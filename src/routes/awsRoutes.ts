@@ -1,51 +1,38 @@
 import express, { Request, Response } from 'express';
+import multer from 'multer';
 import path from 'path';
 import { Readable } from 'stream';
-import { ListBucketsCommand, ListObjectsV2Command, GetObjectCommand, PutObjectCommand, DeleteObjectCommand, CreateBucketCommand, DeleteBucketCommand, HeadObjectCommand, PutObjectAclCommand, PutBucketPolicyCommand, DeleteObjectsCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import s3Client from '../aws/s3';
-import multer from 'multer';
+import * as s3Service from '../aws/s3service';
 
 const router = express.Router();
 const upload = multer();
 
-// Route pour lister les buckets S3
-router.get('/s3-list', async (req: Request, res: Response) => {
+// Lister les buckets
+router.get('/s3-list', async (_req, res) => {
   try {
-    const command = new ListBucketsCommand({});
-    const response = await s3Client.send(command);
-    res.json({ buckets: response.Buckets });
+    const buckets = await s3Service.listBuckets();
+    res.json({ buckets });
   } catch (error) {
     console.error('Error listing buckets:', error);
     res.status(500).json({ error: 'Erreur lors de la récupération des buckets' });
   }
 });
 
-// Route pour lister les objets d'un bucket S3
-router.get('/s3-list/:bucketName', async (req: Request, res: Response) => {
-  const bucketName = req.params.bucketName;
-
+// Lister les objets d’un bucket
+router.get('/s3-list/:bucketName', async (req, res) => {
   try {
-    const command = new ListObjectsV2Command({ Bucket: bucketName });
-    const response = await s3Client.send(command);
-    res.json({ contents: response.Contents });
+    const contents = await s3Service.listObjects(req.params.bucketName);
+    res.json({ contents });
   } catch (error) {
     console.error('Error listing objects:', error);
-    res.status(500).json({ error: 'Erreur lors de la récupération des objets du bucket' });
+    res.status(500).json({ error: 'Erreur lors de la récupération des objets' });
   }
 });
 
-// Route pour créer une URL de download d'un fichier d'un bucket S3
-router.get('/s3-download-url/:bucketName/:key', async (req: Request, res: Response) => {
-  const { bucketName, key } = req.params;
-
+// Générer une URL signée de téléchargement
+router.get('/s3-download-url/:bucketName/:key', async (req, res) => {
   try {
-    const command = new GetObjectCommand({
-      Bucket: bucketName,
-      Key: decodeURIComponent(key),
-    });
-
-    const url = await getSignedUrl(s3Client, command, { expiresIn: 3600 }); // 1h
+    const url = await s3Service.getSignedDownloadUrl(req.params.bucketName, decodeURIComponent(req.params.key));
     res.json({ url });
   } catch (error) {
     console.error('Error generating signed URL:', error);
@@ -53,24 +40,20 @@ router.get('/s3-download-url/:bucketName/:key', async (req: Request, res: Respon
   }
 });
 
-// Route pour télécharger un fichier d'un bucket S3
-router.get('/s3-download/:bucketName/:key', async (req: Request, res: Response) => {
-  const { bucketName, key } = req.params;
-
+// Télécharger un fichier (stream direct)
+router.get('/s3-download/:bucketName/:key', async (req, res) => {
   try {
-    const command = new GetObjectCommand({
-      Bucket: bucketName,
-      Key: decodeURIComponent(key),
-    });
+    const { body, contentType, contentLength } = await s3Service.downloadFile(
+      req.params.bucketName,
+      decodeURIComponent(req.params.key)
+    );
 
-    const { Body, ContentType, ContentLength } = await s3Client.send(command);
+    res.setHeader('Content-Type', contentType || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${path.basename(req.params.key)}"`);
+    res.setHeader('Content-Length', contentLength?.toString() || '0');
 
-    res.setHeader('Content-Type', ContentType || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="${path.basename(key)}"`);
-    res.setHeader('Content-Length', ContentLength?.toString() || '0');
-
-    if (Body instanceof Readable) {
-      Body.pipe(res);
+    if (body instanceof Readable) {
+      body.pipe(res);
     } else {
       res.status(500).json({ error: 'Fichier non lisible' });
     }
@@ -80,139 +63,106 @@ router.get('/s3-download/:bucketName/:key', async (req: Request, res: Response) 
   }
 });
 
-// Route pour uploader un fichier dans un bucket S3
-router.post('/s3-upload/:bucketName', upload.single('file'), async (req: Request, res: Response): Promise<void> => {
-    const file = (req as Request & { file: Express.Multer.File }).file;
-    const bucketName = req.params.bucketName;
-    const metadata = req.body.metadata || {};
+// Uploader un fichier
+router.post('/s3-upload/:bucketName', upload.single('file'), async (req, res) => {
+  const file = req.file;
+  const metadata = req.body.metadata || {};
 
-    if (!file) {
-      res.status(400).json({ error: 'Aucun fichier fourni' });
-      return;
-    }
-
-
-    try {
-      const command = new PutObjectCommand({
-        Bucket: bucketName,
-        Key: file.originalname,
-        Body: file.buffer,
-        ContentType: file.mimetype,
-        Metadata: metadata,
-      });
-
-      await s3Client.send(command);
-      res.status(200).json({ message: 'Fichier uploadé avec succès' });
-    } catch (error) {
-      console.error('Erreur lors de l’upload :', error);
-      res.status(500).json({ error: 'Erreur lors de l’upload vers S3' });
-    }
+  if (!file) {
+    res.status(400).json({ error: 'Aucun fichier fourni' });
+    return;
   }
-);
-
-// Route pour supprimer un fichier
-router.delete('/s3-delete/:bucketName/:key', async (req: Request, res: Response) => {
-  const { bucketName, key } = req.params;
 
   try {
-    const command = new DeleteObjectCommand({
-      Bucket: bucketName,
-      Key: decodeURIComponent(key),
-    });
+    await s3Service.uploadFile(req.params.bucketName, file, metadata);
+    res.status(200).json({ message: 'Fichier uploadé avec succès' });
+  } catch (error) {
+    console.error('Erreur lors de l’upload :', error);
+    res.status(500).json({ error: 'Erreur lors de l’upload vers S3' });
+  }
+});
 
-    await s3Client.send(command);
-    res.status(200).json({ message: `Fichier "${key}" supprimé du bucket "${bucketName}"` });
+// Supprimer un fichier
+router.delete('/s3-delete/:bucketName/:key', async (req, res) => {
+  try {
+    await s3Service.deleteFile(req.params.bucketName, decodeURIComponent(req.params.key));
+    res.status(200).json({ message: 'Fichier supprimé avec succès' });
   } catch (error) {
     console.error('Erreur suppression S3 :', error);
     res.status(500).json({ error: 'Erreur lors de la suppression du fichier' });
   }
 });
 
-// Route pour supprimer un bucket S3
-router.delete('/s3-bucket/:bucketName', async (req: Request, res: Response) => {
-  const { bucketName } = req.params;
-
+// Supprimer plusieurs fichiers
+router.delete('/s3-delete-multiple/:bucketName', async (req, res) => {
   try {
-    const command = new DeleteBucketCommand({
-      Bucket: bucketName,
-    });
-
-    await s3Client.send(command);
-    res.status(200).json({ message: `Bucket "${bucketName}" supprimé avec succès` });
+    const result = await s3Service.deleteFiles(req.params.bucketName, req.body.keys);
+    res.status(200).json({ message: 'Fichiers supprimés avec succès', deleted: result, });
   } catch (error) {
-    console.error('Erreur lors de la suppression du bucket :', error);
+    console.error('Erreur suppression S3 :', error);
+    res.status(500).json({ error: 'Erreur lors de la suppression des fichiers' });
+  }
+});
+
+// Supprimer un bucket
+router.delete('/s3-bucket/:bucketName', async (req, res) => {
+  try {
+    await s3Service.deleteBucket(req.params.bucketName);
+    res.status(200).json({ message: 'Bucket supprimé avec succès' });
+  } catch (error) {
+    console.error('Erreur suppression bucket :', error);
     res.status(500).json({ error: 'Erreur lors de la suppression du bucket' });
   }
 });
 
-// Route pour créer un bucket
-router.post('/s3-bucket/:bucketName', async (req: Request, res: Response) => {
-  const { bucketName } = req.params;
-
+// Créer un bucket
+router.post('/s3-bucket/:bucketName', async (req, res) => {
   try {
-    const command = new CreateBucketCommand({
-      Bucket: bucketName,
-      // CreateBucketConfiguration: {
-      //   LocationConstraint: 'eu-west-3'
-      // }
-    });
-
-    await s3Client.send(command);
-    res.status(201).json({ message: `Bucket "${bucketName}" créé avec succès` });
+    await s3Service.createBucket(req.params.bucketName);
+    res.status(201).json({ message: 'Bucket créé avec succès' });
   } catch (error: any) {
-    console.error('Erreur lors de la création du bucket :', error);
-    res.status(500).json({
-      error: 'Erreur lors de la création du bucket',
-      details: error.message,
-    });
+    console.error('Erreur création bucket :', error);
+    res.status(500).json({ error: 'Erreur lors de la création du bucket', details: error.message });
   }
 });
 
-// Route pour récupérer les métadonnées d’un objet
-router.get('/s3-metadata/:bucketName/:key', async (req: Request, res: Response) => {
-  const { bucketName, key } = req.params;
-
+// Récupérer les métadonnées
+router.get('/s3-metadata/:bucketName/:key', async (req, res) => {
   try {
-    const command = new HeadObjectCommand({
-      Bucket: bucketName,
-      Key: decodeURIComponent(key),
-    });
-
-    const response = await s3Client.send(command);
-
-    res.status(200).json({ metadata: response.Metadata });
+    const metadata = await s3Service.getObjectMetadata(req.params.bucketName, decodeURIComponent(req.params.key));
+    res.status(200).json({ metadata });
   } catch (error) {
-    console.error('Erreur lors de la récupération des métadonnées :', error);
+    console.error('Erreur métadonnées :', error);
     res.status(500).json({ error: 'Erreur lors de la récupération des métadonnées' });
   }
 });
 
-// Route pour générer une politique de bucket S3
-router.post('/s3-policy/:bucketName', async (req: Request, res: Response) => {
-  const { bucketName } = req.params;
+// Générer une politique
+router.post('/s3-policy/:bucketName', async (req, res) => {
   const { actions = ['s3:GetObject'], effect = 'Allow', principal = '*', prefix = '*' } = req.body;
 
   try {
-    const policy = {
-      Version: '2012-10-17',
-      Statement: [
-        {
-          Sid: 'CustomPolicy',
-          Effect: effect,
-          Principal: principal === '*' ? '*' : { AWS: principal },
-          Action: actions,
-          Resource: `arn:aws:s3:::${bucketName}/${prefix}`,
-        },
-      ],
-    };
-
-    res.status(200).json({
-      message: 'Politique générée avec succès',
-      policy,
-    });
+    const policy = s3Service.generateBucketPolicy(req.params.bucketName, actions, effect, principal, prefix);
+    res.status(200).json({ message: 'Politique générée avec succès', policy });
   } catch (error) {
-    console.error('Erreur lors de la génération de la politique :', error);
+    console.error('Erreur génération politique :', error);
     res.status(500).json({ error: 'Erreur lors de la génération de la politique' });
+  }
+});
+
+// Appliquer une politique
+router.post('/s3-apply-policy/:bucketName', async (req, res) => {
+  const { policy } = req.body;
+  if (!policy) {
+    res.status(400).json({ error: 'Aucune politique fournie' });
+    return;
+  }
+  try {
+    await s3Service.applyBucketPolicy(req.params.bucketName, policy);
+    res.status(200).json({ message: 'Politique appliquée avec succès' });
+  } catch (error) {
+    console.error('Erreur application politique :', error);
+    res.status(500).json({ error: 'Erreur lors de l’application de la politique' });
   }
 });
 
