@@ -1,7 +1,6 @@
-import { PrismaClient } from '@prisma/client';
-import { User } from './interfaces';
-
-const prisma = new PrismaClient();
+import { User  } from '@prisma/client'; // -> Prisma crée automatiquement une interface pour les tables définies dans les schémas
+import bcrypt from 'bcryptjs';
+import prisma from './prisma/prisma';
 
 export const getUsers = async (): Promise<User[]> => {
     try {
@@ -27,10 +26,14 @@ export const getUser = async (id: number): Promise<User | null> => {
     }
 };
 
-export const postUser = async (userData: Omit<User, 'id' | 'createdAt'>): Promise<User> => {
+export const postUser = async (userData: Omit<User, 'id' | 'createdAt'> & { password: string }): Promise<User> => {
     try {
+      const hashedPassword = await bcrypt.hash(userData.password, 10);
       const newUser = await prisma.user.create({
-        data: userData,
+        data: {
+          ...userData,
+          password: hashedPassword,
+        },
       });
       return newUser;
     } catch (error) {
@@ -39,8 +42,11 @@ export const postUser = async (userData: Omit<User, 'id' | 'createdAt'>): Promis
     }
 };
 
-export const updateUser = async (id: number, userData: Partial<User>): Promise<User | null> => {
+export const updateUser = async (id: number, userData: Partial<User> & { password?: string }): Promise<User | null> => {
     try {
+      if (userData.password) {
+        userData.password = await bcrypt.hash(userData.password, 10);
+      }
       const updatedUser = await prisma.user.update({
         where: {
           id: id,

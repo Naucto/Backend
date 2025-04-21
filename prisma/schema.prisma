@@ -1,11 +1,6 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
 }
 
 datasource db {
@@ -14,10 +9,129 @@ datasource db {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  name      String?
-  createdAt DateTime @default(now())
+  id              Int              @id @default(autoincrement())
+  email           String           @unique
+  password        String
+  username        String           @unique
+  firstName       String
+  lastName        String
+  createdAt       DateTime         @default(now())
 
-  @@map("users")  // Correspond maintenant à la table "users" dans la base de données
+  // Relations
+  friendsA        Friendship[]     @relation("UserAFriends")
+  friendsB        Friendship[]     @relation("UserBFriends")
+  sentRequests    FriendRequest[]  @relation("SentRequests")
+  receivedRequests FriendRequest[] @relation("ReceivedRequests")
+  subscriptions   Subscription[]
+  comments        Comment[]
+  gameStats       GameStat[]
+  userStats       UserStat?
+  collaboratedProjects Project[]   @relation("ProjectCollaborators")
+}
+
+model FriendRequest {
+  id        Int      @id @default(autoincrement())
+  from      User     @relation("SentRequests", fields: [fromId], references: [id])
+  fromId    Int
+  to        User     @relation("ReceivedRequests", fields: [toId], references: [id])
+  toId      Int
+  createdAt DateTime @default(now())
+  status    String   // pending, accepted, rejected
+}
+
+model Friendship {
+  id        Int      @id @default(autoincrement())
+  userA     User     @relation("UserAFriends", fields: [userAId], references: [id])
+  userAId   Int
+  userB     User     @relation("UserBFriends", fields: [userBId], references: [id])
+  userBId   Int
+  createdAt DateTime @default(now())
+}
+
+model Subscription {
+  id         Int               @id @default(autoincrement())
+  user       User              @relation(fields: [userId], references: [id])
+  userId     Int
+  type       MonetizationType
+  startDate  DateTime
+  endDate    DateTime?
+}
+
+model Project {
+  id                 Int              @id @default(autoincrement())
+  name               String
+  shortDesc          String
+  longDesc           String
+  status             String           // ex: 'in_progress', 'completed'
+  iconUrl            String?
+  fileName           String
+  monetization       MonetizationType
+  price              Float?
+  createdAt          DateTime         @default(now())
+
+  // Relations
+  collaborators      User[]           @relation("ProjectCollaborators")
+  comments           Comment[]
+  projectStats       ProjectStat?
+
+  mostPlayedByUsers  UserStat[]       @relation("MostPlayedGames")
+  recentlyPlayedBy   UserStat[]       @relation("RecentlyPlayedGames")
+  likedByUsers       UserStat[]       @relation("LikedGames")
+
+  gameStats          GameStat[]
+}
+
+enum MonetizationType {
+  NONE
+  ADS
+  PAID
+}
+
+model Comment {
+  id         Int       @id @default(autoincrement())
+  author     User      @relation(fields: [authorId], references: [id])
+  authorId   Int
+  project    Project   @relation(fields: [projectId], references: [id])
+  projectId  Int
+  parent     Comment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  parentId   Int?
+  replies    Comment[] @relation("CommentReplies")
+  content    String
+  rating     Int
+  createdAt  DateTime  @default(now())
+}
+
+model ProjectStat {
+  id            Int      @id @default(autoincrement())
+  project       Project  @relation(fields: [projectId], references: [id])
+  projectId     Int      @unique
+  uniquePlayers Int
+  activePlayers Int
+  likes         Int
+}
+
+model GameStat {
+  id         Int      @id @default(autoincrement())
+  user       User     @relation(fields: [userId], references: [id])
+  userId     Int
+  project    Project  @relation(fields: [projectId], references: [id])
+  projectId  Int
+  startedAt  DateTime
+}
+
+model UserStat {
+  id              Int        @id @default(autoincrement())
+  user            User       @relation(fields: [userId], references: [id])
+  userId          Int        @unique
+
+  mostPlayedGames Project[]  @relation("MostPlayedGames")
+  recentlyPlayed  Project[]  @relation("RecentlyPlayedGames")
+  likedGames      Project[]  @relation("LikedGames")
+}
+
+model GlobalStats {
+  id            Int @id @default(1) // Singleton
+  activeUsers   Int
+  inactiveUsers Int
+  devCount      Int
 }
