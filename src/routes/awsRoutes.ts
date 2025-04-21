@@ -2,7 +2,7 @@ import express, { Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
 import { Readable } from 'stream';
-import * as s3Service from '../aws/s3service';
+import * as s3Service from '@aws/s3service';
 
 const router = express.Router();
 const upload = multer();

@@ -1,6 +1,6 @@
 // src/aws/s3service.ts
 
-import s3Client from './s3';
+import s3Client from '@aws/s3';
 import {
   ListBucketsCommand,
   ListObjectsV2Command,
