@@ -3,8 +3,8 @@ import dotenv from 'dotenv';
 import path from 'path';
 import cors from 'cors';
 
-import awsRoutes from './src/routes/awsRoutes';
-import userRoutes from './src/routes/userRoutes';
+import awsRoutes from '@routes/awsRoutes';
+import userRoutes from '@routes/userRoutes';
 
 if (process.env.NODE_ENV === 'production') {
   dotenv.config({ path: '.env.production' });

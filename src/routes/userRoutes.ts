@@ -1,5 +1,5 @@
 // src/routes/userRoutes.ts
-import { getUsers, getUser, postUser, updateUser, deleteUser } from '../db';
+import { getUsers, getUser, postUser, updateUser, deleteUser } from '@db/db';
 import express from 'express';
 
 const router = express.Router();

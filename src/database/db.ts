@@ -1,6 +1,6 @@
 import { User  } from '@prisma/client'; // -> Prisma crée automatiquement une interface pour les tables définies dans les schémas
 import bcrypt from 'bcryptjs';
-import prisma from './prisma/prisma';
+import prisma from '@prisma/prisma';
 
 export const getUsers = async (): Promise<User[]> => {
     try {
