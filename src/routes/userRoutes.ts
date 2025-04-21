@@ -32,9 +32,10 @@ router.get('/:id', async (req, res) => {
 
 // Ajouter un nouvel utilisateur
 router.post('/', async (req, res) => {
-  const { name, email } = req.body;
+  const { email, password, username, firstName, lastName  } = req.body;
+
   try {
-    const newUser = await postUser({ email, name });
+    const newUser = await postUser({ email, password, username, firstName, lastName });
     res.status(201).json(newUser);
   } catch (error) {
     res.status(400).json({ error: 'Erreur lors de la création de l\'utilisateur' });
@@ -44,9 +45,9 @@ router.post('/', async (req, res) => {
 // Mettre à jour un utilisateur
 router.put('/:id', async (req, res) => {
   const userId = parseInt(req.params.id, 10);
-  const { email, name } = req.body;
+  const { email, password, username, firstName, lastName  } = req.body;
   try {
-    const updatedUser = await updateUser(userId, { email, name });
+    const updatedUser = await updateUser(userId, { email, password, username, firstName, lastName  });
     if (updatedUser) {
       res.json(updatedUser);
     } else {
