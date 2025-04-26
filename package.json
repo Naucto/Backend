@@ -2,7 +2,7 @@
   "name": "backend_naucto",
   "version": "1.0.0",
   "description": "Backend for the Naucto project",
-  "main": "index.js",
+  "main": "index.ts",
   "scripts": {
     "build": "bun build",
     "dev": "bun index.ts",
@@ -31,5 +31,8 @@
     "bun": "latest",
     "@types/bun": "latest"
   },
-  "private": true
+  "private": true,
+  "peerDependencies": {
+    "typescript": "^5"
+  }
 }
