@@ -31,5 +31,8 @@
     "bun": "latest",
     "@types/bun": "latest"
   },
-  "private": true
+  "private": true,
+  "peerDependencies": {
+    "typescript": "^5"
+  }
 }

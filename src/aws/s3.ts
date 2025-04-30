@@ -12,5 +12,14 @@ const s3Client = new S3Client({
   },
 });
 
+/*const s3Client = new S3Client({
+  endpoint: 'https://s3.fr-par.scw.cloud',
+  region: 'fr-par',
+  credentials: {
+    accessKeyId: process.env.SCW_ACCESS_KEY!,
+    secretAccessKey: process.env.SCW_SECRET_KEY!,
+  },
+});*/
+
 export default s3Client;
 
