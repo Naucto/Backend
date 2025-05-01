@@ -30,10 +30,10 @@ model User {
   createdAt DateTime @default(now())
 
   // Relations
-  sentRequests     FriendRequest[] @relation("SentFriendRequests")
-  receivedRequests FriendRequest[] @relation("ReceivedFriendRequests")
   friendsInitiated Friendship[]    @relation("UserAFriends")
   friendsReceived  Friendship[]    @relation("UserBFriends")
+  sentRequests     FriendRequest[] @relation("SentFriendRequests")
+  receivedRequests FriendRequest[] @relation("ReceivedFriendRequests")
   subscriptions    Subscription[]
   comments         Comment[]
   gameSessions     GameSession[]
