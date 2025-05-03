@@ -12,8 +12,7 @@ import {
   HttpCode,
   ParseIntPipe,
   ValidationPipe,
-  Logger,
-  NotFoundException
+  Logger
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -29,11 +28,11 @@ import {
   ApiExtraModels
 } from "@nestjs/swagger";
 import { User } from './entities/user.entity';
-// import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
-// import { RolesGuard } from '../../auth/guards/roles.guard';
-// import { Roles } from '../../auth/decorators/roles.decorator';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
 import { PaginationDto } from '../../common/dto/pagination.dto';
-// import { ApiPaginatedResponse } from '../../common/decorators/api-paginated-response.decorator';
+import { ApiPaginatedResponse } from '../../common/decorators/api-paginated-response.decorator';
 
 @ApiTags('users')
 @ApiExtraModels(User)
@@ -66,14 +65,14 @@ export class UserController {
 
   @Get()
   @ApiOperation({ summary: 'Get all users with pagination and filtering' })
-  // @ApiPaginatedResponse(User)
+  @ApiPaginatedResponse(User)
   @ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number' })
   @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Items per page' })
   @ApiQuery({ name: 'name', required: false, type: String, description: 'Filter by name' })
   @ApiQuery({ name: 'email', required: false, type: String, description: 'Filter by email' })
   @ApiQuery({ name: 'sortBy', required: false, enum: ['id', 'name', 'email', 'createdAt'] })
   @ApiQuery({ name: 'order', required: false, enum: ['asc', 'desc'] })
-  // @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   async findAll(
     @Query() paginationDto: PaginationDto,
@@ -102,10 +101,10 @@ export class UserController {
       this.userService.findAll({ 
         skip, 
         take: limit,
-        // where: Object.keys(filter).length ? filter : undefined,
-        // orderBy
+        where: Object.keys(filter).length ? filter : undefined,
+        orderBy
       }),
-      this.userService.count()
+      this.userService.count(filter)
     ]);
     
     return {
@@ -127,7 +126,7 @@ export class UserController {
   @ApiResponse({ status: HttpStatus.OK, description: 'Returns the user', type: User })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'User not found' })
   @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: 'Invalid ID format' })
-  // @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   async findOne(@Param('id', ParseIntPipe) id: number) {
     this.logger.debug(`Fetching user with ID: ${id}`);
@@ -147,8 +146,8 @@ export class UserController {
   @ApiResponse({ status: HttpStatus.OK, description: 'User updated successfully', type: User })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'User not found' })
   @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: 'Invalid input' })
-  // @UseGuards(JwtAuthGuard, RolesGuard)
-  // @Roles('admin')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
   @ApiBearerAuth()
   async update(
     @Param('id', ParseIntPipe) id: number, 
@@ -171,8 +170,8 @@ export class UserController {
   @ApiResponse({ status: HttpStatus.OK, description: 'User deleted successfully' })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'User not found' })
   @ApiResponse({ status: HttpStatus.FORBIDDEN, description: 'Insufficient permissions' })
-  // @UseGuards(JwtAuthGuard, RolesGuard)
-  // @Roles('admin')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
   @ApiBearerAuth()
   async remove(@Param('id', ParseIntPipe) id: number) {
     this.logger.debug(`Deleting user with ID: ${id}`);
