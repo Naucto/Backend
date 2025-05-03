@@ -32,22 +32,25 @@ export class ProjectService {
       throw new Error(`User with ID ${userId} not found`);
     }
   
-    // return this.prisma.project.create({
-    //   data: {
-    //     ...createProjectDto,
-    //     collaborators: {
-    //       connect: [{ id: userId }], // Connect the creator as an initial collaborator
-    //     },
-    //   },
-    // });
+    const project = await this.prisma.project.create({
+      data: {
+        ...createProjectDto,
+        collaborators: {
+          connect: [{ id: userId }],
+        },
+      },
+      include: {
+        collaborators: true,
+      },
+    });
+  
+    return project;
   }
   
 
   async update(id: number, updateProjectDto: UpdateProjectDto) {
-    // First check if the project exists
     await this.findOne(id);
 
-    // If it exists, update it
     return this.prisma.project.update({
       where: { id },
       data: updateProjectDto,
@@ -55,14 +58,12 @@ export class ProjectService {
   }
 
   async remove(id: number) {
-    // First check if the project exists
     await this.findOne(id);
 
-    // If it exists, delete it
     await this.prisma.project.delete({
       where: { id },
     });
     
-    return null; // Return null for 204 No Content response
+    return null;
   }
 }

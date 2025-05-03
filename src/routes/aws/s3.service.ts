@@ -81,7 +81,6 @@ export class S3Service {
       
       await this.s3.upload(params).promise();
       
-      // Optionally, log the upload in database using Prisma
       // await this.prismaService.s3Upload.create({
       //   data: {
       //     bucketName,
@@ -107,7 +106,6 @@ export class S3Service {
       
       await this.s3.deleteObject(params).promise();
       
-      // Optionally, update database record using Prisma
       // await this.prismaService.s3Upload.deleteMany({
       //   where: {
       //     bucketName,
@@ -133,7 +131,6 @@ export class S3Service {
       
       const result = await this.s3.deleteObjects(params).promise();
       
-      // Optionally, update database records using Prisma
       // await this.prismaService.s3Upload.deleteMany({
       //   where: {
       //     bucketName,
@@ -158,7 +155,6 @@ export class S3Service {
       
       await this.s3.deleteBucket(params).promise();
       
-      // Optionally, update database records using Prisma
       // await this.prismaService.s3Upload.deleteMany({
       //   where: {
       //     bucketName,

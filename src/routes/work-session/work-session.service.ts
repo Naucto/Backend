@@ -31,35 +31,44 @@ export class WorkSessionService {
   }
 
   async create(createWorkSessionDto: CreateWorkSessionDto, userId: number) {
-    // First check if the project exists and belongs to the user
-    // const project = await this.prisma.project.findFirst({
-    //   where: {
-    //     id: createWorkSessionDto.projectId,
-    //     userId: userId,
-    //   },
-    // });
+    const project = await this.prisma.project.findFirst({
+      where: {
+        id: createWorkSessionDto.projectId,
+        collaborators: {
+          some: {
+            id: userId,
+          },
+        },
+      },
+    });
 
-    // if (!project) {
-    //   throw new NotFoundException(`Project not found or does not belong to user`);
-    // }
+    if (!project) {
+      throw new NotFoundException(`Project not found or does not belong to user`);
+    }
 
-    // return this.prisma.workSession.create({
-    //   data: {
-    //     ...createWorkSessionDto,
-    //     startedAt: createWorkSessionDto.startTime || new Date(), // Default to now if not provided
-    //     userId, // Associate with the user who created it
-    //   },
-    //   include: {
-    //     project: true,
-    //   },
-    // });
+    return this.prisma.workSession.create({
+      data: {
+        startedAt: createWorkSessionDto.startTime ?? new Date(),
+        project: {
+          connect: { id: createWorkSessionDto.projectId },
+        },
+        users: {
+          connect: [{ id: userId }],
+        },
+      },
+      include: {
+        project: {
+          include: {
+            collaborators: true,
+          },
+        },
+      },
+    });    
   }
 
   async update(id: number, updateWorkSessionDto: UpdateWorkSessionDto) {
-    // First check if the work session exists
     await this.findOne(id);
 
-    // If it exists, update it
     return this.prisma.workSession.update({
       where: { id },
       data: updateWorkSessionDto,
@@ -70,14 +79,12 @@ export class WorkSessionService {
   }
 
   async remove(id: number) {
-    // First check if the work session exists
     await this.findOne(id);
 
-    // If it exists, delete it
     await this.prisma.workSession.delete({
       where: { id },
     });
     
-    return null; // Return null for 204 No Content response
+    return null;
   }
 }

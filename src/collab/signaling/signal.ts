@@ -18,7 +18,7 @@ export const setupWebSocketServer = (server: http.Server) => {
       conn.close();
     }
     try {
-      console.log("SEND:", JSON.stringify(message))
+      //console.log("SEND:", JSON.stringify(message))
       conn.send(JSON.stringify(message));
     } catch (e) {
       conn.close();
@@ -64,7 +64,7 @@ export const setupWebSocketServer = (server: http.Server) => {
         const parsed = JSON.parse(
           typeof message === 'string' ? message : message.toString()
         );
-        console.log(parsed);
+        //console.log(parsed);
         message = parsed; // replace `message` for further use
       }
       if (message && message.type && !closed) {

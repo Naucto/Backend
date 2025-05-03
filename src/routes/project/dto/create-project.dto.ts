@@ -19,11 +19,10 @@ export class CreateProjectDto {
   @ApiProperty({
     description: 'A detailed description of the project',
     example: 'This e-commerce platform includes user authentication, product catalog, shopping cart, and payment processing features...',
-    required: false,
   })
   @IsString()
   @IsOptional()
-  longDesc?: string;
+  longDesc: string;
 
   @ApiProperty({
     description: 'URL to the project icon',
@@ -37,11 +36,10 @@ export class CreateProjectDto {
   @ApiProperty({
     description: 'The file name associated with the project',
     example: 'ecommerce-platform.zip',
-    required: false,
   })
   @IsString()
   @IsOptional()
-  fileName?: string;
+  fileName: string;
 
   @ApiProperty({
     description: 'The price of the project',

@@ -13,12 +13,22 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const express = require('express');
+  const expressApp = express();
+
+  const server = http.createServer(expressApp);
+
+  const app = await NestFactory.create<NestExpressApplication>(
+    AppModule,
+    new (require('@nestjs/platform-express')).ExpressAdapter(expressApp),
+  );
 
   app.useLogger(['log', 'error', 'warn', 'debug']);
   app.useStaticAssets(path.join(__dirname, '..', 'public'));
   app.setBaseViewsDir(path.join(__dirname, '..', 'views'));
   app.setViewEngine('ejs');
+
+  app.enableCors();
 
   app.use((req, res, next) => {
     console.log(`${req.method} request for ${req.url}`);
@@ -27,7 +37,7 @@ async function bootstrap() {
 
   setupSwagger(app);
 
-  const server = http.createServer(app.getHttpAdapter().getInstance());
+  await app.init();
 
   const { setupWebSocketServer } = await import('./collab/signaling/signal');
   setupWebSocketServer(server);

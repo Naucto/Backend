@@ -4,6 +4,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { User } from './entities/user.entity';
 import * as bcrypt from 'bcryptjs';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class UserService {
@@ -30,24 +31,24 @@ export class UserService {
   async findAll(params?: {
     skip?: number;
     take?: number;
-    // where?: Prisma.UserWhereInput;
-    // orderBy?: Prisma.UserOrderByWithRelationInput;
+    where?: Prisma.UserWhereInput;
+    orderBy?: Prisma.UserOrderByWithRelationInput;
   }): Promise<User[]> {
     try {
       return this.prisma.user.findMany({
         skip: params?.skip,
         take: params?.take,
-        // where: params?.where,
-        // orderBy: params?.orderBy,
+        where: params?.where,
+        orderBy: params?.orderBy,
       });
     } catch (error) {
       throw error;
     }
   }
 
-  async count(): Promise<number> {
+  async count(where?: Prisma.UserWhereInput): Promise<number> {
     try {
-      return this.prisma.user.count();
+      return this.prisma.user.count({ where });
     } catch (error) {
       throw error;
     }
