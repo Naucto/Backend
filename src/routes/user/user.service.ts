@@ -1,8 +1,9 @@
+// src/routes/user/user.service.ts
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from "../../prisma/prisma.service";
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { User } from './entities/user.entity';
+import { User } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { Prisma } from '@prisma/client';
 
@@ -10,9 +11,34 @@ import { Prisma } from '@prisma/client';
 export class UserService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async findRolesByNames(names: string[]) {
+    return await this.prisma.role.findMany({
+      where: {
+        name: { in: names },
+      },
+    });
+  }
+
+  async getUserRoles(userId: number): Promise<string[]> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { roles: true }, // Charge les rôles de l'utilisateur via la relation
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${userId} not found`);
+    }
+
+    return user.roles.map(role => role.name); // Retourne un tableau de noms de rôles
+  }
+
   async create(createUserDto: CreateUserDto): Promise<User> {
     try {
       const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
+      
+      const rolesToAssign = createUserDto.roles
+      ? [...createUserDto.roles.map((roleId) => ({ id: roleId })), { id: 2 }]
+      : [{ id: 2 }];
 
       return this.prisma.user.create({
         data: {
@@ -21,6 +47,9 @@ export class UserService {
           firstName: createUserDto.firstName,
           lastName: createUserDto.lastName,
           password: hashedPassword,
+          roles: {
+            connect: rolesToAssign,
+          },
         },
       });
     } catch (error) {
@@ -78,6 +107,12 @@ export class UserService {
         data.password = await bcrypt.hash(updateUserDto.password, 10);
       }
 
+      if (updateUserDto.roles) {
+        data.roles = {
+          set: updateUserDto.roles.map((roleId) => ({ id: roleId }))
+        };
+      }
+
       return await this.prisma.user.update({
         where: { id },
         data,
@@ -102,4 +137,14 @@ export class UserService {
       throw error;
     }
   }
+
+  async findByEmail(email: string): Promise<User | null> {
+    try {
+      return await this.prisma.user.findUnique({
+        where: { email },
+      });
+    } catch (error) {
+      throw error;
+    }
+  }  
 }

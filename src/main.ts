@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { setupSwagger } from './swagger';
+import { format } from 'date-fns-tz';
 import * as path from 'path';
 import * as dotenv from 'dotenv';
 import * as http from 'http';
@@ -31,9 +32,18 @@ async function bootstrap() {
   app.enableCors();
 
   app.use((req, res, next) => {
-    console.log(`${req.method} request for ${req.url}`);
+    const start = Date.now();  
+    const date = format(new Date(), 'dd-MM-yyyy HH:mm:ss.SSS', { timeZone: 'Europe/Paris' });
+
+    res.on('finish', () => {
+      const duration = Date.now() - start;
+      console.log(
+        `[${date}] ${req.method} ${req.originalUrl} → ${res.statusCode} (${duration}ms)`
+      );
+    });
+  
     next();
-  });
+  });  
 
   setupSwagger(app);
 

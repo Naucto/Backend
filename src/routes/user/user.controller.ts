@@ -12,7 +12,8 @@ import {
   HttpCode,
   ParseIntPipe,
   ValidationPipe,
-  Logger
+  Logger,
+  ForbiddenException
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -55,6 +56,7 @@ export class UserController {
   @ApiResponse({ status: HttpStatus.CONFLICT, description: 'Email already in use' })
   async create(@Body(ValidationPipe) createUserDto: CreateUserDto) {
     this.logger.log(`Creating user with email: ${createUserDto.email}`);
+
     const user = await this.userService.create(createUserDto);
     return {
       statusCode: HttpStatus.CREATED,
@@ -147,7 +149,7 @@ export class UserController {
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'User not found' })
   @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: 'Invalid input' })
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin')
+  @Roles('Admin')
   @ApiBearerAuth()
   async update(
     @Param('id', ParseIntPipe) id: number, 
@@ -171,7 +173,7 @@ export class UserController {
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'User not found' })
   @ApiResponse({ status: HttpStatus.FORBIDDEN, description: 'Insufficient permissions' })
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin')
+  @Roles('Admin')
   @ApiBearerAuth()
   async remove(@Param('id', ParseIntPipe) id: number) {
     this.logger.debug(`Deleting user with ID: ${id}`);

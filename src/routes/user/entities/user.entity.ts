@@ -6,4 +6,5 @@ export class User {
   lastName: string;
   password: string;
   createdAt: Date;
+  roles?: { id: number; name: string }[];
 }
