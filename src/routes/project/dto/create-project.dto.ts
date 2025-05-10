@@ -18,7 +18,8 @@ export class CreateProjectDto {
 
   @ApiProperty({
     description: 'A detailed description of the project',
-    example: 'This e-commerce platform includes user authentication, product catalog, shopping cart, and payment processing features...',
+    example:
+      'This e-commerce platform includes user authentication, product catalog, shopping cart, and payment processing features...',
   })
   @IsString()
   @IsOptional()

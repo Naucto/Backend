@@ -1,10 +1,16 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 export class Project {
-  @ApiProperty({ example: 1, description: 'The unique identifier of the project' })
+  @ApiProperty({
+    example: 1,
+    description: 'The unique identifier of the project',
+  })
   id: number;
 
-  @ApiProperty({ example: 'E-commerce Platform', description: 'The name of the project' })
+  @ApiProperty({
+    example: 'E-commerce Platform',
+    description: 'The name of the project',
+  })
   name: string;
 
   @ApiProperty({
@@ -14,7 +20,8 @@ export class Project {
   shortDesc: string;
 
   @ApiProperty({
-    example: 'This e-commerce platform includes user authentication, product catalog...',
+    example:
+      'This e-commerce platform includes user authentication, product catalog...',
     description: 'A detailed description of the project',
     required: false,
   })

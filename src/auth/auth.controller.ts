@@ -24,10 +24,10 @@ export class AuthController {
           username: 'user_name',
           firstName: 'First',
           lastName: 'Last',
-          createdAt: "2025-05-05T12:51:04.098Z"
-        }
-      }
-    }
+          createdAt: '2025-05-05T12:51:04.098Z',
+        },
+      },
+    },
   })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   async login(@Body() loginDto: LoginDto) {
@@ -48,10 +48,10 @@ export class AuthController {
           email: 'newuser@example.com',
           username: 'new_user',
           firstName: 'First',
-          lastName: 'Last'
-        }
-      }
-    }
+          lastName: 'Last',
+        },
+      },
+    },
   })
   @ApiResponse({ status: 400, description: 'Bad request' })
   @ApiResponse({ status: 409, description: 'Email already in use' })

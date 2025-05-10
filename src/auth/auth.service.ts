@@ -1,4 +1,8 @@
-import { Injectable, ConflictException, UnauthorizedException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UserService } from '../routes/user/user.service';
 import * as bcrypt from 'bcryptjs';
@@ -8,7 +12,7 @@ import { CreateUserDto } from '../routes/user/dto/create-user.dto';
 export class AuthService {
   constructor(
     private readonly userService: UserService,
-    private readonly jwtService: JwtService
+    private readonly jwtService: JwtService,
   ) {}
 
   async validateUser(email: string, password: string) {
@@ -25,7 +29,7 @@ export class AuthService {
     return user;
   }
 
- async login(email: string, password: string) {
+  async login(email: string, password: string) {
     const user = await this.validateUser(email, password);
 
     const payload = { sub: user.id, email: user.email };
@@ -43,25 +47,16 @@ export class AuthService {
     const existing = await this.userService.findAll({
       where: { email: createUserDto.email },
     });
-  
+
     if (existing.length > 0) {
       throw new ConflictException('Email already in use');
     }
 
-    if (createUserDto.roles && createUserDto.roles.includes(1)) {
-        throw new ForbiddenException('You cannot register as an admin');
-    }
-  
-    if (!createUserDto.roles || createUserDto.roles.length === 0) {
-        const defaultRole = await this.userService.findRolesByNames(['User']);
-        createUserDto.roles = defaultRole.map(role => role.id);
-    }
-  
     const newUser = await this.userService.create(createUserDto);
-  
+
     const payload = { sub: newUser.id, email: newUser.email };
     const accessToken = this.jwtService.sign(payload);
-  
+
     return {
       access_token: accessToken,
       user: {

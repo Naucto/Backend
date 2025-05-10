@@ -41,7 +41,9 @@ export class AwsService {
   }
 
   async listObjects(bucketName: string): Promise<_Object[] | undefined> {
-    const response = await s3Client.send(new ListObjectsV2Command({ Bucket: bucketName }));
+    const response = await s3Client.send(
+      new ListObjectsV2Command({ Bucket: bucketName }),
+    );
     return response.Contents;
   }
 
@@ -51,10 +53,18 @@ export class AwsService {
   }
 
   async getObject(bucketName: string, key: string) {
-    return s3Client.send(new GetObjectCommand({ Bucket: bucketName, Key: key }));
+    return s3Client.send(
+      new GetObjectCommand({ Bucket: bucketName, Key: key }),
+    );
   }
 
-  async uploadObject({ bucketName, fileName, buffer, contentType, metadata }: S3UploadParams) {
+  async uploadObject({
+    bucketName,
+    fileName,
+    buffer,
+    contentType,
+    metadata,
+  }: S3UploadParams) {
     return s3Client.send(
       new PutObjectCommand({
         Bucket: bucketName,
@@ -62,27 +72,33 @@ export class AwsService {
         Body: buffer,
         ContentType: contentType,
         Metadata: metadata,
-      })
+      }),
     );
   }
 
   async deleteObject(bucketName: string, key: string) {
-    return s3Client.send(new DeleteObjectCommand({ Bucket: bucketName, Key: key }));
+    return s3Client.send(
+      new DeleteObjectCommand({ Bucket: bucketName, Key: key }),
+    );
   }
 
-  async deleteObjects(bucketName: string, keys: string[]): Promise<DeleteObjectsCommandOutput[]> {
+  async deleteObjects(
+    bucketName: string,
+    keys: string[],
+  ): Promise<DeleteObjectsCommandOutput[]> {
     if (keys.length === 0) return [];
-  
+
     const chunkSize = 1000;
-    const chunks = Array.from({ length: Math.ceil(keys.length / chunkSize) }, (_, i) =>
-      keys.slice(i * chunkSize, i * chunkSize + chunkSize)
+    const chunks = Array.from(
+      { length: Math.ceil(keys.length / chunkSize) },
+      (_, i) => keys.slice(i * chunkSize, i * chunkSize + chunkSize),
     );
-  
+
     const results: DeleteObjectsCommandOutput[] = [];
-  
+
     for (const chunk of chunks) {
       const objects = chunk.map((key) => ({ Key: key }));
-  
+
       const result = await s3Client.send(
         new DeleteObjectsCommand({
           Bucket: bucketName,
@@ -90,12 +106,12 @@ export class AwsService {
             Objects: objects,
             Quiet: false,
           },
-        })
+        }),
       );
-  
+
       results.push(result);
     }
-  
+
     return results;
   }
 
@@ -108,12 +124,19 @@ export class AwsService {
   }
 
   async getMetadata(bucketName: string, key: string) {
-    return s3Client.send(new HeadObjectCommand({ Bucket: bucketName, Key: key }));
+    return s3Client.send(
+      new HeadObjectCommand({ Bucket: bucketName, Key: key }),
+    );
   }
 
   generatePolicy(
     bucketName: string,
-    { actions = ['s3:GetObject'], effect = 'Allow', principal = '*', prefix = '*' }: S3PolicyParams
+    {
+      actions = ['s3:GetObject'],
+      effect = 'Allow',
+      principal = '*',
+      prefix = '*',
+    }: S3PolicyParams,
   ) {
     return {
       Version: '2012-10-17',
@@ -134,7 +157,7 @@ export class AwsService {
       new PutBucketPolicyCommand({
         Bucket: bucketName,
         Policy: JSON.stringify(policy),
-      })
+      }),
     );
   }
 
@@ -149,7 +172,11 @@ export class AwsService {
     };
   }
 
-  async uploadFile(bucketName: string, file: any, metadata?: Record<string, string>) {
+  async uploadFile(
+    bucketName: string,
+    file: any,
+    metadata?: Record<string, string>,
+  ) {
     return this.uploadObject({
       bucketName,
       fileName: file.originalname,
@@ -172,7 +199,18 @@ export class AwsService {
     return metadata.Metadata;
   }
 
-  generateBucketPolicy(bucketName: string, actions?: string[], effect?: 'Allow' | 'Deny', principal?: string, prefix?: string) {
-    return this.generatePolicy(bucketName, { actions, effect, principal, prefix });
+  generateBucketPolicy(
+    bucketName: string,
+    actions?: string[],
+    effect?: 'Allow' | 'Deny',
+    principal?: string,
+    prefix?: string,
+  ) {
+    return this.generatePolicy(bucketName, {
+      actions,
+      effect,
+      principal,
+      prefix,
+    });
   }
 }

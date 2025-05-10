@@ -12,7 +12,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 
 @Controller('aws')
 export class AwsController {
-  constructor(private readonly awsService: AwsService) { }
+  constructor(private readonly awsService: AwsService) {}
 
   @Get('buckets')
   listBuckets() {

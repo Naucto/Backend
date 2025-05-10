@@ -29,7 +29,7 @@ model User {
   lastName  String
   createdAt DateTime @default(now())
 
-  roles     Role[]   @relation("UserRoles")
+  roles Role[] @relation("UserRoles")
 
   // Relations
   friendsInitiated Friendship[]    @relation("UserAFriends")
@@ -39,9 +39,10 @@ model User {
   subscriptions    Subscription[]
   comments         Comment[]
   gameSessions     GameSession[]
+  creator          Project[]       @relation("ProjectCreator")
   collaborators    Project[]       @relation("ProjectCollaborators")
 
-  workSession      WorkSession[]     @relation("WorkSessionUsers")
+  workSession WorkSession[] @relation("WorkSessionUsers")
 }
 
 model Role {
@@ -95,6 +96,7 @@ model Project {
   createdAt    DateTime         @default(now())
 
   // Relations
+  creator       User          @relation("ProjectCreator", fields: [userId], references: [id])
   collaborators User[]        @relation("ProjectCollaborators")
   comments      Comment[]
   gameSessions  GameSession[]
@@ -104,6 +106,7 @@ model Project {
   uniquePlayers Int @default(0)
   activePlayers Int @default(0)
   likes         Int @default(0)
+  userId        Int
 }
 
 model Comment {
@@ -134,11 +137,11 @@ model GameSession {
 }
 
 model WorkSession {
-  id        Int       @id @default(autoincrement())
-  users     User[]    @relation("WorkSessionUsers")
-  project   Project   @relation(fields: [projectId], references: [id])
-  projectId Int       @unique
-  startedAt DateTime  @default(now())
+  id        Int      @id @default(autoincrement())
+  users     User[]   @relation("WorkSessionUsers")
+  project   Project  @relation(fields: [projectId], references: [id])
+  projectId Int      @unique
+  startedAt DateTime @default(now())
 
   roomId       String @unique @default(uuid())
   roomPassword String @default(uuid())

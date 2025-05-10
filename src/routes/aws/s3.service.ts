@@ -37,10 +37,15 @@ export class S3Service {
 
   async listObjects(bucketName: string) {
     try {
-      const result = await this.s3.send(new ListObjectsV2Command({ Bucket: bucketName }));
+      const result = await this.s3.send(
+        new ListObjectsV2Command({ Bucket: bucketName }),
+      );
       return result.Contents || [];
     } catch (error) {
-      this.logger.error(`Error listing objects in ${bucketName}: ${error.message}`, error.stack);
+      this.logger.error(
+        `Error listing objects in ${bucketName}: ${error.message}`,
+        error.stack,
+      );
       throw error;
     }
   }
@@ -50,15 +55,23 @@ export class S3Service {
       const command = new GetObjectCommand({ Bucket: bucketName, Key: key });
       return await getSignedUrl(this.s3, command, { expiresIn: 3600 });
     } catch (error) {
-      this.logger.error(`Error generating signed URL: ${error.message}`, error.stack);
+      this.logger.error(
+        `Error generating signed URL: ${error.message}`,
+        error.stack,
+      );
       throw error;
     }
   }
 
   async downloadFile(bucketName: string, key: string) {
     try {
-      const head = await this.s3.send(new HeadObjectCommand({ Bucket: bucketName, Key: key }));
-      const getObjectCommand = new GetObjectCommand({ Bucket: bucketName, Key: key });
+      const head = await this.s3.send(
+        new HeadObjectCommand({ Bucket: bucketName, Key: key }),
+      );
+      const getObjectCommand = new GetObjectCommand({
+        Bucket: bucketName,
+        Key: key,
+      });
       const response = await this.s3.send(getObjectCommand);
       const stream = response.Body as Readable;
 
@@ -68,20 +81,29 @@ export class S3Service {
         contentLength: head.ContentLength,
       };
     } catch (error) {
-      this.logger.error(`Error downloading ${key}: ${error.message}`, error.stack);
+      this.logger.error(
+        `Error downloading ${key}: ${error.message}`,
+        error.stack,
+      );
       throw error;
     }
   }
 
-  async uploadFile(bucketName: string, file: Express.Multer.File, metadata: Record<string, string>) {
+  async uploadFile(
+    bucketName: string,
+    file: Express.Multer.File,
+    metadata: Record<string, string>,
+  ) {
     try {
-      await this.s3.send(new PutObjectCommand({
-        Bucket: bucketName,
-        Key: file.originalname,
-        Body: file.buffer,
-        ContentType: file.mimetype,
-        Metadata: metadata,
-      }));
+      await this.s3.send(
+        new PutObjectCommand({
+          Bucket: bucketName,
+          Key: file.originalname,
+          Body: file.buffer,
+          ContentType: file.mimetype,
+          Metadata: metadata,
+        }),
+      );
 
       // await this.prismaService.s3Upload.create({
       //   data: {
@@ -92,7 +114,6 @@ export class S3Service {
       //     metadata: metadata,
       //   },
       // });
-
     } catch (error) {
       this.logger.error(`Error uploading file: ${error.message}`, error.stack);
       throw error;
@@ -101,10 +122,12 @@ export class S3Service {
 
   async deleteFile(bucketName: string, key: string) {
     try {
-      await this.s3.send(new DeleteObjectCommand({
-        Bucket: bucketName,
-        Key: key,
-      }));
+      await this.s3.send(
+        new DeleteObjectCommand({
+          Bucket: bucketName,
+          Key: key,
+        }),
+      );
 
       // await this.prismaService.s3Upload.deleteMany({
       //   where: {
@@ -112,7 +135,6 @@ export class S3Service {
       //     key,
       //   },
       // });
-
     } catch (error) {
       this.logger.error(`Error deleting file: ${error.message}`, error.stack);
       throw error;
@@ -121,13 +143,15 @@ export class S3Service {
 
   async deleteFiles(bucketName: string, keys: string[]) {
     try {
-      const result = await this.s3.send(new DeleteObjectsCommand({
-        Bucket: bucketName,
-        Delete: {
-          Objects: keys.map(key => ({ Key: key })),
-          Quiet: false,
-        },
-      }));
+      const result = await this.s3.send(
+        new DeleteObjectsCommand({
+          Bucket: bucketName,
+          Delete: {
+            Objects: keys.map((key) => ({ Key: key })),
+            Quiet: false,
+          },
+        }),
+      );
 
       // await this.prismaService.s3Upload.deleteMany({
       //   where: {
@@ -140,23 +164,27 @@ export class S3Service {
 
       return result.Deleted;
     } catch (error) {
-      this.logger.error(`Error deleting multiple files: ${error.message}`, error.stack);
+      this.logger.error(
+        `Error deleting multiple files: ${error.message}`,
+        error.stack,
+      );
       throw error;
     }
   }
 
   async deleteBucket(bucketName: string) {
     try {
-      await this.s3.send(new DeleteBucketCommand({
-        Bucket: bucketName,
-      }));
+      await this.s3.send(
+        new DeleteBucketCommand({
+          Bucket: bucketName,
+        }),
+      );
 
       // await this.prismaService.s3Upload.deleteMany({
       //   where: {
       //     bucketName,
       //   },
       // });
-
     } catch (error) {
       this.logger.error(`Error deleting bucket: ${error.message}`, error.stack);
       throw error;
@@ -174,7 +202,9 @@ export class S3Service {
 
   async getObjectMetadata(bucketName: string, key: string) {
     try {
-      const result = await this.s3.send(new HeadObjectCommand({ Bucket: bucketName, Key: key }));
+      const result = await this.s3.send(
+        new HeadObjectCommand({ Bucket: bucketName, Key: key }),
+      );
       return {
         contentType: result.ContentType,
         contentLength: result.ContentLength,
@@ -183,7 +213,10 @@ export class S3Service {
         eTag: result.ETag,
       };
     } catch (error) {
-      this.logger.error(`Error fetching metadata: ${error.message}`, error.stack);
+      this.logger.error(
+        `Error fetching metadata: ${error.message}`,
+        error.stack,
+      );
       throw error;
     }
   }
@@ -203,9 +236,10 @@ export class S3Service {
           Effect: effect,
           Principal: principal === '*' ? '*' : { AWS: principal },
           Action: actions,
-          Resource: prefix === '*'
-            ? `arn:aws:s3:::${bucketName}/*`
-            : `arn:aws:s3:::${bucketName}/${prefix}`,
+          Resource:
+            prefix === '*'
+              ? `arn:aws:s3:::${bucketName}/*`
+              : `arn:aws:s3:::${bucketName}/${prefix}`,
         },
       ],
     };
@@ -213,10 +247,12 @@ export class S3Service {
 
   async applyBucketPolicy(bucketName: string, policy: any) {
     try {
-      await this.s3.send(new PutBucketPolicyCommand({
-        Bucket: bucketName,
-        Policy: typeof policy === 'string' ? policy : JSON.stringify(policy),
-      }));
+      await this.s3.send(
+        new PutBucketPolicyCommand({
+          Bucket: bucketName,
+          Policy: typeof policy === 'string' ? policy : JSON.stringify(policy),
+        }),
+      );
     } catch (error) {
       this.logger.error(`Error applying policy: ${error.message}`, error.stack);
       throw error;

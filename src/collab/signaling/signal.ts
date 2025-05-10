@@ -14,7 +14,10 @@ export const setupWebSocketServer = (server: http.Server) => {
   wss = new WebSocketServer({ noServer: true });
 
   const send = (conn, message) => {
-    if (conn.readyState !== wsReadyStateConnecting && conn.readyState !== wsReadyStateOpen) {
+    if (
+      conn.readyState !== wsReadyStateConnecting &&
+      conn.readyState !== wsReadyStateOpen
+    ) {
       conn.close();
     }
     try {
@@ -25,7 +28,7 @@ export const setupWebSocketServer = (server: http.Server) => {
     }
   };
 
-  const onconnection = conn => {
+  const onconnection = (conn) => {
     const subscribedTopics = new Set<string>();
     let closed = false;
     let pongReceived = true;
@@ -48,7 +51,7 @@ export const setupWebSocketServer = (server: http.Server) => {
     });
 
     conn.on('close', () => {
-      subscribedTopics.forEach(topicName => {
+      subscribedTopics.forEach((topicName) => {
         const subs = topics.get(topicName) || new Set();
         subs.delete(conn);
         if (subs.size === 0) {
@@ -59,10 +62,10 @@ export const setupWebSocketServer = (server: http.Server) => {
       closed = true;
     });
 
-    conn.on('message', message => {
+    conn.on('message', (message) => {
       if (typeof message === 'string' || message instanceof Buffer) {
         const parsed = JSON.parse(
-          typeof message === 'string' ? message : message.toString()
+          typeof message === 'string' ? message : message.toString(),
         );
         //console.log(parsed);
         message = parsed; // replace `message` for further use
@@ -72,7 +75,11 @@ export const setupWebSocketServer = (server: http.Server) => {
           case 'subscribe':
             (message.topics || []).forEach((topicName: string) => {
               if (typeof topicName === 'string') {
-                const topic = map.setIfUndefined(topics, topicName, () => new Set());
+                const topic = map.setIfUndefined(
+                  topics,
+                  topicName,
+                  () => new Set(),
+                );
                 topic.add(conn);
                 subscribedTopics.add(topicName);
               }
@@ -91,7 +98,7 @@ export const setupWebSocketServer = (server: http.Server) => {
               const receivers = topics.get(message.topic);
               if (receivers) {
                 message.clients = receivers.size;
-                receivers.forEach(receiver => send(receiver, message));
+                receivers.forEach((receiver) => send(receiver, message));
               }
             }
             break;

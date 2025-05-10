@@ -1,14 +1,17 @@
-import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards, Req, HttpStatus, HttpCode, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards, Req, HttpStatus, HttpCode, ParseIntPipe, Patch } from '@nestjs/common';
 import { ProjectService } from './project.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
-//import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { ProjectCollaboratorGuard } from '../../auth/guards/project.guard';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags, ApiParam, ApiBody } from '@nestjs/swagger';
+import { ProjectCreatorGuard } from '../../auth/guards/project.guard';
+import { AddCollaboratorDto, RemoveCollaboratorDto } from './dto/collaborator-project.dto';
 
 @ApiTags('projects')
-@ApiBearerAuth()
+@ApiBearerAuth('JWT-auth')
 @Controller('projects')
-//@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard)
 export class ProjectController {
   constructor(private readonly projectService: ProjectService) {}
 
@@ -16,10 +19,12 @@ export class ProjectController {
   @ApiOperation({ summary: 'Retrieve the list of projects' })
   @ApiResponse({ status: 200, description: 'A JSON array of projects' })
   @ApiResponse({ status: 500, description: 'Internal server error' })
-  async findAll() {
-    return this.projectService.findAll();
+  async findAll(@Req() request: Request) {
+    const user =  request.user;
+    return this.projectService.findAll(user.id);
   }
 
+  @UseGuards(ProjectCollaboratorGuard)
   @Get(':id')
   @ApiOperation({ summary: 'Retrieve a single project' })
   @ApiParam({ name: 'id', type: 'number', description: 'Numeric ID of the project to retrieve' })
@@ -45,7 +50,11 @@ export class ProjectController {
 
   @Put(':id')
   @ApiOperation({ summary: 'Update an existing project' })
-  @ApiParam({ name: 'id', type: 'number', description: 'Numeric ID of the project to update' })
+  @ApiParam({
+    name: 'id',
+    type: 'number',
+    description: 'Numeric ID of the project to update',
+  })
   @ApiBody({ type: UpdateProjectDto })
   @ApiResponse({ status: 200, description: 'Updated project object' })
   @ApiResponse({ status: 404, description: 'Project not found' })
@@ -57,10 +66,61 @@ export class ProjectController {
     return this.projectService.update(id, updateProjectDto);
   }
 
+  @UseGuards(ProjectCreatorGuard)
+  @Patch(':id/add-collaborator')
+  @ApiOperation({ summary: 'Add a new collaborator' })
+  @ApiParam({
+    name: 'id',
+    type: 'number',
+    description: 'Numeric ID of the project to update',
+  })
+  @ApiBody({ type: AddCollaboratorDto })
+  @ApiResponse({ status: 200, description: 'Patch project object' })
+  @ApiResponse({ status: 404, description: 'Project not found' })
+  @ApiResponse({ status: 500, description: 'Error Patching project' })
+  async addCollaborator(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() addCollaboratorDto: AddCollaboratorDto,
+  ) {
+    return this.projectService.addCollaborator(id, addCollaboratorDto);
+  }
+
+  @UseGuards(ProjectCreatorGuard)
+  @Delete(':id/remove-collaborator')
+  @ApiOperation({ summary: 'Remove a collaborator' })
+  @ApiParam({
+    name: 'id',
+    type: 'number',
+    description: 'Numeric ID of the project to update',
+  })
+  @ApiBody({ type: RemoveCollaboratorDto })
+  @ApiResponse({ status: 200, description: 'Patch project object' })
+  @ApiResponse({ status: 404, description: 'Project not found' })
+  @ApiResponse({
+    status: 500,
+    description: 'Error remove collaborator on project',
+  })
+  async removeCollaborator(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() removeCollaboratorDto: RemoveCollaboratorDto,
+    @Req() request: Request,
+  ) {
+    const initiator = request.user.id;
+    return this.projectService.removeCollaborator(id, initiator, removeCollaboratorDto);
+  }
+
+  @UseGuards(ProjectCreatorGuard)
   @Delete(':id')
   @ApiOperation({ summary: 'Delete a project' })
-  @ApiParam({ name: 'id', type: 'number', description: 'Numeric ID of the project to delete' })
-  @ApiResponse({ status: 204, description: 'Project deleted successfully (no content)' })
+  @ApiParam({
+    name: 'id',
+    type: 'number',
+    description: 'Numeric ID of the project to delete',
+  })
+  @ApiResponse({
+    status: 204,
+    description: 'Project deleted successfully (no content)',
+  })
   @ApiResponse({ status: 404, description: 'Project not found' })
   @ApiResponse({ status: 500, description: 'Error deleting project' })
   @HttpCode(HttpStatus.NO_CONTENT)

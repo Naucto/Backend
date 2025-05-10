@@ -13,7 +13,14 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
-import { ApiTags, ApiOperation, ApiResponse, ApiConsumes, ApiBody, ApiParam } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiConsumes,
+  ApiBody,
+  ApiParam,
+} from '@nestjs/swagger';
 import { S3Service } from './s3.service';
 import { CreateBucketDto } from './dto/create-bucket.dto';
 import { DeleteFilesDto } from './dto/delete-files.dto';
@@ -39,7 +46,10 @@ export class S3Controller {
   @Get('list/:bucketName')
   @ApiOperation({ summary: 'List objects in a bucket' })
   @ApiParam({ name: 'bucketName', description: 'Name of the bucket' })
-  @ApiResponse({ status: 200, description: 'Returns a list of objects in the bucket' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns a list of objects in the bucket',
+  })
   @ApiResponse({ status: 500, description: 'Server error' })
   async listObjects(@Param('bucketName') bucketName: string) {
     const contents = await this.s3Service.listObjects(bucketName);
@@ -50,13 +60,19 @@ export class S3Controller {
   @ApiOperation({ summary: 'Generate a signed download URL' })
   @ApiParam({ name: 'bucketName', description: 'Name of the bucket' })
   @ApiParam({ name: 'key', description: 'Object key' })
-  @ApiResponse({ status: 200, description: 'Returns a signed URL for downloading the file' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns a signed URL for downloading the file',
+  })
   @ApiResponse({ status: 500, description: 'Server error' })
   async getSignedDownloadUrl(
     @Param('bucketName') bucketName: string,
     @Param('key') key: string,
   ) {
-    const url = await this.s3Service.getSignedDownloadUrl(bucketName, decodeURIComponent(key));
+    const url = await this.s3Service.getSignedDownloadUrl(
+      bucketName,
+      decodeURIComponent(key),
+    );
     return { url };
   }
 
@@ -72,14 +88,15 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     try {
-      const { body, contentType, contentLength } = await this.s3Service.downloadFile(
-        bucketName,
-        decodeURIComponent(key),
-      );
+      const { body, contentType, contentLength } =
+        await this.s3Service.downloadFile(bucketName, decodeURIComponent(key));
 
       res.setHeader('Content-Type', contentType || 'application/octet-stream');
-      res.setHeader('Content-Disposition', `attachment; filename="${key.split('/').pop()}"`);
-      
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${key.split('/').pop()}"`,
+      );
+
       if (contentLength) {
         res.setHeader('Content-Length', contentLength.toString());
       }
@@ -87,12 +104,14 @@ export class S3Controller {
       if (body instanceof Readable) {
         body.pipe(res);
       } else {
-        res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ error: 'File not readable' });
+        res
+          .status(HttpStatus.INTERNAL_SERVER_ERROR)
+          .json({ error: 'File not readable' });
       }
     } catch (error) {
-      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ 
+      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         error: 'Server error while downloading file',
-        message: error.message 
+        message: error.message,
       });
     }
   }
@@ -112,13 +131,17 @@ export class S3Controller {
     @Body() uploadFileDto: UploadFileDto,
   ) {
     if (!file) {
-      return { 
+      return {
         statusCode: HttpStatus.BAD_REQUEST,
-        error: 'No file provided' 
+        error: 'No file provided',
       };
     }
 
-    await this.s3Service.uploadFile(bucketName, file, uploadFileDto.metadata || {});
+    await this.s3Service.uploadFile(
+      bucketName,
+      file,
+      uploadFileDto.metadata || {},
+    );
     return { message: 'File uploaded successfully' };
   }
 
@@ -145,7 +168,10 @@ export class S3Controller {
     @Param('bucketName') bucketName: string,
     @Body() deleteFilesDto: DeleteFilesDto,
   ) {
-    const result = await this.s3Service.deleteFiles(bucketName, deleteFilesDto.keys);
+    const result = await this.s3Service.deleteFiles(
+      bucketName,
+      deleteFilesDto.keys,
+    );
     return { message: 'Files deleted successfully', deleted: result };
   }
 
@@ -182,7 +208,10 @@ export class S3Controller {
     @Param('bucketName') bucketName: string,
     @Param('key') key: string,
   ) {
-    const metadata = await this.s3Service.getObjectMetadata(bucketName, decodeURIComponent(key));
+    const metadata = await this.s3Service.getObjectMetadata(
+      bucketName,
+      decodeURIComponent(key),
+    );
     return { metadata };
   }
 
@@ -217,9 +246,9 @@ export class S3Controller {
     @Body() applyPolicyDto: ApplyPolicyDto,
   ) {
     if (!applyPolicyDto.policy) {
-      return { 
+      return {
         statusCode: HttpStatus.BAD_REQUEST,
-        error: 'No policy provided' 
+        error: 'No policy provided',
       };
     }
     await this.s3Service.applyBucketPolicy(bucketName, applyPolicyDto.policy);

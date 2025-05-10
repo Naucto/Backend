@@ -2,13 +2,30 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
+import {
+  AddCollaboratorDto,
+  RemoveCollaboratorDto,
+} from './dto/collaborator-project.dto';
+import { connect } from 'http2';
 
 @Injectable()
 export class ProjectService {
   constructor(private prisma: PrismaService) {}
 
-  async findAll() {
-    return this.prisma.project.findMany();
+  async findAll(userId: number) {
+    return this.prisma.project.findMany({
+      where: {
+        collaborators: {
+          some: {
+            id: userId,
+          },
+        },
+      },
+      include: {
+        collaborators: true,
+        creator: true,
+      },
+    });
   }
 
   async findOne(id: number) {
@@ -27,26 +44,27 @@ export class ProjectService {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
     });
-  
+
     if (!user) {
       throw new Error(`User with ID ${userId} not found`);
     }
-  
+
     const project = await this.prisma.project.create({
       data: {
         ...createProjectDto,
         collaborators: {
           connect: [{ id: userId }],
         },
+        creator: { connect: { id: userId } },
       },
       include: {
         collaborators: true,
+        creator: true,
       },
     });
-  
+
     return project;
   }
-  
 
   async update(id: number, updateProjectDto: UpdateProjectDto) {
     await this.findOne(id);
@@ -63,7 +81,83 @@ export class ProjectService {
     await this.prisma.project.delete({
       where: { id },
     });
-    
+
     return null;
+  }
+
+  async addCollaborator(id: number, addCollaboratorDto: AddCollaboratorDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: addCollaboratorDto.userId },
+    });
+
+    const project = await this.prisma.project.findUnique({
+      where: { id: id },
+      include: {
+        collaborators: true,
+      },
+    });
+
+    if (!user) {
+      throw new Error(`User with ID ${addCollaboratorDto.userId} not found`);
+    }
+    if (!project) {
+      throw new Error(`Project with ID ${id} not found`);
+    }
+    if (project.collaborators.some((collab) => collab.id === user.id)) {
+      throw new Error(`Project with ID ${id} has already this collaborator`);
+    }
+
+    return this.prisma.project.update({
+      where: { id },
+      data: {
+        collaborators: { connect: { id: addCollaboratorDto.userId } },
+      },
+      include: {
+        collaborators: true,
+      },
+    });
+  }
+
+  async removeCollaborator(
+    id: number,
+    initiator: number,
+    removeCollaboratorDto: RemoveCollaboratorDto,
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: removeCollaboratorDto.userId },
+    });
+    const project = await this.prisma.project.findUnique({
+      where: { id: id },
+      include: {
+        collaborators: true,
+      },
+    });
+
+    if (!user) {
+      throw new Error(`User with ID ${removeCollaboratorDto.userId} not found`);
+    }
+    if (removeCollaboratorDto.userId == initiator) {
+      throw new Error(`Cannot remove the project creator`);
+    }
+    if (!project) {
+      throw new Error(`Project with ID ${id} not found`);
+    }
+    if (!project.collaborators.some((collab) => collab.id === user.id)) {
+      throw new Error(
+        `Project with ID ${id} has no collaborator with ID ${user.id}`,
+      );
+    }
+
+    return this.prisma.project.update({
+      where: { id },
+      data: {
+        collaborators: {
+          disconnect: { id: removeCollaboratorDto.userId },
+        },
+      },
+      include: {
+        collaborators: true,
+      },
+    });
   }
 }

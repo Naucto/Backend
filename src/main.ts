@@ -21,7 +21,7 @@ async function bootstrap() {
 
   const app = await NestFactory.create<NestExpressApplication>(
     AppModule,
-    new (require('@nestjs/platform-express')).ExpressAdapter(expressApp),
+    new (require('@nestjs/platform-express').ExpressAdapter)(expressApp),
   );
 
   app.useLogger(['log', 'error', 'warn', 'debug']);
@@ -32,18 +32,20 @@ async function bootstrap() {
   app.enableCors();
 
   app.use((req, res, next) => {
-    const start = Date.now();  
-    const date = format(new Date(), 'dd-MM-yyyy HH:mm:ss.SSS', { timeZone: 'Europe/Paris' });
+    const start = Date.now();
+    const date = format(new Date(), 'dd-MM-yyyy HH:mm:ss.SSS', {
+      timeZone: 'Europe/Paris',
+    });
 
     res.on('finish', () => {
       const duration = Date.now() - start;
       console.log(
-        `[${date}] ${req.method} ${req.originalUrl} → ${res.statusCode} (${duration}ms)`
+        `[${date}] ${req.method} ${req.originalUrl} → ${res.statusCode} (${duration}ms)`,
       );
     });
-  
+
     next();
-  });  
+  });
 
   setupSwagger(app);
 

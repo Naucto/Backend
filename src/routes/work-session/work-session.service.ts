@@ -2,6 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateWorkSessionDto } from './dto/create-work-session.dto';
 import { UpdateWorkSessionDto } from './dto/update-work-session.dto';
+import { User } from '../user/entities/user.entity';
+import { uuidv4 } from 'lib0/random';
 
 @Injectable()
 export class WorkSessionService {
@@ -43,7 +45,9 @@ export class WorkSessionService {
     });
 
     if (!project) {
-      throw new NotFoundException(`Project not found or does not belong to user`);
+      throw new NotFoundException(
+        `Project not found or does not belong to user`,
+      );
     }
 
     return this.prisma.workSession.create({
@@ -63,7 +67,7 @@ export class WorkSessionService {
           },
         },
       },
-    });    
+    });
   }
 
   async update(id: number, updateWorkSessionDto: UpdateWorkSessionDto) {
@@ -82,9 +86,43 @@ export class WorkSessionService {
     await this.findOne(id);
 
     await this.prisma.workSession.delete({
-      where: { id },
+      where: { projectId: id },
     });
-    
+
     return null;
+  }
+
+  async join(projectId: number, user: User) {
+    console.log(projectId);
+    const project = await this.prisma.project.findFirst({
+      where: { id: projectId },
+    });
+    if (project === null) {
+      throw new NotFoundException(`Project with ID ${projectId} not found`);
+    }
+
+    let workSession = await this.prisma.workSession.findFirst({
+      where: { projectId },
+    });
+    if (workSession === null) {
+      workSession = await this.prisma.workSession.create({
+        data: {
+          projectId,
+          startedAt: new Date(),
+          users: {
+            connect: { id: user.id },
+          },
+          roomId: uuidv4(),
+          roomPassword: uuidv4(),
+        },
+      });
+    }
+
+    console.log(workSession);
+
+    return {
+      roomId: workSession.roomId,
+      roomPassword: workSession.roomPassword,
+    };
   }
 }

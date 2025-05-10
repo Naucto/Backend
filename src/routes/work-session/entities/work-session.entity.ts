@@ -2,13 +2,22 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Project } from '../../project/entities/project.entity';
 
 export class WorkSession {
-  @ApiProperty({ example: 1, description: 'The unique identifier of the work session' })
+  @ApiProperty({
+    example: 1,
+    description: 'The unique identifier of the work session',
+  })
   id: number;
 
-  @ApiProperty({ example: 1, description: 'The ID of the project this work session belongs to' })
+  @ApiProperty({
+    example: 1,
+    description: 'The ID of the project this work session belongs to',
+  })
   projectId: number;
 
-  @ApiProperty({ example: 1, description: 'The ID of the user who created this work session' })
+  @ApiProperty({
+    example: 1,
+    description: 'The ID of the user who created this work session',
+  })
   userId: number;
 
   @ApiProperty({
