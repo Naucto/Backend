@@ -29,6 +29,8 @@ model User {
   lastName  String
   createdAt DateTime @default(now())
 
+  roles     Role[]   @relation("UserRoles")
+
   // Relations
   friendsInitiated Friendship[]    @relation("UserAFriends")
   friendsReceived  Friendship[]    @relation("UserBFriends")
@@ -38,6 +40,15 @@ model User {
   comments         Comment[]
   gameSessions     GameSession[]
   collaborators    Project[]       @relation("ProjectCollaborators")
+
+  workSession      WorkSession[]     @relation("WorkSessionUsers")
+}
+
+model Role {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+
+  users User[] @relation("UserRoles")
 }
 
 model FriendRequest {
@@ -87,6 +98,7 @@ model Project {
   collaborators User[]        @relation("ProjectCollaborators")
   comments      Comment[]
   gameSessions  GameSession[]
+  workSession   WorkSession?
 
   // Statistiques agrégées
   uniquePlayers Int @default(0)
@@ -119,4 +131,15 @@ model GameSession {
   projectId Int
   startedAt DateTime  @default(now())
   endedAt   DateTime?
+}
+
+model WorkSession {
+  id        Int       @id @default(autoincrement())
+  users     User[]    @relation("WorkSessionUsers")
+  project   Project   @relation(fields: [projectId], references: [id])
+  projectId Int       @unique
+  startedAt DateTime  @default(now())
+
+  roomId       String @unique @default(uuid())
+  roomPassword String @default(uuid())
 }
