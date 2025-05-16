@@ -3,15 +3,25 @@ import { PrismaService } from '../../prisma/prisma.service';
 import {
   S3Client,
   ListBucketsCommand,
+  ListBucketsCommandInput,
   ListObjectsV2Command,
+  ListObjectsV2CommandInput,
   GetObjectCommand,
+  GetObjectCommandInput,
   PutObjectCommand,
+  PutObjectCommandInput,
   DeleteObjectCommand,
+  DeleteObjectCommandInput,
   DeleteObjectsCommand,
+  DeleteObjectsCommandInput,
   CreateBucketCommand,
+  CreateBucketCommandInput,
   DeleteBucketCommand,
+  DeleteBucketCommandInput,
   HeadObjectCommand,
+  HeadObjectCommandInput,
   PutBucketPolicyCommand,
+  PutBucketPolicyCommandInput,
   Bucket,
   _Object,
 } from '@aws-sdk/client-s3';
@@ -42,7 +52,9 @@ export class S3Service {
 
   async listBuckets(): Promise<Bucket[]> {
     try {
-      const result = await this.s3.send(new ListBucketsCommand({}));
+      const input: ListBucketsCommandInput = {};
+      const command = new ListBucketsCommand(input);
+      const result = await this.s3.send(command);
       return result.Buckets || [];
     } catch (error) {
       throw new S3ListBucketsException(error.message);
@@ -51,9 +63,12 @@ export class S3Service {
 
   async listObjects(bucketName: string): Promise<_Object[] | []> {
     try {
-      const result = await this.s3.send(
-        new ListObjectsV2Command({ Bucket: bucketName }),
-      );
+      const input: ListObjectsV2CommandInput = {
+        Bucket: bucketName,
+      };
+      const command = new ListObjectsV2Command(input);
+      const result = await this.s3.send(command);
+
       return result.Contents || [];
     } catch (error) {
       throw new S3ListObjectsException(bucketName, error);
@@ -62,7 +77,11 @@ export class S3Service {
 
   async getSignedDownloadUrl(bucketName: string, key: string): Promise<string> {
     try {
-      const command = new GetObjectCommand({ Bucket: bucketName, Key: key });
+      const input: GetObjectCommandInput = {
+        Bucket: bucketName,
+        Key: key,
+      };
+      const command = new GetObjectCommand(input);
       return await getSignedUrl(this.s3, command, { expiresIn: 3600 });
     } catch (error) {
       throw new S3SignedUrlException(bucketName, key, error);
@@ -71,13 +90,18 @@ export class S3Service {
 
   async downloadFile(bucketName: string, key: string): Promise<DownloadedFile> {
     try {
-      const head = await this.s3.send(
-        new HeadObjectCommand({ Bucket: bucketName, Key: key }),
-      );
-      const getObjectCommand = new GetObjectCommand({
+      const headInput: HeadObjectCommandInput = {
         Bucket: bucketName,
         Key: key,
-      });
+      };
+      const headCommand = new HeadObjectCommand(headInput);
+      const head = await this.s3.send(headCommand);
+
+      const getObjectInput: GetObjectCommandInput = {
+        Bucket: bucketName,
+        Key: key,
+      };
+      const getObjectCommand = new GetObjectCommand(getObjectInput);
       const response = await this.s3.send(getObjectCommand);
       const stream = response.Body as Readable;
 
@@ -95,16 +119,16 @@ export class S3Service {
 
   async uploadFile(bucketName: string, file: Express.Multer.File, metadata: Record<string, string>): Promise<void> {
     try {
-      await this.s3.send(
-        new PutObjectCommand({
-          Bucket: bucketName,
-          Key: file.originalname,
-          Body: file.buffer,
-          ContentType: file.mimetype,
-          Metadata: metadata,
-        }),
-      );
+      const input: PutObjectCommandInput = {
+        Bucket: bucketName,
+        Key: file.originalname,
+        Body: file.buffer,
+        ContentType: file.mimetype,
+        Metadata: metadata
+      };
+      const command = new PutObjectCommand(input);
 
+      await this.s3.send(command);
     } catch (error) {
       throw new S3UploadException(bucketName, file.originalname, error);
     }
@@ -112,13 +136,13 @@ export class S3Service {
 
   async deleteFile(bucketName: string, key: string): Promise<void> {
     try {
-      await this.s3.send(
-        new DeleteObjectCommand({
-          Bucket: bucketName,
-          Key: key,
-        }),
-      );
+      const input: DeleteObjectCommandInput = {
+        Bucket: bucketName,
+        Key: key
+      };
+      const command = new DeleteObjectCommand(input);
 
+      await this.s3.send(command);
     } catch (error) {
       throw new S3DeleteFileException(bucketName, key, error);
     }
@@ -126,15 +150,15 @@ export class S3Service {
 
   async deleteFiles(bucketName: string, keys: string[]): Promise<_Object[]> {
     try {
-      const result = await this.s3.send(
-        new DeleteObjectsCommand({
-          Bucket: bucketName,
-          Delete: {
-            Objects: keys.map((key) => ({ Key: key })),
-            Quiet: false,
-          },
-        }),
-      );
+      const input: DeleteObjectsCommandInput = {
+        Bucket: bucketName,
+        Delete: {
+          Objects: keys.map((key) => ({ Key: key })),
+          Quiet: false
+        }
+      };
+      const command = new DeleteObjectsCommand(input);
+      const result = await this.s3.send(command);
 
       return result.Deleted ?? [];
     } catch (error) {
@@ -144,12 +168,9 @@ export class S3Service {
 
   async deleteBucket(bucketName: string): Promise<void> {
     try {
-      await this.s3.send(
-        new DeleteBucketCommand({
-          Bucket: bucketName,
-        }),
-      );
-
+      const input: DeleteBucketCommandInput = { Bucket: bucketName };
+      const command = new DeleteBucketCommand(input);
+      await this.s3.send(command);
     } catch (error) {
       throw new S3DeleteBucketException(bucketName, error);
     }
@@ -157,7 +178,11 @@ export class S3Service {
 
   async createBucket(bucketName: string): Promise<void> {
     try {
-      await this.s3.send(new CreateBucketCommand({ Bucket: bucketName }));
+      const input: CreateBucketCommandInput = {
+        Bucket: bucketName
+      };
+      const command = new CreateBucketCommand(input);
+      await this.s3.send(command);
     } catch (error) {
       throw new S3CreateBucketException(bucketName, error);
     }
@@ -165,9 +190,13 @@ export class S3Service {
 
   async getObjectMetadata(bucketName: string, key: string): Promise<S3ObjectMetadata> {
     try {
-      const result = await this.s3.send(
-        new HeadObjectCommand({ Bucket: bucketName, Key: key }),
-      );
+
+      const input: HeadObjectCommandInput = {
+        Bucket: bucketName,
+        Key: key,
+      };
+      const command = new HeadObjectCommand(input);
+      const result = await this.s3.send(command);
       return {
         contentType: result.ContentType,
         contentLength: result.ContentLength,
@@ -192,20 +221,21 @@ export class S3Service {
           Resource:
             prefix === '*'
               ? `arn:aws:s3:::${bucketName}/*`
-              : `arn:aws:s3:::${bucketName}/${prefix}`,
-        },
-      ],
+              : `arn:aws:s3:::${bucketName}/${prefix}`
+        }
+      ]
     };
   }
 
   async applyBucketPolicy(bucketName: string, policy: any): Promise<void> {
     try {
-      await this.s3.send(
-        new PutBucketPolicyCommand({
-          Bucket: bucketName,
-          Policy: typeof policy === 'string' ? policy : JSON.stringify(policy),
-        }),
-      );
+      const input: PutBucketPolicyCommandInput = {
+        Bucket: bucketName,
+        Policy: typeof policy === 'string' ? policy : JSON.stringify(policy)
+      };
+
+      const command = new PutBucketPolicyCommand(input);
+      await this.s3.send(command);
     } catch (error) {
       throw new S3ApplyPolicyException(bucketName, error);
     }

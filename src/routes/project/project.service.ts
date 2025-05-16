@@ -23,7 +23,7 @@ export class ProjectService {
       },
       include: {
         collaborators: true,
-        creator: true,
+        creator: true
       },
     });
   }
