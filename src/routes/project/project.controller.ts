@@ -7,10 +7,16 @@ import { ProjectCollaboratorGuard } from '../../auth/guards/project.guard';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags, ApiParam, ApiBody } from '@nestjs/swagger';
 import { ProjectCreatorGuard } from '../../auth/guards/project.guard';
 import { AddCollaboratorDto, RemoveCollaboratorDto } from './dto/collaborator-project.dto';
+import { User } from '../user/entities/user.entity';
+
+interface RequestWithUser extends Request {
+  user: User;
+}
 
 @ApiTags('projects')
 @ApiBearerAuth('JWT-auth')
 @Controller('projects')
+@UseGuards(JwtAuthGuard)
 @UseGuards(JwtAuthGuard)
 export class ProjectController {
   constructor(private readonly projectService: ProjectService) {}
@@ -19,7 +25,7 @@ export class ProjectController {
   @ApiOperation({ summary: 'Retrieve the list of projects' })
   @ApiResponse({ status: 200, description: 'A JSON array of projects' })
   @ApiResponse({ status: 500, description: 'Internal server error' })
-  async findAll(@Req() request: Request) {
+  async findAll(@Req() request: RequestWithUser) {
     const user =  request.user;
     return this.projectService.findAll(user.id);
   }
@@ -103,7 +109,7 @@ export class ProjectController {
   async removeCollaborator(
     @Param('id', ParseIntPipe) id: number,
     @Body() removeCollaboratorDto: RemoveCollaboratorDto,
-    @Req() request: Request,
+    @Req() request: RequestWithUser,
   ) {
     const initiator = request.user.id;
     return this.projectService.removeCollaborator(id, initiator, removeCollaboratorDto);
@@ -128,3 +134,4 @@ export class ProjectController {
     return this.projectService.remove(id);
   }
 }
+

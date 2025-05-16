@@ -3,6 +3,7 @@ import { AppModule } from './app.module';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { setupSwagger } from './swagger';
 import { format } from 'date-fns-tz';
+import { setupWebSocketServer } from './collab/signaling/signal';
 import * as path from 'path';
 import * as dotenv from 'dotenv';
 import * as http from 'http';
@@ -33,9 +34,7 @@ async function bootstrap() {
 
   app.use((req, res, next) => {
     const start = Date.now();
-    const date = format(new Date(), 'dd-MM-yyyy HH:mm:ss.SSS', {
-      timeZone: 'Europe/Paris',
-    });
+    const date = format(new Date(), 'dd-MM-yyyy HH:mm:ss.SSS');
 
     res.on('finish', () => {
       const duration = Date.now() - start;
@@ -51,7 +50,6 @@ async function bootstrap() {
 
   await app.init();
 
-  const { setupWebSocketServer } = await import('./collab/signaling/signal');
   setupWebSocketServer(server);
 
   const PORT = process.env.PORT || 3000;

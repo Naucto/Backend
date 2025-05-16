@@ -45,9 +45,11 @@ export class ProjectService {
       where: { id: userId },
     });
 
+
     if (!user) {
       throw new Error(`User with ID ${userId} not found`);
     }
+
 
     const project = await this.prisma.project.create({
       data: {
@@ -63,6 +65,7 @@ export class ProjectService {
       },
     });
 
+
     return project;
   }
 
@@ -75,14 +78,14 @@ export class ProjectService {
     });
   }
 
-  async remove(id: number) {
+  async remove(id: number): Promise<void> {
     await this.findOne(id);
 
     await this.prisma.project.delete({
       where: { id },
     });
 
-    return null;
+    return;
   }
 
   async addCollaborator(id: number, addCollaboratorDto: AddCollaboratorDto) {

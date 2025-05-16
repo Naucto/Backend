@@ -44,7 +44,7 @@ export class ProjectCollaboratorGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const user = request.user;
     const projectId = parseInt(request.params.id, 10);
-    console.log(projectId, user);
+
     if (!user || isNaN(projectId)) {
       throw new ForbiddenException('Invalid user or project ID');
     }

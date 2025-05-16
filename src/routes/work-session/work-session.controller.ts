@@ -25,6 +25,7 @@ import {
   ApiBody, ApiQuery,
 } from '@nestjs/swagger';
 import { ProjectCollaboratorGuard } from '../../auth/guards/project.guard';
+import { JoinRoomResult } from './work-session.types';
 
 @ApiTags('work-sessions')
 @Controller('work-sessions')
@@ -36,16 +37,10 @@ export class WorkSessionController {
 
   @Post(':id')
   @ApiOperation({ summary: 'Join a work session' })
-  @ApiResponse({
-    status: HttpStatus.CREATED,
-    description: 'The work session has been successfully created.',
-  })
-  @ApiResponse({
-    status: HttpStatus.BAD_REQUEST,
-    description: 'Bad request.',
-  })
+  @ApiResponse({ status: HttpStatus.CREATED, description: 'The work session has been successfully created.'})
+  @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: 'Bad request.'})
   @ApiParam({ name: 'id', description: 'Project ID' })
-  async join(@Param('id', ParseIntPipe) projectId: number, @Req() req: any) {
+  async join(@Param('id', ParseIntPipe) projectId: number, @Req() req: any): Promise<JoinRoomResult> {
     return await this.workSessionService.join(projectId, req.user);
   }
 }

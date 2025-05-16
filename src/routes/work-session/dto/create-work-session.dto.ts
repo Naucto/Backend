@@ -16,4 +16,8 @@ export class CreateWorkSessionDto {
   })
   @IsInt()
   projectId: number;
+
+  @IsOptional()
+  @IsDate()
+  startTime?: Date;
 }

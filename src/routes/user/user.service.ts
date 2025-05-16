@@ -6,6 +6,8 @@ import { User } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { Prisma } from '@prisma/client';
 
+const BCRYPT_SALT_ROUNDS = 10;
+
 @Injectable()
 export class UserService {
   constructor(private readonly prisma: PrismaService) {}
@@ -13,7 +15,7 @@ export class UserService {
   async findRolesByNames(names: string[]) {
     return this.prisma.role.findMany({
       where: {
-        name: { in: names },
+        name: { in: names }
       },
     });
   }
@@ -21,31 +23,37 @@ export class UserService {
   async getUserRoles(userId: number): Promise<string[]> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { roles: true }, // Charge les rôles de l'utilisateur via la relation
+      include: { roles: true }
     });
 
     if (!user) {
       throw new NotFoundException(`User with ID ${userId} not found`);
     }
 
-    return user.roles.map((role) => role.name); // Retourne un tableau de noms de rôles
+    return user.roles.map(role => role.name);
   }
 
   async create(createUserDto: CreateUserDto): Promise<User> {
-    const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
+    try {
+      const hashedPassword = await bcrypt.hash(createUserDto.password, BCRYPT_SALT_ROUNDS);
 
-    return this.prisma.user.create({
-      data: {
-        email: createUserDto.email,
-        username: createUserDto.username,
-        firstName: createUserDto.firstName,
-        lastName: createUserDto.lastName,
-        password: hashedPassword,
-        roles: {
-          connect: [],
-        },
-      },
-    });
+      const rolesToAssign = createUserDto.roles ? [...createUserDto.roles.map((roleId) => ({ id: roleId })), { id: 2 }] : [{ id: 2 }];
+
+      return this.prisma.user.create({
+        data: {
+          email: createUserDto.email,
+          username: createUserDto.username,
+          firstName: createUserDto.firstName,
+          lastName: createUserDto.lastName,
+          password: hashedPassword,
+          roles: {
+            connect: rolesToAssign
+          }
+        }
+      });
+    } catch (error) {
+      throw error;
+    }
   }
 
   async findAll(params?: {
@@ -54,12 +62,16 @@ export class UserService {
     where?: Prisma.UserWhereInput;
     orderBy?: Prisma.UserOrderByWithRelationInput;
   }): Promise<User[]> {
-    return this.prisma.user.findMany({
-      skip: params?.skip,
-      take: params?.take,
-      where: params?.where,
-      orderBy: params?.orderBy,
-    });
+    try {
+      return this.prisma.user.findMany({
+        skip: params?.skip,
+        take: params?.take,
+        where: params?.where,
+        orderBy: params?.orderBy
+      });
+    } catch (error) {
+      throw error;
+    }
   }
 
   async count(where?: Prisma.UserWhereInput): Promise<number> {
@@ -67,9 +79,9 @@ export class UserService {
   }
 
   async findOne(id: number): Promise<User> {
-    const user = await this.prisma.user.findUnique({
-      where: { id },
-    });
+      const user = await this.prisma.user.findUnique({
+        where: { id }
+      });
 
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
@@ -82,26 +94,43 @@ export class UserService {
     const data: any = {
       ...updateUserDto,
     };
+    try {
+      if (updateUserDto.password) {
+        data.password = await bcrypt.hash(updateUserDto.password, BCRYPT_SALT_ROUNDS);
+      }
 
-    if (updateUserDto.password) {
-      data.password = await bcrypt.hash(updateUserDto.password, 10);
+      if (updateUserDto.roles) {
+        data.roles = {
+          set: updateUserDto.roles.map((roleId) => ({ id: roleId }))
+        };
+      }
+
+      return await this.prisma.user.update({
+        where: { id },
+        data
+      });
+    } catch (error) {
+      if (error.code === 'P2025') {
+        throw new NotFoundException(`User with ID ${id} not found`);
+      }
+      throw error;
     }
-
-    return this.prisma.user.update({
-      where: { id },
-      data,
-    });
   }
 
   async remove(id: number): Promise<User> {
     return this.prisma.user.delete({
-      where: { id },
+      where: { id }
     });
   }
 
-  async findByEmail(email: string): Promise<User | null> {
-    return this.prisma.user.findUnique({
-      where: { email },
-    });
+  async findByEmail(email: string): Promise<User | undefined> {
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { email }
+      });
+      return user ?? undefined;
+    } catch (error) {
+      throw error;
+    }
   }
 }

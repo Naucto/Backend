@@ -1,0 +1,56 @@
+// prisma/models/project.prisma
+
+enum MonetizationType {
+  NONE
+  ADS
+  PAID
+}
+
+enum ProjectStatus {
+  IN_PROGRESS
+  COMPLETED
+  ARCHIVED
+}
+
+model Project {
+  id           Int              @id @default(autoincrement())
+  name         String
+  shortDesc    String
+  longDesc     String?
+  status       ProjectStatus?    @default(IN_PROGRESS)
+  iconUrl      String?
+  fileName     String?
+  monetization MonetizationType? @default(NONE)
+  price        Float?
+  createdAt    DateTime         @default(now())
+
+  // Relations
+  creator       User          @relation("ProjectCreator", fields: [userId], references: [id])
+  collaborators User[]        @relation("ProjectCollaborators")
+  comments      Comment[]
+  gameSessions  GameSession[]
+  workSession   WorkSession?
+
+  // Statistiques agrégées
+  uniquePlayers Int @default(0)
+  activePlayers Int @default(0)
+  likes         Int @default(0)
+  userId        Int
+}
+
+model Comment {
+  id        Int       @id @default(autoincrement())
+  author    User      @relation(fields: [authorId], references: [id])
+  authorId  Int
+  project   Project   @relation(fields: [projectId], references: [id])
+  projectId Int
+  parentId  Int?
+  parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies   Comment[] @relation("CommentReplies")
+  content   String
+  rating    Int
+  createdAt DateTime  @default(now())
+
+  @@index([projectId])
+  @@index([authorId])
+}

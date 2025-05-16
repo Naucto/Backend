@@ -1,33 +1,51 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsNumber, IsUrl, Min } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsNumber,
+  IsUrl,
+  IsEnum,
+  Min,
+} from 'class-validator';
+
+enum ProjectStatus {
+  IN_PROGRESS = 'IN_PROGRESS',
+  COMPLETED = 'COMPLETED',
+  ARCHIVED = 'ARCHIVED',
+}
+
+enum MonetizationType {
+  NONE = 'NONE',
+  ADS = 'ADS',
+  PAID = 'PAID',
+}
 
 export class CreateProjectDto {
   @ApiProperty({
     description: 'The name of the project',
-    example: 'E-commerce Platform',
+    example: 'MySuperVideoGame',
   })
   @IsString()
   name: string;
 
   @ApiProperty({
     description: 'A short description of the project',
-    example: 'An online shopping platform with integrated payment processing',
+    example: 'A 2D platformer game with pixel art graphics',
   })
   @IsString()
   shortDesc: string;
 
   @ApiProperty({
     description: 'A detailed description of the project',
-    example:
-      'This e-commerce platform includes user authentication, product catalog, shopping cart, and payment processing features...',
+    example: 'This game features multiple levels, power-ups, and boss fights.',
+    required: false,
   })
   @IsString()
-  @IsOptional()
-  longDesc: string;
+  longDesc?: string | null;
 
   @ApiProperty({
     description: 'URL to the project icon',
-    example: 'https://example.com/icons/ecommerce.png',
+    example: 'https://example.com/icons/MySuperVideoGame.png',
     required: false,
   })
   @IsUrl()
@@ -36,11 +54,30 @@ export class CreateProjectDto {
 
   @ApiProperty({
     description: 'The file name associated with the project',
-    example: 'ecommerce-platform.zip',
+    required: false,
   })
   @IsString()
+  fileName?: string;
+
+  @ApiProperty({
+    description: 'Project status',
+    enum: ProjectStatus,
+    default: ProjectStatus.IN_PROGRESS,
+    required: false,
+  })
+  @IsEnum(ProjectStatus)
   @IsOptional()
-  fileName: string;
+  status?: ProjectStatus;
+
+  @ApiProperty({
+    description: 'Monetization type',
+    enum: MonetizationType,
+    required: false,
+    default: MonetizationType.NONE,
+  })
+  @IsEnum(MonetizationType)
+  @IsOptional()
+  monetization?: MonetizationType;
 
   @ApiProperty({
     description: 'The price of the project',

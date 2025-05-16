@@ -8,42 +8,52 @@ export class Project {
   id: number;
 
   @ApiProperty({
-    example: 'E-commerce Platform',
     description: 'The name of the project',
+    example: 'MySuperVideoGame',
   })
   name: string;
 
   @ApiProperty({
-    example: 'An online shopping platform with integrated payment processing',
     description: 'A short description of the project',
+    example: 'A 2D platformer game with pixel art graphics',
   })
   shortDesc: string;
 
   @ApiProperty({
-    example:
-      'This e-commerce platform includes user authentication, product catalog...',
     description: 'A detailed description of the project',
-    required: false,
+    example: 'This game features multiple levels, power-ups, and boss fights.',
   })
   longDesc?: string;
 
   @ApiProperty({
-    example: 'https://example.com/icons/ecommerce.png',
     description: 'URL to the project icon',
+    example: 'https://example.com/icons/MySuperVideoGame.png',
     required: false,
   })
   iconUrl?: string;
 
   @ApiProperty({
-    example: 'ecommerce-platform.zip',
     description: 'The file name associated with the project',
-    required: false,
   })
   fileName?: string;
 
   @ApiProperty({
+    description: 'The current status of the project',
+    example: 'IN_PROGRESS',
+    enum: ['IN_PROGRESS', 'COMPLETED', 'ARCHIVED'],
+  })
+  status: string;
+
+  @ApiProperty({
+    description: 'The monetization strategy for this project',
+    example: 'NONE',
+    enum: ['NONE', 'ADS', 'PAID'],
+  })
+  monetization: string;
+
+  @ApiProperty({
     example: 99.99,
-    description: 'The price of the project',
+    description: 'The price of the project, if applicable',
     required: false,
   })
   price?: number;
@@ -61,8 +71,47 @@ export class Project {
   createdAt: Date;
 
   @ApiProperty({
-    example: '2023-04-15T14:30:00Z',
-    description: 'The date and time when the project was last updated',
+    example: 123,
+    description: 'The number of unique players who have interacted with this project',
   })
-  updatedAt: Date;
+  uniquePlayers: number;
+
+  @ApiProperty({
+    example: 42,
+    description: 'The number of currently active players in this project',
+  })
+  activePlayers: number;
+
+  @ApiProperty({
+    example: 87,
+    description: 'The number of likes received by the project',
+  })
+  likes: number;
+
+  // Relations
+
+  @ApiProperty({
+    description: 'The users collaborating on this project',
+    type: () => [Number],
+  })
+  collaborators: number[];
+
+  @ApiProperty({
+    description: 'Comments associated with this project',
+    type: () => [Number],
+  })
+  comments: number[];
+
+  @ApiProperty({
+    description: 'Game sessions associated with this project',
+    type: () => [Number],
+  })
+  gameSessions: number[];
+
+  @ApiProperty({
+    description: 'Work session associated with this project',
+    type: () => Number,
+    required: false,
+  })
+  workSession?: number;
 }
