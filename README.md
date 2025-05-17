@@ -11,6 +11,47 @@ This project is open source. You are welcome to contribute on GitHub at the foll
 
 ---
 
+### Launch the project
+
+1. Clone the repository
+
+2. Install dependencies
+
+   ```bash
+   yarn install
+   ```
+
+3. Create a `.env` file in the root directory and set the following environment variables:
+
+   ```bash
+    POSTGRES_USER=USER
+    POSTGRES_PASSWORD=PASSWORD
+    POSTGRES_DB=DB_NAME
+    POSTGRES_HOST=HOST
+    POSTGRES_PORT=PORT
+    DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DB_NAME?schema=public
+
+    JWT_SECRET=JWT_SECRET
+    JWT_EXPIRES_IN=EXPIRATION_TIME
+    ```
+
+4. Run the Prisma migration to create the database schema:
+
+   ```bash
+   npx prisma migrate dev --name init
+   ```
+
+5. Seed the database with initial data (optional):
+
+   ```bash
+   npx prisma db seed
+   ```
+6. Start the application:
+
+   ```bash
+    yarn start:dev
+    ```
+
 ### 📁 Project Structure
 
 - `src/auth` : JWT authentication, roles, guards, strategy
