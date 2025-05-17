@@ -1,3 +1,19 @@
+export class S3ConfigurationException extends Error {
+  constructor(public readonly missingKeys: string[] = []) {
+    super(
+      `AWS credentials are not properly configured.${missingKeys.length > 0 ? ' Missing keys: ' + missingKeys.join(', ') : ''}`,
+    );
+    this.name = 'S3ConfigurationException';
+  }
+}
+
+export class BucketResolutionException extends Error {
+  constructor(message?: string) {
+    super(message || 'Failed to resolve S3 bucket name.');
+    this.name = 'BucketResolutionException';
+  }
+}
+
 export class S3ListBucketsException extends Error {
   constructor(message?: string) {
     super(message || 'Error while listing buckets');
@@ -110,3 +126,4 @@ export class S3ApplyPolicyException extends Error {
     this.name = 'S3ApplyPolicyException';
   }
 }
+

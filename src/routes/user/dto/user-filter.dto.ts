@@ -1,0 +1,36 @@
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsString, IsEnum, IsInt, Min } from 'class-validator';
+
+export class UserFilterDto {
+  @ApiPropertyOptional({ description: 'Page number', example: 1 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @ApiPropertyOptional({ description: 'Items per page', example: 10 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  limit?: number;
+
+  @ApiPropertyOptional({ description: 'Filter by nickname' })
+  @IsOptional()
+  @IsString()
+  nickname?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by email' })
+  @IsOptional()
+  @IsString()
+  email?: string;
+
+  @ApiPropertyOptional({ enum: ['id', 'name', 'email', 'createdAt'], description: 'Sort by field' })
+  @IsOptional()
+  @IsEnum(['id', 'name', 'email', 'createdAt'])
+  sortBy?: string;
+
+  @ApiPropertyOptional({ enum: ['asc', 'desc'], description: 'Sort order' })
+  @IsOptional()
+  @IsEnum(['asc', 'desc'])
+  order?: 'asc' | 'desc';
+}

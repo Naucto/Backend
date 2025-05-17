@@ -4,7 +4,7 @@ model User {
   id        Int      @id @default(autoincrement())
   email     String   @unique
   username  String   @unique
-  nickName  String?
+  nickname  String?
   password  String
   createdAt DateTime @default(now())
 

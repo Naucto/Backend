@@ -43,26 +43,26 @@ export class ProjectCollaboratorGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
     const user = request.user;
-    const projectId = parseInt(request.params.id, 10);
+    const projectId = parseInt(request.params.projectId, 10);
 
     if (!user || isNaN(projectId)) {
       throw new ForbiddenException('Invalid user or project ID');
     }
 
-    const project = await this.prisma.project.findUnique({
-      include: { collaborators: true },
+    const project = await this.prisma.project.findFirst({
       where: {
         id: projectId,
         collaborators: {
           some: {
-            id: user.id
-          }
-        }
-      }
+            id: user.id,
+          },
+        },
+      },
+      include: { collaborators: true },
     });
 
     if (!project) {
-      throw new ForbiddenException('Project not found');
+      throw new ForbiddenException('Project not found or no access');
     }
 
     return true;

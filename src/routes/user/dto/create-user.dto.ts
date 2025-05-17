@@ -15,10 +15,10 @@ export class CreateUserDto {
   @IsNotEmpty()
   username: string;
 
-  @ApiProperty({ description: 'User nick name', example: 'John Doe' })
+  @ApiProperty({ description: 'User nick name', example: 'John Doe', required: false })
   @IsString()
-  @IsNotEmpty()
-  nickname: string;
+  @IsOptional()
+  nickname?: string;
 
   @ApiProperty({ description: 'User password', example: 'password123' })
   @IsString()
@@ -28,7 +28,7 @@ export class CreateUserDto {
 
   @ApiProperty({
     description: 'List of Role IDs to assign to the user',
-    example: [1, 2],
+    example: [2],
     required: false,
   })
   @IsOptional()

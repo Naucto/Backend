@@ -8,7 +8,9 @@ import { JwtService } from '@nestjs/jwt';
 import { UserService } from '../routes/user/user.service';
 import * as bcrypt from 'bcryptjs';
 import { CreateUserDto } from '../routes/user/dto/create-user.dto';
-import { UserWithoutPassword, LoginResponse, JwtPayload } from './auth.types';
+import { UserDto } from './dto/user.dto';
+import { AuthResponseDto } from './dto/auth-response.dto';
+import { JwtPayload } from './auth.types';
 
 @Injectable()
 export class AuthService {
@@ -17,7 +19,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
   ) {}
 
-  async validateUser(email: string, password: string): Promise<UserWithoutPassword> {
+  async validateUser(email: string, password: string): Promise<UserDto> {
     const user = await this.userService.findByEmail(email);
     if (!user) {
       throw new UnauthorizedException('Invalid email or password');
@@ -31,7 +33,7 @@ export class AuthService {
     return user;
   }
 
- async login(email: string, password: string): Promise<LoginResponse> {
+ async login(email: string, password: string): Promise<AuthResponseDto> {
     const user = await this.validateUser(email, password);
 
     const payload : JwtPayload = { sub: user.id, email: user.email };
@@ -43,7 +45,7 @@ export class AuthService {
     };
   }
 
-  async register(createUserDto: CreateUserDto): Promise<LoginResponse> {
+  async register(createUserDto: CreateUserDto): Promise<AuthResponseDto> {
     const existing = await this.userService.findAll({
       where: { email: createUserDto.email },
     });
@@ -66,14 +68,15 @@ export class AuthService {
     const payload = { sub: newUser.id, email: newUser.email };
     const accessToken = this.jwtService.sign(payload);
 
-    const user: UserWithoutPassword = {
+    const user: UserDto = {
       id: newUser.id,
       email: newUser.email,
       username: newUser.username,
-      nickname: newUser.nickName,
+      nickname: newUser.nickname ?? '',
+      createdAt: newUser.createdAt
     };
 
-    const response: LoginResponse = {
+    const response: AuthResponseDto = {
       access_token: accessToken,
       user,
     };

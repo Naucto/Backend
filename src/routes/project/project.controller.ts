@@ -1,25 +1,28 @@
-import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards, Req, HttpStatus, HttpCode, ParseIntPipe, Patch } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards, Req, Res, HttpStatus, HttpCode, ParseIntPipe, Patch, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ProjectService } from './project.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { ProjectCollaboratorGuard } from '../../auth/guards/project.guard';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags, ApiParam, ApiBody } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags, ApiParam, ApiBody, ApiConsumes } from '@nestjs/swagger';
 import { ProjectCreatorGuard } from '../../auth/guards/project.guard';
 import { AddCollaboratorDto, RemoveCollaboratorDto } from './dto/collaborator-project.dto';
-import { User } from '../user/entities/user.entity';
+import { S3Service } from '../s3/s3.service';
+import { S3DownloadException } from '../s3/s3.error';
+import { Response } from 'express';
+import { UserDto } from 'src/auth/dto/user.dto';
 
 interface RequestWithUser extends Request {
-  user: User;
+  user: UserDto;
 }
 
 @ApiTags('projects')
-@ApiBearerAuth('JWT-auth')
 @Controller('projects')
 @UseGuards(JwtAuthGuard)
-@UseGuards(JwtAuthGuard)
+@ApiBearerAuth('JWT-auth')
 export class ProjectController {
-  constructor(private readonly projectService: ProjectService) {}
+  constructor(private readonly projectService: ProjectService, private readonly s3Service: S3Service) {}
 
   @Get()
   @ApiOperation({ summary: 'Retrieve the list of projects' })
@@ -30,15 +33,16 @@ export class ProjectController {
     return this.projectService.findAll(user.id);
   }
 
+  @Get(':projectId')
   @UseGuards(ProjectCollaboratorGuard)
-  @Get(':id')
   @ApiOperation({ summary: 'Retrieve a single project' })
-  @ApiParam({ name: 'id', type: 'number', description: 'Numeric ID of the project to retrieve' })
+  @ApiParam({ name: 'projectId', type: 'number', description: 'Numeric ID of the project to retrieve' })
   @ApiResponse({ status: 200, description: 'Project object' })
   @ApiResponse({ status: 404, description: 'Project not found' })
   @ApiResponse({ status: 500, description: 'Internal server error' })
-  async findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.projectService.findOne(id);
+  @ApiResponse({ status: 403, description: 'Invalid user or project ID' })
+  async findOne(@Param('projectId', ParseIntPipe) projectId: number) {
+    return this.projectService.findOne(projectId);
   }
 
   @Post()
@@ -132,6 +136,62 @@ export class ProjectController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Param('id', ParseIntPipe) id: number) {
     return this.projectService.remove(id);
+  }
+
+  @Patch(':projectId/saveContent')
+  @UseGuards(ProjectCollaboratorGuard)
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({ summary: 'Save content file to S3 for a project' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+        },
+      },
+    },
+  })
+  @ApiParam({ name: 'projectId', type: 'string' })
+  @ApiResponse({ status: 201, description: 'File uploaded successfully' })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  @HttpCode(HttpStatus.CREATED)
+  async saveProjectContent(@Param('projectId') projectId: string, @UploadedFile() file: Express.Multer.File, @Req() req: any) {
+    const metadata = {
+      uploadedBy: req.user.id.toString(),
+      projectId,
+    };
+
+    await this.s3Service.uploadFile(file, metadata, undefined, projectId);
+
+    return { message: 'File uploaded successfully', projectId };
+  }
+
+  @Get(':projectId/fetchContent')
+  @UseGuards(ProjectCollaboratorGuard)
+  @ApiOperation({ summary: 'Fetch content file from S3 for a project' })
+  @ApiParam({ name: 'projectId', type: 'string' })
+  @ApiResponse({ status: 200, description: 'File fetched successfully' })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  @ApiResponse({ status: 404, description: 'File not found' })
+  async fetchProjectContent(@Param('projectId') projectId: string, @Res() res: Response) {
+    try {
+      const file = await this.s3Service.downloadFile(projectId);
+
+      res.set({
+        'Content-Type': file.contentType,
+        'Content-Length': file.contentLength,
+      });
+
+      file.body.pipe(res);
+    } catch (error) {
+      if (error instanceof S3DownloadException) {
+        return res.status(404).json({ message: 'File not found' });
+      }
+      return res.status(500).json({ message: 'Internal server error' });
+    }
   }
 }
 

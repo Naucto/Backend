@@ -42,7 +42,7 @@ export class UserService {
         data: {
           email: createUserDto.email,
           username: createUserDto.username,
-          nickName: createUserDto.nickname,
+          nickname: createUserDto.nickname,
           password: hashedPassword,
           roles: {
             connect: rolesToAssign

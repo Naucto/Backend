@@ -56,35 +56,35 @@ export class S3Controller {
     description: 'Returns a list of objects in the bucket',
   })
   @ApiResponse({ status: 500, description: 'Server error' })
-  async listObjects(@Param('bucketName') bucketName: string): Promise<{ contents: _Object[] | [] }> {
+  async listObjects(@Param('bucketName') bucketName?: string): Promise<{ contents: _Object[] | [] }> {
     const contents = await this.s3Service.listObjects(bucketName);
     return { contents };
   }
 
   @Get('download-url/:bucketName/:key')
   @ApiOperation({ summary: 'Generate a signed download URL' })
-  @ApiParam({ name: 'bucketName', description: 'Name of the bucket' })
   @ApiParam({ name: 'key', description: 'Object key' })
+  @ApiParam({ name: 'bucketName', description: 'Name of the bucket' })
   @ApiResponse({status: 200, description: 'Returns a signed URL for downloading the file'})
   @ApiResponse({ status: 500, description: 'Server error' })
-  async getSignedDownloadUrl(@Param('bucketName') bucketName: string, @Param('key') key: string): Promise<{url: string}> {
+  async getSignedDownloadUrl(@Param('key') key: string, @Param('bucketName') bucketName?: string): Promise<{url: string}> {
     const url = await this.s3Service.getSignedDownloadUrl(
-      bucketName,
       decodeURIComponent(key),
+      bucketName,
     );
     return { url };
   }
 
   @Get('download/:bucketName/:key')
   @ApiOperation({ summary: 'Download a file directly' })
-  @ApiParam({ name: 'bucketName', description: 'Name of the bucket' })
   @ApiParam({ name: 'key', description: 'Object key' })
+  @ApiParam({ name: 'bucketName', description: 'Name of the bucket' })
   @ApiResponse({ status: 200, description: 'File stream' })
   @ApiResponse({ status: 500, description: 'Server error' })
-  async downloadFile(@Param('bucketName') bucketName: string, @Param('key') key: string, @Res() res: Response): Promise<void> {
+  async downloadFile(@Param('key') key: string, @Res() res: Response, @Param('bucketName') bucketName?: string): Promise<void> {
     try {
       const { body, contentType, contentLength } =
-        await this.s3Service.downloadFile(bucketName, decodeURIComponent(key));
+        await this.s3Service.downloadFile(decodeURIComponent(key), bucketName);
 
       res.setHeader('Content-Type', contentType || 'application/octet-stream');
       res.setHeader(
@@ -120,7 +120,7 @@ export class S3Controller {
   @ApiResponse({ status: 200, description: 'File uploaded successfully' })
   @ApiResponse({ status: 400, description: 'No file provided' })
   @ApiResponse({ status: 500, description: 'Server error' })
-  async uploadFile(@Param('bucketName') bucketName: string, @UploadedFile() file: Express.Multer.File, @Body() uploadFileDto: UploadFileDto): Promise<{ message: string } | { statusCode: number; error: string }> {
+  async uploadFile(@UploadedFile() file: Express.Multer.File, @Body() uploadFileDto: UploadFileDto, @Param('bucketName') bucketName?: string): Promise<{ message: string } | { statusCode: number; error: string }> {
     if (!file) {
       return {
         statusCode: HttpStatus.BAD_REQUEST,
@@ -129,21 +129,21 @@ export class S3Controller {
     }
 
     await this.s3Service.uploadFile(
-      bucketName,
       file,
       uploadFileDto.metadata || {},
+      bucketName,
     );
     return { message: 'File uploaded successfully' };
   }
 
   @Delete('delete/:bucketName/:key')
   @ApiOperation({ summary: 'Delete a file from S3' })
-  @ApiParam({ name: 'bucketName', description: 'Name of the bucket' })
   @ApiParam({ name: 'key', description: 'Object key' })
+  @ApiParam({ name: 'bucketName', description: 'Name of the bucket' })
   @ApiResponse({ status: 200, description: 'File deleted successfully' })
   @ApiResponse({ status: 500, description: 'Server error' })
-  async deleteFile(@Param('bucketName') bucketName: string, @Param('key') key: string): Promise<{ message: string }> {
-    await this.s3Service.deleteFile(bucketName, decodeURIComponent(key));
+  async deleteFile(@Param('key') key: string, @Param('bucketName') bucketName?: string): Promise<{ message: string }> {
+    await this.s3Service.deleteFile(decodeURIComponent(key), bucketName);
     return { message: 'File deleted successfully' };
   }
 
@@ -152,10 +152,10 @@ export class S3Controller {
   @ApiParam({ name: 'bucketName', description: 'Name of the bucket' })
   @ApiResponse({ status: 200, description: 'Files deleted successfully' })
   @ApiResponse({ status: 500, description: 'Server error' })
-  async deleteFiles(@Param('bucketName') bucketName: string, @Body() deleteFilesDto: DeleteFilesDto): Promise<{ message: string; deleted: _Object[] }> {
+  async deleteFiles(@Body() deleteFilesDto: DeleteFilesDto, @Param('bucketName') bucketName?: string): Promise<{ message: string; deleted: _Object[] }> {
     const result = await this.s3Service.deleteFiles(
+      deleteFilesDto.keys.map(key => decodeURIComponent(key)),
       bucketName,
-      deleteFilesDto.keys,
     );
     return { message: 'Files deleted successfully', deleted: result };
   }
@@ -165,7 +165,7 @@ export class S3Controller {
   @ApiParam({ name: 'bucketName', description: 'Name of the bucket' })
   @ApiResponse({ status: 200, description: 'Bucket deleted successfully' })
   @ApiResponse({ status: 500, description: 'Server error' })
-  async deleteBucket(@Param('bucketName') bucketName: string): Promise<{ message: string }> {
+  async deleteBucket(@Param('bucketName') bucketName?: string): Promise<{ message: string }> {
     await this.s3Service.deleteBucket(bucketName);
     return { message: 'Bucket deleted successfully' };
   }
@@ -175,21 +175,21 @@ export class S3Controller {
   @ApiParam({ name: 'bucketName', description: 'Name of the bucket' })
   @ApiResponse({ status: 201, description: 'Bucket created successfully' })
   @ApiResponse({ status: 500, description: 'Server error' })
-  async createBucket(@Param('bucketName') bucketName: string, @Body() createBucketDto: CreateBucketDto): Promise<{ message: string }> {
+  async createBucket( @Body() createBucketDto: CreateBucketDto, @Param('bucketName') bucketName?: string): Promise<{ message: string }> {
     await this.s3Service.createBucket(bucketName);
     return { message: 'Bucket created successfully' };
   }
 
   @Get('metadata/:bucketName/:key')
   @ApiOperation({ summary: 'Get object metadata' })
-  @ApiParam({ name: 'bucketName', description: 'Name of the bucket' })
   @ApiParam({ name: 'key', description: 'Object key' })
+  @ApiParam({ name: 'bucketName', description: 'Name of the bucket' })
   @ApiResponse({ status: 200, description: 'Returns object metadata' })
   @ApiResponse({ status: 500, description: 'Server error' })
-  async getObjectMetadata(@Param('bucketName') bucketName: string, @Param('key') key: string): Promise<{metadata: S3ObjectMetadata}> {
+  async getObjectMetadata(@Param('key') key: string, @Param('bucketName') bucketName?: string): Promise<{metadata: S3ObjectMetadata}> {
     const metadata = await this.s3Service.getObjectMetadata(
-      bucketName,
       decodeURIComponent(key),
+      bucketName
     );
     return { metadata };
   }
@@ -199,7 +199,7 @@ export class S3Controller {
   @ApiParam({ name: 'bucketName', description: 'Name of the bucket' })
   @ApiResponse({ status: 200, description: 'Policy generated successfully' })
   @ApiResponse({ status: 500, description: 'Server error' })
-  async generateBucketPolicy(@Param('bucketName') bucketName: string, @Body() generatePolicyDto: GeneratePolicyDto): Promise<{ message: string; policy: BucketPolicy }> {
+  async generateBucketPolicy(@Body() generatePolicyDto: GeneratePolicyDto, @Param('bucketName') bucketName?: string): Promise<{ message: string; policy: BucketPolicy }> {
     const { actions, effect, principal, prefix } = generatePolicyDto;
     const policy = this.s3Service.generateBucketPolicy(
       bucketName,
@@ -217,14 +217,14 @@ export class S3Controller {
   @ApiResponse({ status: 200, description: 'Policy applied successfully' })
   @ApiResponse({ status: 400, description: 'No policy provided' })
   @ApiResponse({ status: 500, description: 'Server error' })
-  async applyBucketPolicy(@Param('bucketName') bucketName: string, @Body() applyPolicyDto: ApplyPolicyDto): Promise<{ message: string } | { statusCode: number; error: string }> {
+  async applyBucketPolicy(@Body() applyPolicyDto: ApplyPolicyDto, @Param('bucketName') bucketName?: string): Promise<{ message: string } | { statusCode: number; error: string }> {
     if (!applyPolicyDto.policy) {
       return {
         statusCode: HttpStatus.BAD_REQUEST,
         error: 'No policy provided',
       };
     }
-    await this.s3Service.applyBucketPolicy(bucketName, applyPolicyDto.policy);
+    await this.s3Service.applyBucketPolicy(applyPolicyDto.policy, bucketName);
     return { message: 'Policy applied successfully' };
   }
 }

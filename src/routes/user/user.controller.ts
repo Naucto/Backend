@@ -15,6 +15,7 @@ import {
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { UserFilterDto } from './dto/user-filter.dto';
 import {
   ApiOperation,
   ApiResponse,
@@ -26,16 +27,16 @@ import {
   ApiExtraModels,
 } from '@nestjs/swagger';
 import { Request } from '@nestjs/common';
-import { User } from './entities/user.entity';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { ApiPaginatedResponse } from '../../common/decorators/api-paginated-response.decorator';
 import { Prisma } from '@prisma/client';
+import { UserDto } from 'src/auth/dto/user.dto';
 
 @ApiTags('users')
-@ApiExtraModels(User)
+@ApiExtraModels(UserDto)
 @ApiBearerAuth('JWT-auth')
 @Controller('users')
 export class UserController {
@@ -51,54 +52,30 @@ export class UserController {
 
   @Get()
   @ApiOperation({ summary: 'Get all users with pagination and filtering' })
-  @ApiPaginatedResponse(User)
-  @ApiQuery({
-    name: 'page',
-    required: false,
-    type: Number,
-    description: 'Page number',
-  })
-  @ApiQuery({
-    name: 'limit',
-    required: false,
-    type: Number,
-    description: 'Items per page',
-  })
-  @ApiQuery({
-    name: 'name',
-    required: false,
-    type: String,
-    description: 'Filter by name',
-  })
-  @ApiQuery({
-    name: 'email',
-    required: false,
-    type: String,
-    description: 'Filter by email',
-  })
-  @ApiQuery({
-    name: 'sortBy',
-    required: false,
-    enum: ['id', 'name', 'email', 'createdAt'],
-  })
-  @ApiQuery({ name: 'order', required: false, enum: ['asc', 'desc'] })
+  @ApiPaginatedResponse(UserDto)
+  @ApiQuery({ type: UserFilterDto })
   @UseGuards(JwtAuthGuard)
-  async findAll(
-    @Query() paginationDto: PaginationDto,
-    @Query('nickname') nickname?: string,
-    @Query('email') email?: string,
-    @Query('sortBy') sortBy?: string,
-    @Query('order') order?: 'asc' | 'desc',
-  ) {
+  async findAll(@Query() filterDto: UserFilterDto) {
+    const {
+      page = 1,
+      limit = 10,
+      nickname,
+      email,
+      sortBy,
+      order,
+    } = filterDto;
+
+    const pageNumber = Number(page) || 1;
+    const limitNumber = Number(limit) || 10;
+
     this.logger.debug(
-      `Fetching users with pagination: ${JSON.stringify(paginationDto)}`,
+      `Fetching users with pagination: ${JSON.stringify(filterDto)}`,
     );
 
-    const { page = 1, limit = 10 } = paginationDto;
-    const skip = (page - 1) * limit;
-
+    const skip = (pageNumber - 1) * limitNumber;
     const filter: Prisma.UserWhereInput = {};
-    if (nickname) filter.nickName = { contains: nickname };
+
+    if (nickname) filter.nickname = { contains: nickname };
     if (email) filter.email = { contains: email };
 
     const orderBy: Prisma.UserOrderByWithRelationInput = {};
@@ -111,7 +88,7 @@ export class UserController {
     const [users, total] = await Promise.all([
       this.userService.findAll({
         skip,
-        take: limit,
+        take: limitNumber,
         where: Object.keys(filter).length ? filter : undefined,
         orderBy,
       }),
@@ -123,10 +100,10 @@ export class UserController {
       message: 'Users retrieved successfully',
       data: users,
       meta: {
-        page: +page,
-        limit: +limit,
+        page: +pageNumber,
+        limit: +limitNumber,
         total,
-        totalPages: Math.ceil(total / limit),
+        totalPages: Math.ceil(total / limitNumber),
       },
     };
   }
@@ -137,7 +114,7 @@ export class UserController {
   @ApiResponse({
     status: HttpStatus.OK,
     description: 'Returns the user',
-    type: User,
+    type: UserDto,
   })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'User not found' })
   @ApiResponse({
@@ -163,7 +140,7 @@ export class UserController {
   @ApiResponse({
     status: HttpStatus.OK,
     description: 'User updated successfully',
-    type: User,
+    type: UserDto,
   })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'User not found' })
   @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: 'Invalid input' })

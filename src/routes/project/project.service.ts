@@ -6,11 +6,11 @@ import {
   AddCollaboratorDto,
   RemoveCollaboratorDto,
 } from './dto/collaborator-project.dto';
-import { connect } from 'http2';
+import { S3Service } from '../s3/s3.service';
 
 @Injectable()
 export class ProjectService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private readonly s3Service: S3Service) {}
 
   async findAll(userId: number) {
     return this.prisma.project.findMany({
@@ -80,6 +80,12 @@ export class ProjectService {
 
   async remove(id: number): Promise<void> {
     await this.findOne(id);
+
+    try {
+      await this.s3Service.deleteFile(id.toString());
+    } catch (error) {
+      throw new Error(`Error deleting S3 file with key ${id}: ${error.message}`);
+    }
 
     await this.prisma.project.delete({
       where: { id },
