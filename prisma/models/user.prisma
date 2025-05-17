@@ -1,0 +1,63 @@
+// prisma/models/user.prisma
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  username  String   @unique
+  nickName  String?
+  password  String
+  createdAt DateTime @default(now())
+
+  roles     Role[]   @relation("UserRoles")
+
+  // Relations
+  friendsInitiated Friendship[]    @relation("UserAFriends")
+  friendsReceived  Friendship[]    @relation("UserBFriends")
+  sentRequests     FriendRequest[] @relation("SentFriendRequests")
+  receivedRequests FriendRequest[] @relation("ReceivedFriendRequests")
+  subscriptions    Subscription[]
+  comments         Comment[]
+  gameSessions     GameSession[]
+  creator          Project[]       @relation("ProjectCreator")
+  collaborators    Project[]       @relation("ProjectCollaborators")
+
+  workSession      WorkSession[]     @relation("WorkSessionUsers")
+}
+
+model Role {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+
+  users User[] @relation("UserRoles")
+}
+
+model FriendRequest {
+  id        Int      @id @default(autoincrement())
+  from      User     @relation("SentFriendRequests", fields: [fromId], references: [id])
+  fromId    Int
+  to        User     @relation("ReceivedFriendRequests", fields: [toId], references: [id])
+  toId      Int
+  createdAt DateTime @default(now())
+
+  @@unique([fromId, toId])
+}
+
+model Friendship {
+  id        Int      @id @default(autoincrement())
+  userA     User     @relation("UserAFriends", fields: [userAId], references: [id])
+  userAId   Int
+  userB     User     @relation("UserBFriends", fields: [userBId], references: [id])
+  userBId   Int
+  createdAt DateTime @default(now())
+
+  @@unique([userAId, userBId])
+}
+
+model Subscription {
+  id        Int       @id @default(autoincrement())
+  user      User      @relation(fields: [userId], references: [id])
+  userId    Int
+  price     Int
+  startDate DateTime
+  endDate   DateTime?
+}
