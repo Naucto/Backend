@@ -2,9 +2,9 @@ import { WebSocketServer } from 'ws';
 import http from 'http';
 import * as map from 'lib0/map';
 
-const wsReadyStateConnecting = 0;
-const wsReadyStateOpen = 1;
-const pingTimeout = 30000;
+const WS_READY_STATE_CONNECTING = 0;
+const WS_READY_STATE_OPEN = 1;
+const PING_TIMEOUT = 30000;
 
 const topics = new Map<string, Set<any>>();
 
@@ -14,18 +14,20 @@ export const setupWebSocketServer = (server: http.Server) => {
   wss = new WebSocketServer({ noServer: true });
 
   const send = (conn, message) => {
-    if (conn.readyState !== wsReadyStateConnecting && conn.readyState !== wsReadyStateOpen) {
+    if (
+      conn.readyState !== WS_READY_STATE_CONNECTING &&
+      conn.readyState !== WS_READY_STATE_OPEN
+    ) {
       conn.close();
     }
     try {
-      //console.log("SEND:", JSON.stringify(message))
       conn.send(JSON.stringify(message));
     } catch (e) {
       conn.close();
     }
   };
 
-  const onconnection = conn => {
+  const onConnection = (conn) => {
     const subscribedTopics = new Set<string>();
     let closed = false;
     let pongReceived = true;
@@ -41,14 +43,14 @@ export const setupWebSocketServer = (server: http.Server) => {
           conn.close();
         }
       }
-    }, pingTimeout);
+    }, PING_TIMEOUT);
 
     conn.on('pong', () => {
       pongReceived = true;
     });
 
     conn.on('close', () => {
-      subscribedTopics.forEach(topicName => {
+      subscribedTopics.forEach((topicName) => {
         const subs = topics.get(topicName) || new Set();
         subs.delete(conn);
         if (subs.size === 0) {
@@ -59,12 +61,11 @@ export const setupWebSocketServer = (server: http.Server) => {
       closed = true;
     });
 
-    conn.on('message', message => {
+    conn.on('message', (message) => {
       if (typeof message === 'string' || message instanceof Buffer) {
         const parsed = JSON.parse(
-          typeof message === 'string' ? message : message.toString()
+          typeof message === 'string' ? message : message.toString(),
         );
-        //console.log(parsed);
         message = parsed; // replace `message` for further use
       }
       if (message && message.type && !closed) {
@@ -72,7 +73,11 @@ export const setupWebSocketServer = (server: http.Server) => {
           case 'subscribe':
             (message.topics || []).forEach((topicName: string) => {
               if (typeof topicName === 'string') {
-                const topic = map.setIfUndefined(topics, topicName, () => new Set());
+                const topic = map.setIfUndefined(
+                  topics,
+                  topicName,
+                  () => new Set(),
+                );
                 topic.add(conn);
                 subscribedTopics.add(topicName);
               }
@@ -91,7 +96,7 @@ export const setupWebSocketServer = (server: http.Server) => {
               const receivers = topics.get(message.topic);
               if (receivers) {
                 message.clients = receivers.size;
-                receivers.forEach(receiver => send(receiver, message));
+                receivers.forEach((receiver) => send(receiver, message));
               }
             }
             break;
@@ -102,7 +107,7 @@ export const setupWebSocketServer = (server: http.Server) => {
     });
   };
 
-  wss.on('connection', onconnection);
+  wss.on('connection', onConnection);
 
   server.on('upgrade', (request, socket, head) => {
     const handleAuth = (ws) => {

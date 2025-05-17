@@ -1,0 +1,112 @@
+export class S3ListBucketsException extends Error {
+  constructor(message?: string) {
+    super(message || 'Error while listing buckets');
+    this.name = 'S3ListBucketsException';
+  }
+}
+
+export class S3ListObjectsException extends Error {
+  constructor(
+    public readonly bucketName: string,
+    public readonly cause?: unknown,
+  ) {
+    super(`Error while listing objects in bucket: ${bucketName}`);
+    this.name = 'S3ListObjectsException';
+  }
+}
+
+export class S3UploadException extends Error {
+  constructor(
+    public readonly bucketName: string,
+    public readonly fileName: string,
+    public readonly cause?: unknown,
+  ) {
+    super(`Error while uploading file "${fileName}" to bucket: ${bucketName}`);
+    this.name = 'S3UploadException';
+  }
+}
+
+export class S3DownloadException extends Error {
+  constructor(
+    public readonly bucketName: string,
+    public readonly key: string,
+    public readonly cause?: unknown,
+  ) {
+    super(`Error downloading file "${key}" from bucket: ${bucketName}`);
+    this.name = 'S3DownloadException';
+  }
+}
+
+export class S3SignedUrlException extends Error {
+  constructor(
+    public readonly bucketName: string,
+    public readonly key: string,
+    public readonly cause?: unknown,
+  ) {
+    super(`Error generating signed URL for file "${key}" in bucket: ${bucketName}`);
+    this.name = 'S3SignedUrlException';
+  }
+}
+
+export class S3DeleteFileException extends Error {
+  constructor(
+    public readonly bucketName: string,
+    public readonly key: string,
+    public readonly cause?: unknown,
+  ) {
+    super(`Error deleting file "${key}" in bucket: ${bucketName}`);
+    this.name = 'S3DeleteFileException';
+  }
+}
+
+export class S3DeleteFilesException extends Error {
+  constructor(
+    public readonly bucketName: string,
+    public readonly keys: string[],
+    public readonly cause?: unknown,
+  ) {
+    super(`Error deleting multiple files in bucket: ${bucketName}`);
+    this.name = 'S3DeleteFilesException';
+  }
+}
+
+export class S3DeleteBucketException extends Error {
+  constructor(
+    public readonly bucketName: string,
+    public readonly cause?: unknown,
+  ) {
+    super(`Error deleting bucket: ${bucketName}`);
+    this.name = 'S3DeleteBucketException';
+  }
+}
+
+export class S3CreateBucketException extends Error {
+  constructor(
+    public readonly bucketName: string,
+    public readonly cause?: unknown,
+  ) {
+    super(`Error creating bucket: ${bucketName}`);
+    this.name = 'S3CreateBucketException';
+  }
+}
+
+export class S3GetMetadataException extends Error {
+  constructor(
+    public readonly bucketName: string,
+    public readonly key: string,
+    public readonly cause?: unknown,
+  ) {
+    super(`Error fetching metadata for file "${key}" in bucket: ${bucketName}`);
+    this.name = 'S3GetMetadataException';
+  }
+}
+
+export class S3ApplyPolicyException extends Error {
+  constructor(
+    public readonly bucketName: string,
+    public readonly cause?: unknown,
+  ) {
+    super(`Error applying policy to bucket: ${bucketName}`);
+    this.name = 'S3ApplyPolicyException';
+  }
+}

@@ -56,11 +56,10 @@ pids
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
-.yarn/*
-.yarn/install-state.gz
-
 *.jpg
 *.png
 *.jpeg
 *.gif
 *.txt
+yarn.lock
+.yarn

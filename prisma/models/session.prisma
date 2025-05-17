@@ -1,0 +1,22 @@
+// prisma/models/session.prisma
+
+model GameSession {
+  id        Int       @id @default(autoincrement())
+  user      User      @relation(fields: [userId], references: [id])
+  userId    Int
+  project   Project   @relation(fields: [projectId], references: [id])
+  projectId Int
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+}
+
+model WorkSession {
+  id        Int       @id @default(autoincrement())
+  users     User[]    @relation("WorkSessionUsers")
+  project   Project   @relation(fields: [projectId], references: [id])
+  projectId Int       @unique
+  startedAt DateTime  @default(now())
+
+  roomId       String @unique @default(uuid())
+  roomPassword String @default(uuid())
+}
