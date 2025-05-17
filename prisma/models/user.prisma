@@ -4,9 +4,8 @@ model User {
   id        Int      @id @default(autoincrement())
   email     String   @unique
   username  String   @unique
+  nickName  String?
   password  String
-  firstName String
-  lastName  String
   createdAt DateTime @default(now())
 
   roles     Role[]   @relation("UserRoles")

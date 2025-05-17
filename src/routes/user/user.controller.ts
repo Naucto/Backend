@@ -85,8 +85,7 @@ export class UserController {
   @UseGuards(JwtAuthGuard)
   async findAll(
     @Query() paginationDto: PaginationDto,
-    @Query('firstname') firstname?: string,
-    @Query('lastname') lastname?: string,
+    @Query('nickname') nickname?: string,
     @Query('email') email?: string,
     @Query('sortBy') sortBy?: string,
     @Query('order') order?: 'asc' | 'desc',
@@ -99,8 +98,7 @@ export class UserController {
     const skip = (page - 1) * limit;
 
     const filter: Prisma.UserWhereInput = {};
-    if (firstname) filter.firstName = { contains: firstname };
-    if (lastname) filter.lastName = { contains: lastname };
+    if (nickname) filter.nickName = { contains: nickname };
     if (email) filter.email = { contains: email };
 
     const orderBy: Prisma.UserOrderByWithRelationInput = {};

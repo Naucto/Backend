@@ -70,8 +70,7 @@ export class AuthService {
       id: newUser.id,
       email: newUser.email,
       username: newUser.username,
-      firstName: newUser.firstName,
-      lastName: newUser.lastName,
+      nickname: newUser.nickName,
     };
 
     const response: LoginResponse = {

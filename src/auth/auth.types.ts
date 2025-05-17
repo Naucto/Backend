@@ -2,8 +2,7 @@ export interface UserWithoutPassword {
   id: number;
   email: string;
   username?: string;
-  firstName?: string;
-  lastName?: string;
+  nickname?: string | null;
 }
 
 export interface LoginResponse {
