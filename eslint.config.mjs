@@ -1,34 +1,50 @@
-// @ts-check
-import eslint from '@eslint/js';
-import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
-import globals from 'globals';
-import tseslint from 'typescript-eslint';
+import { defineConfig } from "eslint/config";
+import js from "@eslint/js";
+import globals from "globals";
+import tseslint from "typescript-eslint";
+import pluginReact from "eslint-plugin-react";
 
-export default tseslint.config(
+
+export default defineConfig([
   {
-    ignores: ['eslint.config.mjs'],
-  },
-  eslint.configs.recommended,
-  ...tseslint.configs.recommendedTypeChecked,
-  eslintPluginPrettierRecommended,
-  {
+    files: ["**/*.{js,mjs,cjs,ts,jsx,tsx}"],
     languageOptions: {
-      globals: {
-        ...globals.node,
-        ...globals.jest,
-      },
-      sourceType: 'commonjs',
+      globals: globals.browser,
+      parser: tseslint.parser,
       parserOptions: {
-        projectService: true,
-        tsconfigRootDir: import.meta.dirname,
-      },
+        project: "./tsconfig.eslint.json"
+      }
     },
-  },
-  {
+    plugins: {
+      js,
+      react: pluginReact,
+      "@typescript-eslint": tseslint.plugin,
+    },
+    extends: ["js/recommended"],
     rules: {
-      '@typescript-eslint/no-explicit-any': 'off',
-      '@typescript-eslint/no-floating-promises': 'warn',
-      '@typescript-eslint/no-unsafe-argument': 'warn'
+      indent: ["error", 2],
+      quotes: ["error", "double"],
+      "@typescript-eslint/no-unused-vars": "warn",
+      "no-console": "warn",
+      "react/react-in-jsx-scope": "off",
+      "react/self-closing-comp": "error",
+      "no-var": "error",
+      "prefer-const": "error",
+      "object-curly-spacing": ["error", "always"],
+      "semi": ["error", "always"],
+      "@typescript-eslint/explicit-function-return-type": ["error", {
+        allowExpressions: true,
+        allowTypedFunctionExpressions: true,
+      }],
+      "eol-last": ["error", "always"],
+      "no-multiple-empty-lines": ["error", { "max": 1 }],
+
     },
+
+
+
+
   },
-);
+  tseslint.configs.recommended,
+
+]);
