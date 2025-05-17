@@ -1,4 +1,4 @@
-# EIP Backend
+# Naucto Backend
 
 This is the backend for the EIP project, developed using [NestJS](https://nestjs.com/), [Prisma](https://www.prisma.io/), and TypeScript.
 

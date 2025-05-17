@@ -6,11 +6,10 @@ import { User } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { Prisma } from '@prisma/client';
 
-const BCRYPT_SALT_ROUNDS = 10;
-
 @Injectable()
 export class UserService {
   constructor(private readonly prisma: PrismaService) {}
+  private static readonly BCRYPT_SALT_ROUNDS = 10;
 
   async findRolesByNames(names: string[]) {
     return this.prisma.role.findMany({
@@ -35,7 +34,7 @@ export class UserService {
 
   async create(createUserDto: CreateUserDto): Promise<User> {
     try {
-      const hashedPassword = await bcrypt.hash(createUserDto.password, BCRYPT_SALT_ROUNDS);
+      const hashedPassword = await bcrypt.hash(createUserDto.password, UserService.BCRYPT_SALT_ROUNDS);
 
       const rolesToAssign = createUserDto.roles ? [...createUserDto.roles.map((roleId) => ({ id: roleId })), { id: 2 }] : [{ id: 2 }];
 
@@ -95,7 +94,7 @@ export class UserService {
     };
     try {
       if (updateUserDto.password) {
-        data.password = await bcrypt.hash(updateUserDto.password, BCRYPT_SALT_ROUNDS);
+        data.password = await bcrypt.hash(updateUserDto.password, UserService.BCRYPT_SALT_ROUNDS);
       }
 
       if (updateUserDto.roles) {
