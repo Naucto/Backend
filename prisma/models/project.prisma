@@ -19,7 +19,6 @@ model Project {
   longDesc     String?
   status       ProjectStatus?    @default(IN_PROGRESS)
   iconUrl      String?
-  fileName     String?
   monetization MonetizationType? @default(NONE)
   price        Float?
   createdAt    DateTime         @default(now())
