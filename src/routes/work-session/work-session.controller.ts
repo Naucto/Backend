@@ -1,20 +1,13 @@
 import {
   Controller,
-  Get,
   Post,
-  Put,
-  Delete,
   Param,
-  Body,
   UseGuards,
   Req,
   HttpStatus,
-  HttpCode,
-  ParseIntPipe, Query,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { WorkSessionService } from './work-session.service';
-import { CreateWorkSessionDto } from './dto/create-work-session.dto';
-import { UpdateWorkSessionDto } from './dto/update-work-session.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import {
   ApiBearerAuth,
@@ -22,7 +15,6 @@ import {
   ApiResponse,
   ApiTags,
   ApiParam,
-  ApiBody, ApiQuery,
 } from '@nestjs/swagger';
 import { ProjectCollaboratorGuard } from '../../auth/guards/project.guard';
 import { JoinRoomResult } from './work-session.types';
