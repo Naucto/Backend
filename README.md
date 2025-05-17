@@ -24,6 +24,9 @@ This project is open source. You are welcome to contribute on GitHub at the foll
 3. Create a `.env` file in the root directory and set the following environment variables:
 
    ```bash
+    AWS_ACCESS_KEY_ID=MY_SECRET_ACCESS_KEY_ID
+    AWS_SECRET_ACCESS_KEY=MY_SECRET_ACCESS_KEY
+    AWS_REGION=MY_REGION
     POSTGRES_USER=USER
     POSTGRES_PASSWORD=PASSWORD
     POSTGRES_DB=DB_NAME
@@ -33,6 +36,7 @@ This project is open source. You are welcome to contribute on GitHub at the foll
 
     JWT_SECRET=JWT_SECRET
     JWT_EXPIRES_IN=EXPIRATION_TIME
+    PORT=PORT_NUMBER
     ```
 
 4. Run the Prisma migration to create the database schema:
