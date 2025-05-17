@@ -33,11 +33,6 @@ export class Project {
   iconUrl?: string;
 
   @ApiProperty({
-    description: 'The file name associated with the project',
-  })
-  fileName?: string;
-
-  @ApiProperty({
     description: 'The current status of the project',
     example: 'IN_PROGRESS',
     enum: ['IN_PROGRESS', 'COMPLETED', 'ARCHIVED'],
