@@ -182,7 +182,6 @@ export class UserController {
     return {
       statusCode: HttpStatus.OK,
       message: 'User deleted successfully',
-      data: user,
     };
   }
 }

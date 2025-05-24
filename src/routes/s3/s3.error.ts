@@ -1,7 +1,7 @@
 export class S3ConfigurationException extends Error {
   constructor(public readonly missingKeys: string[] = []) {
     super(
-      `AWS credentials are not properly configured.${missingKeys.length > 0 ? ' Missing keys: ' + missingKeys.join(', ') : ''}`,
+      `AWS credentials are not properly configured.${missingKeys.length > 0 ? ' Missing keys: ' + missingKeys.join(', ') : ""}`,
     );
     this.name = 'S3ConfigurationException';
   }

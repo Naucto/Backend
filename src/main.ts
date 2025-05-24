@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { setupSwagger } from './swagger';
@@ -27,6 +28,15 @@ if (process.env.NODE_ENV === 'production') {
 
   appPromise.then((app) => {
     app.useLogger(['log', 'error', 'warn', 'debug']);
+
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+      }),
+    );
+
     app.useStaticAssets(path.join(__dirname, '..', 'public'));
     app.setBaseViewsDir(path.join(__dirname, '..', 'views'));
     app.setViewEngine('ejs');

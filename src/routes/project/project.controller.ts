@@ -33,16 +33,16 @@ export class ProjectController {
     return this.projectService.findAll(user.id);
   }
 
-  @Get(':projectId')
+  @Get(':id')
   @UseGuards(ProjectCollaboratorGuard)
   @ApiOperation({ summary: 'Retrieve a single project' })
-  @ApiParam({ name: 'projectId', type: 'number', description: 'Numeric ID of the project to retrieve' })
+  @ApiParam({ name: 'id', type: 'number', description: 'Numeric ID of the project to retrieve' })
   @ApiResponse({ status: 200, description: 'Project object' })
   @ApiResponse({ status: 404, description: 'Project not found' })
   @ApiResponse({ status: 500, description: 'Internal server error' })
   @ApiResponse({ status: 403, description: 'Invalid user or project ID' })
-  async findOne(@Param('projectId', ParseIntPipe) projectId: number) {
-    return this.projectService.findOne(projectId);
+  async findOne(@Param('id', ParseIntPipe) id: number) {
+    return this.projectService.findOne(id);
   }
 
   @Post()
@@ -52,8 +52,6 @@ export class ProjectController {
   @ApiResponse({ status: 400, description: 'Bad request – invalid input' })
   @HttpCode(HttpStatus.CREATED)
   async create(@Body() createProjectDto: CreateProjectDto, @Req() req) {
-    // The user ID can be extracted from the JWT token
-    // assuming it's attached to the request by the JwtAuthGuard
     const userId = req.user.id;
     return this.projectService.create(createProjectDto, userId);
   }
@@ -138,7 +136,7 @@ export class ProjectController {
     return this.projectService.remove(id);
   }
 
-  @Patch(':projectId/saveContent')
+  @Patch(':id/saveContent')
   @UseGuards(ProjectCollaboratorGuard)
   @UseInterceptors(FileInterceptor('file'))
   @ApiOperation({ summary: 'Save content file to S3 for a project' })
@@ -154,31 +152,31 @@ export class ProjectController {
       },
     },
   })
-  @ApiParam({ name: 'projectId', type: 'string' })
+  @ApiParam({ name: 'id', type: 'string' })
   @ApiResponse({ status: 201, description: 'File uploaded successfully' })
   @ApiResponse({ status: 403, description: 'Forbidden' })
   @HttpCode(HttpStatus.CREATED)
-  async saveProjectContent(@Param('projectId') projectId: string, @UploadedFile() file: Express.Multer.File, @Req() req: any) {
+  async saveProjectContent(@Param('id') id: string, @UploadedFile() file: Express.Multer.File, @Req() req: any) {
     const metadata = {
       uploadedBy: req.user.id.toString(),
-      projectId,
+      id,
     };
 
-    await this.s3Service.uploadFile(file, metadata, undefined, projectId);
+    await this.s3Service.uploadFile(file, metadata, undefined, id);
 
-    return { message: 'File uploaded successfully', projectId };
+    return { message: 'File uploaded successfully', id };
   }
 
-  @Get(':projectId/fetchContent')
+  @Get(':id/fetchContent')
   @UseGuards(ProjectCollaboratorGuard)
   @ApiOperation({ summary: 'Fetch content file from S3 for a project' })
-  @ApiParam({ name: 'projectId', type: 'string' })
+  @ApiParam({ name: 'id', type: 'string' })
   @ApiResponse({ status: 200, description: 'File fetched successfully' })
   @ApiResponse({ status: 403, description: 'Forbidden' })
   @ApiResponse({ status: 404, description: 'File not found' })
-  async fetchProjectContent(@Param('projectId') projectId: string, @Res() res: Response) {
+  async fetchProjectContent(@Param('id') id: string, @Res() res: Response) {
     try {
-      const file = await this.s3Service.downloadFile(projectId);
+      const file = await this.s3Service.downloadFile(id);
 
       res.set({
         'Content-Type': file.contentType,

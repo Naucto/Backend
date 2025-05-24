@@ -40,18 +40,22 @@ export class AuthService {
     const access_token = this.jwtService.sign(payload);
 
     return {
-      access_token,
-      user
+      access_token
     };
   }
 
   async register(createUserDto: CreateUserDto): Promise<AuthResponseDto> {
-    const existing = await this.userService.findAll({
-      where: { email: createUserDto.email },
-    });
+    const [existingByEmail, existingByUsername] = await Promise.all([
+      this.userService.findAll({ where: { email: createUserDto.email } }),
+      this.userService.findAll({ where: { username: createUserDto.username } }),
+    ]);
 
-    if (existing.length > 0) {
+    if (existingByEmail.length > 0) {
       throw new ConflictException('Email already in use');
+    }
+
+    if (existingByUsername.length > 0) {
+      throw new ConflictException('Username already in use');
     }
 
     if (createUserDto.roles && createUserDto.roles.includes(1)) {
@@ -68,17 +72,8 @@ export class AuthService {
     const payload = { sub: newUser.id, email: newUser.email };
     const accessToken = this.jwtService.sign(payload);
 
-    const user: UserDto = {
-      id: newUser.id,
-      email: newUser.email,
-      username: newUser.username,
-      nickname: newUser.nickname ?? '',
-      createdAt: newUser.createdAt
-    };
-
     const response: AuthResponseDto = {
       access_token: accessToken,
-      user,
     };
 
     return response;
