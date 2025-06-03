@@ -42,7 +42,7 @@ export class UserService {
         data: {
           email: createUserDto.email,
           username: createUserDto.username,
-          nickname: createUserDto.nickname,
+          nickname: createUserDto.nickname ?? null,
           password: hashedPassword,
           roles: {
             connect: rolesToAssign
@@ -54,26 +54,25 @@ export class UserService {
     }
   }
 
-  async findAll(params?: {
-    skip?: number;
-    take?: number;
-    where?: Prisma.UserWhereInput;
-    orderBy?: Prisma.UserOrderByWithRelationInput;
-  }): Promise<User[]> {
+  async findAll(params?: {skip?: number, take?: number, where?: Prisma.UserWhereInput, orderBy?: Prisma.UserOrderByWithRelationInput }): Promise<User[]> {
     try {
-      return this.prisma.user.findMany({
-        skip: params?.skip,
-        take: params?.take,
-        where: params?.where,
-        orderBy: params?.orderBy
-      });
+      const query: Prisma.UserFindManyArgs = {};
+      if (params?.skip !== undefined) query.skip = params.skip;
+      if (params?.take !== undefined) query.take = params.take;
+      if (params?.where !== undefined) query.where = params.where;
+      if (params?.orderBy !== undefined) query.orderBy = params.orderBy;
+
+      return this.prisma.user.findMany(query);
     } catch (error) {
       throw error;
     }
   }
 
   async count(where?: Prisma.UserWhereInput): Promise<number> {
-    return this.prisma.user.count({ where });
+    const countArgs: Prisma.UserCountArgs = {};
+
+    if (where !== undefined) countArgs.where = where;
+    return this.prisma.user.count(countArgs);
   }
 
   async findOne(id: number): Promise<User> {
@@ -107,8 +106,8 @@ export class UserService {
         where: { id },
         data
       });
-    } catch (error) {
-      if (error.code === 'P2025') {
+    } catch (error: unknown) {
+      if (typeof error === 'object' && error !== null && 'code' in error && (error as any).code === 'P2025') {
         throw new NotFoundException(`User with ID ${id} not found`);
       }
       throw error;

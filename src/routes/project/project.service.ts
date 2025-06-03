@@ -83,8 +83,12 @@ export class ProjectService {
 
     try {
       await this.s3Service.deleteFile(id.toString());
-    } catch (error) {
-      throw new Error(`Error deleting S3 file with key ${id}: ${error.message}`);
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        throw new Error(`Error deleting S3 file with key ${id}: ${error.message}`);
+      } else {
+        throw new Error(`Error deleting S3 file with key ${id}: Unknown error`);
+      }
     }
 
     await this.prisma.project.delete({

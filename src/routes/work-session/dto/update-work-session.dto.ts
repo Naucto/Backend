@@ -1,4 +1,3 @@
-import { ApiProperty } from '@nestjs/swagger';
 import { PartialType } from '@nestjs/swagger';
 import { CreateWorkSessionDto } from './create-work-session.dto';
 

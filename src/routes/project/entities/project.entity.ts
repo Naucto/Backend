@@ -5,19 +5,19 @@ export class Project {
     example: 1,
     description: 'The unique identifier of the project',
   })
-  id: number;
+  id!: number;
 
   @ApiProperty({
     description: 'The name of the project',
     example: 'MySuperVideoGame',
   })
-  name: string;
+  name!: string;
 
   @ApiProperty({
     description: 'A short description of the project',
     example: 'A 2D platformer game with pixel art graphics',
   })
-  shortDesc: string;
+  shortDesc!: string;
 
   @ApiProperty({
     description: 'A detailed description of the project',
@@ -37,14 +37,14 @@ export class Project {
     example: 'IN_PROGRESS',
     enum: ['IN_PROGRESS', 'COMPLETED', 'ARCHIVED'],
   })
-  status: string;
+  status!: string;
 
   @ApiProperty({
     description: 'The monetization strategy for this project',
     example: 'NONE',
     enum: ['NONE', 'ADS', 'PAID'],
   })
-  monetization: string;
+  monetization!: string;
 
   @ApiProperty({
     example: 99.99,
@@ -57,31 +57,31 @@ export class Project {
     example: 1,
     description: 'The ID of the user who owns this project',
   })
-  userId: number;
+  userId!: number;
 
   @ApiProperty({
     example: '2023-04-15T12:00:00Z',
     description: 'The date and time when the project was created',
   })
-  createdAt: Date;
+  createdAt!: Date;
 
   @ApiProperty({
     example: 123,
     description: 'The number of unique players who have interacted with this project',
   })
-  uniquePlayers: number;
+  uniquePlayers!: number;
 
   @ApiProperty({
     example: 42,
     description: 'The number of currently active players in this project',
   })
-  activePlayers: number;
+  activePlayers!: number;
 
   @ApiProperty({
     example: 87,
     description: 'The number of likes received by the project',
   })
-  likes: number;
+  likes!: number;
 
   // Relations
 
@@ -89,19 +89,19 @@ export class Project {
     description: 'The users collaborating on this project',
     type: () => [Number],
   })
-  collaborators: number[];
+  collaborators!: number[];
 
   @ApiProperty({
     description: 'Comments associated with this project',
     type: () => [Number],
   })
-  comments: number[];
+  comments!: number[];
 
   @ApiProperty({
     description: 'Game sessions associated with this project',
     type: () => [Number],
   })
-  gameSessions: number[];
+  gameSessions!: number[];
 
   @ApiProperty({
     description: 'Work session associated with this project',

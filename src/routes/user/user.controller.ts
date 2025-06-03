@@ -30,7 +30,6 @@ import { Request } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
-import { PaginationDto } from '../../common/dto/pagination.dto';
 import { ApiPaginatedResponse } from '../../common/decorators/api-paginated-response.decorator';
 import { Prisma } from '@prisma/client';
 import { UserDto } from 'src/auth/dto/user.dto';
@@ -80,7 +79,7 @@ export class UserController {
 
     const orderBy: Prisma.UserOrderByWithRelationInput = {};
     if (sortBy) {
-      orderBy[sortBy] = order || 'asc';
+      (orderBy as any)[sortBy] = order || 'asc';
     } else {
       orderBy.id = 'asc';
     }
@@ -89,7 +88,7 @@ export class UserController {
       this.userService.findAll({
         skip,
         take: limitNumber,
-        where: Object.keys(filter).length ? filter : undefined,
+        where: Object.keys(filter).length ? filter : {},
         orderBy,
       }),
       this.userService.count(filter),
@@ -177,7 +176,7 @@ export class UserController {
   @Roles('Admin')
   async remove(@Param('id', ParseIntPipe) id: number) {
     this.logger.debug(`Deleting user with ID: ${id}`);
-    const user = await this.userService.remove(id);
+    await this.userService.remove(id);
 
     return {
       statusCode: HttpStatus.OK,

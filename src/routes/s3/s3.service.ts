@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PrismaService } from '../../prisma/prisma.service';
 import {
   S3Client,
   ListBucketsCommand,
@@ -44,14 +43,21 @@ import {
   S3GetMetadataException,
   S3ApplyPolicyException
 } from './s3.error';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as crypto from 'crypto';
+
 
 @Injectable()
 export class S3Service {
   private readonly s3: S3Client;
   private readonly defaultBucket: string | undefined;
 
-  constructor(private readonly prismaService: PrismaService, private readonly configService: ConfigService,) {
+  constructor(private readonly configService: ConfigService,) {
     const region = this.configService.get<string>('AWS_REGION');
+    if (!region) {
+      throw new S3ConfigurationException(['AWS_REGION']);
+    }
     const accessKeyId = this.configService.get<string>('AWS_ACCESS_KEY_ID');
     const secretAccessKey = this.configService.get<string>('AWS_SECRET_ACCESS_KEY');
 
@@ -93,8 +99,12 @@ export class S3Service {
       const command = new ListBucketsCommand(input);
       const result = await this.s3.send(command);
       return result.Buckets || [];
-    } catch (error) {
-      throw new S3ListBucketsException(error.message);
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        throw new S3ListBucketsException(error.message);
+      } else {
+        throw new S3ListBucketsException('An unknown error occurred while listing buckets.');
+      }
     }
   }
 
@@ -145,16 +155,72 @@ export class S3Service {
       const response = await this.s3.send(getObjectCommand);
       const stream = response.Body as Readable;
 
+      const contentType = head.ContentType;
+      const contentLength = head.ContentLength;
+
+      if (!contentType || !contentLength) {
+        throw new Error('Missing required metadata in S3 head response');
+      }
+
       const downloadedFile: DownloadedFile = {
         body: stream,
-        contentType: head.ContentType,
-        contentLength: head.ContentLength,
+        contentType: contentType,
+        contentLength: contentLength,
       };
 
       return downloadedFile;
     } catch (error) {
       throw new S3DownloadException(resolvedBucketName, key, error);
     }
+  }
+
+  rsaSha256Sign(privateKey: string, policy: string): string {
+    const signer = crypto.createSign('RSA-SHA256');
+    signer.update(policy);
+    signer.end();
+    const signature = signer.sign(privateKey);
+    return signature.toString('base64');
+  }
+
+  urlSafeBase64(input: string): string {
+    return input.replace(/\+/g, '-').replace(/=/g, '_').replace(/\//g, '~');
+  }
+
+  getCDNUrl(key: string): string {
+    const cdnUrl = process.env['CDN_URL']?.replace(/\/$/, '');
+
+    return `https://${cdnUrl}/${encodeURIComponent(key)}`;
+  }
+
+  getSignedCloudfrontUrl(fileKey: string): string {
+    const cdnUrl = process.env['CDN_URL']!;
+    const keyPairId = process.env['CLOUDFRONT_KEY_PAIR_ID']!;
+    const privateKeyPath = path.resolve(__dirname, '../../../cloudfront-private-key.pem');
+    const privateKey = fs.readFileSync(privateKeyPath, 'utf8');
+
+    const url = `https://${cdnUrl}/${encodeURIComponent(fileKey)}`;
+
+    const dateLessThan = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
+
+    const policy = JSON.stringify({
+      Statement: [
+        {
+          Resource: url,
+          Condition: {
+            DateLessThan: { "AWS:EpochTime": dateLessThan },
+          },
+        },
+      ],
+    });
+
+    const signature = this.rsaSha256Sign(privateKey, policy);
+    const encodedSignature = this.urlSafeBase64(signature);
+    const encodedPolicy = this.urlSafeBase64(Buffer.from(policy).toString('base64'));
+    const signedUrl = `${url}?Policy=${encodedPolicy}&Signature=${encodedSignature}&Key-Pair-Id=${keyPairId}`;
+
+    console.log('Generated signed URL (SHA256):', signedUrl);
+
+    return signedUrl;
   }
 
   async uploadFile(file: Express.Multer.File, metadata: Record<string, string>, bucketName?: string, keyName?: string): Promise<void> {
@@ -242,11 +308,16 @@ export class S3Service {
       };
       const command = new HeadObjectCommand(input);
       const result = await this.s3.send(command);
+
+      if (!result.ContentType || !result.ContentLength || !result.LastModified || !result.ETag) {
+        throw new Error('Missing required metadata in S3 head response');
+      }
+
       return {
         contentType: result.ContentType,
         contentLength: result.ContentLength,
         lastModified: result.LastModified,
-        metadata: result.Metadata,
+        metadata: result.Metadata ?? {},
         eTag: result.ETag,
       };
     } catch (error) {

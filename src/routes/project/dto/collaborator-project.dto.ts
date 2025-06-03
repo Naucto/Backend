@@ -7,7 +7,7 @@ export class AddCollaboratorDto {
     example: '1234',
   })
   @IsNumber()
-  userId: number;
+  userId!: number;
 }
 
 export class RemoveCollaboratorDto {
@@ -16,5 +16,5 @@ export class RemoveCollaboratorDto {
     example: '1234',
   })
   @IsNumber()
-  userId: number;
+  userId!: number;
 }

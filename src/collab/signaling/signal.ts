@@ -1,4 +1,4 @@
-import { WebSocketServer } from 'ws';
+import { WebSocket, WebSocketServer } from 'ws';
 import http from 'http';
 import * as map from 'lib0/map';
 
@@ -6,14 +6,21 @@ const WS_READY_STATE_CONNECTING = 0;
 const WS_READY_STATE_OPEN = 1;
 const PING_TIMEOUT = 30000;
 
-const topics = new Map<string, Set<any>>();
+const topics = new Map<string, Set<WebSocket>>();
+
+interface WSMessage {
+  type: 'subscribe' | 'unsubscribe' | 'publish' | 'ping' | 'pong';
+  topics?: string[];
+  topic?: string;
+  clients?: number;
+}
 
 export let wss: WebSocketServer;
 
 export const setupWebSocketServer = (server: http.Server) => {
   wss = new WebSocketServer({ noServer: true });
 
-  const send = (conn, message) => {
+  const send = (conn: WebSocket, message: WSMessage) => {
     if (
       conn.readyState !== WS_READY_STATE_CONNECTING &&
       conn.readyState !== WS_READY_STATE_OPEN
@@ -27,7 +34,7 @@ export const setupWebSocketServer = (server: http.Server) => {
     }
   };
 
-  const onConnection = (conn) => {
+  const onConnection = (conn: WebSocket) => {
     const subscribedTopics = new Set<string>();
     let closed = false;
     let pongReceived = true;
@@ -61,13 +68,19 @@ export const setupWebSocketServer = (server: http.Server) => {
       closed = true;
     });
 
-    conn.on('message', (message) => {
-      if (typeof message === 'string' || message instanceof Buffer) {
+    conn.on('message', (raw: import('ws').RawData) => {
+      let message: WSMessage;
+
+      try {
         const parsed = JSON.parse(
-          typeof message === 'string' ? message : message.toString(),
+          typeof raw === 'string' ? raw : raw.toString()
         );
-        message = parsed; // replace `message` for further use
+        message = parsed as WSMessage;
+      } catch (e) {
+        conn.close();
+        return;
       }
+
       if (message && message.type && !closed) {
         switch (message.type) {
           case 'subscribe':
@@ -76,7 +89,7 @@ export const setupWebSocketServer = (server: http.Server) => {
                 const topic = map.setIfUndefined(
                   topics,
                   topicName,
-                  () => new Set(),
+                  () => new Set<WebSocket>(),
                 );
                 topic.add(conn);
                 subscribedTopics.add(topicName);
@@ -101,7 +114,8 @@ export const setupWebSocketServer = (server: http.Server) => {
             }
             break;
           case 'ping':
-            send(conn, { type: 'pong' });
+            send(conn, { type: 'pong' } as WSMessage);
+            break;
         }
       }
     });
@@ -110,7 +124,7 @@ export const setupWebSocketServer = (server: http.Server) => {
   wss.on('connection', onConnection);
 
   server.on('upgrade', (request, socket, head) => {
-    const handleAuth = (ws) => {
+    const handleAuth = (ws: WebSocket) => {
       wss.emit('connection', ws, request);
     };
     wss.handleUpgrade(request, socket, head, handleAuth);

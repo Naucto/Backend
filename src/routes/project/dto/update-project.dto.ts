@@ -1,7 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsOptional, IsNumber, IsUrl, Min, IsEnum } from 'class-validator';
-import { PartialType } from '@nestjs/swagger';
-import { CreateProjectDto } from './create-project.dto';
 import { ProjectStatus, MonetizationType } from '@prisma/client';
 
 export class UpdateProjectDto {
@@ -10,14 +8,14 @@ export class UpdateProjectDto {
     example: 'MySuperVideoGame',
   })
   @IsString()
-  name: string;
+  name!: string;
 
   @ApiProperty({
     description: 'A short description of the project',
     example: 'A 2D platformer game with pixel art graphics',
   })
   @IsString()
-  shortDesc: string;
+  shortDesc!: string;
 
   @ApiProperty({
     description: 'A detailed description of the project',

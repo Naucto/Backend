@@ -10,7 +10,7 @@ import { ProjectCreatorGuard } from '../../auth/guards/project.guard';
 import { AddCollaboratorDto, RemoveCollaboratorDto } from './dto/collaborator-project.dto';
 import { S3Service } from '../s3/s3.service';
 import { S3DownloadException } from '../s3/s3.error';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { UserDto } from 'src/auth/dto/user.dto';
 
 interface RequestWithUser extends Request {
@@ -51,9 +51,10 @@ export class ProjectController {
   @ApiResponse({ status: 201, description: 'Project created successfully' })
   @ApiResponse({ status: 400, description: 'Bad request – invalid input' })
   @HttpCode(HttpStatus.CREATED)
-  async create(@Body() createProjectDto: CreateProjectDto, @Req() req) {
+  async create(@Body() createProjectDto: CreateProjectDto, @Req() req: Request) {
     const userId = req.user.id;
-    return this.projectService.create(createProjectDto, userId);
+    this.projectService.create(createProjectDto, userId)
+    return { message: 'Project created successfully' };
   }
 
   @Put(':id')
@@ -174,7 +175,7 @@ export class ProjectController {
   @ApiResponse({ status: 200, description: 'File fetched successfully' })
   @ApiResponse({ status: 403, description: 'Forbidden' })
   @ApiResponse({ status: 404, description: 'File not found' })
-  async fetchProjectContent(@Param('id') id: string, @Res() res: Response) {
+  async fetchProjectContent(@Param('id') id: string, @Res() res: Response): Promise<void> {
     try {
       const file = await this.s3Service.downloadFile(id);
 
@@ -186,10 +187,38 @@ export class ProjectController {
       file.body.pipe(res);
     } catch (error) {
       if (error instanceof S3DownloadException) {
-        return res.status(404).json({ message: 'File not found' });
+        res.status(404).json({ message: 'File not found' });
+        return;
       }
+      res.status(500).json({ message: 'Internal server error' });
+      return;
+    }
+  }
+
+  @Get(':id/getCdnUrl')
+  @UseGuards(ProjectCollaboratorGuard)
+  @ApiOperation({ summary: 'Get a secure CDN URL for a project file' })
+  @ApiParam({ name: 'id', type: 'string' })
+  @ApiResponse({ status: 200, description: 'Signed URL returned successfully' })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  @ApiResponse({ status: 404, description: 'File not found' })
+  async getProjectCdnUrl(@Param('id') id: string, @Res() res: Response) {
+    try {
+      const signedUrl = this.s3Service.getCDNUrl(id);
+      return res.status(200).json({ url: signedUrl });
+    } catch (error) {
       return res.status(500).json({ message: 'Internal server error' });
     }
+  }
+
+  @Get(':key/signed-url')
+  @UseGuards(ProjectCollaboratorGuard)
+  @ApiOperation({ summary: 'Get signed CloudFront URL for a protected file' })
+  @ApiParam({ name: 'key', type: 'string', description: 'File key in CDN' })
+  @ApiResponse({ status: 200, description: 'Signed URL returned' })
+  async getSignedUrl(@Param('key') key: string): Promise<{ signedUrl: string }> {
+    const signedUrl = this.s3Service.getSignedCloudfrontUrl(key);
+    return { signedUrl };
   }
 }
 

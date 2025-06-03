@@ -9,7 +9,7 @@ import { JwtPayload } from '../auth.types';
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
-    private readonly config: ConfigService,
+    config: ConfigService,
     private readonly userService: UserService,
   ) {
     const secret = config.getOrThrow<string>('JWT_SECRET');

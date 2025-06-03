@@ -8,8 +8,9 @@ import { setupWebSocketServer } from './collab/signaling/signal';
 import * as path from 'path';
 import * as dotenv from 'dotenv';
 import * as http from 'http';
+import { Request, Response, NextFunction } from 'express';
 
-if (process.env.NODE_ENV === 'production') {
+if (process.env['NODE_ENV'] === 'production') {
   dotenv.config({ path: '.env.production' });
 } else {
   dotenv.config();
@@ -33,7 +34,7 @@ if (process.env.NODE_ENV === 'production') {
       new ValidationPipe({
         whitelist: true,
         forbidNonWhitelisted: true,
-        transform: true,
+        transform: true
       }),
     );
 
@@ -43,7 +44,7 @@ if (process.env.NODE_ENV === 'production') {
 
     app.enableCors();
 
-    app.use((req, res, next) => {
+    app.use((req: Request, res: Response, next: NextFunction) => {
       const start = Date.now();
       const date = format(new Date(), 'dd-MM-yyyy HH:mm:ss.SSS');
 
@@ -62,7 +63,7 @@ if (process.env.NODE_ENV === 'production') {
     app.init().then(() => {
       setupWebSocketServer(server);
 
-      const PORT = process.env.PORT || 3000;
+      const PORT = process.env['PORT'] || 3000;
       server.listen(PORT, () => {
         console.log(`Server listening on port ${PORT}`);
       });

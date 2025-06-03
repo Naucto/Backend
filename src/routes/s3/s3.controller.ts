@@ -21,7 +21,6 @@ import {
   ApiParam,
 } from '@nestjs/swagger';
 import { S3Service } from './s3.service';
-import { CreateBucketDto } from './dto/create-bucket.dto';
 import { DeleteFilesDto } from './dto/delete-files.dto';
 import { ApplyPolicyDto } from './dto/apply-policy.dto';
 import { GeneratePolicyDto } from './dto/generate-policy.dto';
@@ -86,14 +85,14 @@ export class S3Controller {
       const { body, contentType, contentLength } =
         await this.s3Service.downloadFile(decodeURIComponent(key), bucketName);
 
-      res.setHeader('Content-Type', contentType || 'application/octet-stream');
-      res.setHeader(
-        'Content-Disposition',
-        `attachment; filename="${key.split('/').pop()}"`,
-      );
+      res
+        .setHeader('Content-Type', contentType || 'application/octet-stream');
+      res
+        .setHeader('Content-Disposition', `attachment; filename="${key.split('/').pop()}"`);
 
       if (contentLength) {
-        res.setHeader('Content-Length', contentLength.toString());
+        res
+          .setHeader('Content-Length', contentLength.toString());
       }
 
       if (body instanceof Readable) {
@@ -103,12 +102,28 @@ export class S3Controller {
           .status(HttpStatus.INTERNAL_SERVER_ERROR)
           .json({ error: 'File not readable' });
       }
-    } catch (error) {
-      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
-        error: 'Server error while downloading file',
-        message: error.message,
-      });
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        res
+          .status(HttpStatus.INTERNAL_SERVER_ERROR)
+          .json({ error: 'Server error while downloading file', message: error.message });
+      } else {
+        res
+          .status(HttpStatus.INTERNAL_SERVER_ERROR)
+          .json({ error: 'Server error while downloading file', message: 'Unknown error occurred' });
+      }
+      return;
     }
+  }
+
+  @Get('cdn-url/:key')
+  @ApiOperation({ summary: 'Get the CDN URL for a file' })
+  @ApiParam({ name: 'key', description: 'Object key' })
+  @ApiResponse({ status: 200, description: 'Returns the CDN URL' })
+  @ApiResponse({ status: 500, description: 'Server error' })
+  async getCdnUrl(@Param('key') key: string): Promise<{ url: string }> {
+    const url = this.s3Service.getCDNUrl(decodeURIComponent(key));
+    return { url };
   }
 
   @Post('upload/:bucketName')
@@ -175,7 +190,7 @@ export class S3Controller {
   @ApiParam({ name: 'bucketName', description: 'Name of the bucket' })
   @ApiResponse({ status: 201, description: 'Bucket created successfully' })
   @ApiResponse({ status: 500, description: 'Server error' })
-  async createBucket( @Body() createBucketDto: CreateBucketDto, @Param('bucketName') bucketName?: string): Promise<{ message: string }> {
+  async createBucket(@Param('bucketName') bucketName?: string): Promise<{ message: string }> {
     await this.s3Service.createBucket(bucketName);
     return { message: 'Bucket created successfully' };
   }

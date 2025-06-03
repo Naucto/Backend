@@ -6,7 +6,7 @@ dotenv.config();
 
 export async function listServers(token: string) {
   const res = await fetch(
-    `${SCW_API}/instance/v1/zones/${process.env.SCW_REGION}/servers`,
+    `${SCW_API}/instance/v1/zones/${process.env['SCW_REGION']}/servers`,
     {
       headers: {
         'X-Auth-Token': token,

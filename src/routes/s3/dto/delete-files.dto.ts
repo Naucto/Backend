@@ -9,5 +9,5 @@ export class DeleteFilesDto {
   })
   @IsArray()
   @IsString({ each: true })
-  readonly keys: string[];
+  readonly keys!: string[];
 }

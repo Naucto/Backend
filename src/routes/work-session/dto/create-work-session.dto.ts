@@ -3,11 +3,7 @@ import {
   IsInt,
   IsOptional,
   IsDate,
-  IsString,
-  IsNumber,
-  Min,
 } from 'class-validator';
-import { Type } from 'class-transformer';
 
 export class CreateWorkSessionDto {
   @ApiProperty({
@@ -15,7 +11,7 @@ export class CreateWorkSessionDto {
     example: 1,
   })
   @IsInt()
-  projectId: number;
+  projectId!: number;
 
   @IsOptional()
   @IsDate()
