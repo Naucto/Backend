@@ -131,7 +131,7 @@ export class S3Service {
         Key: key,
       };
       const command = new GetObjectCommand(input);
-      return await getSignedUrl(this.s3, command, { expiresIn: 3600 });
+      return await getSignedUrl(this.s3 as any, command, { expiresIn: 3600 });
     } catch (error) {
       throw new S3SignedUrlException(resolvedBucketName, key, error);
     }
