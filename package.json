@@ -40,6 +40,7 @@
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
     "dotenv": "^16.5.0",
+    "express": "^5.1.0",
     "ioredis": "^5.6.1",
     "jsonwebtoken": "^9.0.2",
     "lib0": "^0.2.105",
@@ -63,7 +64,7 @@
     "@types/jest": "^29.5.14",
     "@types/jsonwebtoken": "^9",
     "@types/multer": "^1",
-    "@types/node": "^22.10.7",
+    "@types/node": "^22.15.30",
     "@types/passport": "^0",
     "@types/passport-jwt": "^4.0.1",
     "@types/supertest": "^6.0.2",
@@ -107,5 +108,5 @@
   "prisma": {
     "schema": "./prisma/"
   },
-  "packageManager": "yarn@4.9.1+sha512.f95ce356460e05be48d66401c1ae64ef84d163dd689964962c6888a9810865e39097a5e9de748876c2e0bf89b232d583c33982773e9903ae7a76257270986538"
+  "packageManager": "yarn@4.9.2"
 }
