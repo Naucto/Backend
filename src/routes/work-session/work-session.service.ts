@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {Injectable, NotFoundException} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateWorkSessionDto } from './dto/create-work-session.dto';
 import { UpdateWorkSessionDto } from './dto/update-work-session.dto';
@@ -6,6 +6,7 @@ import { uuidv4 } from 'lib0/random';
 import { WorkSession } from '@prisma/client';
 import { JoinRoomResult } from './work-session.types';
 import { UserDto } from 'src/auth/dto/user.dto';
+import {FetchWorkSessionDto} from "src/routes/work-session/dto/fetch-work-session.dto";
 
 @Injectable()
 export class WorkSessionService {
@@ -24,6 +25,7 @@ export class WorkSessionService {
       where: { id },
       include: {
         project: true,
+        users: true
       },
     });
 
@@ -99,7 +101,7 @@ export class WorkSessionService {
       where: { id: projectId },
     });
     if (project === null) {
-      throw new NotFoundException(`Project with ID ${projectId} not found`);
+      throw new NotFoundException(`Project with ID ${projectId}`);
     }
 
     let workSession = await this.prisma.workSession.findFirst({
@@ -119,10 +121,56 @@ export class WorkSessionService {
       });
     }
 
-    const result: JoinRoomResult = {
+    return {
       roomId: workSession.roomId,
       roomPassword: workSession.roomPassword,
     };
-    return result;
+  }
+
+  async leave(projectId: number, user: UserDto): Promise<void> {
+    const workSession = await this.prisma.workSession.findFirst({
+      where: { projectId: projectId },
+      include: {
+        users: true
+      }
+    });
+
+    if (!workSession) {
+      throw new NotFoundException(`Work session for project ID ${projectId}`);
+    }
+
+    if (workSession.users.length === 1) {
+      await this.remove(workSession.id);
+    } else {
+      await this.prisma.workSession.update({
+        where: { id: workSession.id },
+        data: {
+          users: {
+            disconnect: { id: user.id },
+          },
+        },
+      });
+    }
+  }
+
+  async getInfo(projectId: number): Promise<FetchWorkSessionDto> {
+    const workSession = await this.prisma.workSession.findFirst({
+      where: { projectId },
+      include: {
+        users: true,
+      },
+    });
+
+    if (!workSession) {
+      throw new NotFoundException(`Work session for project ID ${projectId}`);
+    }
+
+    return {
+      users: workSession.users.map(user => user.id),
+      project: workSession.projectId,
+      startedAt: workSession.startedAt,
+      roomId: workSession.roomId,
+      roomPassword: workSession.roomPassword,
+    };
   }
 }
