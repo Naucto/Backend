@@ -62,13 +62,17 @@ export class ProjectController {
   @Post()
   @ApiOperation({ summary: 'Create a new project' })
   @ApiBody({ type: CreateProjectDto })
-  @ApiResponse({ status: 201, description: 'Project created successfully' })
+  @ApiResponse({ 
+    status: 201, 
+    description: 'Project created successfully',
+    type: ProjectResponseDto
+  })
   @ApiResponse({ status: 400, description: 'Bad request – invalid input' })
   @HttpCode(HttpStatus.CREATED)
-  async create(@Body() createProjectDto: CreateProjectDto, @Req() req: RequestWithUser) {
+  async create(@Body() createProjectDto: CreateProjectDto, @Req() req: RequestWithUser): Promise<ProjectResponseDto> {
     const userId = req.user.id;
-    await this.projectService.create(createProjectDto, userId);
-    return { message: 'Project created successfully' };
+    const project = await this.projectService.create(createProjectDto, userId);
+    return project;
   }
 
   @Put(':id')
