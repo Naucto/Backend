@@ -194,7 +194,6 @@ export class S3Service {
 
     const signedUrl = `${url}?Policy=${this.base64UrlEncode(policy)}&Signature=${this.base64UrlEncode(signature)}&Key-Pair-Id=${keyPairId}`;
 
-    console.log('Generated signed URL (SHA256):', signedUrl);
     return signedUrl;
   }
 
