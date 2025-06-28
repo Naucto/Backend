@@ -47,7 +47,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 
-
 @Injectable()
 export class S3Service {
   private readonly s3: S3Client;
@@ -137,6 +136,67 @@ export class S3Service {
     }
   }
 
+  base64UrlEncode(input: string | Buffer): string {
+    return Buffer.from(input)
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+  }
+
+  createPolicy(resourceUrl: string, expires: number): string {
+    return JSON.stringify({
+      Statement: [{
+        Resource: resourceUrl,
+        Condition: {
+          DateLessThan: { 'AWS:EpochTime': expires },
+        },
+      }],
+    });
+  }
+
+  rsaSha256Sign(privateKey: string, policy: string): Buffer {
+    const signer = crypto.createSign('RSA-SHA256');
+    signer.update(policy);
+    signer.end();
+    return signer.sign(privateKey);
+  }
+
+  createSignedCookies(keyPairId: string, privateKeyPath: string, resourceUrl: string, expiresInSeconds: number) {
+    const privateKey = fs.readFileSync(privateKeyPath, 'utf8');
+    const expires = Math.floor(Date.now() / 1000) + expiresInSeconds;
+    const policy = this.createPolicy(resourceUrl, expires);
+    const signature = this.rsaSha256Sign(privateKey, policy);
+
+    return {
+      'CloudFront-Policy': this.base64UrlEncode(policy),
+      'CloudFront-Signature': this.base64UrlEncode(signature),
+      'CloudFront-Key-Pair-Id': keyPairId,
+    };
+  }
+
+  getSignedCloudfrontUrl(fileKey: string): string {
+    const cdnUrl = process.env['CDN_URL']!.replace(/\/$/, '');
+    const keyPairId = process.env['CLOUDFRONT_KEY_PAIR_ID']!;
+    const privateKeyPath = path.resolve(__dirname, '../../../cloudfront-private-key.pem');
+    const privateKey = fs.readFileSync(privateKeyPath, 'utf8');
+
+    const url = `https://${cdnUrl}/${encodeURIComponent(fileKey)}`;
+    const expires = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
+    const policy = this.createPolicy(url, expires);
+    const signature = this.rsaSha256Sign(privateKey, policy);
+
+    const signedUrl = `${url}?Policy=${this.base64UrlEncode(policy)}&Signature=${this.base64UrlEncode(signature)}&Key-Pair-Id=${keyPairId}`;
+
+    console.log('Generated signed URL (SHA256):', signedUrl);
+    return signedUrl;
+  }
+
+  getCDNUrl(key: string): string {
+    const cdnUrl = process.env['CDN_URL']?.replace(/\/$/, '');
+    return `https://${cdnUrl}/${encodeURIComponent(key)}`;
+  }
+
   async downloadFile(key:string, bucketName?: string): Promise<DownloadedFile> {
     const resolvedBucketName = this.resolveBucket(bucketName);
     try {
@@ -172,55 +232,6 @@ export class S3Service {
     } catch (error) {
       throw new S3DownloadException(resolvedBucketName, key, error);
     }
-  }
-
-  rsaSha256Sign(privateKey: string, policy: string): string {
-    const signer = crypto.createSign('RSA-SHA256');
-    signer.update(policy);
-    signer.end();
-    const signature = signer.sign(privateKey);
-    return signature.toString('base64');
-  }
-
-  urlSafeBase64(input: string): string {
-    return input.replace(/\+/g, '-').replace(/=/g, '_').replace(/\//g, '~');
-  }
-
-  getCDNUrl(key: string): string {
-    const cdnUrl = process.env['CDN_URL']?.replace(/\/$/, '');
-
-    return `https://${cdnUrl}/${encodeURIComponent(key)}`;
-  }
-
-  getSignedCloudfrontUrl(fileKey: string): string {
-    const cdnUrl = process.env['CDN_URL']!;
-    const keyPairId = process.env['CLOUDFRONT_KEY_PAIR_ID']!;
-    const privateKeyPath = path.resolve(__dirname, '../../../cloudfront-private-key.pem');
-    const privateKey = fs.readFileSync(privateKeyPath, 'utf8');
-
-    const url = `https://${cdnUrl}/${encodeURIComponent(fileKey)}`;
-
-    const dateLessThan = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
-
-    const policy = JSON.stringify({
-      Statement: [
-        {
-          Resource: url,
-          Condition: {
-            DateLessThan: { "AWS:EpochTime": dateLessThan },
-          },
-        },
-      ],
-    });
-
-    const signature = this.rsaSha256Sign(privateKey, policy);
-    const encodedSignature = this.urlSafeBase64(signature);
-    const encodedPolicy = this.urlSafeBase64(Buffer.from(policy).toString('base64'));
-    const signedUrl = `${url}?Policy=${encodedPolicy}&Signature=${encodedSignature}&Key-Pair-Id=${keyPairId}`;
-
-    console.log('Generated signed URL (SHA256):', signedUrl);
-
-    return signedUrl;
   }
 
   async uploadFile(file: Express.Multer.File, metadata: Record<string, string>, bucketName?: string, keyName?: string): Promise<void> {

@@ -194,31 +194,5 @@ export class ProjectController {
       return;
     }
   }
-
-  @Get(':id/getCdnUrl')
-  @UseGuards(ProjectCollaboratorGuard)
-  @ApiOperation({ summary: 'Get a secure CDN URL for a project file' })
-  @ApiParam({ name: 'id', type: 'string' })
-  @ApiResponse({ status: 200, description: 'Signed URL returned successfully' })
-  @ApiResponse({ status: 403, description: 'Forbidden' })
-  @ApiResponse({ status: 404, description: 'File not found' })
-  async getProjectCdnUrl(@Param('id') id: string, @Res() res: Response) {
-    try {
-      const signedUrl = this.s3Service.getCDNUrl(id);
-      return res.status(200).json({ url: signedUrl });
-    } catch (error) {
-      return res.status(500).json({ message: 'Internal server error' });
-    }
-  }
-
-  @Get(':key/signed-url')
-  @UseGuards(ProjectCollaboratorGuard)
-  @ApiOperation({ summary: 'Get signed CloudFront URL for a protected file' })
-  @ApiParam({ name: 'key', type: 'string', description: 'File key in CDN' })
-  @ApiResponse({ status: 200, description: 'Signed URL returned' })
-  async getSignedUrl(@Param('key') key: string): Promise<{ signedUrl: string }> {
-    const signedUrl = this.s3Service.getSignedCloudfrontUrl(key);
-    return { signedUrl };
-  }
 }
 

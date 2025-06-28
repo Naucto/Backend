@@ -9,7 +9,7 @@
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
-    "start:dev": "ts-node-dev --respawn --transpile-only src/main.ts",
+    "start:dev": "tsx watch src/main.ts",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "clean": "find ./src -type f \\( -name '*.js' -o -name '*.js.map' -o -name '*.d.ts' -o -name '*.d.ts.map' \\) -delete",
@@ -44,7 +44,7 @@
     "ioredis": "^5.6.1",
     "jsonwebtoken": "^9.0.2",
     "lib0": "^0.2.105",
-    "multer": "^1.4.5-lts.2",
+    "multer": "^2.0.1",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "reflect-metadata": "^0.2.2",
@@ -84,8 +84,8 @@
     "ts-jest": "^29.2.5",
     "ts-loader": "^9.5.2",
     "ts-node": "^10.9.2",
-    "ts-node-dev": "^2.0.0",
     "tsconfig-paths": "^4.2.0",
+    "tsx": "^4.20.3",
     "typescript": "^5.7.3"
   },
   "jest": {
@@ -108,5 +108,5 @@
   "prisma": {
     "schema": "./prisma/"
   },
-  "packageManager": "yarn@4.9.2"
+  "packageManager": "npm@10.9.2"
 }

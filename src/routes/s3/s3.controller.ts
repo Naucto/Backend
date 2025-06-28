@@ -32,6 +32,7 @@ import {
   _Object,
 } from '@aws-sdk/client-s3';
 import { S3ObjectMetadata, BucketPolicy } from './s3.interface';
+import * as path from 'path';
 
 @ApiTags('s3')
 @Controller('s3')
@@ -114,16 +115,6 @@ export class S3Controller {
       }
       return;
     }
-  }
-
-  @Get('cdn-url/:key')
-  @ApiOperation({ summary: 'Get the CDN URL for a file' })
-  @ApiParam({ name: 'key', description: 'Object key' })
-  @ApiResponse({ status: 200, description: 'Returns the CDN URL' })
-  @ApiResponse({ status: 500, description: 'Server error' })
-  async getCdnUrl(@Param('key') key: string): Promise<{ url: string }> {
-    const url = this.s3Service.getCDNUrl(decodeURIComponent(key));
-    return { url };
   }
 
   @Post('upload/:bucketName')
@@ -241,5 +232,67 @@ export class S3Controller {
     }
     await this.s3Service.applyBucketPolicy(applyPolicyDto.policy, bucketName);
     return { message: 'Policy applied successfully' };
+  }
+
+  @Get('signed-cookies/:key')
+  @ApiOperation({ summary: 'Generate CloudFront signed cookies for a resource' })
+  @ApiParam({ name: 'key', description: 'Object key (relative path in CDN)' })
+  @ApiResponse({ status: 200, description: 'Returns signed cookies' })
+  @ApiResponse({ status: 500, description: 'Server error' })
+  async getSignedCookies(@Param('key') key: string, @Res() res: Response): Promise<void> {
+    try {
+      const cdnUrl = process.env['CDN_URL']!;
+      const resourceUrl = `https://${cdnUrl}/${encodeURIComponent(key)}`;
+      const keyPairId = 'K3AUK8QB395VGT';
+      const privateKeyPath = path.resolve(__dirname, '../../../cloudfront-private-key.pem');
+
+      const expiresInSeconds = 60 * 10; // 10 minutes
+
+      const cookies = this.s3Service.createSignedCookies(
+        keyPairId,
+        privateKeyPath,
+        resourceUrl,
+        expiresInSeconds,
+      );
+
+      res.cookie('CloudFront-Policy', cookies['CloudFront-Policy'], {
+        httpOnly: true,
+        //secure: true,
+        path: '/',
+        domain: cdnUrl,
+      });
+      res.cookie('CloudFront-Signature', cookies['CloudFront-Signature'], {
+        httpOnly: true,
+        //secure: true,
+        path: '/',
+        domain: cdnUrl,
+      });
+      res.cookie('CloudFront-Key-Pair-Id', cookies['CloudFront-Key-Pair-Id'], {
+        httpOnly: true,
+        //secure: true,
+        path: '/',
+        domain: cdnUrl,
+      });
+
+      res.status(HttpStatus.OK).json({
+        message: 'Signed cookies set successfully',
+        resourceUrl,
+      });
+    } catch (error) {
+      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+        error: 'Could not generate signed cookies',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  @Get('cdn-url/:key')
+  @ApiOperation({ summary: 'Get the CDN URL for a file' })
+  @ApiParam({ name: 'key', description: 'Object key' })
+  @ApiResponse({ status: 200, description: 'Returns the CDN URL' })
+  @ApiResponse({ status: 500, description: 'Server error' })
+  async getCdnUrl(@Param('key') key: string): Promise<{ url: string }> {
+    const url = this.s3Service.getCDNUrl(decodeURIComponent(key));
+    return { url };
   }
 }

@@ -14,7 +14,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Authenticate a user and return an access token' })
   @ApiBody({ type: LoginDto })
   @ApiResponse({
-    status: 200,
+    status: 201,
     description: 'Login successful',
     type: AuthResponseDto
   })

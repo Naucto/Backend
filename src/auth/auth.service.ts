@@ -64,7 +64,7 @@ export class AuthService {
 
     if (!createUserDto.roles || createUserDto.roles.length === 0) {
         const defaultRole = await this.userService.findRolesByNames(['User']);
-        createUserDto.roles = defaultRole.map(role => role.id);
+        createUserDto.roles = defaultRole.map((role: { id: any; }) => role.id);
     }
 
     const newUser = await this.userService.create(createUserDto);
