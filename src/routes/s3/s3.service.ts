@@ -58,7 +58,13 @@ export class S3Service {
       throw new S3ConfigurationException(['AWS_REGION']);
     }
     const accessKeyId = this.configService.get<string>('AWS_ACCESS_KEY_ID');
+    if (!accessKeyId) {
+      throw new S3ConfigurationException(['AWS_ACCESS_KEY_ID']);
+    }
     const secretAccessKey = this.configService.get<string>('AWS_SECRET_ACCESS_KEY');
+    if (!secretAccessKey) {
+      throw new S3ConfigurationException(['AWS_SECRET_ACCESS_KEY']);
+    }
 
     const envVars = {
       AWS_REGION: region,
