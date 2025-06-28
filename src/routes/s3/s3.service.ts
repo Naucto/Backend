@@ -45,7 +45,7 @@ import {
 } from './s3.error';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as crypto from 'crypto';
+import { base64UrlEncode, createPolicy, rsaSha256Sign } from './s3.utils';
 
 @Injectable()
 export class S3Service {
@@ -142,41 +142,15 @@ export class S3Service {
     }
   }
 
-  base64UrlEncode(input: string | Buffer): string {
-    return Buffer.from(input)
-      .toString('base64')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=+$/, '');
-  }
-
-  createPolicy(resourceUrl: string, expires: number): string {
-    return JSON.stringify({
-      Statement: [{
-        Resource: resourceUrl,
-        Condition: {
-          DateLessThan: { 'AWS:EpochTime': expires },
-        },
-      }],
-    });
-  }
-
-  rsaSha256Sign(privateKey: string, policy: string): Buffer {
-    const signer = crypto.createSign('RSA-SHA256');
-    signer.update(policy);
-    signer.end();
-    return signer.sign(privateKey);
-  }
-
   createSignedCookies(keyPairId: string, privateKeyPath: string, resourceUrl: string, expiresInSeconds: number) {
     const privateKey = fs.readFileSync(privateKeyPath, 'utf8');
     const expires = Math.floor(Date.now() / 1000) + expiresInSeconds;
-    const policy = this.createPolicy(resourceUrl, expires);
-    const signature = this.rsaSha256Sign(privateKey, policy);
+    const policy = createPolicy(resourceUrl, expires);
+    const signature = rsaSha256Sign(privateKey, policy);
 
     return {
-      'CloudFront-Policy': this.base64UrlEncode(policy),
-      'CloudFront-Signature': this.base64UrlEncode(signature),
+      'CloudFront-Policy': base64UrlEncode(policy),
+      'CloudFront-Signature': base64UrlEncode(signature),
       'CloudFront-Key-Pair-Id': keyPairId,
     };
   }
@@ -189,10 +163,10 @@ export class S3Service {
 
     const url = `https://${cdnUrl}/${encodeURIComponent(fileKey)}`;
     const expires = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
-    const policy = this.createPolicy(url, expires);
-    const signature = this.rsaSha256Sign(privateKey, policy);
+    const policy = createPolicy(url, expires);
+    const signature = rsaSha256Sign(privateKey, policy);
 
-    const signedUrl = `${url}?Policy=${this.base64UrlEncode(policy)}&Signature=${this.base64UrlEncode(signature)}&Key-Pair-Id=${keyPairId}`;
+    const signedUrl = `${url}?Policy=${base64UrlEncode(policy)}&Signature=${base64UrlEncode(signature)}&Key-Pair-Id=${keyPairId}`;
 
     return signedUrl;
   }
