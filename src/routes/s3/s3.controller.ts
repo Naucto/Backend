@@ -246,7 +246,7 @@ export class S3Controller {
       const keyPairId = 'K3AUK8QB395VGT';
       const privateKeyPath = path.resolve(__dirname, '../../../cloudfront-private-key.pem');
 
-      const expiresInSeconds = 60 * 10; // 10 minutes
+      const expiresInSeconds = 600;
 
       const cookies = this.s3Service.createSignedCookies(
         keyPairId,
