@@ -22,8 +22,20 @@ export class ProjectService {
         },
       },
       include: {
-        collaborators: true,
-        creator: true
+        collaborators: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+          },
+        },
+        creator: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+          },
+        },
       },
     });
   }
@@ -45,11 +57,9 @@ export class ProjectService {
       where: { id: userId },
     });
 
-
     if (!user) {
       throw new Error(`User with ID ${userId} not found`);
     }
-
 
     const project = await this.prisma.project.create({
       data: {
@@ -60,11 +70,22 @@ export class ProjectService {
         creator: { connect: { id: userId } },
       },
       include: {
-        collaborators: true,
-        creator: true,
+        collaborators: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+          },
+        },
+        creator: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+          },
+        },
       },
     });
-
 
     return project;
   }
@@ -126,7 +147,20 @@ export class ProjectService {
         collaborators: { connect: { id: addCollaboratorDto.userId } },
       },
       include: {
-        collaborators: true,
+        collaborators: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+          },
+        },
+        creator: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+          },
+        },
       },
     });
   }
@@ -169,7 +203,20 @@ export class ProjectService {
         },
       },
       include: {
-        collaborators: true,
+        collaborators: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+          },
+        },
+        creator: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+          },
+        },
       },
     });
   }

@@ -12,6 +12,12 @@ import { S3Service } from '../s3/s3.service';
 import { S3DownloadException } from '../s3/s3.error';
 import { Request, Response } from 'express';
 import { UserDto } from 'src/auth/dto/user.dto';
+import { 
+  ProjectResponseDto, 
+  ProjectWithRelationsResponseDto, 
+  CdnUrlResponseDto, 
+  SignedUrlResponseDto 
+} from './dto/project-response.dto';
 
 interface RequestWithUser extends Request {
   user: UserDto;
@@ -26,10 +32,14 @@ export class ProjectController {
 
   @Get()
   @ApiOperation({ summary: 'Retrieve the list of projects' })
-  @ApiResponse({ status: 200, description: 'A JSON array of projects' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'A JSON array of projects with collaborators and creator information',
+    type: [ProjectWithRelationsResponseDto]
+  })
   @ApiResponse({ status: 500, description: 'Internal server error' })
-  async findAll(@Req() request: RequestWithUser) {
-    const user =  request.user;
+  async findAll(@Req() request: RequestWithUser): Promise<ProjectWithRelationsResponseDto[]> {
+    const user = request.user;
     return this.projectService.findAll(user.id);
   }
 
@@ -37,11 +47,15 @@ export class ProjectController {
   @UseGuards(ProjectCollaboratorGuard)
   @ApiOperation({ summary: 'Retrieve a single project' })
   @ApiParam({ name: 'id', type: 'number', description: 'Numeric ID of the project to retrieve' })
-  @ApiResponse({ status: 200, description: 'Project object' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Project object',
+    type: ProjectResponseDto
+  })
   @ApiResponse({ status: 404, description: 'Project not found' })
   @ApiResponse({ status: 500, description: 'Internal server error' })
   @ApiResponse({ status: 403, description: 'Invalid user or project ID' })
-  async findOne(@Param('id', ParseIntPipe) id: number) {
+  async findOne(@Param('id', ParseIntPipe) id: number): Promise<ProjectResponseDto> {
     return this.projectService.findOne(id);
   }
 
@@ -51,9 +65,9 @@ export class ProjectController {
   @ApiResponse({ status: 201, description: 'Project created successfully' })
   @ApiResponse({ status: 400, description: 'Bad request – invalid input' })
   @HttpCode(HttpStatus.CREATED)
-  async create(@Body() createProjectDto: CreateProjectDto, @Req() req: Request) {
+  async create(@Body() createProjectDto: CreateProjectDto, @Req() req: RequestWithUser) {
     const userId = req.user.id;
-    this.projectService.create(createProjectDto, userId)
+    await this.projectService.create(createProjectDto, userId);
     return { message: 'Project created successfully' };
   }
 
@@ -65,13 +79,17 @@ export class ProjectController {
     description: 'Numeric ID of the project to update',
   })
   @ApiBody({ type: UpdateProjectDto })
-  @ApiResponse({ status: 200, description: 'Updated project object' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Updated project object',
+    type: ProjectResponseDto
+  })
   @ApiResponse({ status: 404, description: 'Project not found' })
   @ApiResponse({ status: 500, description: 'Error updating project' })
   async update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateProjectDto: UpdateProjectDto,
-  ) {
+  ): Promise<ProjectResponseDto> {
     return this.projectService.update(id, updateProjectDto);
   }
 
@@ -84,13 +102,17 @@ export class ProjectController {
     description: 'Numeric ID of the project to update',
   })
   @ApiBody({ type: AddCollaboratorDto })
-  @ApiResponse({ status: 200, description: 'Patch project object' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Updated project object with collaborators',
+    type: ProjectWithRelationsResponseDto
+  })
   @ApiResponse({ status: 404, description: 'Project not found' })
   @ApiResponse({ status: 500, description: 'Error Patching project' })
   async addCollaborator(
     @Param('id', ParseIntPipe) id: number,
     @Body() addCollaboratorDto: AddCollaboratorDto,
-  ) {
+  ): Promise<ProjectWithRelationsResponseDto> {
     return this.projectService.addCollaborator(id, addCollaboratorDto);
   }
 
@@ -103,7 +125,11 @@ export class ProjectController {
     description: 'Numeric ID of the project to update',
   })
   @ApiBody({ type: RemoveCollaboratorDto })
-  @ApiResponse({ status: 200, description: 'Patch project object' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Updated project object with collaborators',
+    type: ProjectWithRelationsResponseDto
+  })
   @ApiResponse({ status: 404, description: 'Project not found' })
   @ApiResponse({
     status: 500,
@@ -113,7 +139,7 @@ export class ProjectController {
     @Param('id', ParseIntPipe) id: number,
     @Body() removeCollaboratorDto: RemoveCollaboratorDto,
     @Req() request: RequestWithUser,
-  ) {
+  ): Promise<ProjectWithRelationsResponseDto> {
     const initiator = request.user.id;
     return this.projectService.removeCollaborator(id, initiator, removeCollaboratorDto);
   }
@@ -133,7 +159,7 @@ export class ProjectController {
   @ApiResponse({ status: 404, description: 'Project not found' })
   @ApiResponse({ status: 500, description: 'Error deleting project' })
   @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(@Param('id', ParseIntPipe) id: number) {
+  async remove(@Param('id', ParseIntPipe) id: number): Promise<void> {
     return this.projectService.remove(id);
   }
 
@@ -199,10 +225,14 @@ export class ProjectController {
   @UseGuards(ProjectCollaboratorGuard)
   @ApiOperation({ summary: 'Get a secure CDN URL for a project file' })
   @ApiParam({ name: 'id', type: 'string' })
-  @ApiResponse({ status: 200, description: 'Signed URL returned successfully' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Signed URL returned successfully',
+    type: CdnUrlResponseDto
+  })
   @ApiResponse({ status: 403, description: 'Forbidden' })
   @ApiResponse({ status: 404, description: 'File not found' })
-  async getProjectCdnUrl(@Param('id') id: string, @Res() res: Response) {
+  async getProjectCdnUrl(@Param('id') id: string, @Res() res: Response): Promise<Response<CdnUrlResponseDto>> {
     try {
       const signedUrl = this.s3Service.getCDNUrl(id);
       return res.status(200).json({ url: signedUrl });
@@ -215,10 +245,13 @@ export class ProjectController {
   @UseGuards(ProjectCollaboratorGuard)
   @ApiOperation({ summary: 'Get signed CloudFront URL for a protected file' })
   @ApiParam({ name: 'key', type: 'string', description: 'File key in CDN' })
-  @ApiResponse({ status: 200, description: 'Signed URL returned' })
-  async getSignedUrl(@Param('key') key: string): Promise<{ signedUrl: string }> {
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Signed URL returned',
+    type: SignedUrlResponseDto
+  })
+  async getSignedUrl(@Param('key') key: string): Promise<SignedUrlResponseDto> {
     const signedUrl = this.s3Service.getSignedCloudfrontUrl(key);
     return { signedUrl };
   }
 }
-
