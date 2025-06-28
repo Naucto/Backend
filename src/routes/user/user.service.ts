@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateUserRoleDto } from './dto/create-user-role.dto';
+import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { User } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
@@ -32,11 +32,11 @@ export class UserService {
     return user.roles.map(role => role.name);
   }
 
-  async create(createUserDto: CreateUserRoleDto): Promise<User> {
+  async create(createUserDto: CreateUserDto): Promise<User> {
     try {
       const hashedPassword = await bcrypt.hash(createUserDto.password, UserService.BCRYPT_SALT_ROUNDS);
 
-      const rolesToAssign = createUserDto.roles ? [...createUserDto.roles.map((roleId) => ({ id: roleId })), { id: 2 }] : [{ id: 2 }];
+      const rolesToAssign: { id: number }[] = [];
 
       return this.prisma.user.create({
         data: {
@@ -94,12 +94,6 @@ export class UserService {
     try {
       if (updateUserDto.password) {
         data.password = await bcrypt.hash(updateUserDto.password, UserService.BCRYPT_SALT_ROUNDS);
-      }
-
-      if (updateUserDto.roles) {
-        data.roles = {
-          set: updateUserDto.roles.map((roleId) => ({ id: roleId }))
-        };
       }
 
       return await this.prisma.user.update({

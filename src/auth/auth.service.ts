@@ -9,7 +9,7 @@ import * as bcrypt from 'bcryptjs';
 import { UserDto } from './dto/user.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { JwtPayload } from './auth.types';
-import { CreateUserRoleDto } from 'src/routes/user/dto/create-user-role.dto';
+import { CreateUserDto } from '../routes/user/dto/create-user.dto';
 
 @Injectable()
 export class AuthService {
@@ -43,7 +43,7 @@ export class AuthService {
     };
   }
 
-  async register(createUserDto: CreateUserRoleDto): Promise<AuthResponseDto> {
+  async register(createUserDto: CreateUserDto): Promise<AuthResponseDto> {
     const [existingByEmail, existingByUsername] = await Promise.all([
       this.userService.findAll({ where: { email: createUserDto.email } }),
       this.userService.findAll({ where: { username: createUserDto.username } }),
@@ -57,8 +57,7 @@ export class AuthService {
       throw new ConflictException('Username already in use');
     }
 
-    const defaultRole = await this.userService.findRolesByNames(['User']);
-    createUserDto.roles = defaultRole.map((role: { id: any }) => role.id);
+    (createUserDto as any).roles = [];
 
     const newUser = await this.userService.create(createUserDto);
 
