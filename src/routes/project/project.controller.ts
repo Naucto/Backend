@@ -53,7 +53,8 @@ export class ProjectController {
   @HttpCode(HttpStatus.CREATED)
   async create(@Body() createProjectDto: CreateProjectDto, @Req() req: Request) {
     const userId = req.user.id;
-    this.projectService.create(createProjectDto, userId)
+
+    await this.projectService.create(createProjectDto, userId)
     return { message: 'Project created successfully' };
   }
 

@@ -27,9 +27,9 @@ export class UserFilterDto {
   @IsString()
   email?: string;
 
-  @ApiPropertyOptional({ enum: ['id', 'name', 'email', 'createdAt'], description: 'Sort by field' })
+  @ApiPropertyOptional({ enum: ['id', 'username', 'email', 'createdAt'], description: 'Sort by field' })
   @IsOptional()
-  @IsEnum(['id', 'name', 'email', 'createdAt'])
+  @IsEnum(['id', 'username', 'email', 'createdAt'])
   sortBy?: string;
 
   @ApiPropertyOptional({ enum: ['asc', 'desc'], description: 'Sort order' })

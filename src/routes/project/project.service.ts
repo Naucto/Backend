@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
@@ -85,9 +85,9 @@ export class ProjectService {
       await this.s3Service.deleteFile(id.toString());
     } catch (error: unknown) {
       if (error instanceof Error) {
-        throw new Error(`Error deleting S3 file with key ${id}: ${error.message}`);
+        throw new InternalServerErrorException(`Error deleting S3 file with key ${id}: ${error.message}`);
       } else {
-        throw new Error(`Error deleting S3 file with key ${id}: Unknown error`);
+        throw new InternalServerErrorException(`Error deleting S3 file with key ${id}: Unknown error`);
       }
     }
 
