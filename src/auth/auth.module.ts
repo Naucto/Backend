@@ -17,10 +17,17 @@ import { AuthService } from './auth.service';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (cs: ConfigService) => ({
-        secret: cs.get<string>('JWT_SECRET') ?? '',
-        signOptions: { expiresIn: cs.get<string>('JWT_EXPIRES_IN') ?? '1h' },
-      }),
+      useFactory: (cs: ConfigService) => {
+        const secret = cs.get<string>('JWT_SECRET');
+        if (!secret) {
+          throw new Error('JWT_SECRET environment variable is not set');
+        }
+
+        return {
+          secret,
+          signOptions: { expiresIn: cs.get<string>('JWT_EXPIRES_IN') ?? '1h' },
+        };
+      },
     }),
   ],
   providers: [JwtAuthGuard, JwtStrategy, RolesGuard, AuthService],
