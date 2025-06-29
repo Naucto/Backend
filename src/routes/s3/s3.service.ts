@@ -1,5 +1,5 @@
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Injectable } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import {
   S3Client,
   ListBucketsCommand,
@@ -24,10 +24,10 @@ import {
   PutBucketPolicyCommandInput,
   Bucket,
   _Object,
-} from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { Readable } from 'stream';
-import { DownloadedFile, S3ObjectMetadata, BucketPolicy } from './s3.interface';
+} from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { Readable } from "stream";
+import { DownloadedFile, S3ObjectMetadata, BucketPolicy } from "./s3.interface";
 import {
   S3ConfigurationException,
   BucketResolutionException,
@@ -42,10 +42,10 @@ import {
   S3CreateBucketException,
   S3GetMetadataException,
   S3ApplyPolicyException
-} from './s3.error';
-import * as fs from 'fs';
-import * as path from 'path';
-import { base64UrlEncode, createPolicy, rsaSha256Sign } from './s3.utils';
+} from "./s3.error";
+import * as fs from "fs";
+import * as path from "path";
+import { base64UrlEncode, createPolicy, rsaSha256Sign } from "./s3.utils";
 
 @Injectable()
 export class S3Service {
@@ -53,17 +53,17 @@ export class S3Service {
   private readonly defaultBucket: string | undefined;
 
   constructor(private readonly configService: ConfigService,) {
-    const region = this.configService.get<string>('AWS_REGION');
+    const region = this.configService.get<string>("AWS_REGION");
     if (!region) {
-      throw new S3ConfigurationException(['AWS_REGION']);
+      throw new S3ConfigurationException(["AWS_REGION"]);
     }
-    const accessKeyId = this.configService.get<string>('AWS_ACCESS_KEY_ID');
+    const accessKeyId = this.configService.get<string>("AWS_ACCESS_KEY_ID");
     if (!accessKeyId) {
-      throw new S3ConfigurationException(['AWS_ACCESS_KEY_ID']);
+      throw new S3ConfigurationException(["AWS_ACCESS_KEY_ID"]);
     }
-    const secretAccessKey = this.configService.get<string>('AWS_SECRET_ACCESS_KEY');
+    const secretAccessKey = this.configService.get<string>("AWS_SECRET_ACCESS_KEY");
     if (!secretAccessKey) {
-      throw new S3ConfigurationException(['AWS_SECRET_ACCESS_KEY']);
+      throw new S3ConfigurationException(["AWS_SECRET_ACCESS_KEY"]);
     }
 
     const envVars = {
@@ -73,7 +73,7 @@ export class S3Service {
     };
 
     const missingKeys = Object.entries(envVars)
-      .filter(([_, value]) => !value)
+      .filter(([, value]) => !value)
       .map(([key]) => key);
 
     if (missingKeys.length > 0) {
@@ -87,13 +87,13 @@ export class S3Service {
         secretAccessKey: secretAccessKey as string,
       },
     });
-    this.defaultBucket = this.configService.get<string>('S3_BUCKET_NAME');
+    this.defaultBucket = this.configService.get<string>("S3_BUCKET_NAME");
   }
 
   private resolveBucket(bucketName?: string): string {
     const resolved = bucketName || this.defaultBucket;
     if (!resolved) {
-      throw new BucketResolutionException('No bucket name provided and no default bucket configured.');
+      throw new BucketResolutionException("No bucket name provided and no default bucket configured.");
     }
     return resolved;
   }
@@ -106,9 +106,9 @@ export class S3Service {
       return result.Buckets || [];
     } catch (error: unknown) {
       if (error instanceof Error) {
-        throw new S3ListBucketsException(error.message);
+        throw new S3ListBucketsException(error.message, { cause: error });
       } else {
-        throw new S3ListBucketsException('An unknown error occurred while listing buckets.');
+        throw new S3ListBucketsException("An unknown error occurred while listing buckets.");
       }
     }
   }
@@ -136,30 +136,30 @@ export class S3Service {
         Key: key,
       };
       const command = new GetObjectCommand(input);
-      return await getSignedUrl(this.s3 as any, command, { expiresIn: 3600 });
+      return await getSignedUrl(this.s3, command, { expiresIn: 3600 });
     } catch (error) {
       throw new S3SignedUrlException(resolvedBucketName, key, error);
     }
   }
 
-  createSignedCookies(keyPairId: string, privateKeyPath: string, resourceUrl: string, expiresInSeconds: number) {
-    const privateKey = fs.readFileSync(privateKeyPath, 'utf8');
+  createSignedCookies(keyPairId: string, privateKeyPath: string, resourceUrl: string, expiresInSeconds: number): Record<string, string> {
+    const privateKey = fs.readFileSync(privateKeyPath, "utf8");
     const expires = Math.floor(Date.now() / 1000) + expiresInSeconds;
     const policy = createPolicy(resourceUrl, expires);
     const signature = rsaSha256Sign(privateKey, policy);
 
     return {
-      'CloudFront-Policy': base64UrlEncode(policy),
-      'CloudFront-Signature': base64UrlEncode(signature),
-      'CloudFront-Key-Pair-Id': keyPairId,
+      "CloudFront-Policy": base64UrlEncode(policy),
+      "CloudFront-Signature": base64UrlEncode(signature),
+      "CloudFront-Key-Pair-Id": keyPairId,
     };
   }
 
   getSignedCloudfrontUrl(fileKey: string): string {
-    const cdnUrl = process.env['CDN_URL']!.replace(/\/$/, '');
-    const keyPairId = process.env['CLOUDFRONT_KEY_PAIR_ID']!;
-    const privateKeyPath = path.resolve(__dirname, '../../../cloudfront-private-key.pem');
-    const privateKey = fs.readFileSync(privateKeyPath, 'utf8');
+    const cdnUrl = process.env["CDN_URL"]!.replace(/\/$/, "");
+    const keyPairId = process.env["CLOUDFRONT_KEY_PAIR_ID"]!;
+    const privateKeyPath = path.resolve(__dirname, "../../../cloudfront-private-key.pem");
+    const privateKey = fs.readFileSync(privateKeyPath, "utf8");
 
     const url = `https://${cdnUrl}/${encodeURIComponent(fileKey)}`;
     const expires = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
@@ -172,7 +172,7 @@ export class S3Service {
   }
 
   getCDNUrl(key: string): string {
-    const cdnUrl = process.env['CDN_URL']?.replace(/\/$/, '');
+    const cdnUrl = process.env["CDN_URL"]?.replace(/\/$/, "");
     return `https://${cdnUrl}/${encodeURIComponent(key)}`;
   }
 
@@ -198,7 +198,7 @@ export class S3Service {
       const contentLength = head.ContentLength;
 
       if (!contentType || !contentLength) {
-        throw new Error('Missing required metadata in S3 head response');
+        throw new Error("Missing required metadata in S3 head response");
       }
 
       const downloadedFile: DownloadedFile = {
@@ -300,7 +300,7 @@ export class S3Service {
       const result = await this.s3.send(command);
 
       if (!result.ContentType || !result.ContentLength || !result.LastModified || !result.ETag) {
-        throw new Error('Missing required metadata in S3 head response');
+        throw new Error("Missing required metadata in S3 head response");
       }
 
       return {
@@ -315,18 +315,18 @@ export class S3Service {
     }
   }
 
-  generateBucketPolicy(bucketName?: string, actions: string[] = ['s3:GetObject'], effect = 'Allow', principal = '*', prefix = '*'): BucketPolicy {
+  generateBucketPolicy(bucketName?: string, actions: string[] = ["s3:GetObject"], effect = "Allow", principal = "*", prefix = "*"): BucketPolicy {
     const resolvedBucketName = this.resolveBucket(bucketName);
     return {
-      Version: '2012-10-17',
+      Version: "2012-10-17",
       Statement: [
         {
-          Sid: 'BucketPolicy',
+          Sid: "BucketPolicy",
           Effect: effect,
-          Principal: principal === '*' ? '*' : { AWS: principal },
+          Principal: principal === "*" ? "*" : { AWS: principal },
           Action: actions,
           Resource:
-            prefix === '*'
+            prefix === "*"
               ? `arn:aws:s3:::${resolvedBucketName}/*`
               : `arn:aws:s3:::${resolvedBucketName}/${prefix}`
         }
@@ -339,7 +339,7 @@ export class S3Service {
     try {
       const input: PutBucketPolicyCommandInput = {
         Bucket: resolvedBucketName,
-        Policy: typeof policy === 'string' ? policy : JSON.stringify(policy)
+        Policy: typeof policy === "string" ? policy : JSON.stringify(policy)
       };
 
       const command = new PutBucketPolicyCommand(input);

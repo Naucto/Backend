@@ -1,4 +1,4 @@
-import { Readable } from 'stream';
+import { Readable } from "stream";
 
 export interface DownloadedFile {
   body: Readable;
@@ -19,7 +19,7 @@ export interface BucketPolicy {
   Statement: Array<{
     Sid: string;
     Effect: string;
-    Principal: '*' | { AWS: string };
+    Principal: "*" | { AWS: string };
     Action: string[];
     Resource: string;
   }>;

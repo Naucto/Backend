@@ -1,11 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
-import { CreateWorkSessionDto } from './dto/create-work-session.dto';
-import { UpdateWorkSessionDto } from './dto/update-work-session.dto';
-import { uuidv4 } from 'lib0/random';
-import { WorkSession } from '@prisma/client';
-import { JoinRoomResult } from './work-session.types';
-import { UserDto } from 'src/auth/dto/user.dto';
+import { Injectable, NotFoundException } from "@nestjs/common";
+import { PrismaService } from "../../prisma/prisma.service";
+import { CreateWorkSessionDto } from "./dto/create-work-session.dto";
+import { UpdateWorkSessionDto } from "./dto/update-work-session.dto";
+import { uuidv4 } from "lib0/random";
+import { WorkSession } from "@prisma/client";
+import { JoinRoomResult } from "./work-session.types";
+import { UserDto } from "src/auth/dto/user.dto";
 
 @Injectable()
 export class WorkSessionService {
@@ -48,7 +48,7 @@ export class WorkSessionService {
 
     if (!project) {
       throw new NotFoundException(
-        `Project not found or does not belong to user`,
+        "Project not found or does not belong to user",
       );
     }
 
