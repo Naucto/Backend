@@ -38,6 +38,7 @@ import { MissingEnvVarError } from "src/auth/auth.error";
 @ApiTags("s3")
 @Controller("s3")
 export class S3Controller {
+  private readonly sessionCookieTimeout = 600;
   constructor(private readonly s3Service: S3Service, private readonly configService: ConfigService) {}
 
   @Get("list")
@@ -247,11 +248,10 @@ export class S3Controller {
         throw new MissingEnvVarError("CDN_URL");
       }
       const resourceUrl = `https://${cdnUrl}/${encodeURIComponent(key)}`;
-      const sessionCookieTimeout = 600;
 
       const cookies = this.s3Service.createSignedCookies(
         resourceUrl,
-        sessionCookieTimeout,
+        this.sessionCookieTimeout,
       );
 
       res.cookie("CloudFront-Policy", cookies["CloudFront-Policy"], {

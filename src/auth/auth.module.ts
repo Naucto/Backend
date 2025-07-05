@@ -21,7 +21,7 @@ import { MissingEnvVarError } from "./auth.error";
       useFactory: (cs: ConfigService) => {
         const secret = cs.get<string>("JWT_SECRET");
         if (!secret) {
-          throw new MissingEnvVarError("JWT_SECRET environment variable is not set");
+          throw new MissingEnvVarError("JWT_SECRET");
         }
 
         return {
