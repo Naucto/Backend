@@ -6,7 +6,8 @@ import {
   UseGuards,
   Req,
   HttpStatus,
-  ParseIntPipe
+  ParseIntPipe,
+  Body
 } from '@nestjs/common';
 import { WorkSessionService } from './work-session.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
@@ -20,6 +21,7 @@ import {
 import { ProjectCollaboratorGuard } from '../../auth/guards/project.guard';
 import { JoinRoomResult } from './work-session.types';
 import {FetchWorkSessionDto} from "src/routes/work-session/dto/fetch-work-session.dto";
+import { KickWorkSessionDto } from './dto/kick-work-session.dto';
 
 @ApiTags('work-sessions')
 @Controller('work-sessions')
@@ -45,6 +47,15 @@ export class WorkSessionController {
   @ApiParam({ name: 'id', description: 'Project ID' })
   async leave(@Param('id', ParseIntPipe) projectId: number, @Req() req: any): Promise<void> {
     return await this.workSessionService.leave(projectId, req.user);
+  }
+
+  @Post('kick/:id')
+  @ApiOperation({ summary: 'Leave a work session' })
+  @ApiResponse({ status: HttpStatus.NO_CONTENT, description: 'Successfully left the work session.'})
+  @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: 'Bad request.'})
+  @ApiParam({ name: 'id', description: 'Project ID' })
+  async kick(@Param('id', ParseIntPipe) projectId: number, @Body() kick: KickWorkSessionDto): Promise<void> {
+    return await this.workSessionService.kick(projectId, kick.userId);
   }
 
   @Get('info/:id')

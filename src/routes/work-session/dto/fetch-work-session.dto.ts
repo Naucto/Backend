@@ -10,6 +10,13 @@ export class FetchWorkSessionDto {
   users!: number[];
 
   @ApiProperty({
+    description: "The ID of the session's host",
+    example: 1,
+  })
+  @IsNumber()
+  host!: number;
+
+  @ApiProperty({
     description: 'The ID of the project this work session belongs to',
     example: 1,
   })

@@ -63,6 +63,9 @@ export class WorkSessionService {
         users: {
           connect: [{ id: userId }],
         },
+        host:  {
+          connect: { id: userId }
+        }
       },
       include: {
         project: {
@@ -86,16 +89,6 @@ export class WorkSessionService {
     });
   }
 
-  async remove(id: number): Promise<void> {
-    await this.findOne(id);
-
-    await this.prisma.workSession.delete({
-      where: { projectId: id },
-    });
-
-    return;
-  }
-
   async join(projectId: number, user: UserDto): Promise<JoinRoomResult> {
     const project = await this.prisma.project.findFirst({
       where: { id: projectId },
@@ -110,15 +103,26 @@ export class WorkSessionService {
     if (workSession === null) {
       workSession = await this.prisma.workSession.create({
         data: {
-          projectId,
+          project: { connect: { id: projectId } },
           startedAt: new Date(),
           users: {
-            connect: { id: user.id },
+            connect: { id: user.id }
+          },
+          host: {
+            connect: { id: user.id }
           },
           roomId: uuidv4(),
-          roomPassword: uuidv4(),
+          roomPassword: uuidv4()
         },
       });
+    } else {
+      workSession = await this.prisma.workSession.update({
+        data: {
+          users: {
+            connect: {id : user.id},
+          }
+        }, where: { projectId }
+      })
     }
 
     return {
@@ -139,17 +143,65 @@ export class WorkSessionService {
       throw new NotFoundException(`Work session for project ID ${projectId}`);
     }
 
-    if (workSession.users.length === 1) {
-      await this.remove(workSession.id);
-    } else {
-      await this.prisma.workSession.update({
-        where: { id: workSession.id },
-        data: {
-          users: {
-            disconnect: { id: user.id },
-          },
+    await this.prisma.workSession.update({
+      where: { id: workSession.id },
+      data: {
+        users: {
+          disconnect: { id: user.id },
         },
-      });
+      },
+    });
+
+    if (workSession.hostId == user.id) {
+      const newHost = workSession.users.find(u => u.id !== user.id);
+      if (newHost) {
+        await this.prisma.workSession.update({
+          where: { id: workSession.id },
+          data: { hostId: newHost.id },
+        });
+      } else {
+        await this.prisma.workSession.delete({
+          where: { id: workSession.id },
+        });
+      }
+
+    }
+  }
+
+  async kick(projectId: number, userId: number): Promise<void> {
+    const workSession = await this.prisma.workSession.findFirst({
+      where: { projectId: projectId },
+      include: {
+        users: true
+      }
+    });
+
+    if (!workSession) {
+      throw new NotFoundException(`Work session for project ID ${projectId}`);
+    }
+
+    await this.prisma.workSession.update({
+      where: { id: workSession.id },
+      data: {
+        users: {
+          disconnect: { id: userId },
+        },
+      },
+    });
+
+    if (workSession.hostId == userId) {
+      const newHost = workSession.users.find(u => u.id !== userId);
+      if (newHost) {
+        await this.prisma.workSession.update({
+          where: { id: workSession.id },
+          data: { hostId: newHost.id },
+        });
+      } else {
+        await this.prisma.workSession.delete({
+          where: { id: workSession.id },
+        });
+      }
+
     }
   }
 
@@ -167,6 +219,7 @@ export class WorkSessionService {
 
     return {
       users: workSession.users.map(user => user.id),
+      host: workSession.hostId,
       project: workSession.projectId,
       startedAt: workSession.startedAt,
       roomId: workSession.roomId,
