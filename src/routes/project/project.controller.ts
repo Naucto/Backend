@@ -149,7 +149,7 @@ export class ProjectController {
   @ApiResponse({ status: 201, description: "File uploaded successfully" })
   @ApiResponse({ status: 403, description: "Forbidden" })
   @HttpCode(HttpStatus.CREATED)
-  async saveProjectContent(@Param("id") id: string, @UploadedFile() file: Express.Multer.File, @Req() req: any): Promise<{ message: string, id: string }> {
+  async saveProjectContent(@Param("id") id: string, @UploadedFile() file: Express.Multer.File, @Req() req: RequestWithUser): Promise<{ message: string, id: string }> {
     const metadata = {
       uploadedBy: req.user.id.toString(),
       id,

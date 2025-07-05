@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
   S3Client,
@@ -27,7 +27,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Readable } from "stream";
-import { DownloadedFile, S3ObjectMetadata, BucketPolicy } from "./s3.interface";
+import { DownloadedFile, S3ObjectMetadata, BucketPolicy, BucketPolicyStatement } from "./s3.interface";
 import {
   S3ConfigurationException,
   BucketResolutionException,
@@ -41,11 +41,12 @@ import {
   S3DeleteBucketException,
   S3CreateBucketException,
   S3GetMetadataException,
+  S3MissingMetadataException,
   S3ApplyPolicyException
 } from "./s3.error";
 import * as fs from "fs";
-import * as path from "path";
 import { base64UrlEncode, createPolicy, rsaSha256Sign } from "./s3.utils";
+import { MissingEnvVarError } from "src/auth/auth.error";
 
 @Injectable()
 export class S3Service {
@@ -142,9 +143,18 @@ export class S3Service {
     }
   }
 
-  createSignedCookies(keyPairId: string, privateKeyPath: string, resourceUrl: string, expiresInSeconds: number): Record<string, string> {
+  createSignedCookies(resourceUrl: string, sessionCookieTimeout: number): Record<string, string> {
+    const keyPairId = this.configService.get<string>("CLOUDFRONT_KEY_PAIR_ID");
+    const privateKeyPath = this.configService.get<string>("CLOUDFRONT_PRIVATE_KEY_PATH");
+    if (!keyPairId) {
+      throw new MissingEnvVarError("CLOUDFRONT_KEY_PAIR_ID");
+    }
+    if (!privateKeyPath) {
+      throw new MissingEnvVarError("CLOUDFRONT_PRIVATE_KEY_PATH");
+    }
+
     const privateKey = fs.readFileSync(privateKeyPath, "utf8");
-    const expires = Math.floor(Date.now() / 1000) + expiresInSeconds;
+    const expires = Math.floor(Date.now() / 1000) + sessionCookieTimeout;
     const policy = createPolicy(resourceUrl, expires);
     const signature = rsaSha256Sign(privateKey, policy);
 
@@ -156,11 +166,24 @@ export class S3Service {
   }
 
   getSignedCloudfrontUrl(fileKey: string): string {
-    const cdnUrl = process.env["CDN_URL"]!.replace(/\/$/, "");
-    const keyPairId = process.env["CLOUDFRONT_KEY_PAIR_ID"]!;
-    const privateKeyPath = path.resolve(__dirname, "../../../cloudfront-private-key.pem");
-    const privateKey = fs.readFileSync(privateKeyPath, "utf8");
+    const cdnUrl = (this.configService.get<string>("CDN_URL"));
+    const keyPairId = this.configService.get<string>("CLOUDFRONT_KEY_PAIR_ID");
+    const privateKeyPath = this.configService.get<string>("CLOUDFRONT_PRIVATE_KEY_PATH");
+    if (!cdnUrl) {
+      throw new MissingEnvVarError("CDN_URL");
+    }
+    if (!keyPairId) {
+      throw new MissingEnvVarError("CLOUDFRONT_KEY_PAIR_ID");
+    }
+    if (!privateKeyPath) {
+      throw new MissingEnvVarError("CLOUDFRONT_PRIVATE_KEY_PATH");
+    }
 
+    if (!/^[\w\-./]+$/.test(fileKey) || fileKey.includes("..")) {
+      throw new BadRequestException("Invalid fileKey format");
+    }
+
+    const privateKey = fs.readFileSync(privateKeyPath, "utf8");
     const url = `https://${cdnUrl}/${encodeURIComponent(fileKey)}`;
     const expires = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
     const policy = createPolicy(url, expires);
@@ -172,7 +195,7 @@ export class S3Service {
   }
 
   getCDNUrl(key: string): string {
-    const cdnUrl = process.env["CDN_URL"]?.replace(/\/$/, "");
+    const cdnUrl = this.configService.get<string>("CDN_URL");
     return `https://${cdnUrl}/${encodeURIComponent(key)}`;
   }
 
@@ -300,7 +323,13 @@ export class S3Service {
       const result = await this.s3.send(command);
 
       if (!result.ContentType || !result.ContentLength || !result.LastModified || !result.ETag) {
-        throw new Error("Missing required metadata in S3 head response");
+        const missingFields = [];
+        if (!result.ContentType) missingFields.push("ContentType");
+        if (!result.ContentLength) missingFields.push("ContentLength");
+        if (!result.LastModified) missingFields.push("LastModified");
+        if (!result.ETag) missingFields.push("ETag");
+
+        throw new S3MissingMetadataException(resolvedBucketName, key, missingFields);
       }
 
       return {
@@ -317,20 +346,21 @@ export class S3Service {
 
   generateBucketPolicy(bucketName?: string, actions: string[] = ["s3:GetObject"], effect = "Allow", principal = "*", prefix = "*"): BucketPolicy {
     const resolvedBucketName = this.resolveBucket(bucketName);
+
+    const statement: BucketPolicyStatement = {
+      Sid: "BucketPolicy",
+      Effect: effect,
+      Principal: principal === "*" ? "*" : { AWS: principal },
+      Action: actions,
+      Resource:
+        prefix === "*"
+          ? `arn:aws:s3:::${resolvedBucketName}/*`
+          : `arn:aws:s3:::${resolvedBucketName}/${prefix}`,
+    };
+
     return {
       Version: "2012-10-17",
-      Statement: [
-        {
-          Sid: "BucketPolicy",
-          Effect: effect,
-          Principal: principal === "*" ? "*" : { AWS: principal },
-          Action: actions,
-          Resource:
-            prefix === "*"
-              ? `arn:aws:s3:::${resolvedBucketName}/*`
-              : `arn:aws:s3:::${resolvedBucketName}/${prefix}`
-        }
-      ]
+      Statement: [ statement ]
     };
   }
 

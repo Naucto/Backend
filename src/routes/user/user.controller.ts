@@ -33,6 +33,7 @@ import { Roles } from "../../auth/decorators/roles.decorator";
 import { ApiPaginatedResponse } from "../../common/decorators/api-paginated-response.decorator";
 import { Prisma } from "@prisma/client";
 import { UserDto } from "src/auth/dto/user.dto";
+import { RequestWithUser } from "src/auth/auth.types";
 
 @ApiTags("users")
 @ApiExtraModels(UserDto)
@@ -45,7 +46,7 @@ export class UserController {
 
   @Get("profile")
   @UseGuards(JwtAuthGuard)
-  getProfile(@Request() req: any): UserDto {
+  getProfile(@Request() req: RequestWithUser): UserDto {
     return req.user;
   }
 

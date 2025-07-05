@@ -120,6 +120,19 @@ export class S3GetMetadataException extends Error {
   }
 }
 
+export class S3MissingMetadataException extends Error {
+  constructor(
+    public readonly bucketName: string,
+    public readonly key: string,
+    public readonly missingFields: string[],
+  ) {
+    super(
+      `Missing required metadata fields [${missingFields.join(", ")}] for file "${key}" in bucket: ${bucketName}`,
+    );
+    this.name = "S3MissingMetadataException";
+  }
+}
+
 export class S3ApplyPolicyException extends Error {
   constructor(
     public readonly bucketName: string,

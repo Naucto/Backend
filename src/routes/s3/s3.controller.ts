@@ -10,6 +10,7 @@ import {
   UseInterceptors,
   HttpStatus,
 } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
 import {
@@ -32,12 +33,12 @@ import {
   _Object,
 } from "@aws-sdk/client-s3";
 import { S3ObjectMetadata, BucketPolicy } from "./s3.interface";
-import * as path from "path";
+import { MissingEnvVarError } from "src/auth/auth.error";
 
 @ApiTags("s3")
 @Controller("s3")
 export class S3Controller {
-  constructor(private readonly s3Service: S3Service) {}
+  constructor(private readonly s3Service: S3Service, private readonly configService: ConfigService) {}
 
   @Get("list")
   @ApiOperation({ summary: "List all S3 buckets" })
@@ -241,18 +242,16 @@ export class S3Controller {
   @ApiResponse({ status: 500, description: "Server error" })
   async getSignedCookies(@Param("key") key: string, @Res() res: Response): Promise<void> {
     try {
-      const cdnUrl = process.env["CDN_URL"]!;
+      const cdnUrl = this.configService.get<string>("CDN_URL");
+      if (!cdnUrl) {
+        throw new MissingEnvVarError("CDN_URL");
+      }
       const resourceUrl = `https://${cdnUrl}/${encodeURIComponent(key)}`;
-      const keyPairId = "K3AUK8QB395VGT";
-      const privateKeyPath = path.resolve(__dirname, "../../../cloudfront-private-key.pem");
-
-      const expiresInSeconds = 600;
+      const sessionCookieTimeout = 600;
 
       const cookies = this.s3Service.createSignedCookies(
-        keyPairId,
-        privateKeyPath,
         resourceUrl,
-        expiresInSeconds,
+        sessionCookieTimeout,
       );
 
       res.cookie("CloudFront-Policy", cookies["CloudFront-Policy"], {

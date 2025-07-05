@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CreateProjectDto } from "./dto/create-project.dto";
 import { UpdateProjectDto } from "./dto/update-project.dto";
@@ -47,7 +47,7 @@ export class ProjectService {
     });
 
     if (!user) {
-      throw new Error(`User with ID ${userId} not found`);
+      throw new NotFoundException(`User with ID ${userId} not found`);
     }
 
     try {
@@ -137,26 +137,25 @@ export class ProjectService {
     const user = await this.prisma.user.findUnique({
       where: { id: removeCollaboratorDto.userId },
     });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${removeCollaboratorDto.userId} not found`);
+    }
+
     const project = await this.prisma.project.findUnique({
       where: { id: id },
       include: {
         collaborators: true,
       },
     });
-
-    if (!user) {
-      throw new Error(`User with ID ${removeCollaboratorDto.userId} not found`);
+    if (!project) {
+      throw new NotFoundException(`Project with ID ${id} not found`);
     }
     if (removeCollaboratorDto.userId == initiator) {
-      throw new Error("Cannot remove the project creator");
-    }
-    if (!project) {
-      throw new Error(`Project with ID ${id} not found`);
+      throw new ForbiddenException("Cannot remove the project creator");
     }
     if (!project.collaborators.some((collab) => collab.id === user.id)) {
-      throw new Error(
-        `Project with ID ${id} has no collaborator with ID ${user.id}`,
-      );
+      throw new BadRequestException(`Project with ID ${id} has no collaborator with ID ${user.id}`);
     }
 
     return this.prisma.project.update({
