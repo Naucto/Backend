@@ -6,7 +6,7 @@ import {PrismaService} from "src/prisma/prisma.service";
 export class TasksService {
   constructor(private prisma: PrismaService) {}
 
-  @Cron(CronExpression.EVERY_10_SECONDS)
+  @Cron(CronExpression.EVERY_10_MINUTES)
   async cleanTimedOutWorkSessions() {
     await this.prisma.workSession.deleteMany({
       where: {
