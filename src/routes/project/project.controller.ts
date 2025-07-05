@@ -191,9 +191,10 @@ export class ProjectController {
     const metadata = {
       uploadedBy: req.user.id.toString(),
       id,
-    };
-
+    };    
     await this.s3Service.uploadFile(file, metadata, undefined, id);
+    
+    await this.projectService.updateLastTimeUpdate(Number(id));
 
     return { message: 'File uploaded successfully', id };
   }

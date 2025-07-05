@@ -220,4 +220,14 @@ export class ProjectService {
       },
     });
   }
+
+  async updateLastTimeUpdate(projectId: number)
+  {
+    await this.prisma.workSession.update({
+      data: {
+        lastSave: new Date()
+      },
+      where: { projectId }
+    })
+  }
 }

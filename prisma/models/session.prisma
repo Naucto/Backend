@@ -18,6 +18,7 @@ model WorkSession {
   project   Project   @relation(fields: [projectId], references: [id])
   projectId Int       @unique
   startedAt DateTime  @default(now())
+  lastSave  DateTime  @default(now())
 
   roomId       String @unique @default(uuid())
   roomPassword String @default(uuid())
