@@ -223,6 +223,9 @@ export class ProjectService {
 
   async updateLastTimeUpdate(projectId: number)
   {
+    const sessions = await this.prisma.workSession.findMany({where : {projectId}});
+    if (sessions.length === 0)
+      return;
     await this.prisma.workSession.update({
       data: {
         lastSave: new Date()
