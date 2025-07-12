@@ -27,16 +27,19 @@ import {
   ApiExtraModels,
 } from "@nestjs/swagger";
 import { Request } from "@nestjs/common";
-import { JwtAuthGuard } from "../../auth/guards/jwt-auth.guard";
-import { RolesGuard } from "../../auth/guards/roles.guard";
-import { Roles } from "../../auth/decorators/roles.decorator";
-import { ApiPaginatedResponse } from "../../common/decorators/api-paginated-response.decorator";
+import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
+import { RolesGuard } from "@auth/guards/roles.guard";
+import { Roles } from "@auth/decorators/roles.decorator";
 import { Prisma } from "@prisma/client";
-import { UserDto } from "src/auth/dto/user.dto";
+import { UserResponseDto } from "./dto/user-response.dto";
+import { UserListResponseDto } from "./dto/user-list-response.dto";
+import { UserSingleResponseDto } from "./dto/user-single-response.dto";
+import { UserProfileResponseDto } from "./dto/user-profile-response.dto";
 import { RequestWithUser } from "src/auth/auth.types";
+import { UserDto } from "src/auth/dto/user.dto";
 
 @ApiTags("users")
-@ApiExtraModels(UserDto)
+@ApiExtraModels(UserResponseDto, UserListResponseDto, UserSingleResponseDto, UserProfileResponseDto)
 @ApiBearerAuth("JWT-auth")
 @Controller("users")
 export class UserController {
@@ -45,6 +48,13 @@ export class UserController {
   constructor(private readonly userService: UserService) {}
 
   @Get("profile")
+  @ApiOperation({ summary: "Get current user profile" })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Returns the current user profile",
+    type: UserProfileResponseDto,
+  })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
   @UseGuards(JwtAuthGuard)
   getProfile(@Request() req: RequestWithUser): UserDto {
     return req.user;
@@ -52,7 +62,12 @@ export class UserController {
 
   @Get()
   @ApiOperation({ summary: "Get all users with pagination and filtering" })
-  @ApiPaginatedResponse(UserDto)
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Returns paginated list of users",
+    type: UserListResponseDto,
+  })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
   @ApiQuery({ type: UserFilterDto })
   @UseGuards(JwtAuthGuard)
   async findAll(@Query() filterDto: UserFilterDto): Promise<{statusCode: number, message: string, data: UserDto[], meta: { page: number, limit: number, total: number, totalPages: number} }>{
@@ -114,13 +129,14 @@ export class UserController {
   @ApiResponse({
     status: HttpStatus.OK,
     description: "Returns the user",
-    type: UserDto,
+    type: UserSingleResponseDto,
   })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: "User not found" })
   @ApiResponse({
     status: HttpStatus.BAD_REQUEST,
     description: "Invalid ID format",
   })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
   @UseGuards(JwtAuthGuard)
   async findOne(@Param("id", ParseIntPipe) id: number): Promise<{ statusCode: number, message: string, data: UserDto }> {
     this.logger.debug(`Fetching user with ID: ${id}`);
@@ -140,10 +156,12 @@ export class UserController {
   @ApiResponse({
     status: HttpStatus.OK,
     description: "User updated successfully",
-    type: UserDto,
+    type: UserSingleResponseDto,
   })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: "User not found" })
   @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: "Invalid input" })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
+  @ApiResponse({ status: HttpStatus.FORBIDDEN, description: "Insufficient permissions" })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles("Admin")
   async update(@Param("id", ParseIntPipe) id: number, @Body(ValidationPipe) updateUserDto: UpdateUserDto): Promise<{statusCode: number, message: string, data: UserDto}> {
@@ -164,8 +182,16 @@ export class UserController {
   @ApiResponse({
     status: HttpStatus.OK,
     description: "User deleted successfully",
+    schema: {
+      type: "object",
+      properties: {
+        statusCode: { type: "number", example: 200 },
+        message: { type: "string", example: "User deleted successfully" }
+      }
+    }
   })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: "User not found" })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
   @ApiResponse({
     status: HttpStatus.FORBIDDEN,
     description: "Insufficient permissions",

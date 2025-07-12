@@ -21,7 +21,8 @@ model User {
   creator          Project[]       @relation("ProjectCreator")
   collaborators    Project[]       @relation("ProjectCollaborators")
 
-  workSession      WorkSession[]     @relation("WorkSessionUsers")
+  workSession      WorkSession[]   @relation("WorkSessionUsers")
+  hostingSession   WorkSession[]   @relation("WorkSessionHost")
 }
 
 model Role {

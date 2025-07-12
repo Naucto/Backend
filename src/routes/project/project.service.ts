@@ -11,6 +11,17 @@ import { Project } from "@prisma/client";
 
 @Injectable()
 export class ProjectService {
+  static COLLABORATOR_SELECT = {
+    id: true,
+    username: true,
+    email: true,
+  };
+  static CREATOR_SELECT = {
+    id: true,
+    username: true,
+    email: true,
+  };
+
   constructor(private prisma: PrismaService, private readonly s3Service: S3Service) {}
 
   async findAll(userId: number): Promise<Project[]> {
@@ -23,8 +34,12 @@ export class ProjectService {
         },
       },
       include: {
-        collaborators: true,
-        creator: true
+        collaborators: {
+          select: ProjectService.COLLABORATOR_SELECT,
+        },
+        creator: {
+          select: ProjectService.CREATOR_SELECT,
+        },
       },
     });
   }
@@ -51,7 +66,7 @@ export class ProjectService {
     }
 
     try {
-      const project = await this.prisma.project.create({
+      return await this.prisma.project.create({
         data: {
           ...createProjectDto,
           collaborators: {
@@ -60,12 +75,22 @@ export class ProjectService {
           creator: { connect: { id: userId } },
         },
         include: {
-          collaborators: true,
-          creator: true,
+          collaborators: {
+            select: {
+              id: true,
+              username: true,
+              email: true,
+            },
+          },
+          creator: {
+            select: {
+              id: true,
+              username: true,
+              email: true,
+            },
+          },
         },
       });
-
-      return project;
     } catch (error) {
       throw new InternalServerErrorException("Failed to create project", { cause: error });
     }
@@ -128,7 +153,12 @@ export class ProjectService {
         collaborators: { connect: { id: addCollaboratorDto.userId } },
       },
       include: {
-        collaborators: true,
+        collaborators: {
+          select: ProjectService.COLLABORATOR_SELECT,
+        },
+        creator: {
+          select: ProjectService.CREATOR_SELECT,
+        },
       },
     });
   }
@@ -166,8 +196,26 @@ export class ProjectService {
         },
       },
       include: {
-        collaborators: true,
+        collaborators: {
+          select: ProjectService.COLLABORATOR_SELECT,
+        },
+        creator: {
+          select: ProjectService.CREATOR_SELECT,
+        },
       },
+    });
+  }
+
+  async updateLastTimeUpdate(projectId: number): Promise<void>
+  {
+    const sessions = await this.prisma.workSession.findMany({ where : { projectId } });
+    if (sessions.length === 0)
+      return;
+    await this.prisma.workSession.update({
+      data: {
+        lastSave: new Date()
+      },
+      where: { projectId }
     });
   }
 }

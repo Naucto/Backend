@@ -1,18 +1,36 @@
-import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards, Req, Res, HttpStatus, HttpCode, ParseIntPipe, Patch, UploadedFile, UseInterceptors, Logger } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Logger,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Put,
+  Req,
+  Res,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors
+} from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { ProjectService } from "@projects/project.service";
 import { CreateProjectDto } from "@projects/dto/create-project.dto";
 import { UpdateProjectDto } from "@projects/dto/update-project.dto";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
-import { ProjectCollaboratorGuard } from "@auth/guards/project.guard";
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags, ApiParam, ApiBody, ApiConsumes } from "@nestjs/swagger";
-import { ProjectCreatorGuard } from "@auth/guards/project.guard";
+import { ProjectCollaboratorGuard, ProjectCreatorGuard } from "@auth/guards/project.guard";
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiParam, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { AddCollaboratorDto, RemoveCollaboratorDto } from "@projects/dto/collaborator-project.dto";
 import { S3Service } from "@s3/s3.service";
 import { S3DownloadException } from "@s3/s3.error";
 import { Request, Response } from "express";
 import { UserDto } from "@auth/dto/user.dto";
 import { Project } from "@prisma/client";
+import { ProjectResponseDto, ProjectWithRelationsResponseDto } from "./dto/project-response.dto";
 
 interface RequestWithUser extends Request {
   user: UserDto;
@@ -29,10 +47,14 @@ export class ProjectController {
 
   @Get()
   @ApiOperation({ summary: "Retrieve the list of projects" })
-  @ApiResponse({ status: 200, description: "A JSON array of projects" })
+  @ApiResponse({
+    status: 200,
+    description: "A JSON array of projects with collaborators and creator information",
+    type: [ProjectWithRelationsResponseDto]
+  })
   @ApiResponse({ status: 500, description: "Internal server error" })
   async findAll(@Req() request: RequestWithUser): Promise<Project[]> {
-    const user =  request.user;
+    const user = request.user;
     return this.projectService.findAll(user.id);
   }
 
@@ -40,25 +62,31 @@ export class ProjectController {
   @UseGuards(ProjectCollaboratorGuard)
   @ApiOperation({ summary: "Retrieve a single project" })
   @ApiParam({ name: "id", type: "number", description: "Numeric ID of the project to retrieve" })
-  @ApiResponse({ status: 200, description: "Project object" })
+  @ApiResponse({
+    status: 200,
+    description: "Project object",
+    type: ProjectResponseDto
+  })
   @ApiResponse({ status: 404, description: "Project not found" })
   @ApiResponse({ status: 500, description: "Internal server error" })
   @ApiResponse({ status: 403, description: "Invalid user or project ID" })
-  async findOne(@Param("id", ParseIntPipe) id: number): Promise<Project> {
+  async findOne(@Param("id", ParseIntPipe) id: number): Promise<ProjectResponseDto> {
     return this.projectService.findOne(id);
   }
 
   @Post()
   @ApiOperation({ summary: "Create a new project" })
   @ApiBody({ type: CreateProjectDto })
-  @ApiResponse({ status: 201, description: "Project created successfully" })
+  @ApiResponse({
+    status: 201,
+    description: "Project created successfully",
+    type: ProjectResponseDto
+  })
   @ApiResponse({ status: 400, description: "Bad request – invalid input" })
   @HttpCode(HttpStatus.CREATED)
-  async create(@Body() createProjectDto: CreateProjectDto, @Req() req: Request): Promise<{ message: string }> {
+  async create(@Body() createProjectDto: CreateProjectDto, @Req() req: RequestWithUser): Promise<ProjectResponseDto> {
     const userId = req.user.id;
-
-    await this.projectService.create(createProjectDto, userId);
-    return { message: "Project created successfully" };
+    return await this.projectService.create(createProjectDto, userId);
   }
 
   @Put(":id")
@@ -69,10 +97,17 @@ export class ProjectController {
     description: "Numeric ID of the project to update",
   })
   @ApiBody({ type: UpdateProjectDto })
-  @ApiResponse({ status: 200, description: "Updated project object" })
+  @ApiResponse({
+    status: 200,
+    description: "Updated project object",
+    type: ProjectResponseDto
+  })
   @ApiResponse({ status: 404, description: "Project not found" })
   @ApiResponse({ status: 500, description: "Error updating project" })
-  async update(@Param("id", ParseIntPipe) id: number, @Body() updateProjectDto: UpdateProjectDto): Promise<Project> {
+  async update(
+    @Param("id", ParseIntPipe) id: number,
+    @Body() updateProjectDto: UpdateProjectDto,
+  ): Promise<ProjectResponseDto> {
     return this.projectService.update(id, updateProjectDto);
   }
 
@@ -85,10 +120,17 @@ export class ProjectController {
     description: "Numeric ID of the project to update",
   })
   @ApiBody({ type: AddCollaboratorDto })
-  @ApiResponse({ status: 200, description: "Patch project object" })
+  @ApiResponse({
+    status: 200,
+    description: "Updated project object with collaborators",
+    type: ProjectWithRelationsResponseDto
+  })
   @ApiResponse({ status: 404, description: "Project not found" })
   @ApiResponse({ status: 500, description: "Error Patching project" })
-  async addCollaborator(@Param("id", ParseIntPipe) id: number, @Body() addCollaboratorDto: AddCollaboratorDto): Promise<Project> {
+  async addCollaborator(
+    @Param("id", ParseIntPipe) id: number,
+    @Body() addCollaboratorDto: AddCollaboratorDto,
+  ): Promise<Project> {
     return this.projectService.addCollaborator(id, addCollaboratorDto);
   }
 
@@ -101,13 +143,21 @@ export class ProjectController {
     description: "Numeric ID of the project to update",
   })
   @ApiBody({ type: RemoveCollaboratorDto })
-  @ApiResponse({ status: 200, description: "Patch project object" })
+  @ApiResponse({
+    status: 200,
+    description: "Updated project object with collaborators",
+    type: ProjectWithRelationsResponseDto
+  })
   @ApiResponse({ status: 404, description: "Project not found" })
   @ApiResponse({
     status: 500,
     description: "Error remove collaborator on project",
   })
-  async removeCollaborator(@Param("id", ParseIntPipe) id: number, @Body() removeCollaboratorDto: RemoveCollaboratorDto, @Req() request: RequestWithUser): Promise<Project> {
+  async removeCollaborator(
+    @Param("id", ParseIntPipe) id: number,
+    @Body() removeCollaboratorDto: RemoveCollaboratorDto,
+    @Req() request: RequestWithUser,
+  ): Promise<Project> {
     const initiator = request.user.id;
     return this.projectService.removeCollaborator(id, initiator, removeCollaboratorDto);
   }
@@ -156,8 +206,9 @@ export class ProjectController {
       uploadedBy: req.user.id.toString(),
       id,
     };
-
     await this.s3Service.uploadFile(file, metadata, undefined, id);
+
+    await this.projectService.updateLastTimeUpdate(Number(id));
 
     return { message: "File uploaded successfully", id };
   }
@@ -196,4 +247,3 @@ export class ProjectController {
     }
   }
 }
-
