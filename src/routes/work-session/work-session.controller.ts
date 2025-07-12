@@ -10,7 +10,7 @@ import {
   Body
 } from "@nestjs/common";
 import { WorkSessionService } from "./work-session.service";
-import { JwtAuthGuard } from "../../auth/guards/jwt-auth.guard";
+import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -18,9 +18,9 @@ import {
   ApiTags,
   ApiParam,
 } from "@nestjs/swagger";
-import { ProjectCollaboratorGuard } from "../../auth/guards/project.guard";
+import { ProjectCollaboratorGuard } from "@auth/guards/project.guard";
 import { JoinRoomResult } from "./work-session.types";
-import { FetchWorkSessionDto } from "src/routes/work-session/dto/fetch-work-session.dto";
+import { FetchWorkSessionDto } from "@work-session/dto/fetch-work-session.dto";
 import { KickWorkSessionDto } from "./dto/kick-work-session.dto";
 
 @ApiTags("work-sessions")
@@ -49,7 +49,7 @@ export class WorkSessionController {
   }
 
   @Post("kick/:id")
-  @ApiOperation({ summary: "Leave a work session" })
+  @ApiOperation({ summary: "Kick user from work session" })
   @ApiResponse({ status: HttpStatus.NO_CONTENT, description: "Successfully left the work session." })
   @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: "Bad request." })
   @ApiParam({ name: "id", description: "Project ID" })
@@ -61,7 +61,7 @@ export class WorkSessionController {
   @ApiOperation({ summary: "Get work session info" })
   @ApiResponse({ status: HttpStatus.OK, description: "Work session info retrieved successfully.", type: FetchWorkSessionDto })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: "Work session not found." })
-  @ApiParam({ name: "id", description: "Work session ID" })
+  @ApiParam({ name: "id", description: "Project ID" })
   async getInfo(@Param("id", ParseIntPipe) workSessionId: number): Promise<any> {
     return await this.workSessionService.getInfo(workSessionId);
   }

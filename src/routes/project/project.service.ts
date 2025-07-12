@@ -11,6 +11,17 @@ import { Project } from "@prisma/client";
 
 @Injectable()
 export class ProjectService {
+  static COLLABORATOR_SELECT = {
+    id: true,
+    username: true,
+    email: true,
+  };
+  static CREATOR_SELECT = {
+    id: true,
+    username: true,
+    email: true,
+  };
+
   constructor(private prisma: PrismaService, private readonly s3Service: S3Service) {}
 
   async findAll(userId: number): Promise<Project[]> {
@@ -24,18 +35,10 @@ export class ProjectService {
       },
       include: {
         collaborators: {
-          select: {
-            id: true,
-            username: true,
-            email: true,
-          },
+          select: ProjectService.COLLABORATOR_SELECT,
         },
         creator: {
-          select: {
-            id: true,
-            username: true,
-            email: true,
-          },
+          select: ProjectService.CREATOR_SELECT,
         },
       },
     });
@@ -63,7 +66,7 @@ export class ProjectService {
     }
 
     try {
-      const project = await this.prisma.project.create({
+      return await this.prisma.project.create({
         data: {
           ...createProjectDto,
           collaborators: {
@@ -88,7 +91,6 @@ export class ProjectService {
           },
         },
       });
-      return project;
     } catch (error) {
       throw new InternalServerErrorException("Failed to create project", { cause: error });
     }
@@ -152,18 +154,10 @@ export class ProjectService {
       },
       include: {
         collaborators: {
-          select: {
-            id: true,
-            username: true,
-            email: true,
-          },
+          select: ProjectService.COLLABORATOR_SELECT,
         },
         creator: {
-          select: {
-            id: true,
-            username: true,
-            email: true,
-          },
+          select: ProjectService.CREATOR_SELECT,
         },
       },
     });
@@ -203,18 +197,10 @@ export class ProjectService {
       },
       include: {
         collaborators: {
-          select: {
-            id: true,
-            username: true,
-            email: true,
-          },
+          select: ProjectService.COLLABORATOR_SELECT,
         },
         creator: {
-          select: {
-            id: true,
-            username: true,
-            email: true,
-          },
+          select: ProjectService.CREATOR_SELECT,
         },
       },
     });

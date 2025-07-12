@@ -3,7 +3,7 @@ import { IsArray, IsDate, IsNumber, IsString } from "class-validator";
 
 export class FetchWorkSessionDto {
   @ApiProperty({
-    description: "The ID of the users participating in the work session",
+    description: "The ID of the user participating in the work session",
     example: [1, 2, 3],
   })
   @IsArray()

@@ -27,9 +27,9 @@ import {
   ApiExtraModels,
 } from "@nestjs/swagger";
 import { Request } from "@nestjs/common";
-import { JwtAuthGuard } from "../../auth/guards/jwt-auth.guard";
-import { RolesGuard } from "../../auth/guards/roles.guard";
-import { Roles } from "../../auth/decorators/roles.decorator";
+import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
+import { RolesGuard } from "@auth/guards/roles.guard";
+import { Roles } from "@auth/decorators/roles.decorator";
 import { Prisma } from "@prisma/client";
 import { UserResponseDto } from "./dto/user-response.dto";
 import { UserListResponseDto } from "./dto/user-list-response.dto";
