@@ -46,7 +46,7 @@ import {
 } from "./s3.error";
 import * as fs from "fs";
 import { base64UrlEncode, createPolicy, rsaSha256Sign } from "./s3.utils";
-import { MissingEnvVarError } from "src/auth/auth.error";
+import { MissingEnvVarError } from "@auth/auth.error";
 
 @Injectable()
 export class S3Service {
@@ -114,7 +114,7 @@ export class S3Service {
     }
   }
 
-  async listObjects(bucketName?: string): Promise<_Object[] | []> {
+  async listObjects(bucketName?: string): Promise<_Object[]> {
     const resolvedBucketName = this.resolveBucket(bucketName);
     try {
       const input: ListObjectsV2CommandInput = {
@@ -166,7 +166,7 @@ export class S3Service {
   }
 
   getSignedCloudfrontUrl(fileKey: string): string {
-    const cdnUrl = (this.configService.get<string>("CDN_URL"));
+    const cdnUrl = this.configService.get<string>("CDN_URL");
     const keyPairId = this.configService.get<string>("CLOUDFRONT_KEY_PAIR_ID");
     const privateKeyPath = this.configService.get<string>("CLOUDFRONT_PRIVATE_KEY_PATH");
     if (!cdnUrl) {

@@ -1,17 +1,17 @@
-import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards, Req, Res, HttpStatus, HttpCode, ParseIntPipe, Patch, UploadedFile, UseInterceptors } from "@nestjs/common";
+import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards, Req, Res, HttpStatus, HttpCode, ParseIntPipe, Patch, UploadedFile, UseInterceptors, Logger } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import { ProjectService } from "./project.service";
-import { CreateProjectDto } from "./dto/create-project.dto";
-import { UpdateProjectDto } from "./dto/update-project.dto";
-import { JwtAuthGuard } from "../../auth/guards/jwt-auth.guard";
-import { ProjectCollaboratorGuard } from "../../auth/guards/project.guard";
+import { ProjectService } from "@projects/project.service";
+import { CreateProjectDto } from "@projects/dto/create-project.dto";
+import { UpdateProjectDto } from "@projects/dto/update-project.dto";
+import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
+import { ProjectCollaboratorGuard } from "@auth/guards/project.guard";
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags, ApiParam, ApiBody, ApiConsumes } from "@nestjs/swagger";
-import { ProjectCreatorGuard } from "../../auth/guards/project.guard";
-import { AddCollaboratorDto, RemoveCollaboratorDto } from "./dto/collaborator-project.dto";
-import { S3Service } from "../s3/s3.service";
-import { S3DownloadException } from "../s3/s3.error";
+import { ProjectCreatorGuard } from "@auth/guards/project.guard";
+import { AddCollaboratorDto, RemoveCollaboratorDto } from "@projects/dto/collaborator-project.dto";
+import { S3Service } from "@s3/s3.service";
+import { S3DownloadException } from "@s3/s3.error";
 import { Request, Response } from "express";
-import { UserDto } from "src/auth/dto/user.dto";
+import { UserDto } from "@auth/dto/user.dto";
 import { Project } from "@prisma/client";
 
 interface RequestWithUser extends Request {
@@ -24,6 +24,8 @@ interface RequestWithUser extends Request {
 @ApiBearerAuth("JWT-auth")
 export class ProjectController {
   constructor(private readonly projectService: ProjectService, private readonly s3Service: S3Service) {}
+
+  private readonly logger = new Logger(ProjectController.name);
 
   @Get()
   @ApiOperation({ summary: "Retrieve the list of projects" })
@@ -132,7 +134,7 @@ export class ProjectController {
   @Patch(":id/saveContent")
   @UseGuards(ProjectCollaboratorGuard)
   @UseInterceptors(FileInterceptor("file"))
-  @ApiOperation({ summary: "Save content file to S3 for a project" })
+  @ApiOperation({ summary: "Save project's content" })
   @ApiConsumes("multipart/form-data")
   @ApiBody({
     schema: {
@@ -162,7 +164,7 @@ export class ProjectController {
 
   @Get(":id/fetchContent")
   @UseGuards(ProjectCollaboratorGuard)
-  @ApiOperation({ summary: "Fetch content file from S3 for a project" })
+  @ApiOperation({ summary: "Fetch project's content" })
   @ApiParam({ name: "id", type: "string" })
   @ApiResponse({ status: 200, description: "File fetched successfully" })
   @ApiResponse({ status: 403, description: "Forbidden" })
@@ -178,6 +180,13 @@ export class ProjectController {
 
       file.body.pipe(res);
     } catch (error) {
+
+      if (error instanceof Error) {
+        this.logger.error(`Failed to fetch content for project ${id}: ${error.message}`, error.stack);
+      } else {
+        this.logger.error(`Failed to fetch content for project ${id}: ${JSON.stringify(error)}`);
+      }
+
       if (error instanceof S3DownloadException) {
         res.status(404).json({ message: "File not found" });
         return;

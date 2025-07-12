@@ -1,7 +1,7 @@
 import { ApiProperty } from "@nestjs/swagger";
 import { IsArray, IsString } from "class-validator";
 
-export class DeleteFilesDto {
+export class DeleteS3FilesDto {
   @ApiProperty({
     description: "List of object keys to delete",
     type: [String],

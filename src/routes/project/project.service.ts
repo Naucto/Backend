@@ -1,12 +1,12 @@
 import { BadRequestException, ForbiddenException, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
-import { PrismaService } from "../../prisma/prisma.service";
+import { PrismaService } from "@prisma/prisma.service";
 import { CreateProjectDto } from "./dto/create-project.dto";
 import { UpdateProjectDto } from "./dto/update-project.dto";
 import {
   AddCollaboratorDto,
   RemoveCollaboratorDto,
 } from "./dto/collaborator-project.dto";
-import { S3Service } from "../s3/s3.service";
+import { S3Service } from "@s3/s3.service";
 import { Project } from "@prisma/client";
 
 @Injectable()

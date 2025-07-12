@@ -9,6 +9,7 @@ import {
   UploadedFile,
   UseInterceptors,
   HttpStatus,
+  Logger
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { FileInterceptor } from "@nestjs/platform-express";
@@ -22,23 +23,21 @@ import {
   ApiParam,
 } from "@nestjs/swagger";
 import { S3Service } from "./s3.service";
-import { DeleteFilesDto } from "./dto/delete-files.dto";
+import { DeleteS3FilesDto } from "./dto/delete-files.dto";
 import { ApplyPolicyDto } from "./dto/apply-policy.dto";
 import { GeneratePolicyDto } from "./dto/generate-policy.dto";
 import { UploadFileDto } from "./dto/upload-file.dto";
 import { Readable } from "stream";
 
-import {
-  Bucket,
-  _Object,
-} from "@aws-sdk/client-s3";
+import { Bucket, _Object } from "@aws-sdk/client-s3";
 import { S3ObjectMetadata, BucketPolicy } from "./s3.interface";
-import { MissingEnvVarError } from "src/auth/auth.error";
+import { MissingEnvVarError } from "@auth/auth.error";
 
 @ApiTags("s3")
 @Controller("s3")
 export class S3Controller {
   private readonly sessionCookieTimeout = 600;
+  private readonly logger = new Logger(S3Controller.name);
   constructor(private readonly s3Service: S3Service, private readonly configService: ConfigService) {}
 
   @Get("list")
@@ -84,33 +83,33 @@ export class S3Controller {
   @ApiResponse({ status: 200, description: "File stream" })
   @ApiResponse({ status: 500, description: "Server error" })
   async downloadFile(@Param("key") key: string, @Res() res: Response, @Param("bucketName") bucketName?: string): Promise<void> {
+    const decodedKey = decodeURIComponent(key);
     try {
-      const { body, contentType, contentLength } =
-        await this.s3Service.downloadFile(decodeURIComponent(key), bucketName);
+      const { body, contentType, contentLength } = await this.s3Service.downloadFile(decodedKey, bucketName);
 
-      res
-        .setHeader("Content-Type", contentType || "application/octet-stream");
-      res
-        .setHeader("Content-Disposition", `attachment; filename="${key.split("/").pop()}"`);
+      res.setHeader("Content-Type", contentType || "application/octet-stream");
+      res.setHeader("Content-Disposition", `attachment; filename="${decodedKey.split("/").pop()}"`);
 
       if (contentLength) {
-        res
-          .setHeader("Content-Length", contentLength.toString());
+        res.setHeader("Content-Length", contentLength.toString());
       }
 
       if (body instanceof Readable) {
         body.pipe(res);
       } else {
+        this.logger.error(`Downloaded body is not a readable stream for: ${decodedKey}`);
         res
           .status(HttpStatus.INTERNAL_SERVER_ERROR)
           .json({ error: "File not readable" });
       }
     } catch (error: unknown) {
       if (error instanceof Error) {
+        this.logger.error(`Error downloading project's content ${decodedKey} from bucket ${bucketName}: ${error.message}`, error.stack);
         res
           .status(HttpStatus.INTERNAL_SERVER_ERROR)
           .json({ error: "Server error while downloading file", message: error.message });
       } else {
+        this.logger.error(`Unknown error downloading content ${decodedKey} from bucket ${bucketName}`);
         res
           .status(HttpStatus.INTERNAL_SERVER_ERROR)
           .json({ error: "Server error while downloading file", message: "Unknown error occurred" });
@@ -160,7 +159,7 @@ export class S3Controller {
   @ApiParam({ name: "bucketName", description: "Name of the bucket" })
   @ApiResponse({ status: 200, description: "Files deleted successfully" })
   @ApiResponse({ status: 500, description: "Server error" })
-  async deleteFiles(@Body() deleteFilesDto: DeleteFilesDto, @Param("bucketName") bucketName?: string): Promise<{ message: string; deleted: _Object[] }> {
+  async deleteFiles(@Body() deleteFilesDto: DeleteS3FilesDto, @Param("bucketName") bucketName?: string): Promise<{ message: string; deleted: _Object[] }> {
     const result = await this.s3Service.deleteFiles(
       deleteFilesDto.keys.map(key => decodeURIComponent(key)),
       bucketName,

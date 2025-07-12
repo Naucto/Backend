@@ -1,5 +1,5 @@
 import { Request } from "express";
-import { UserDto } from "src/auth/dto/user.dto";
+import { UserDto } from "@auth/dto/user.dto";
 
 export interface JwtPayload {
   sub: number;

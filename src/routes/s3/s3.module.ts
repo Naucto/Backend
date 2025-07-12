@@ -2,7 +2,7 @@ import { Module } from "@nestjs/common";
 import { MulterModule } from "@nestjs/platform-express";
 import { S3Controller } from "./s3.controller";
 import { S3Service } from "./s3.service";
-import { PrismaService } from "../../prisma/prisma.service";
+import { PrismaService } from "@prisma/prisma.service";
 
 @Module({
   imports: [
