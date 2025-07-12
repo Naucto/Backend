@@ -20,8 +20,8 @@ import {
 } from "@nestjs/swagger";
 import { ProjectCollaboratorGuard } from "../../auth/guards/project.guard";
 import { JoinRoomResult } from "./work-session.types";
-import {FetchWorkSessionDto} from "src/routes/work-session/dto/fetch-work-session.dto";
-import { KickWorkSessionDto } from './dto/kick-work-session.dto';
+import { FetchWorkSessionDto } from "src/routes/work-session/dto/fetch-work-session.dto";
+import { KickWorkSessionDto } from "./dto/kick-work-session.dto";
 
 @ApiTags("work-sessions")
 @Controller("work-sessions")
@@ -32,37 +32,37 @@ export class WorkSessionController {
 
   @Post("join/:id")
   @ApiOperation({ summary: "Join a work session" })
-  @ApiResponse({ status: HttpStatus.CREATED, description: "The work session has been successfully created."})
+  @ApiResponse({ status: HttpStatus.CREATED, description: "The work session has been successfully created." })
   @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: "Bad request." })
   @ApiParam({ name: "id", description: "Project ID" })
   async join(@Param("id", ParseIntPipe) projectId: number, @Req() req: any): Promise<JoinRoomResult> {
     return await this.workSessionService.join(projectId, req.user);
   }
 
-  @Post('leave/:id')
-  @ApiOperation({ summary: 'Leave a work session' })
-  @ApiResponse({ status: HttpStatus.NO_CONTENT, description: 'Successfully left the work session.'})
-  @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: 'Bad request.'})
-  @ApiParam({ name: 'id', description: 'Project ID' })
-  async leave(@Param('id', ParseIntPipe) projectId: number, @Req() req: any): Promise<void> {
+  @Post("leave/:id")
+  @ApiOperation({ summary: "Leave a work session" })
+  @ApiResponse({ status: HttpStatus.NO_CONTENT, description: "Successfully left the work session." })
+  @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: "Bad request." })
+  @ApiParam({ name: "id", description: "Project ID" })
+  async leave(@Param("id", ParseIntPipe) projectId: number, @Req() req: any): Promise<void> {
     return await this.workSessionService.leave(projectId, req.user);
   }
 
-  @Post('kick/:id')
-  @ApiOperation({ summary: 'Leave a work session' })
-  @ApiResponse({ status: HttpStatus.NO_CONTENT, description: 'Successfully left the work session.'})
-  @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: 'Bad request.'})
-  @ApiParam({ name: 'id', description: 'Project ID' })
-  async kick(@Param('id', ParseIntPipe) projectId: number, @Body() kick: KickWorkSessionDto): Promise<void> {
+  @Post("kick/:id")
+  @ApiOperation({ summary: "Leave a work session" })
+  @ApiResponse({ status: HttpStatus.NO_CONTENT, description: "Successfully left the work session." })
+  @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: "Bad request." })
+  @ApiParam({ name: "id", description: "Project ID" })
+  async kick(@Param("id", ParseIntPipe) projectId: number, @Body() kick: KickWorkSessionDto): Promise<void> {
     return await this.workSessionService.kick(projectId, kick.userId);
   }
 
-  @Get('info/:id')
-  @ApiOperation({ summary: 'Get work session info' })
-  @ApiResponse({ status: HttpStatus.OK, description: 'Work session info retrieved successfully.', type: FetchWorkSessionDto})
-  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'Work session not found.'})
-  @ApiParam({ name: 'id', description: 'Work session ID' })
-  async getInfo(@Param('id', ParseIntPipe) workSessionId: number): Promise<any> {
+  @Get("info/:id")
+  @ApiOperation({ summary: "Get work session info" })
+  @ApiResponse({ status: HttpStatus.OK, description: "Work session info retrieved successfully.", type: FetchWorkSessionDto })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: "Work session not found." })
+  @ApiParam({ name: "id", description: "Work session ID" })
+  async getInfo(@Param("id", ParseIntPipe) workSessionId: number): Promise<any> {
     return await this.workSessionService.getInfo(workSessionId);
   }
 }

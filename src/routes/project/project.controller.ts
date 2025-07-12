@@ -17,20 +17,20 @@ import {
   UseGuards,
   UseInterceptors
 } from "@nestjs/common";
-import {FileInterceptor} from "@nestjs/platform-express";
-import {ProjectService} from "@projects/project.service";
-import {CreateProjectDto} from "@projects/dto/create-project.dto";
-import {UpdateProjectDto} from "@projects/dto/update-project.dto";
-import {JwtAuthGuard} from "@auth/guards/jwt-auth.guard";
-import {ProjectCollaboratorGuard, ProjectCreatorGuard} from "@auth/guards/project.guard";
-import {ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiParam, ApiResponse, ApiTags} from "@nestjs/swagger";
-import {AddCollaboratorDto, RemoveCollaboratorDto} from "@projects/dto/collaborator-project.dto";
-import {S3Service} from "@s3/s3.service";
-import {S3DownloadException} from "@s3/s3.error";
-import {Request, Response} from "express";
-import {UserDto} from "@auth/dto/user.dto";
-import {Project} from "@prisma/client";
-import {ProjectResponseDto, ProjectWithRelationsResponseDto} from './dto/project-response.dto';
+import { FileInterceptor } from "@nestjs/platform-express";
+import { ProjectService } from "@projects/project.service";
+import { CreateProjectDto } from "@projects/dto/create-project.dto";
+import { UpdateProjectDto } from "@projects/dto/update-project.dto";
+import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
+import { ProjectCollaboratorGuard, ProjectCreatorGuard } from "@auth/guards/project.guard";
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiParam, ApiResponse, ApiTags } from "@nestjs/swagger";
+import { AddCollaboratorDto, RemoveCollaboratorDto } from "@projects/dto/collaborator-project.dto";
+import { S3Service } from "@s3/s3.service";
+import { S3DownloadException } from "@s3/s3.error";
+import { Request, Response } from "express";
+import { UserDto } from "@auth/dto/user.dto";
+import { Project } from "@prisma/client";
+import { ProjectResponseDto, ProjectWithRelationsResponseDto } from "./dto/project-response.dto";
 
 interface RequestWithUser extends Request {
   user: UserDto;
@@ -60,17 +60,17 @@ export class ProjectController {
 
   @Get(":id")
   @UseGuards(ProjectCollaboratorGuard)
-  @ApiOperation({ summary: 'Retrieve a single project' })
-  @ApiParam({ name: 'id', type: 'number', description: 'Numeric ID of the project to retrieve' })
+  @ApiOperation({ summary: "Retrieve a single project" })
+  @ApiParam({ name: "id", type: "number", description: "Numeric ID of the project to retrieve" })
   @ApiResponse({
     status: 200,
-    description: 'Project object',
+    description: "Project object",
     type: ProjectResponseDto
   })
-  @ApiResponse({ status: 404, description: 'Project not found' })
-  @ApiResponse({ status: 500, description: 'Internal server error' })
-  @ApiResponse({ status: 403, description: 'Invalid user or project ID' })
-  async findOne(@Param('id', ParseIntPipe) id: number): Promise<ProjectResponseDto> {
+  @ApiResponse({ status: 404, description: "Project not found" })
+  @ApiResponse({ status: 500, description: "Internal server error" })
+  @ApiResponse({ status: 403, description: "Invalid user or project ID" })
+  async findOne(@Param("id", ParseIntPipe) id: number): Promise<ProjectResponseDto> {
     return this.projectService.findOne(id);
   }
 
