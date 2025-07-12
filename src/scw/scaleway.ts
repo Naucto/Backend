@@ -1,16 +1,16 @@
 // src/scaleway.ts
-import dotenv from 'dotenv';
-const SCW_API = 'https://api.scaleway.com';
+import dotenv from "dotenv";
+const SCW_API = "https://api.scaleway.com";
 
 dotenv.config();
 
 export async function listServers(token: string) {
   const res = await fetch(
-    `${SCW_API}/instance/v1/zones/${process.env.SCW_REGION}/servers`,
+    `${SCW_API}/instance/v1/zones/${process.env["SCW_REGION"]}/servers`,
     {
       headers: {
-        'X-Auth-Token': token,
-        'Content-Type': 'application/json',
+        "X-Auth-Token": token,
+        "Content-Type": "application/json",
       },
     },
   );

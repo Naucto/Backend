@@ -1,4 +1,4 @@
-import { Readable } from 'stream';
+import { Readable } from "stream";
 
 export interface DownloadedFile {
   body: Readable;
@@ -14,13 +14,15 @@ export interface S3ObjectMetadata {
   eTag?: string;
 }
 
+export type BucketPolicyStatement = {
+  Sid: string;
+  Effect: string;
+  Principal: "*" | { AWS: string };
+  Action: string[];
+  Resource: string;
+};
+
 export interface BucketPolicy {
   Version: string;
-  Statement: Array<{
-    Sid: string;
-    Effect: string;
-    Principal: '*' | { AWS: string };
-    Action: string[];
-    Resource: string;
-  }>;
+  Statement: BucketPolicyStatement[];
 }

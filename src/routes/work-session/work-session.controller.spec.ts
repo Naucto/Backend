@@ -1,8 +1,8 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { WorkSessionController } from './work-session.controller';
-import { WorkSessionService } from './work-session.service';
+import { Test, TestingModule } from "@nestjs/testing";
+import { WorkSessionController } from "./work-session.controller";
+import { WorkSessionService } from "./work-session.service";
 
-describe('WorkSessionController', () => {
+describe("WorkSessionController", () => {
   let controller: WorkSessionController;
 
   beforeEach(async () => {
@@ -14,7 +14,7 @@ describe('WorkSessionController', () => {
     controller = module.get<WorkSessionController>(WorkSessionController);
   });
 
-  it('should be defined', () => {
+  it("should be defined", () => {
     expect(controller).toBeDefined();
   });
 });

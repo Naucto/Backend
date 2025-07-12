@@ -3,8 +3,9 @@ import {
   CanActivate,
   ExecutionContext,
   ForbiddenException,
-} from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
+  NotFoundException,
+} from "@nestjs/common";
+import { PrismaService } from "../../prisma/prisma.service";
 
 @Injectable()
 export class ProjectCreatorGuard implements CanActivate {
@@ -16,7 +17,7 @@ export class ProjectCreatorGuard implements CanActivate {
     const projectId = parseInt(request.params.id, 10);
 
     if (!user || isNaN(projectId)) {
-      throw new ForbiddenException('Invalid user or project ID');
+      throw new ForbiddenException("Invalid user or project ID");
     }
 
     const project = await this.prisma.project.findUnique({
@@ -25,11 +26,11 @@ export class ProjectCreatorGuard implements CanActivate {
     });
 
     if (!project) {
-      throw new ForbiddenException('Project not found');
+      throw new ForbiddenException("Project not found");
     }
 
     if (project.creator.id !== user.id) {
-      throw new ForbiddenException('You are not the creator of this project');
+      throw new ForbiddenException("You are not the creator of this project");
     }
 
     return true;
@@ -46,23 +47,21 @@ export class ProjectCollaboratorGuard implements CanActivate {
     const projectId = parseInt(request.params.id, 10);
 
     if (!user || isNaN(projectId)) {
-      throw new ForbiddenException('Invalid user or project ID');
+      throw new ForbiddenException("Invalid user or project ID");
     }
 
     const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
       include: { collaborators: true },
-      where: {
-        id: projectId,
-        collaborators: {
-          some: {
-            id: user.id
-          }
-        }
-      }
     });
 
     if (!project) {
-      throw new ForbiddenException('Project not found');
+      throw new NotFoundException("Project not found");
+    }
+
+    const isCollaborator = project.collaborators.some(c => c.id === user.id);
+    if (!isCollaborator) {
+      throw new ForbiddenException("No access to this project");
     }
 
     return true;

@@ -1,23 +1,19 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty } from "@nestjs/swagger";
 import {
   IsInt,
   IsOptional,
   IsDate,
-  IsString,
-  IsNumber,
-  Min,
-} from 'class-validator';
-import { Type } from 'class-transformer';
+} from "class-validator";
 
 export class CreateWorkSessionDto {
   @ApiProperty({
-    description: 'The ID of the project this work session belongs to',
+    description: "The ID of the project this work session belongs to",
     example: 1,
   })
   @IsInt()
-  projectId: number;
+    projectId!: number;
 
   @IsOptional()
   @IsDate()
-  startTime?: Date;
+    startTime?: Date;
 }

@@ -1,37 +1,29 @@
-import { IsEmail, IsNotEmpty, IsString, MinLength, IsOptional, IsArray } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsEmail, IsNotEmpty, IsString, MinLength, IsOptional, Length } from "class-validator";
+import { ApiProperty } from "@nestjs/swagger";
 
 export class CreateUserDto {
   @ApiProperty({
-    description: 'User email address',
-    example: 'user@example.com',
+    description: "User email address",
+    example: "user@example.com",
   })
   @IsEmail()
   @IsNotEmpty()
-  email: string;
+    email!: string;
 
-  @ApiProperty({ description: 'User username', example: 'xX_DarkGamer_Xx' })
+  @ApiProperty({ description: "User username", example: "xX_DarkGamer_Xx" })
   @IsString()
-  @IsNotEmpty()
-  username: string;
+  @Length(3, 20, { message: "Username must be between 3 and 20 characters" })
+    username!: string;
 
-  @ApiProperty({ description: 'User nick name', example: 'John Doe' })
+  @ApiProperty({ description: "User nick name", example: "JohnDoe", required: false })
   @IsString()
-  @IsNotEmpty()
-  nickname: string;
-
-  @ApiProperty({ description: 'User password', example: 'password123' })
-  @IsString()
-  @MinLength(6)
-  @IsNotEmpty()
-  password: string;
-
-  @ApiProperty({
-    description: 'List of Role IDs to assign to the user',
-    example: [1, 2],
-    required: false,
-  })
   @IsOptional()
-  @IsArray()
-  roles?: number[];
+  @Length(3, 30, { message: "Nickname must be between 3 and 30 characters" })
+    nickname?: string;
+
+  @ApiProperty({ description: "User password", example: "password123" })
+  @IsString()
+  @MinLength(6, { message: "Password must be at least 6 characters" })
+  @IsNotEmpty()
+    password!: string;
 }
