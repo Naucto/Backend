@@ -177,7 +177,7 @@ export class WorkSessionService {
     });
 
     if (!workSession) {
-      throw new NotFoundException(`Work session for project ID ${projectId}`);
+      throw new NotFoundException(`Work session for project ID ${projectId} not found`);
     }
 
     await this.prisma.workSession.update({
@@ -214,7 +214,7 @@ export class WorkSessionService {
     });
 
     if (!workSession) {
-      throw new NotFoundException(`Work session for project ID ${projectId}`);
+      throw new NotFoundException(`Work session for project ID ${projectId} not found`);
     }
 
     return {
