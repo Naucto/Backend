@@ -26,7 +26,7 @@ export class UserResponseDto {
 
   @ApiProperty({ description: "User nickname", example: "JohnDoe", nullable: true })
   @Expose()
-    nickname!: string | null;
+    nickname?: string;
 
   @ApiProperty({ description: "User roles", type: [UserRoleDto], required: false })
   @Expose()

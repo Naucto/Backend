@@ -94,7 +94,7 @@ export class WorkSessionService {
       where: { id: projectId },
     });
     if (project === null) {
-      throw new NotFoundException(`Project with ID ${projectId}`);
+      throw new NotFoundException(`Project with ID ${projectId} not found`);
     }
 
     let workSession = await this.prisma.workSession.findFirst({
@@ -140,7 +140,7 @@ export class WorkSessionService {
     });
 
     if (!workSession) {
-      throw new NotFoundException(`Work session for project ID ${projectId}`);
+      throw new NotFoundException(`Work session for project ID ${projectId} not found`);
     }
 
     await this.prisma.workSession.update({
