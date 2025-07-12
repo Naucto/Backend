@@ -1,11 +1,11 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsArray, IsOptional, IsString } from 'class-validator';
+import { ApiProperty } from "@nestjs/swagger";
+import { IsArray, IsOptional, IsString } from "class-validator";
 
 export class GeneratePolicyDto {
   @ApiProperty({
-    description: 'S3 actions to include in the policy',
+    description: "S3 actions to include in the policy",
     type: [String],
-    example: ['s3:GetObject', 's3:PutObject'],
+    example: ["s3:GetObject", "s3:PutObject"],
     required: false,
   })
   @IsOptional()
@@ -14,8 +14,8 @@ export class GeneratePolicyDto {
   readonly actions?: string[];
 
   @ApiProperty({
-    description: 'Policy effect (Allow or Deny)',
-    example: 'Allow',
+    description: "Policy effect (Allow or Deny)",
+    example: "Allow",
     required: false,
   })
   @IsOptional()
@@ -23,8 +23,8 @@ export class GeneratePolicyDto {
   readonly effect?: string;
 
   @ApiProperty({
-    description: 'AWS principal',
-    example: '*',
+    description: "AWS principal",
+    example: "*",
     required: false,
   })
   @IsOptional()
@@ -32,8 +32,8 @@ export class GeneratePolicyDto {
   readonly principal?: string;
 
   @ApiProperty({
-    description: 'Object key prefix',
-    example: 'public/',
+    description: "Object key prefix",
+    example: "public/",
     required: false,
   })
   @IsOptional()

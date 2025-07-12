@@ -33,10 +33,17 @@ This project is open source. You are welcome to contribute on GitHub at the foll
     POSTGRES_HOST=HOST
     POSTGRES_PORT=PORT
     DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DB_NAME?schema=public
+    S3_BUCKET_NAME=bucket-name
+
+    CDN_URL=URL
+    CLOUDFRONT_KEY_PAIR_ID=PAIR_ID
+    CLOUDFRONT_PRIVATE_KEY=
+    CLOUDFRONT_PRIVATE_KEY_PATH=
 
     JWT_SECRET=JWT_SECRET
     JWT_EXPIRES_IN=EXPIRATION_TIME
     PORT=PORT_NUMBER
+    NODE_ENV=
     ```
 
 4. Run the Prisma migration to create the database schema:
