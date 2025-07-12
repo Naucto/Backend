@@ -68,7 +68,7 @@ export class ProjectResponseDto {
     example: MonetizationType.NONE,
     nullable: true,
   })
-    monetization?: MonetizationType;
+    monetization?: MonetizationType | null;
 
   @ApiProperty({
     example: 99.99,
