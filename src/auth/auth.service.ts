@@ -57,7 +57,7 @@ export class AuthService {
       throw new ConflictException("Username already in use");
     }
 
-    (createUserDto as any).roles = [];
+    createUserDto.roles = [];
 
     const newUser = await this.userService.create(createUserDto);
 
