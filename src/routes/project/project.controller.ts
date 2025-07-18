@@ -210,7 +210,7 @@ export class ProjectController {
 
     await this.projectService.updateLastTimeUpdate(Number(id));
 
-    return { message: "File uploaded successfully", id };
+    return { message: "Project content uploaded successfully", id };
   }
 
   @Get(":id/fetchContent")
@@ -239,7 +239,7 @@ export class ProjectController {
       }
 
       if (error instanceof S3DownloadException) {
-        res.status(404).json({ message: "File not found" });
+        res.status(404).json({ message: "Project content not found" });
         return;
       }
       res.status(500).json({ message: "Internal server error" });
