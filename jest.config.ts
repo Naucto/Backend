@@ -7,8 +7,8 @@ const compilerOptions = configFile.config.compilerOptions;
 module.exports = {
   preset: "ts-jest",
   testEnvironment: "node",
-  moduleFileExtensions: ["js", "json", "ts"],
   rootDir: "./src",
+  moduleFileExtensions: ["js", "json", "ts"],
   testRegex: ".*\\.spec\\.ts$",
   moduleNameMapper: pathsToModuleNameMapper(compilerOptions.paths || {}, {
     prefix: "<rootDir>/",
@@ -16,4 +16,9 @@ module.exports = {
   transform: {
     "^.+\\.(t|j)s$": "ts-jest",
   },
+  collectCoverage: true,
+  collectCoverageFrom: ["**/*.(t|j)s"],
+  coverageDirectory: "../coverage",
+  coveragePathIgnorePatterns: ["/node_modules/"],
+  verbose: true
 };
