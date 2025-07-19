@@ -1,72 +1,70 @@
-import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
-import { AppModule } from './app.module';
-import { NestExpressApplication } from '@nestjs/platform-express';
-import { setupSwagger } from './swagger';
-import { format } from 'date-fns-tz';
-import { setupWebSocketServer } from './collab/signaling/signal';
-import * as path from 'path';
-import * as dotenv from 'dotenv';
-import * as http from 'http';
-import { Request, Response, NextFunction } from 'express';
+import { NestFactory } from "@nestjs/core";
+import { ValidationPipe } from "@nestjs/common";
+import { AppModule } from "./app.module";
+import { NestExpressApplication, ExpressAdapter } from "@nestjs/platform-express";
+import { setupSwagger } from "./swagger";
+import { format } from "date-fns-tz";
+import { setupWebSocketServer } from "./collab/signaling/signal";
+import { Logger } from "@nestjs/common";
+import express, { Request, Response, NextFunction } from "express";
+import * as path from "path";
+import * as dotenv from "dotenv";
+import * as http from "http";
 
-if (process.env['NODE_ENV'] === 'production') {
-  dotenv.config({ path: '.env.production' });
+if (process.env["NODE_ENV"] === "production") {
+  dotenv.config({ path: ".env.production" });
 } else {
   dotenv.config();
 }
 
-(() => {
-  const express = require('express');
+(async () => {
   const expressApp = express();
 
   const server = http.createServer(expressApp);
 
-  const appPromise = NestFactory.create<NestExpressApplication>(
+  const app = await NestFactory.create<NestExpressApplication>(
     AppModule,
-    new (require('@nestjs/platform-express').ExpressAdapter)(expressApp),
+    new ExpressAdapter(expressApp),
   );
 
-  appPromise.then((app) => {
-    app.useLogger(['log', 'error', 'warn', 'debug']);
+  const logger = new Logger("HTTP");
 
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true
-      }),
-    );
+  app.useLogger(["log", "error", "warn", "debug"]);
 
-    app.useStaticAssets(path.join(__dirname, '..', 'public'));
-    app.setBaseViewsDir(path.join(__dirname, '..', 'views'));
-    app.setViewEngine('ejs');
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true
+    }),
+  );
 
-    app.enableCors();
+  app.useStaticAssets(path.join(__dirname, "..", "public"));
+  app.setBaseViewsDir(path.join(__dirname, "..", "views"));
+  app.setViewEngine("ejs");
 
-    app.use((req: Request, res: Response, next: NextFunction) => {
-      const start = Date.now();
-      const date = format(new Date(), 'dd-MM-yyyy HH:mm:ss.SSS');
+  app.enableCors();
 
-      res.on('finish', () => {
-        const duration = Date.now() - start;
-        console.log(
-          `[${date}] ${req.method} ${req.originalUrl} → ${res.statusCode} (${duration}ms)`,
-        );
-      });
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const start = Date.now();
+    const date = format(new Date(), "dd-MM-yyyy HH:mm:ss.SSS");
 
-      next();
+    res.on("finish", () => {
+      const duration = Date.now() - start;
+      logger.log(`[${date}] ${req.method} ${req.originalUrl} → ${res.statusCode} (${duration}ms)`);
     });
 
-    setupSwagger(app);
+    next();
+  });
 
-    app.init().then(() => {
-      setupWebSocketServer(server);
+  setupSwagger(app);
 
-      const PORT = process.env['PORT'] || 3000;
-      server.listen(PORT, () => {
-        console.log(`Server listening on port ${PORT}`);
-      });
-    });
+  await app.init();
+
+  setupWebSocketServer(server);
+
+  const PORT = process.env["PORT"] || 3000;
+  server.listen(PORT, () => {
+    logger.log(`Server listening on port ${PORT}`);
   });
 })();

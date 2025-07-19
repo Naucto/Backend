@@ -1,36 +1,39 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsEnum, IsInt, Min } from 'class-validator';
+import { ApiPropertyOptional } from "@nestjs/swagger";
+import { IsOptional, IsString, IsEnum, IsInt, Min } from "class-validator";
+import { Type } from "class-transformer";
 
 export class UserFilterDto {
-  @ApiPropertyOptional({ description: 'Page number', example: 1 })
+  @ApiPropertyOptional({ description: "Page number", example: 1 })
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   @Min(1)
-  page?: number;
+    page?: number;
 
-  @ApiPropertyOptional({ description: 'Items per page', example: 10 })
+  @ApiPropertyOptional({ description: "Items per page", example: 10 })
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   @Min(1)
-  limit?: number;
+    limit?: number;
 
-  @ApiPropertyOptional({ description: 'Filter by nickname' })
+  @ApiPropertyOptional({ description: "Filter by nickname" })
   @IsOptional()
   @IsString()
-  nickname?: string;
+    nickname?: string;
 
-  @ApiPropertyOptional({ description: 'Filter by email' })
+  @ApiPropertyOptional({ description: "Filter by email" })
   @IsOptional()
   @IsString()
-  email?: string;
+    email?: string;
 
-  @ApiPropertyOptional({ enum: ['id', 'name', 'email', 'createdAt'], description: 'Sort by field' })
+  @ApiPropertyOptional({ enum: ["id", "username", "email", "createdAt"], description: "Sort by field" })
   @IsOptional()
-  @IsEnum(['id', 'name', 'email', 'createdAt'])
-  sortBy?: string;
+  @IsEnum(["id", "username", "email", "createdAt"])
+    sortBy?: string;
 
-  @ApiPropertyOptional({ enum: ['asc', 'desc'], description: 'Sort order' })
+  @ApiPropertyOptional({ enum: ["asc", "desc"], description: "Sort order" })
   @IsOptional()
-  @IsEnum(['asc', 'desc'])
-  order?: 'asc' | 'desc';
+  @IsEnum(["asc", "desc"])
+    order?: "asc" | "desc";
 }
