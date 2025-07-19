@@ -1,6 +1,7 @@
 .idea
 .husky
 .github
+.prettierrc
 esling.config.js
 README.md
 license.txt
