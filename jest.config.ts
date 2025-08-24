@@ -20,5 +20,6 @@ module.exports = {
   collectCoverageFrom: ["**/*.(t|j)s"],
   coverageDirectory: "../coverage",
   coveragePathIgnorePatterns: ["/node_modules/"],
-  verbose: true
+  setupFiles: ["<rootDir>/../jest.setup.ts"],
+  verbose: false // true pour plus d'informations
 };

@@ -1,20 +1,73 @@
-import { Test, TestingModule } from "@nestjs/testing";
 import { S3Service } from "./s3.service";
-import { ConfigModule } from "@nestjs/config";
+import { S3ConfigurationException } from "./s3.error";
+import { ConfigService } from "@nestjs/config";
 
-describe("S3Service", () => {
-  let service: S3Service;
+describe("S3Service (constructor)", () => {
+  let mockConfigService: Partial<ConfigService>;
 
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      imports: [ConfigModule.forRoot()],
-      providers: [S3Service],
-    }).compile();
+  it("should throw S3ConfigurationException if AWS_REGION is missing", () => {
+    mockConfigService = {
+      get: (key: string) => {
+        if (key === "AWS_REGION") return undefined;
+        if (key === "AWS_ACCESS_KEY_ID") return "fake-access-key";
+        if (key === "AWS_SECRET_ACCESS_KEY") return "fake-secret-key";
+        if (key === "S3_BUCKET_NAME") return "my-bucket";
+        return undefined;
+      },
+    };
 
-    service = module.get<S3Service>(S3Service);
+    expect(() => new S3Service(mockConfigService as ConfigService))
+      .toThrow(S3ConfigurationException);
   });
 
-  it("should be defined", () => {
-    expect(service).toBeDefined();
+  it("should throw S3ConfigurationException if AWS_ACCESS_KEY_ID is missing", () => {
+    mockConfigService = {
+      get: (key: string) => {
+        if (key === "AWS_REGION") return "us-east-1";
+        if (key === "AWS_ACCESS_KEY_ID") return undefined;
+        if (key === "AWS_SECRET_ACCESS_KEY") return "fake-secret-key";
+        if (key === "S3_BUCKET_NAME") return "my-bucket";
+        return undefined;
+      },
+    };
+
+    expect(() => new S3Service(mockConfigService as ConfigService))
+      .toThrow(S3ConfigurationException);
+  });
+
+  it("should throw S3ConfigurationException if AWS_SECRET_ACCESS_KEY is missing", () => {
+    mockConfigService = {
+      get: (key: string) => {
+        if (key === "AWS_REGION") return "us-east-1";
+        if (key === "AWS_ACCESS_KEY_ID") return "fake-access-key";
+        if (key === "AWS_SECRET_ACCESS_KEY") return undefined;
+        if (key === "S3_BUCKET_NAME") return "my-bucket";
+        return undefined;
+      },
+    };
+
+    expect(() => new S3Service(mockConfigService as ConfigService))
+      .toThrow(S3ConfigurationException);
+  });
+
+  it("should construct successfully if all env vars are provided", () => {
+    mockConfigService = {
+      get: (key: string) => {
+        switch (key) {
+        case "AWS_REGION":
+          return "us-east-1";
+        case "AWS_ACCESS_KEY_ID":
+          return "fake-access-key";
+        case "AWS_SECRET_ACCESS_KEY":
+          return "fake-secret-key";
+        case "S3_BUCKET_NAME":
+          return "my-bucket";
+        default:
+          return undefined;
+        }
+      },
+    };
+
+    expect(() => new S3Service(mockConfigService as ConfigService)).not.toThrow();
   });
 });

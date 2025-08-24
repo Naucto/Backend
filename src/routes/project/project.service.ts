@@ -9,18 +9,22 @@ import {
 import { S3Service } from "@s3/s3.service";
 import { Project } from "@prisma/client";
 
+export const CREATOR_SELECT = {
+  id: true,
+  username: true,
+  email: true,
+};
+
+export const COLLABORATOR_SELECT = {
+  id: true,
+  username: true,
+  email: true,
+};
+
 @Injectable()
 export class ProjectService {
-  static COLLABORATOR_SELECT = {
-    id: true,
-    username: true,
-    email: true,
-  };
-  static CREATOR_SELECT = {
-    id: true,
-    username: true,
-    email: true,
-  };
+  static COLLABORATOR_SELECT = COLLABORATOR_SELECT;
+  static CREATOR_SELECT = CREATOR_SELECT;
 
   constructor(private prisma: PrismaService, private readonly s3Service: S3Service) {}
 

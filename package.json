@@ -8,10 +8,10 @@
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
-    "start": "nest start",
-    "start:dev": "tsx watch src/main.ts",
-    "start:debug": "nest start --debug --watch",
-    "start:prod": "node dist/main",
+    "start": "export OPENSSL_CONF=/home/priax/openssl-legacy.cnf && nest start",
+    "start:dev": "export OPENSSL_CONF=/home/priax/openssl-legacy.cnf && tsx watch src/main.ts",
+    "start:debug": "export OPENSSL_CONF=/home/priax/openssl-legacy.cnf && nest start --debug --watch",
+    "start:prod": "export OPENSSL_CONF=/home/priax/openssl-legacy.cnf && node dist/main",
     "clean": "find ./src -type f \\( -name '*.js' -o -name '*.js.map' -o -name '*.d.ts' -o -name '*.d.ts.map' \\) -delete",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
@@ -71,7 +71,7 @@
     "@types/ws": "^8",
     "@typescript-eslint/eslint-plugin": "^8.37.0",
     "@typescript-eslint/parser": "^8.37.0",
-    "typescript-eslint": "^8.37.0",
+    "aws-sdk-client-mock": "^4.1.0",
     "eslint": "^9.31.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",
@@ -87,7 +87,8 @@
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "tsx": "^4.20.3",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.37.0"
   },
   "prisma": {
     "schema": "./prisma/"

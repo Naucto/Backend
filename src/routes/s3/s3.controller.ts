@@ -30,6 +30,8 @@ import { UploadFileDto } from "./dto/upload-file.dto";
 import { Readable } from "stream";
 
 import { Bucket, _Object } from "@aws-sdk/client-s3";
+import { CloudfrontSignedCookiesOutput } from "@aws-sdk/cloudfront-signer";
+
 import { S3ObjectMetadata, BucketPolicy } from "./s3.interface";
 import { MissingEnvVarError } from "@auth/auth.error";
 
@@ -235,6 +237,16 @@ export class S3Controller {
     return { message: "Policy applied successfully" };
   }
 
+  @Get("cdn-url/:key")
+  @ApiOperation({ summary: "Get the CDN URL for a file" })
+  @ApiParam({ name: "key", description: "Object key" })
+  @ApiResponse({ status: 200, description: "Returns the CDN URL" })
+  @ApiResponse({ status: 500, description: "Server error" })
+  async getCdnUrl(@Param("key") key: string): Promise<{ url: string }> {
+    const url = this.s3Service.generateSignedUrl(decodeURIComponent(key));
+    return { url };
+  }
+
   @Get("signed-cookies/:key")
   @ApiOperation({ summary: "Generate CloudFront signed cookies for a resource" })
   @ApiParam({ name: "key", description: "Object key (relative path in CDN)" })
@@ -246,37 +258,39 @@ export class S3Controller {
       if (!cdnUrl) {
         throw new MissingEnvVarError("CDN_URL");
       }
-      const resourceUrl = `https://${cdnUrl}/${encodeURIComponent(key)}`;
+      const resourceUrl = `https://${cdnUrl}/${key.split("/").map(encodeURIComponent).join("/")}`;
 
       const cookies = this.s3Service.createSignedCookies(
         resourceUrl,
         this.sessionCookieTimeout,
       );
 
-      res.cookie("CloudFront-Policy", cookies["CloudFront-Policy"], {
+      const cookieOptions = {
         httpOnly: true,
-        //secure: true,
+        secure: true,
         path: "/",
-        domain: cdnUrl,
-      });
-      res.cookie("CloudFront-Signature", cookies["CloudFront-Signature"], {
-        httpOnly: true,
-        //secure: true,
-        path: "/",
-        domain: cdnUrl,
-      });
-      res.cookie("CloudFront-Key-Pair-Id", cookies["CloudFront-Key-Pair-Id"], {
-        httpOnly: true,
-        //secure: true,
-        path: "/",
-        domain: cdnUrl,
-      });
+        domain: ".d3puh88kxjv1qg.cloudfront.net",
+        sameSite: "lax" as const,
+        maxAge: 60 * 60 * 1000,
+      };
 
-      res.status(HttpStatus.OK).json({
+      res.cookie("CloudFront-Expires", cookies["CloudFront-Expires"], cookieOptions);
+      res.cookie("CloudFront-Signature", cookies["CloudFront-Signature"], cookieOptions);
+      res.cookie("CloudFront-Key-Pair-Id", cookies["CloudFront-Key-Pair-Id"], cookieOptions);
+
+      const response = {
         message: "Signed cookies set successfully",
         resourceUrl,
-      });
+        cookies: {
+          "CloudFront-Expires": cookies["CloudFront-Expires"],
+          "CloudFront-Signature": cookies["CloudFront-Signature"],
+          "CloudFront-Key-Pair-Id": cookies["CloudFront-Key-Pair-Id"],
+        },
+      };
+      this.logger.debug("Response JSON:", JSON.stringify(response));
+      res.status(HttpStatus.OK).json(response);
     } catch (error) {
+      this.logger.error("Error generating signed cookies:", error);
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         error: "Could not generate signed cookies",
         message: error instanceof Error ? error.message : "Unknown error",
@@ -284,13 +298,21 @@ export class S3Controller {
     }
   }
 
-  @Get("cdn-url/:key")
-  @ApiOperation({ summary: "Get the CDN URL for a file" })
-  @ApiParam({ name: "key", description: "Object key" })
-  @ApiResponse({ status: 200, description: "Returns the CDN URL" })
-  @ApiResponse({ status: 500, description: "Server error" })
-  async getCdnUrl(@Param("key") key: string): Promise<{ url: string }> {
-    const url = this.s3Service.getCDNUrl(decodeURIComponent(key));
-    return { url };
+  @Get("/signed-cookies")
+  async setSignedCookies(@Res({ passthrough: true }) res: Response): Promise<{ success: boolean, cookies: CloudfrontSignedCookiesOutput}> {
+    const cookies = this.s3Service.generateSignedCookies();
+
+    Object.entries(cookies).forEach(([name, value]) => {
+      res.cookie(name, value, {
+        // domain: "d3puh88kxjv1qg.cloudfront.net",
+        httpOnly: true,
+        secure: false,
+        path: "/",
+        sameSite: "lax",
+        maxAge: 60 * 60 * 1000,
+      });
+    });
+
+    return { success: true, cookies };
   }
 }

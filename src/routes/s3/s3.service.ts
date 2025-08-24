@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
   S3Client,
@@ -45,8 +45,8 @@ import {
   S3ApplyPolicyException
 } from "./s3.error";
 import * as fs from "fs";
-import { base64UrlEncode, createPolicy, rsaSha256Sign } from "./s3.utils";
 import { MissingEnvVarError } from "@auth/auth.error";
+import { CloudfrontSignedCookiesOutput, getSignedCookies, getSignedUrl as getSignedCFUrl } from "@aws-sdk/cloudfront-signer";
 
 @Injectable()
 export class S3Service {
@@ -73,9 +73,7 @@ export class S3Service {
       AWS_SECRET_ACCESS_KEY: secretAccessKey,
     };
 
-    const missingKeys = Object.entries(envVars)
-      .filter(([, value]) => !value)
-      .map(([key]) => key);
+    const missingKeys = Object.entries(envVars).filter(([, value]) => !value).map(([key]) => key);
 
     if (missingKeys.length > 0) {
       throw new S3ConfigurationException(missingKeys);
@@ -143,7 +141,7 @@ export class S3Service {
     }
   }
 
-  createSignedCookies(resourceUrl: string, sessionCookieTimeout: number): Record<string, string> {
+  /*createSignedCookies(resourceUrl: string, sessionCookieTimeout: number): Record<string, string> {
     const keyPairId = this.configService.get<string>("CLOUDFRONT_KEY_PAIR_ID");
     const privateKeyPath = this.configService.get<string>("CLOUDFRONT_PRIVATE_KEY_PATH");
     if (!keyPairId) {
@@ -163,9 +161,36 @@ export class S3Service {
       "CloudFront-Signature": base64UrlEncode(signature),
       "CloudFront-Key-Pair-Id": keyPairId,
     };
+  }*/
+  /* Pas encore fonctionnel*/
+  createSignedCookies(resourceUrl: string, sessionCookieTimeout: number): CloudfrontSignedCookiesOutput {
+    const keyPairId = this.configService.get<string>("CLOUDFRONT_KEY_PAIR_ID");
+    const privateKeyPath = this.configService.get<string>("CLOUDFRONT_PRIVATE_KEY_PATH");
+    if (!keyPairId) throw new MissingEnvVarError("CLOUDFRONT_KEY_PAIR_ID");
+    if (!privateKeyPath) throw new MissingEnvVarError("CLOUDFRONT_PRIVATE_KEY_PATH");
+
+    const privateKey = fs.readFileSync(privateKeyPath, "utf8");
+    const expires = Math.floor(Date.now() / 1000) + sessionCookieTimeout;
+
+    const cookies = getSignedCookies({
+      url: resourceUrl,
+      keyPairId,
+      privateKey,
+      dateLessThan: expires,
+    });
+
+    if (!cookies["CloudFront-Signature"] || !cookies["CloudFront-Key-Pair-Id"]) {
+      throw new Error("Signed cookies are incomplete: {cookies}");
+    }
+
+    return {
+      ...cookies,
+      "CloudFront-Expires": expires,
+    };
   }
 
-  getSignedCloudfrontUrl(fileKey: string): string {
+  /* ça c'est fonctionnel */
+  generateSignedUrl(fileKey: string): string {
     const cdnUrl = this.configService.get<string>("CDN_URL");
     const keyPairId = this.configService.get<string>("CLOUDFRONT_KEY_PAIR_ID");
     const privateKeyPath = this.configService.get<string>("CLOUDFRONT_PRIVATE_KEY_PATH");
@@ -178,25 +203,45 @@ export class S3Service {
     if (!privateKeyPath) {
       throw new MissingEnvVarError("CLOUDFRONT_PRIVATE_KEY_PATH");
     }
-
-    if (!/^[\w\-./]+$/.test(fileKey) || fileKey.includes("..")) {
-      throw new BadRequestException("Invalid fileKey format");
-    }
-
+    const resourceUrl = this.getCDNUrl(fileKey);
     const privateKey = fs.readFileSync(privateKeyPath, "utf8");
-    const url = `https://${cdnUrl}/${encodeURIComponent(fileKey)}`;
-    const expires = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
-    const policy = createPolicy(url, expires);
-    const signature = rsaSha256Sign(privateKey, policy);
 
-    const signedUrl = `${url}?Policy=${base64UrlEncode(policy)}&Signature=${base64UrlEncode(signature)}&Key-Pair-Id=${keyPairId}`;
+    const signedUrl = getSignedCFUrl({
+      url: resourceUrl,
+      dateLessThan: new Date(Date.now() + 1000 * 60 * 60).toISOString(),
+      privateKey: privateKey,
+      keyPairId: keyPairId,
+    });
 
     return signedUrl;
   }
 
+  generateSignedCookies(): CloudfrontSignedCookiesOutput {
+    const cdnUrl = this.configService.get<string>("CDN_URL");
+    const keyPairId = this.configService.get<string>("CLOUDFRONT_KEY_PAIR_ID");
+    const privateKeyPath = this.configService.get<string>("CLOUDFRONT_PRIVATE_KEY_PATH");
+
+    if (!cdnUrl) throw new Error("Missing CDN_URL");
+    if (!keyPairId) throw new Error("Missing CLOUDFRONT_KEY_PAIR_ID");
+    if (!privateKeyPath) throw new Error("Missing CLOUDFRONT_PRIVATE_KEY_PATH");
+
+    const privateKey = fs.readFileSync(privateKeyPath, "utf8");
+
+    const expires = Math.floor(Date.now() / 1000) + 60 * 60; // expire in 1h
+
+    const cookies = getSignedCookies({
+      url: `https://${cdnUrl}/*`,
+      keyPairId: keyPairId,
+      privateKey: privateKey,
+      dateLessThan: expires,
+    });
+
+    return cookies;
+  }
+
   getCDNUrl(key: string): string {
     const cdnUrl = this.configService.get<string>("CDN_URL");
-    return `https://${cdnUrl}/${encodeURIComponent(key)}`;
+    return `https://${cdnUrl}/${key.split("/").map(encodeURIComponent).join("/")}`;
   }
 
   async downloadFile(key:string, bucketName?: string): Promise<DownloadedFile> {
