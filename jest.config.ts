@@ -1,11 +1,12 @@
 import { pathsToModuleNameMapper } from "ts-jest";
 import { readConfigFile, sys } from "typescript";
+import type { Config } from "jest";
 
 const configFile = readConfigFile("./tsconfig.json", sys.readFile);
 const compilerOptions = configFile.config.compilerOptions;
 
-module.exports = {
-  preset: "ts-jest",
+const config: Config = {
+  preset: "ts-jest/presets/default-esm",
   testEnvironment: "node",
   rootDir: "./src",
   moduleFileExtensions: ["js", "json", "ts"],
@@ -14,12 +15,19 @@ module.exports = {
     prefix: "<rootDir>/",
   }),
   transform: {
-    "^.+\\.(t|j)s$": "ts-jest",
+    "^.+\\.(t|j)s$": [
+      "ts-jest",
+      {
+        useESM: true,
+      },
+    ],
   },
   collectCoverage: true,
   collectCoverageFrom: ["**/*.(t|j)s"],
   coverageDirectory: "../coverage",
   coveragePathIgnorePatterns: ["/node_modules/"],
   setupFiles: ["<rootDir>/../jest.setup.ts"],
-  verbose: false // true pour plus d'informations
+  verbose: false, // true for more information
 };
+
+export default config;

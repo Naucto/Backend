@@ -53,19 +53,10 @@ export class S3Service {
   private readonly s3: S3Client;
   private readonly defaultBucket: string | undefined;
 
-  constructor(private readonly configService: ConfigService,) {
+  constructor(private readonly configService: ConfigService) {
     const region = this.configService.get<string>("AWS_REGION");
-    if (!region) {
-      throw new S3ConfigurationException(["AWS_REGION"]);
-    }
     const accessKeyId = this.configService.get<string>("AWS_ACCESS_KEY_ID");
-    if (!accessKeyId) {
-      throw new S3ConfigurationException(["AWS_ACCESS_KEY_ID"]);
-    }
     const secretAccessKey = this.configService.get<string>("AWS_SECRET_ACCESS_KEY");
-    if (!secretAccessKey) {
-      throw new S3ConfigurationException(["AWS_SECRET_ACCESS_KEY"]);
-    }
 
     const envVars = {
       AWS_REGION: region,
@@ -73,14 +64,16 @@ export class S3Service {
       AWS_SECRET_ACCESS_KEY: secretAccessKey,
     };
 
-    const missingKeys = Object.entries(envVars).filter(([, value]) => !value).map(([key]) => key);
+    const missingKeys = Object.entries(envVars)
+      .filter(([, value]) => !value)
+      .map(([key]) => key);
 
     if (missingKeys.length > 0) {
       throw new S3ConfigurationException(missingKeys);
     }
 
     this.s3 = new S3Client({
-      region: region,
+      region: region as string,
       credentials: {
         accessKeyId: accessKeyId as string,
         secretAccessKey: secretAccessKey as string,
