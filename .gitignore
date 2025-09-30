@@ -71,3 +71,6 @@ yarn.lock
 .yarn
 *.pem
 package-lock.json
+
+# Project specific
+config.json
