@@ -23,6 +23,8 @@ import {
   ApiParam,
 } from "@nestjs/swagger";
 import { S3Service } from "./s3.service";
+import { BucketService } from "./bucket.service";
+import { CloudfrontService } from "./cloudfront.service";
 import { DeleteS3FilesDto } from "./dto/delete-files.dto";
 import { ApplyPolicyDto } from "./dto/apply-policy.dto";
 import { GeneratePolicyDto } from "./dto/generate-policy.dto";
@@ -40,14 +42,19 @@ import { MissingEnvVarError } from "@auth/auth.error";
 export class S3Controller {
   private readonly sessionCookieTimeout = 600;
   private readonly logger = new Logger(S3Controller.name);
-  constructor(private readonly s3Service: S3Service, private readonly configService: ConfigService) {}
+  constructor(
+    private readonly s3Service: S3Service,
+    private readonly bucketService: BucketService,
+    private readonly cloudfrontService: CloudfrontService,
+    private readonly configService: ConfigService
+  ) {}
 
   @Get("list")
   @ApiOperation({ summary: "List all S3 buckets" })
   @ApiResponse({ status: 200, description: "Returns a list of all buckets" })
   @ApiResponse({ status: 500, description: "Server error" })
   async listBuckets(): Promise<{ buckets: Bucket[] }> {
-    const buckets = await this.s3Service.listBuckets();
+    const buckets = await this.bucketService.listBuckets();
     return { buckets };
   }
 
@@ -175,7 +182,7 @@ export class S3Controller {
   @ApiResponse({ status: 200, description: "Bucket deleted successfully" })
   @ApiResponse({ status: 500, description: "Server error" })
   async deleteBucket(@Param("bucketName") bucketName?: string): Promise<{ message: string }> {
-    await this.s3Service.deleteBucket(bucketName);
+    await this.bucketService.deleteBucket(bucketName);
     return { message: "Bucket deleted successfully" };
   }
 
@@ -185,7 +192,7 @@ export class S3Controller {
   @ApiResponse({ status: 201, description: "Bucket created successfully" })
   @ApiResponse({ status: 500, description: "Server error" })
   async createBucket(@Param("bucketName") bucketName?: string): Promise<{ message: string }> {
-    await this.s3Service.createBucket(bucketName);
+    await this.bucketService.createBucket(bucketName);
     return { message: "Bucket created successfully" };
   }
 
@@ -210,7 +217,7 @@ export class S3Controller {
   @ApiResponse({ status: 500, description: "Server error" })
   async generateBucketPolicy(@Body() generatePolicyDto: GeneratePolicyDto, @Param("bucketName") bucketName?: string): Promise<{ message: string; policy: BucketPolicy }> {
     const { actions, effect, principal, prefix } = generatePolicyDto;
-    const policy = this.s3Service.generateBucketPolicy(
+    const policy = this.bucketService.generateBucketPolicy(
       bucketName,
       actions || ["s3:GetObject"],
       effect || "Allow",
@@ -233,7 +240,7 @@ export class S3Controller {
         error: "No policy provided",
       };
     }
-    await this.s3Service.applyBucketPolicy(applyPolicyDto.policy, bucketName);
+    await this.bucketService.applyBucketPolicy(applyPolicyDto.policy, bucketName);
     return { message: "Policy applied successfully" };
   }
 
@@ -243,7 +250,7 @@ export class S3Controller {
   @ApiResponse({ status: 200, description: "Returns the CDN URL" })
   @ApiResponse({ status: 500, description: "Server error" })
   async getCdnUrl(@Param("key") key: string): Promise<{ url: string }> {
-    const url = this.s3Service.generateSignedUrl(decodeURIComponent(key));
+    const url = this.cloudfrontService.generateSignedUrl(decodeURIComponent(key));
     return { url };
   }
 
@@ -260,7 +267,7 @@ export class S3Controller {
       }
       const resourceUrl = `https://${cdnUrl}/${key.split("/").map(encodeURIComponent).join("/")}`;
 
-      const cookies = this.s3Service.createSignedCookies(
+      const cookies = this.cloudfrontService.createSignedCookies(
         resourceUrl,
         this.sessionCookieTimeout,
       );
@@ -300,7 +307,7 @@ export class S3Controller {
 
   @Get("/signed-cookies")
   async setSignedCookies(@Res({ passthrough: true }) res: Response): Promise<{ success: boolean, cookies: CloudfrontSignedCookiesOutput}> {
-    const cookies = this.s3Service.generateSignedCookies();
+    const cookies = this.cloudfrontService.generateSignedCookies();
 
     Object.entries(cookies).forEach(([name, value]) => {
       res.cookie(name, value, {
