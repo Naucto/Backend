@@ -1,5 +1,6 @@
 FROM node:20-alpine
 
+ARG BACKEND_PORT=3000
 ARG POSTGRES_HOST
 ARG POSTGRES_PORT
 ARG POSTGRES_USER
@@ -18,6 +19,6 @@ COPY prisma ./prisma
 RUN npm install && npx prisma generate
 COPY . .
 
-EXPOSE 3000
+EXPOSE $BACKEND_PORT
 
 CMD ["sh", "-c", "npx prisma migrate deploy && npm start"]
