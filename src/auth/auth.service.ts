@@ -5,6 +5,7 @@ import {
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { UserService } from "@user/user.service";
+import { GoogleAuthService } from "./google-auth.service";
 import * as bcrypt from "bcryptjs";
 import { UserDto } from "./dto/user.dto";
 import { AuthResponseDto } from "./dto/auth-response.dto";
@@ -16,6 +17,7 @@ export class AuthService {
   constructor(
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
+    private readonly googleAuthService: GoogleAuthService,
   ) {}
 
   async validateUser(email: string, password: string): Promise<UserDto> {
@@ -69,5 +71,25 @@ export class AuthService {
     };
 
     return response;
+  }
+  
+  async loginWithGoogle(googleToken: string): Promise<AuthResponseDto> {
+    const googleUser = await this.googleAuthService.verifyGoogleToken(googleToken);
+
+    let user = await this.userService.findByEmail(googleUser.email);
+
+    if (!user) {
+      user = await this.userService.create({
+        email: googleUser.email,
+        username: googleUser.name.replace(/\s+/g, "_"),
+        password: "",
+        roles: [],
+      });
+    }
+
+    const payload: JwtPayload = { sub: user.id, email: user.email };
+    const access_token = this.jwtService.sign(payload);
+
+    return { access_token };
   }
 }

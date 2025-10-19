@@ -18,7 +18,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Readable } from "stream";
-import { DownloadedFile, S3ObjectMetadata } from "./s3.interface";
+import { DownloadedFile, S3ObjectMetadata, StorageService } from "./s3.interface";
 import {
   S3ListObjectsException,
   S3SignedUrlException,
@@ -32,36 +32,7 @@ import {
 } from "./s3.error";
 
 @Injectable()
-export class S3Service {
-  //private readonly s3: S3Client;
-
-  /*constructor(private readonly configService: ConfigService) {
-    const region = this.configService.get<string>("AWS_REGION");
-    const accessKeyId = this.configService.get<string>("AWS_ACCESS_KEY_ID");
-    const secretAccessKey = this.configService.get<string>("AWS_SECRET_ACCESS_KEY");
-
-    const envVars = {
-      AWS_REGION: region,
-      AWS_ACCESS_KEY_ID: accessKeyId,
-      AWS_SECRET_ACCESS_KEY: secretAccessKey,
-    };
-
-    const missingKeys = Object.entries(envVars)
-      .filter(([, value]) => !value)
-      .map(([key]) => key);
-
-    if (missingKeys.length > 0) {
-      throw new S3ConfigurationException(missingKeys);
-    }
-
-    this.s3 = new S3Client({
-      region: region as string,
-      credentials: {
-        accessKeyId: accessKeyId as string,
-        secretAccessKey: secretAccessKey as string,
-      },
-    });
-  }*/
+export class S3Service implements StorageService {
   constructor(private readonly s3: S3Client, private readonly configService: ConfigService) {}
 
   private resolveBucket(bucketName?: string): string {

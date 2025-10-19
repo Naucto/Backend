@@ -9,6 +9,7 @@ import { RolesGuard } from "./guards/roles.guard";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { MissingEnvVarError } from "./auth.error";
+import { GoogleAuthService } from "./google-auth.service";
 
 @Module({
   imports: [
@@ -23,15 +24,16 @@ import { MissingEnvVarError } from "./auth.error";
         if (!secret) {
           throw new MissingEnvVarError("JWT_SECRET");
         }
+        const expiresIn = (cs.get<string>("JWT_EXPIRES_IN") ?? "1h") as `${number}${"s" | "m" | "h" | "d"}`;
 
         return {
           secret,
-          signOptions: { expiresIn: cs.get<string>("JWT_EXPIRES_IN") ?? "1h" },
+          signOptions: { expiresIn: expiresIn },
         };
       },
     }),
   ],
-  providers: [JwtAuthGuard, JwtStrategy, RolesGuard, AuthService],
+  providers: [JwtAuthGuard, JwtStrategy, RolesGuard, AuthService, GoogleAuthService],
   exports: [JwtAuthGuard, RolesGuard, JwtModule],
   controllers: [AuthController],
 })

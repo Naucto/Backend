@@ -9,3 +9,10 @@ export interface JwtPayload {
 export interface RequestWithUser extends Request {
   user: UserDto;
 }
+
+export interface GoogleUserPayload {
+  email: string;
+  name: string;
+  picture: string | undefined;
+  googleId: string;
+}

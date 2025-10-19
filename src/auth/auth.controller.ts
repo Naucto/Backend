@@ -37,4 +37,12 @@ export class AuthController {
   async register(@Body() createUserDto: CreateUserDto): Promise<AuthResponseDto> {
     return this.authService.register(createUserDto);
   }
+
+  @Post("google")
+  @ApiOperation({ summary: "Authenticate with Google" })
+  @ApiBody({ schema: { properties: { token: { type: "string" } } } })
+  @ApiResponse({ status: 201, type: AuthResponseDto })
+  async loginWithGoogle(@Body("token") token: string): Promise<AuthResponseDto> {
+    return this.authService.loginWithGoogle(token);
+  }
 }

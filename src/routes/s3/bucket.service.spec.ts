@@ -14,17 +14,26 @@ import {
   S3ApplyPolicyException,
   BucketResolutionException
 } from "./s3.error";
+import { ConfigService } from "@nestjs/config";
 
 describe("BucketService", () => {
   let bucketService: BucketService;
   let mockS3: S3Client & { send: jest.Mock };
+  let mockConfigService: ConfigService;
 
   beforeEach(() => {
     mockS3 = {
       send: jest.fn(),
     } as unknown as S3Client & { send: jest.Mock };
 
-    bucketService = new BucketService(mockS3);
+    mockConfigService = {
+      get: jest.fn((key: string) => {
+        if (key === "S3_BUCKET_NAME") return undefined; // no default bucket
+        return undefined;
+      }),
+    } as unknown as ConfigService;
+
+    bucketService = new BucketService(mockS3, mockConfigService);
   });
 
   describe("resolveBucket", () => {
