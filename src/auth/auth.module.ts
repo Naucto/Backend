@@ -8,7 +8,7 @@ import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import { RolesGuard } from "./guards/roles.guard";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
-import { MissingEnvVarError } from "./auth.error";
+import { MissingEnvVarError, BadEnvVarError } from "./auth.error";
 
 type DurationString = `${number}${'s'|'m'|'h'|'d'}`;
 
@@ -16,7 +16,7 @@ function parseExpiresIn(v?: string): number | DurationString {
   if (!v) return '1h';
   if (/^\d+$/.test(v)) return Number(v);
   if (/^\d+[smhd]$/.test(v)) return v as DurationString;
-  throw new Error(`Invalid JWT_EXPIRES_IN: ${v}`);
+  throw new BadEnvVarError(`Invalid JWT_EXPIRES_IN: ${v}`);
 }
 
 @Module({
