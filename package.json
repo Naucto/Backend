@@ -32,12 +32,13 @@
     "@nestjs/platform-express": "^11.1.6",
     "@nestjs/schedule": "^6.0.1",
     "@nestjs/swagger": "^11.2.0",
-    "@prisma/client": "^6.16.3",
+    "@prisma/client": "^6.18.0",
     "ansis": "^4.2.0",
     "aws-cloudfront-sign": "^3.0.2",
     "bcryptjs": "^3.0.2",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
+    "cookie-parser": "^1.4.7",
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
     "dotenv": "^17.2.3",
@@ -62,6 +63,7 @@
     "@nestjs/testing": "^11.1.6",
     "@swc/cli": "^0.7.8",
     "@swc/core": "^1.13.5",
+    "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.3",
     "@types/jest": "^30.0.0",
     "@types/jsonwebtoken": "^9",
@@ -82,7 +84,7 @@
     "globals": "^16.4.0",
     "jest": "^30.2.0",
     "prettier": "^3.6.2",
-    "prisma": "^6.16.3",
+    "prisma": "^6.18.0",
     "source-map-support": "^0.5.21",
     "supertest": "^7.1.4",
     "ts-jest": "^29.4.4",
@@ -92,9 +94,6 @@
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.45.0"
-  },
-  "prisma": {
-    "schema": "./prisma/"
   },
   "packageManager": "npm@11.6.1"
 }
