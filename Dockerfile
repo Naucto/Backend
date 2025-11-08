@@ -19,6 +19,5 @@ COPY prisma ./prisma
 RUN npm install && npx prisma generate
 COPY . .
 
-EXPOSE $BACKEND_PORT
-
-CMD ["sh", "-c", "npx prisma migrate deploy && npm start"]
+ENV PORT=${BACKEND_PORT}
+CMD ["sh", "-c", "npx prisma migrate deploy && npm run start"]
