@@ -1,5 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
+import { join } from "path";
+import express from "express";
 
 export function setupSwagger(app: INestApplication) {
   const config = new DocumentBuilder()
@@ -18,9 +20,22 @@ export function setupSwagger(app: INestApplication) {
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
+
+  app.use(
+    "/swagger-ui",
+    express.static(join(__dirname, "..", "node_modules", "swagger-ui-dist")),
+  );
+
   SwaggerModule.setup("swagger", app, document, {
     swaggerOptions: {
       persistAuthorization: true,
+      url: "/swagger-json",
     },
+    customSiteTitle: "Naucto API Docs",
+    customCssUrl: "/swagger-ui/swagger-ui.css",
+    customJs: [
+      "/swagger-ui/swagger-ui-bundle.js",
+      "/swagger-ui/swagger-ui-standalone-preset.js",
+    ],
   });
 }
