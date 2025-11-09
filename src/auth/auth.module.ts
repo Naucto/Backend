@@ -7,11 +7,18 @@ import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import { RolesGuard } from "./guards/roles.guard";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
-import { MissingEnvVarError } from "./auth.error";
+import { MissingEnvVarError, BadEnvVarError } from "./auth.error";
 import { GoogleAuthService } from "./google-auth.service";
 import { Module, Logger } from "@nestjs/common";
-import { isStringValue } from "./auth.utils";
 
+type DurationString = `${number}${'s'|'m'|'h'|'d'}`;
+
+function parseExpiresIn(v?: string): number | DurationString {
+  if (!v) return '1h';
+  if (/^\d+$/.test(v)) return Number(v);
+  if (/^\d+[smhd]$/.test(v)) return v as DurationString;
+  throw new BadEnvVarError(`Invalid JWT_EXPIRES_IN: ${v}`);
+}
 
 @Module({
     imports: [
@@ -25,7 +32,7 @@ import { isStringValue } from "./auth.utils";
                 const logger = new Logger("AuthModule");
                 const env = cs.get<string>("NODE_ENV") ?? "development";
                 const secret = cs.get<string>("JWT_SECRET");
-                const expiresIn = cs.get<string>("JWT_EXPIRES_IN") ?? "1h";
+                const expiresInRaw = cs.get<string>("JWT_EXPIRES_IN");
 
                 if (!secret) {
                     throw new MissingEnvVarError("JWT_SECRET");
@@ -33,17 +40,12 @@ import { isStringValue } from "./auth.utils";
                 if (secret === "undefined" || secret === "null") {
                     throw new MissingEnvVarError("JWT_SECRET seems malformed (string 'undefined' or 'null')");
                 }
-                if (expiresIn === "undefined" || expiresIn === "null") {
-                    logger.warn(`JWT_EXPIRES_IN seems malformed ("${expiresIn}"). Falling back to default "1h".`);
-                }
+
                 if (env === "development" && secret.length < 16) {
                     logger.warn(`JWT_SECRET is quite short (${secret.length} chars). Consider using a longer, more secure secret.`);
                 }
 
-                if (!isStringValue(expiresIn) && isNaN(Number(expiresIn))) {
-                    logger.error(`Invalid JWT_EXPIRES_IN value: "${expiresIn}". Expected a number or a string like "60s", "2h", or "1d".`);
-                    throw new Error(`Invalid JWT_EXPIRES_IN value: ${expiresIn}`);
-                }
+                const expiresIn = parseExpiresIn(expiresInRaw);
 
                 if (env === "development") {
                     logger.log(`JWT config loaded successfully ✅`);
@@ -54,7 +56,7 @@ import { isStringValue } from "./auth.utils";
                 return {
                     secret,
                     signOptions: {
-                        expiresIn: isStringValue(expiresIn) ? expiresIn : Number(expiresIn),
+                        expiresIn: expiresIn,
                     },
                 };
             },
