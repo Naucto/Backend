@@ -1,6 +1,6 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { IsEmail, IsInt, IsOptional, IsString } from "class-validator";
-import { AtLeastOne } from "@common/decorators/at-least-one";
+import { IsEmail, IsInt, IsOptional, IsString, Validate } from "class-validator";
+import { AtLeastOneConstraint } from "@common/decorators/at-least-one";
 
 export class AddCollaboratorDto {
   @ApiProperty({
@@ -10,7 +10,7 @@ export class AddCollaboratorDto {
   })
   @IsOptional()
   @IsInt()
-  @AtLeastOne(['userId', 'username', 'email'])
+  @Validate(AtLeastOneConstraint, [['userId', 'username', 'email']])
   userId?: number;
 
   @ApiProperty({
@@ -40,7 +40,7 @@ export class RemoveCollaboratorDto {
   })
   @IsOptional()
   @IsInt()
-  @AtLeastOne(['userId', 'username', 'email'])
+  @Validate(AtLeastOneConstraint, [['userId', 'username', 'email']])
   userId?: number;
 
   @ApiProperty({
