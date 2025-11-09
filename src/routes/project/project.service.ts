@@ -219,7 +219,7 @@ export class ProjectService {
             throw new NotFoundException(`Project with ID ${id} not found`);
         }
 
-        if (user.id === initiator) {
+        if (user.id === project.userId) {
             throw new ForbiddenException("Cannot remove the project creator");
         }
 
@@ -245,8 +245,7 @@ export class ProjectService {
         });
     }
 
-    async updateLastTimeUpdate(projectId: number): Promise<void>
-{
+    async updateLastTimeUpdate(projectId: number): Promise<void> {
         const sessions = await this.prisma.workSession.findMany({ where : { projectId } });
         if (sessions.length === 0)
             return;

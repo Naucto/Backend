@@ -23,7 +23,7 @@ export function setupSwagger(app: INestApplication) {
 
   app.use(
     "/swagger-ui",
-    express.static(join(__dirname, "..", "node_modules", "swagger-ui-dist")),
+    express.static(join(process.cwd(), "node_modules", "swagger-ui-dist")),
   );
 
   SwaggerModule.setup("swagger", app, document, {
