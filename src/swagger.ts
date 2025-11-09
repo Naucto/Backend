@@ -30,6 +30,7 @@ export function setupSwagger(app: INestApplication) {
     swaggerOptions: {
       persistAuthorization: true,
       url: "/swagger-json",
+      layout: "BaseLayout",
     },
     customSiteTitle: "Naucto API Docs",
     customCssUrl: "/swagger-ui/swagger-ui.css",
