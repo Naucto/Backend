@@ -13,7 +13,7 @@ enum ProjectStatus {
 }
 
 model Project {
-  id           Int              @id @default(autoincrement())
+  id           Int               @id @default(autoincrement())
   name         String
   shortDesc    String
   longDesc     String?
@@ -21,7 +21,8 @@ model Project {
   iconUrl      String?
   monetization MonetizationType? @default(NONE)
   price        Float?
-  createdAt    DateTime         @default(now())
+  createdAt    DateTime          @default(now())
+  userId       Int
 
   // Relations
   creator       User          @relation("ProjectCreator", fields: [userId], references: [id])
@@ -34,7 +35,6 @@ model Project {
   uniquePlayers Int @default(0)
   activePlayers Int @default(0)
   likes         Int @default(0)
-  userId        Int
 }
 
 model Comment {

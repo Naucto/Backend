@@ -1,6 +1,9 @@
-import { ApiProperty } from "@nestjs/swagger";
+import { ApiProperty, ApiHideProperty } from "@nestjs/swagger";
 
 export class AuthResponseDto {
-  @ApiProperty({ example: "jwt_token_here" })
-    access_token!: string;
+  @ApiProperty({ example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." })
+  access_token!: string;
+
+  @ApiHideProperty()
+  refresh_token!: string;
 }

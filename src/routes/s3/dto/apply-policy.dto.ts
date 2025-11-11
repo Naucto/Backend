@@ -1,5 +1,33 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { IsNotEmpty } from "class-validator";
+import { IsNotEmpty, ValidateNested } from "class-validator";
+import { Type } from "class-transformer";
+
+class BucketPolicyStatementDto {
+  @ApiProperty()
+    Sid!: string;
+
+  @ApiProperty()
+    Effect!: string;
+
+  @ApiProperty()
+    Principal!: "*" | { AWS: string };
+
+  @ApiProperty({ type: [String] })
+    Action!: string[];
+
+  @ApiProperty()
+    Resource!: string;
+}
+
+class BucketPolicyDto {
+  @ApiProperty()
+    Version!: string;
+
+  @ApiProperty({ type: [BucketPolicyStatementDto] })
+  @ValidateNested({ each: true })
+  @Type(() => BucketPolicyStatementDto)
+    Statement!: BucketPolicyStatementDto[];
+}
 
 export class ApplyPolicyDto {
   @ApiProperty({
@@ -8,6 +36,7 @@ export class ApplyPolicyDto {
       Version: "2012-10-17",
       Statement: [
         {
+          Sid: "Stmt1",
           Effect: "Allow",
           Principal: "*",
           Action: ["s3:GetObject"],
@@ -17,5 +46,7 @@ export class ApplyPolicyDto {
     },
   })
   @IsNotEmpty()
-  readonly policy: any;
+  @ValidateNested()
+  @Type(() => BucketPolicyDto)
+  readonly policy!: BucketPolicyDto;
 }

@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import { PrismaService } from "@prisma/prisma.service";
+import { PrismaService } from "@prisma_naucto/prisma.service";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
 import { User } from "@prisma/client";
@@ -81,17 +81,21 @@ export class UserService {
   }
 
   async update(id: number, updateUserDto: UpdateUserDto): Promise<User> {
+    const { roles, ...rest } = updateUserDto;
+    
     const data: Prisma.UserUpdateInput = {
-      ...updateUserDto,
+      ...rest,
+      ...(roles ? { roles: { connect: roles.map(roleName => ({ name: roleName })) } } : {}),
     };
-    try {
-      if (updateUserDto.password) {
-        data.password = await bcrypt.hash(updateUserDto.password, UserService.BCRYPT_SALT_ROUNDS);
-      }
 
+    if (updateUserDto.password) {
+      data.password = await bcrypt.hash(updateUserDto.password, UserService.BCRYPT_SALT_ROUNDS);
+    }
+
+    try {
       return await this.prisma.user.update({
         where: { id },
-        data
+        data,
       });
     } catch (error: unknown) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {

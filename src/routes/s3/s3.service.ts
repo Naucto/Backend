@@ -1,9 +1,7 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
   S3Client,
-  ListBucketsCommand,
-  ListBucketsCommandInput,
   ListObjectsV2Command,
   ListObjectsV2CommandInput,
   GetObjectCommand,
@@ -14,106 +12,36 @@ import {
   DeleteObjectCommandInput,
   DeleteObjectsCommand,
   DeleteObjectsCommandInput,
-  CreateBucketCommand,
-  CreateBucketCommandInput,
-  DeleteBucketCommand,
-  DeleteBucketCommandInput,
   HeadObjectCommand,
   HeadObjectCommandInput,
-  PutBucketPolicyCommand,
-  PutBucketPolicyCommandInput,
-  Bucket,
   _Object,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Readable } from "stream";
-import { DownloadedFile, S3ObjectMetadata, BucketPolicy, BucketPolicyStatement } from "./s3.interface";
+import { DownloadedFile, S3ObjectMetadata, StorageService } from "./s3.interface";
 import {
-  S3ConfigurationException,
-  BucketResolutionException,
-  S3ListBucketsException,
   S3ListObjectsException,
   S3SignedUrlException,
   S3DownloadException,
   S3UploadException,
   S3DeleteFileException,
   S3DeleteFilesException,
-  S3DeleteBucketException,
-  S3CreateBucketException,
   S3GetMetadataException,
   S3MissingMetadataException,
-  S3ApplyPolicyException
+  BucketResolutionException,
 } from "./s3.error";
-import * as fs from "fs";
-import { base64UrlEncode, createPolicy, rsaSha256Sign } from "./s3.utils";
-import { MissingEnvVarError } from "@auth/auth.error";
 
 @Injectable()
-export class S3Service {
-  private readonly s3: S3Client;
-  private readonly defaultBucket: string | undefined;
-
-  constructor(private readonly configService: ConfigService,) {
-    const region = this.configService.get<string>("AWS_REGION");
-    if (!region) {
-      throw new S3ConfigurationException(["AWS_REGION"]);
-    }
-    const accessKeyId = this.configService.get<string>("AWS_ACCESS_KEY_ID");
-    if (!accessKeyId) {
-      throw new S3ConfigurationException(["AWS_ACCESS_KEY_ID"]);
-    }
-    const secretAccessKey = this.configService.get<string>("AWS_SECRET_ACCESS_KEY");
-    if (!secretAccessKey) {
-      throw new S3ConfigurationException(["AWS_SECRET_ACCESS_KEY"]);
-    }
-
-    const envVars = {
-      AWS_REGION: region,
-      AWS_ACCESS_KEY_ID: accessKeyId,
-      AWS_SECRET_ACCESS_KEY: secretAccessKey,
-    };
-
-    const missingKeys = Object.entries(envVars)
-      .filter(([, value]) => !value)
-      .map(([key]) => key);
-
-    if (missingKeys.length > 0) {
-      throw new S3ConfigurationException(missingKeys);
-    }
-
-    this.s3 = new S3Client({
-      region: region,
-      credentials: {
-        accessKeyId: accessKeyId as string,
-        secretAccessKey: secretAccessKey as string,
-      },
-    });
-    this.defaultBucket = this.configService.get<string>("S3_BUCKET_NAME");
-  }
+export class S3Service implements StorageService {
+  constructor(private readonly s3: S3Client, private readonly configService: ConfigService) {}
 
   private resolveBucket(bucketName?: string): string {
-    const resolved = bucketName || this.defaultBucket;
-    if (!resolved) {
-      throw new BucketResolutionException("No bucket name provided and no default bucket configured.");
-    }
+    const defaultBucket = this.configService.get<string>("S3_BUCKET_NAME");
+    const resolved = bucketName || defaultBucket;
+    if (!resolved) throw new BucketResolutionException("No bucket provided and no default bucket configured.");
     return resolved;
   }
-
-  async listBuckets(): Promise<Bucket[]> {
-    try {
-      const input: ListBucketsCommandInput = {};
-      const command = new ListBucketsCommand(input);
-      const result = await this.s3.send(command);
-      return result.Buckets || [];
-    } catch (error: unknown) {
-      if (error instanceof Error) {
-        throw new S3ListBucketsException(error.message, { cause: error });
-      } else {
-        throw new S3ListBucketsException("An unknown error occurred while listing buckets.");
-      }
-    }
-  }
-
+ 
   async listObjects(bucketName?: string): Promise<_Object[]> {
     const resolvedBucketName = this.resolveBucket(bucketName);
     try {
@@ -141,62 +69,6 @@ export class S3Service {
     } catch (error) {
       throw new S3SignedUrlException(resolvedBucketName, key, error);
     }
-  }
-
-  createSignedCookies(resourceUrl: string, sessionCookieTimeout: number): Record<string, string> {
-    const keyPairId = this.configService.get<string>("CLOUDFRONT_KEY_PAIR_ID");
-    const privateKeyPath = this.configService.get<string>("CLOUDFRONT_PRIVATE_KEY_PATH");
-    if (!keyPairId) {
-      throw new MissingEnvVarError("CLOUDFRONT_KEY_PAIR_ID");
-    }
-    if (!privateKeyPath) {
-      throw new MissingEnvVarError("CLOUDFRONT_PRIVATE_KEY_PATH");
-    }
-
-    const privateKey = fs.readFileSync(privateKeyPath, "utf8");
-    const expires = Math.floor(Date.now() / 1000) + sessionCookieTimeout;
-    const policy = createPolicy(resourceUrl, expires);
-    const signature = rsaSha256Sign(privateKey, policy);
-
-    return {
-      "CloudFront-Policy": base64UrlEncode(policy),
-      "CloudFront-Signature": base64UrlEncode(signature),
-      "CloudFront-Key-Pair-Id": keyPairId,
-    };
-  }
-
-  getSignedCloudfrontUrl(fileKey: string): string {
-    const cdnUrl = this.configService.get<string>("CDN_URL");
-    const keyPairId = this.configService.get<string>("CLOUDFRONT_KEY_PAIR_ID");
-    const privateKeyPath = this.configService.get<string>("CLOUDFRONT_PRIVATE_KEY_PATH");
-    if (!cdnUrl) {
-      throw new MissingEnvVarError("CDN_URL");
-    }
-    if (!keyPairId) {
-      throw new MissingEnvVarError("CLOUDFRONT_KEY_PAIR_ID");
-    }
-    if (!privateKeyPath) {
-      throw new MissingEnvVarError("CLOUDFRONT_PRIVATE_KEY_PATH");
-    }
-
-    if (!/^[\w\-./]+$/.test(fileKey) || fileKey.includes("..")) {
-      throw new BadRequestException("Invalid fileKey format");
-    }
-
-    const privateKey = fs.readFileSync(privateKeyPath, "utf8");
-    const url = `https://${cdnUrl}/${encodeURIComponent(fileKey)}`;
-    const expires = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
-    const policy = createPolicy(url, expires);
-    const signature = rsaSha256Sign(privateKey, policy);
-
-    const signedUrl = `${url}?Policy=${base64UrlEncode(policy)}&Signature=${base64UrlEncode(signature)}&Key-Pair-Id=${keyPairId}`;
-
-    return signedUrl;
-  }
-
-  getCDNUrl(key: string): string {
-    const cdnUrl = this.configService.get<string>("CDN_URL");
-    return `https://${cdnUrl}/${encodeURIComponent(key)}`;
   }
 
   async downloadFile(key:string, bucketName?: string): Promise<DownloadedFile> {
@@ -288,30 +160,6 @@ export class S3Service {
     }
   }
 
-  async deleteBucket(bucketName?: string): Promise<void> {
-    const resolvedBucketName = this.resolveBucket(bucketName);
-    try {
-      const input: DeleteBucketCommandInput = { Bucket: resolvedBucketName };
-      const command = new DeleteBucketCommand(input);
-      await this.s3.send(command);
-    } catch (error) {
-      throw new S3DeleteBucketException(resolvedBucketName, error);
-    }
-  }
-
-  async createBucket(bucketName?: string): Promise<void> {
-    const resolvedBucketName = this.resolveBucket(bucketName);
-    try {
-      const input: CreateBucketCommandInput = {
-        Bucket: resolvedBucketName
-      };
-      const command = new CreateBucketCommand(input);
-      await this.s3.send(command);
-    } catch (error) {
-      throw new S3CreateBucketException(resolvedBucketName, error);
-    }
-  }
-
   async getObjectMetadata(key:string, bucketName?: string): Promise<S3ObjectMetadata> {
     const resolvedBucketName = this.resolveBucket(bucketName);
     try {
@@ -341,41 +189,6 @@ export class S3Service {
       };
     } catch (error) {
       throw new S3GetMetadataException(resolvedBucketName, key, error);
-    }
-  }
-
-  generateBucketPolicy(bucketName?: string, actions: string[] = ["s3:GetObject"], effect = "Allow", principal = "*", prefix = "*"): BucketPolicy {
-    const resolvedBucketName = this.resolveBucket(bucketName);
-
-    const statement: BucketPolicyStatement = {
-      Sid: "BucketPolicy",
-      Effect: effect,
-      Principal: principal === "*" ? "*" : { AWS: principal },
-      Action: actions,
-      Resource:
-        prefix === "*"
-          ? `arn:aws:s3:::${resolvedBucketName}/*`
-          : `arn:aws:s3:::${resolvedBucketName}/${prefix}`,
-    };
-
-    return {
-      Version: "2012-10-17",
-      Statement: [ statement ]
-    };
-  }
-
-  async applyBucketPolicy(policy: BucketPolicy, bucketName?: string): Promise<void> {
-    const resolvedBucketName = this.resolveBucket(bucketName);
-    try {
-      const input: PutBucketPolicyCommandInput = {
-        Bucket: resolvedBucketName,
-        Policy: typeof policy === "string" ? policy : JSON.stringify(policy)
-      };
-
-      const command = new PutBucketPolicyCommand(input);
-      await this.s3.send(command);
-    } catch (error) {
-      throw new S3ApplyPolicyException(resolvedBucketName, error);
     }
   }
 }
