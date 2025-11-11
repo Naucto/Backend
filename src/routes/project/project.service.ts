@@ -184,7 +184,7 @@ export class ProjectService {
         });
     }
 
-    async removeCollaborator(id: number, initiator: number, removeCollaboratorDto: RemoveCollaboratorDto): Promise<Project> {
+    async removeCollaborator(id: number, removeCollaboratorDto: RemoveCollaboratorDto): Promise<Project> {
         let user;
 
         if (removeCollaboratorDto.userId) {

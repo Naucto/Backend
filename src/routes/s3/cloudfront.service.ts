@@ -8,7 +8,6 @@ import { MissingEnvVarError } from "@auth/auth.error";
 export class CloudfrontService {
   constructor(private readonly configService: ConfigService) {}
 
-  /* ça c'est fonctionnel */
   generateSignedUrl(fileKey: string): string {
     const cdnUrl = this.configService.get<string>("CDN_URL");
     const keyPairId = this.configService.get<string>("CLOUDFRONT_KEY_PAIR_ID");
@@ -79,7 +78,7 @@ export class CloudfrontService {
       "CloudFront-Key-Pair-Id": keyPairId,
     };
   }*/
-  /* Pas encore fonctionnel*/
+
   createSignedCookies(resourceUrl: string, sessionCookieTimeout: number): CloudfrontSignedCookiesOutput {
     const keyPairId = this.configService.get<string>("CLOUDFRONT_KEY_PAIR_ID");
     const privateKeyPath = this.configService.get<string>("CLOUDFRONT_PRIVATE_KEY_PATH");
@@ -97,7 +96,7 @@ export class CloudfrontService {
     });
 
     if (!cookies["CloudFront-Signature"] || !cookies["CloudFront-Key-Pair-Id"]) {
-      throw new Error("Signed cookies are incomplete: {cookies}");
+      throw new Error(`Signed cookies are incomplete: ${JSON.stringify(cookies)}`);
     }
 
     return {

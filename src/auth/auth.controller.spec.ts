@@ -1,6 +1,6 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { AuthController } from "./auth.controller";
-import { PrismaModule } from "src/prisma/prisma.module";
+import { PrismaModule } from "@prisma_naucto/prisma.module";
 import { AuthService } from "./auth.service";
 
 describe("AuthController", () => {

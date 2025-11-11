@@ -1,7 +1,7 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { WorkSessionController } from "./work-session.controller";
 import { WorkSessionService } from "./work-session.service";
-import { PrismaModule } from "src/prisma/prisma.module";
+import { PrismaModule } from "@prisma_naucto/prisma.module";
 
 describe("WorkSessionController", () => {
   let controller: WorkSessionController;

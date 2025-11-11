@@ -209,10 +209,8 @@ export class ProjectController {
     async removeCollaborator(
         @Param("id", ParseIntPipe) id: number,
         @Body() removeCollaboratorDto: RemoveCollaboratorDto,
-        @Req() request: RequestWithUser,
     ): Promise<Project> {
-        const initiator = request.user.id;
-        return this.projectService.removeCollaborator(id, initiator, removeCollaboratorDto);
+        return this.projectService.removeCollaborator(id, removeCollaboratorDto);
     }
 
     @UseGuards(ProjectCreatorGuard)
