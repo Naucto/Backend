@@ -9,6 +9,11 @@ import {
 import { S3Service } from "@s3/s3.service";
 import { Project } from "@prisma/client";
 
+type ProjectWithRelations = Project & {
+    collaborators: Array<{ id: number; username: string; email: string }>;
+    creator: { id: number; username: string; email: string };
+};
+
 @Injectable()
 export class ProjectService {
     static COLLABORATOR_SELECT = {
@@ -44,9 +49,17 @@ export class ProjectService {
         });
     }
 
-    async findOne(id: number): Promise<Project> {
+    async findOne(id: number): Promise<ProjectWithRelations> {
         const project = await this.prisma.project.findUnique({
             where: { id },
+            include: {
+                collaborators: {
+                    select: ProjectService.COLLABORATOR_SELECT,
+                },
+                creator: {
+                    select: ProjectService.CREATOR_SELECT,
+                },
+            },
         });
 
         if (!project) {

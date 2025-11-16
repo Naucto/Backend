@@ -70,7 +70,7 @@ export class ProjectController {
     @ApiResponse({ status: 404, description: "Project not found" })
     @ApiResponse({ status: 500, description: "Internal server error" })
     @ApiResponse({ status: 403, description: "Invalid user or project ID" })
-    async findOne(@Param("id", ParseIntPipe) id: number): Promise<ProjectResponseDto> {
+    async findOne(@Param("id", ParseIntPipe) id: number): Promise<ProjectWithRelationsResponseDto> {
         return this.projectService.findOne(id);
     }
 
