@@ -8,6 +8,7 @@ import {
 } from "./dto/collaborator-project.dto";
 import { S3Service } from "@s3/s3.service";
 import { Project } from "@prisma/client";
+import { User } from "@prisma/client";
 
 export const CREATOR_SELECT = {
     id: true,
@@ -110,15 +111,23 @@ export class ProjectService {
     }
 
     async remove(id: number): Promise<void> {
-        await this.findOne(id);
+        const project = await this.findOne(id);
 
-        try {
-            await this.s3Service.deleteFile(id.toString());
-        } catch (error: unknown) {
-            if (error instanceof Error) {
-                throw new InternalServerErrorException(`Error deleting S3 file with key ${id}: ${error.message}`, { cause: error });
-            } else {
-                throw new InternalServerErrorException(`Error deleting S3 file with key ${id}: Unknown error`, { cause: error });
+        if (project.contentKey) {
+            try {
+                await this.s3Service.deleteFile(project.contentKey);
+            } catch (error: unknown) {
+                if (error instanceof Error) {
+                    throw new InternalServerErrorException(
+                        `Error deleting S3 file with key ${project.contentKey}: ${error.message}`,
+                        { cause: error }
+                    );
+                } else {
+                    throw new InternalServerErrorException(
+                        `Error deleting S3 file with key ${project.contentKey}: Unknown error`,
+                        { cause: error }
+                    );
+                }
             }
         }
 
@@ -129,32 +138,35 @@ export class ProjectService {
         return;
     }
 
-    async addCollaborator(id: number, addCollaboratorDto: AddCollaboratorDto): Promise<Project> {
-        let user;
+    private async findUserByIdentifier(dto: AddCollaboratorDto | RemoveCollaboratorDto): Promise<User> {
+        let user: User | null = null;
+        let identifier: string;
 
-        if (addCollaboratorDto.userId) {
-            user = await this.prisma.user.findUnique({
-                where: { id: addCollaboratorDto.userId },
-            });
-        } else if (addCollaboratorDto.username) {
-            user = await this.prisma.user.findUnique({
-                where: { username: addCollaboratorDto.username },
-            });
-        } else if (addCollaboratorDto.email) {
-            user = await this.prisma.user.findUnique({
-                where: { email: addCollaboratorDto.email },
-            });
+        if ('userId' in dto && dto.userId) {
+            identifier = dto.userId.toString();
+            user = await this.prisma.user.findUnique({ where: { id: dto.userId } });
+        } else if ('username' in dto && dto.username) {
+            identifier = dto.username;
+            user = await this.prisma.user.findUnique({ where: { username: dto.username } });
+        } else if ('email' in dto && dto.email) {
+            identifier = dto.email;
+            user = await this.prisma.user.findUnique({ where: { email: dto.email } });
         } else {
             throw new BadRequestException("Either userId, username or email must be provided");
         }
 
         if (!user) {
-            const identifier = addCollaboratorDto.userId || addCollaboratorDto.username || addCollaboratorDto.email;
             throw new NotFoundException(`User with identifier '${identifier}' not found`);
         }
 
+        return user;
+    }
+
+    async addCollaborator(id: number, addCollaboratorDto: AddCollaboratorDto): Promise<Project> {
+        const user = await this.findUserByIdentifier(addCollaboratorDto);
+
         const project = await this.prisma.project.findUnique({
-            where: { id: id },
+            where: { id },
             include: {
                 collaborators: true,
             },
@@ -185,31 +197,10 @@ export class ProjectService {
     }
 
     async removeCollaborator(id: number, removeCollaboratorDto: RemoveCollaboratorDto): Promise<Project> {
-        let user;
-
-        if (removeCollaboratorDto.userId) {
-            user = await this.prisma.user.findUnique({
-                where: { id: removeCollaboratorDto.userId },
-            });
-        } else if (removeCollaboratorDto.username) {
-            user = await this.prisma.user.findUnique({
-                where: { username: removeCollaboratorDto.username },
-            });
-        } else if (removeCollaboratorDto.email) {
-            user = await this.prisma.user.findUnique({
-                where: { email: removeCollaboratorDto.email },
-            });
-        } else {
-            throw new BadRequestException("Either userId, username or email must be provided");
-        }
-
-        if (!user) {
-            const identifier = removeCollaboratorDto.userId || removeCollaboratorDto.username || removeCollaboratorDto.email;
-            throw new NotFoundException(`User with identifier '${identifier}' not found`);
-        }
+        const user = await this.findUserByIdentifier(removeCollaboratorDto);
 
         const project = await this.prisma.project.findUnique({
-            where: { id: id },
+            where: { id },
             include: {
                 collaborators: true,
             },
@@ -256,4 +247,15 @@ export class ProjectService {
             where: { projectId }
         });
     }
+
+    async updateContentInfo(projectId: number, contentKey: string, extension: string): Promise<void> {
+        await this.prisma.project.update({
+            where: { id: projectId },
+            data: {
+                contentKey,
+                contentExtension: extension,
+                contentUploadedAt: new Date(),
+            },
+        });
+    } 
 }

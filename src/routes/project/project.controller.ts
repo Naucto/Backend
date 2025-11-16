@@ -12,7 +12,6 @@ import {
     Post,
     Put,
     Req,
-    Res,
     UploadedFile,
     UseGuards,
     UseInterceptors
@@ -26,11 +25,12 @@ import { ProjectCollaboratorGuard, ProjectCreatorGuard } from "@auth/guards/proj
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiParam, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { AddCollaboratorDto, RemoveCollaboratorDto } from "@projects/dto/collaborator-project.dto";
 import { S3Service } from "@s3/s3.service";
-import { S3DownloadException } from "@s3/s3.error";
-import { Request, Response } from "express";
+import { Request } from "express";
 import { UserDto } from "@auth/dto/user.dto";
 import { Project } from "@prisma/client";
 import { ProjectResponseDto, ProjectWithRelationsResponseDto } from "./dto/project-response.dto";
+import { BadRequestException } from "@nestjs/common";
+import { CloudfrontService } from "@s3/cloudfront.service";
 
 interface RequestWithUser extends Request {
     user: UserDto;
@@ -41,7 +41,7 @@ interface RequestWithUser extends Request {
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth("JWT-auth")
 export class ProjectController {
-    constructor(private readonly projectService: ProjectService, private readonly s3Service: S3Service) {}
+    constructor(private readonly projectService: ProjectService, private readonly s3Service: S3Service, private readonly cloudfrontService: CloudfrontService) {}
 
     private readonly logger = new Logger(ProjectController.name);
 
@@ -233,10 +233,10 @@ export class ProjectController {
     }
 
     @Patch(":id/saveContent")
-    @UseGuards(ProjectCollaboratorGuard)
     @UseInterceptors(FileInterceptor("file"))
-    @ApiOperation({ summary: "Save project's content" })
+    @ApiOperation({ summary: "Upload content file for a project" })
     @ApiConsumes("multipart/form-data")
+    @ApiParam({ name: "id", type: "string", description: "Project ID" })
     @ApiBody({
         schema: {
             type: "object",
@@ -244,57 +244,102 @@ export class ProjectController {
                 file: {
                     type: "string",
                     format: "binary",
+                    description: "Select the file to upload",
                 },
             },
+            required: ["file"],
         },
     })
-    @ApiParam({ name: "id", type: "string" })
     @ApiResponse({ status: 201, description: "File uploaded successfully" })
-    @ApiResponse({ status: 403, description: "Forbidden" })
+    @ApiResponse({ status: 400, description: "No file uploaded" })
     @HttpCode(HttpStatus.CREATED)
-    async saveProjectContent(@Param("id") id: string, @UploadedFile() file: Express.Multer.File, @Req() req: RequestWithUser): Promise<{ message: string, id: string }> {
-        const metadata = {
-            uploadedBy: req.user.id.toString(),
-            id,
+    async saveProjectContent(
+        @Param("id") id: string,
+        @UploadedFile() file: Express.Multer.File,
+        @Req() req: RequestWithUser
+    ): Promise<{ message: string; cdnUrl: string }> {
+        this.logger.log(`Uploading content for project ${id} by user ${req.user.id}`);
+
+        if (!file) {
+            this.logger.warn(`No file provided for project ${id}`);
+            throw new BadRequestException("No file uploaded");
+        }
+
+        const extension = file.originalname.split('.').pop();
+        if (!extension) {
+            throw new BadRequestException("Uploaded file has no extension");
+        }
+
+        const projectId = Number(id);
+        const s3Key = `${id}.${extension}`;
+
+        const project = await this.projectService.findOne(projectId);
+
+        if (project.contentKey) {
+            this.logger.log(`Deleting old project content: ${project.contentKey}`);
+            try {
+                await this.s3Service.deleteFile(project.contentKey);
+            } catch (error: unknown) {
+                if (error instanceof Error) {
+                    this.logger.warn(`Failed to delete old file: ${error.message}`);
+                } else {
+                    this.logger.warn(`Failed to delete old file: Unknown error`);
+                }
+            }
+        }
+
+        await this.s3Service.uploadFile(
+            file,
+            { uploadedBy: req.user.id.toString(), projectId: id },
+            undefined,
+            s3Key
+        );
+
+        await this.projectService.updateContentInfo(projectId, s3Key, extension);
+
+        const signedUrl = this.cloudfrontService.generateSignedUrl(s3Key);
+
+        this.logger.log(`Upload completed for project ${id}, signed URL generated`);
+
+        return {
+            message: "Project content uploaded successfully",
+            cdnUrl: signedUrl,
         };
-        await this.s3Service.uploadFile(file, metadata, undefined, id);
-
-        await this.projectService.updateLastTimeUpdate(Number(id));
-
-        return { message: "Project content uploaded successfully", id };
     }
 
     @Get(":id/fetchContent")
-    @UseGuards(ProjectCollaboratorGuard)
-    @ApiOperation({ summary: "Fetch project's content" })
-    @ApiParam({ name: "id", type: "string" })
-    @ApiResponse({ status: 200, description: "File fetched successfully" })
-    @ApiResponse({ status: 403, description: "Forbidden" })
-    @ApiResponse({ status: 404, description: "File not found" })
-    async fetchProjectContent(@Param("id") id: string, @Res() res: Response): Promise<void> {
-        try {
-            const file = await this.s3Service.downloadFile(id);
+    async fetchProjectContent(@Param("id") id: string) {
+        this.logger.log(`Generating CDN signed URL for project ${id}`);
 
-            res.set({
-                "Content-Type": file.contentType,
-                "Content-Length": file.contentLength,
-            });
+        const projectId = Number(id);
+        const project = await this.projectService.findOne(projectId);
 
-            file.body.pipe(res);
-        } catch (error) {
-
-            if (error instanceof Error) {
-                this.logger.error(`Failed to fetch content for project ${id}: ${error.message}`, error.stack);
-            } else {
-                this.logger.error(`Failed to fetch content for project ${id}: ${JSON.stringify(error)}`);
-            }
-
-            if (error instanceof S3DownloadException) {
-                res.status(404).json({ message: "Project content not found" });
-                return;
-            }
-            res.status(500).json({ message: "Internal server error" });
-            return;
+        if (!project.contentKey) {
+            throw new BadRequestException("Project content not found");
         }
+
+        this.logger.debug(`Content key from DB: "${project.contentKey}"`);
+
+        const exists = await this.s3Service.fileExists(project.contentKey);
+        if (!exists) {
+            this.logger.error(
+                `Content key ${project.contentKey} stored in DB but file not found on S3 for project ${id}`
+            );
+            throw new BadRequestException("Project content file not found on storage");
+        }
+
+        const cdnUrl = this.cloudfrontService.getCDNUrl(project.contentKey);
+        this.logger.debug(`CDN URL before signing: "${cdnUrl}"`);
+
+        const signedUrl = this.cloudfrontService.generateSignedUrl(project.contentKey);
+        this.logger.debug(`Signed URL: "${signedUrl}"`);
+
+        this.logger.log(`Signed URL generated for project ${id}`);
+
+        return {
+            cdnUrl: signedUrl,
+            uploadedAt: project.contentUploadedAt,
+            extension: project.contentExtension,
+        };
     }
 }

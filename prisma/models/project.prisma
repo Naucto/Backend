@@ -23,14 +23,18 @@ model Project {
   price        Float?
   createdAt    DateTime          @default(now())
   userId       Int
-
+  
+  contentKey        String?   @map("content_key")
+  contentExtension  String?   @map("content_extension")
+  contentUploadedAt DateTime? @map("content_uploaded_at")
+  
   // Relations
   creator       User          @relation("ProjectCreator", fields: [userId], references: [id])
   collaborators User[]        @relation("ProjectCollaborators")
   comments      Comment[]
   gameSessions  GameSession[]
   workSession   WorkSession?
-
+  
   // Statistiques agrégées
   uniquePlayers Int @default(0)
   activePlayers Int @default(0)
