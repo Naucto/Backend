@@ -9,7 +9,7 @@ import { JwtPayload } from "./auth.types";
 import { CreateUserDto } from "@user/dto/create-user.dto";
 import { PrismaService } from "src/prisma/prisma.service";
 import { ConfigService } from "@nestjs/config";
-import { isStringValue } from "./auth.utils";
+import { parseExpiresIn, timespanToMs } from "./auth.utils";
 
 @Injectable()
 export class AuthService {
@@ -22,22 +22,22 @@ export class AuthService {
     ) {}
 
     async generateTokens(payload: JwtPayload, userId: number) {
-        const accessTokenExpiry = this.configService.get<string>("JWT_EXPIRES_IN") ?? "1h";
+        const accessTokenExpiresIn = parseExpiresIn(this.configService.get<string>("JWT_EXPIRES_IN"), "1h");
+        const refreshTokenExpiresIn = parseExpiresIn(this.configService.get<string>("JWT_REFRESH_EXPIRES_IN"), "7d");
 
-        let expiresIn: number | `${number}${"s" | "m" | "h" | "d" | "w" | "y"}`;
-        if (isStringValue(accessTokenExpiry)) {
-            expiresIn = accessTokenExpiry;
-        } else {
-            expiresIn = Number(accessTokenExpiry);
-        }
-        const access_token = this.jwtService.sign(payload, { expiresIn: expiresIn });
-        const refresh_token = this.jwtService.sign(payload, { expiresIn: "7d" });
+        const access_token = this.jwtService.sign(payload, {
+            expiresIn: accessTokenExpiresIn,
+        });
+
+        const refresh_token = this.jwtService.sign(payload, {
+            expiresIn: refreshTokenExpiresIn,
+        });
 
         await this.prisma.refreshToken.create({
             data: {
                 token: refresh_token,
                 userId,
-                expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+                expiresAt: new Date(Date.now() + timespanToMs(refreshTokenExpiresIn)),
             },
         });
 
@@ -48,6 +48,9 @@ export class AuthService {
         const user = await this.userService.findByEmail(email);
         if (!user) {
             throw new UnauthorizedException("Invalid email or password");
+        }
+        if (!user.password) {
+            throw new UnauthorizedException("This account cannot authenticate with a password.");
         }
 
         const passwordValid = await bcrypt.compare(password, user.password);
@@ -61,14 +64,17 @@ export class AuthService {
     async login(email: string, password: string): Promise<AuthResponseDto> {
         const user = await this.validateUser(email, password);
 
-        await this.prisma.refreshToken.deleteMany({ where: { userId: user.id } });
-        const payload : JwtPayload = { sub: user.id, email: user.email };
-        const { access_token, refresh_token } = await this.generateTokens(payload, user.id);
+        return this.prisma.$transaction(async (tx) => {
+            await tx.refreshToken.deleteMany({ where: { userId: user.id } });
 
-        return {
-            access_token,
-            refresh_token
-        };
+            const payload: JwtPayload = { sub: user.id, email: user.email };
+            const { access_token, refresh_token } = await this.generateTokens(payload, user.id);
+
+            return {
+                access_token,
+                refresh_token,
+            };
+        });
     }
 
     async register(createUserDto: CreateUserDto): Promise<AuthResponseDto> {
@@ -135,10 +141,15 @@ export class AuthService {
             throw new UnauthorizedException("Refresh token expired");
         }
 
-        return await this.prisma.$transaction(async (tx) => {
+        return this.prisma.$transaction(async (tx) => {
+            const payload: JwtPayload = {
+                sub: storedToken.user.id,
+                email: storedToken.user.email,
+            };
+
             const { access_token, refresh_token } = await this.generateTokens(
-                { sub: storedToken.user.id, email: storedToken.user.email },
-                storedToken.user.id
+                payload,
+                storedToken.user.id,
             );
 
             await tx.refreshToken.delete({ where: { id: storedToken.id } });

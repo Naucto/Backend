@@ -37,10 +37,6 @@ function parseExpiresIn(v?: string): number | DurationString {
                 if (!secret) {
                     throw new MissingEnvVarError("JWT_SECRET");
                 }
-                if (secret === "undefined" || secret === "null") {
-                    throw new MissingEnvVarError("JWT_SECRET seems malformed (string 'undefined' or 'null')");
-                }
-
                 if (env === "development" && secret.length < 16) {
                     logger.warn(`JWT_SECRET is quite short (${secret.length} chars). Consider using a longer, more secure secret.`);
                 }
@@ -48,7 +44,7 @@ function parseExpiresIn(v?: string): number | DurationString {
                 const expiresIn = parseExpiresIn(expiresInRaw);
 
                 if (env === "development") {
-                    logger.log(`JWT config loaded successfully ✅`);
+                    logger.log(`JWT config loaded successfully`);
                     logger.log(`→ JWT_SECRET length: ${secret.length}`);
                     logger.log(`→ JWT_EXPIRES_IN: ${expiresIn}`);
                 }

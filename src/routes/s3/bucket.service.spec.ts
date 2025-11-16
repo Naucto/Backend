@@ -28,7 +28,7 @@ describe("BucketService", () => {
 
     mockConfigService = {
       get: jest.fn((key: string) => {
-        if (key === "S3_BUCKET_NAME") return undefined; // no default bucket
+        if (key === "S3_BUCKET_NAME") return undefined;
         return undefined;
       }),
     } as unknown as ConfigService;
@@ -161,7 +161,6 @@ describe("BucketService", () => {
 
       const policyString = JSON.stringify(bucketService.generateBucketPolicy("my-bucket"));
 
-      // On force le type string pour couvrir le cas de JSON.stringify interne
       await bucketService.applyBucketPolicy(policyString as unknown as BucketPolicy, "my-bucket");
 
       expect(mockS3.send).toHaveBeenCalledWith(expect.any(PutBucketPolicyCommand));
