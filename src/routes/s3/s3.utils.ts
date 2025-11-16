@@ -16,7 +16,7 @@ export function createPolicy(resourceUrl: string, expires: number): string {
         DateLessThan: { "AWS:EpochTime": expires },
       },
     }],
-  });
+  }, null, 0);
 }
 
 export function rsaSha256Sign(privateKey: string, policy: string): Buffer {
@@ -25,4 +25,10 @@ export function rsaSha256Sign(privateKey: string, policy: string): Buffer {
   signer.end();
 
   return signer.sign(privateKey);
+}
+
+export function rsaSha1Sign(privateKey: string, policy: string): string {
+  const signer = crypto.createSign("RSA-SHA1");
+  signer.update(policy);
+  return signer.sign(privateKey, "base64");
 }

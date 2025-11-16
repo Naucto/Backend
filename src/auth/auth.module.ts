@@ -1,4 +1,3 @@
-import { Module } from "@nestjs/common";
 import { PassportModule } from "@nestjs/passport";
 import { JwtModule } from "@nestjs/jwt";
 import { ConfigModule, ConfigService } from "@nestjs/config";
@@ -9,6 +8,8 @@ import { RolesGuard } from "./guards/roles.guard";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { MissingEnvVarError, BadEnvVarError } from "./auth.error";
+import { GoogleAuthService } from "./google-auth.service";
+import { Module, Logger } from "@nestjs/common";
 
 type DurationString = `${number}${'s'|'m'|'h'|'d'}`;
 
@@ -20,32 +21,45 @@ function parseExpiresIn(v?: string): number | DurationString {
 }
 
 @Module({
-  imports: [
-    ConfigModule,
-    UserModule,
-    PassportModule.register({ defaultStrategy: "jwt" }),
-    JwtModule.registerAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (cs: ConfigService) => {
-        const secret = cs.get<string>("JWT_SECRET");
-        if (!secret) {
-          throw new MissingEnvVarError("JWT_SECRET");
-        }
+    imports: [
+        ConfigModule,
+        UserModule,
+        PassportModule.register({ defaultStrategy: "jwt" }),
+        JwtModule.registerAsync({
+            imports: [ConfigModule],
+            inject: [ConfigService],
+            useFactory: (cs: ConfigService) => {
+                const logger = new Logger("AuthModule");
+                const env = cs.get<string>("NODE_ENV") ?? "development";
+                const secret = cs.get<string>("JWT_SECRET");
+                const expiresInRaw = cs.get<string>("JWT_EXPIRES_IN");
 
-        const expiresIn = parseExpiresIn(cs.get<string>("JWT_EXPIRES_IN"));
+                if (!secret) {
+                    throw new MissingEnvVarError("JWT_SECRET");
+                }
+                if (env === "development" && secret.length < 16) {
+                    logger.warn(`JWT_SECRET is quite short (${secret.length} chars). Consider using a longer, more secure secret.`);
+                }
 
-        return {
-          secret,
-          signOptions: {
-            expiresIn: expiresIn
-	  }
-        };
-      },
-    }),
-  ],
-  providers: [JwtAuthGuard, JwtStrategy, RolesGuard, AuthService],
-  exports: [JwtAuthGuard, RolesGuard, JwtModule],
-  controllers: [AuthController],
+                const expiresIn = parseExpiresIn(expiresInRaw);
+
+                if (env === "development") {
+                    logger.log(`JWT config loaded successfully`);
+                    logger.log(`→ JWT_SECRET length: ${secret.length}`);
+                    logger.log(`→ JWT_EXPIRES_IN: ${expiresIn}`);
+                }
+
+                return {
+                    secret,
+                    signOptions: {
+                        expiresIn: expiresIn,
+                    },
+                };
+            },
+        }),
+    ],
+    providers: [JwtAuthGuard, JwtStrategy, RolesGuard, AuthService, GoogleAuthService],
+    exports: [JwtAuthGuard, RolesGuard, JwtModule],
+    controllers: [AuthController],
 })
 export class AuthModule {}
