@@ -65,7 +65,7 @@ export class ProjectController {
     @ApiResponse({
         status: 200,
         description: "Project object",
-        type: ProjectResponseDto
+        type: ProjectWithRelationsResponseDto
     })
     @ApiResponse({ status: 404, description: "Project not found" })
     @ApiResponse({ status: 500, description: "Internal server error" })
