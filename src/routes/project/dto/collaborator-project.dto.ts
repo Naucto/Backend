@@ -1,20 +1,63 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { IsNumber } from "class-validator";
+import { IsEmail, IsInt, IsOptional, IsString, Validate } from "class-validator";
+import { AtLeastOneConstraint } from "@common/decorators/at-least-one";
 
 export class AddCollaboratorDto {
   @ApiProperty({
-    description: "The User to add to the project as collaborator",
-    example: "1234",
+    description: "User ID of the user to add as collaborator",
+    example: 42,
+    required: false
   })
-  @IsNumber()
-    userId!: number;
+  @IsOptional()
+  @IsInt()
+  @Validate(AtLeastOneConstraint, [['userId', 'username', 'email']])
+  userId?: number;
+
+  @ApiProperty({
+    description: "Username of the user to add as collaborator",
+    example: "john_doe",
+    required: false
+  })
+  @IsOptional()
+  @IsString()
+  username?: string;
+
+  @ApiProperty({
+    description: "Email of the user to add as collaborator",
+    example: "john.doe@example.com",
+    required: false
+  })
+  @IsOptional()
+  @IsEmail()
+  email?: string;
 }
 
 export class RemoveCollaboratorDto {
   @ApiProperty({
-    description: "The User to add to the project as collaborator",
-    example: "1234",
+    description: "User ID of the user to remove as collaborator",
+    example: 42,
+    required: false
   })
-  @IsNumber()
-    userId!: number;
+  @IsOptional()
+  @IsInt()
+  @Validate(AtLeastOneConstraint, [['userId', 'username', 'email']])
+  userId?: number;
+
+  @ApiProperty({
+    description: "Username of the user to remove as collaborator",
+    example: "john_doe",
+    required: false
+  })
+  @IsOptional()
+  @IsString()
+  username?: string;
+
+  @ApiProperty({
+    description: "Email of the user to remove as collaborator",
+    example: "john.doe@example.com",
+    required: false
+  })
+  @IsOptional()
+  @IsEmail()
+  email?: string;
 }
