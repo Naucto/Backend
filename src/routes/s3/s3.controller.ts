@@ -276,7 +276,7 @@ export class S3Controller {
         httpOnly: true,
         secure: true,
         path: "/",
-        domain: ".d3puh88kxjv1qg.cloudfront.net",
+        domain: `.${cdnUrl}`,
         sameSite: "lax" as const,
         maxAge: 60 * 60 * 1000,
       };

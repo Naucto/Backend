@@ -1,6 +1,6 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { WorkSessionService } from "./work-session.service";
-import { PrismaModule } from "@prisma_naucto/prisma.module";
+import { PrismaModule } from "@prisma/prisma.module";
 
 describe("WorkSessionService", () => {
   let service: WorkSessionService;

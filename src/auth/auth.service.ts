@@ -7,7 +7,7 @@ import { UserDto } from "./dto/user.dto";
 import { AuthResponseDto } from "./dto/auth-response.dto";
 import { JwtPayload } from "./auth.types";
 import { CreateUserDto } from "@user/dto/create-user.dto";
-import { PrismaService } from "src/prisma/prisma.service";
+import { PrismaService } from "@prisma/prisma.service";
 import { ConfigService } from "@nestjs/config";
 import { parseExpiresIn, timespanToMs } from "./auth.utils";
 

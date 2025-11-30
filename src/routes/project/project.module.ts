@@ -1,7 +1,7 @@
 import { Module } from "@nestjs/common";
 import { ProjectController } from "./project.controller";
 import { ProjectService } from "./project.service";
-import { PrismaModule } from "@prisma_naucto/prisma.module";
+import { PrismaModule } from "@prisma/prisma.module";
 import { S3Module } from "@s3/s3.module";
 
 @Module({

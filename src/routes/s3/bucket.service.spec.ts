@@ -112,7 +112,6 @@ describe("BucketService", () => {
       const [statement] = bucketService.generateBucketPolicy("my-bucket").Statement;
       if (!statement) throw new Error("Statement is undefined");
 
-      // Non-null assertion pour Statement[0]
       expect(statement.Resource).toBe("arn:aws:s3:::my-bucket/*");
       expect(statement.Effect).toBe("Allow");
       expect(statement.Principal).toBe("*");
