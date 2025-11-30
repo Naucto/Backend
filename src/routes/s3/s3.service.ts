@@ -14,20 +14,14 @@ import {
   DeleteObjectCommandInput,
   DeleteObjectsCommand,
   DeleteObjectsCommandInput,
-  CreateBucketCommand,
-  CreateBucketCommandInput,
-  DeleteBucketCommand,
-  DeleteBucketCommandInput,
   HeadObjectCommand,
   HeadObjectCommandInput,
-  PutBucketPolicyCommand,
-  PutBucketPolicyCommandInput,
   Bucket,
   _Object,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Readable } from "stream";
-import { DownloadedFile, S3ObjectMetadata, BucketPolicy, BucketPolicyStatement } from "./s3.interface";
+import { DownloadedFile, S3ObjectMetadata } from "./s3.interface";
 import {
   S3ConfigurationException,
   BucketResolutionException,
@@ -38,11 +32,8 @@ import {
   S3UploadException,
   S3DeleteFileException,
   S3DeleteFilesException,
-  S3DeleteBucketException,
-  S3CreateBucketException,
   S3GetMetadataException,
   S3MissingMetadataException,
-  S3ApplyPolicyException
 } from "./s3.error";
 import * as fs from "fs";
 import { base64UrlEncode, createPolicy, rsaSha256Sign } from "./s3.utils";
@@ -54,17 +45,26 @@ export class S3Service {
   private readonly defaultBucket: string | undefined;
 
   constructor(private readonly configService: ConfigService,) {
-    const region = this.configService.get<string>("AWS_REGION");
+    const errors = [];
+    const endpoint = this.configService.get<string>("S3_ENDPOINT");
+    if (!endpoint) {
+      errors.push("S3_ENDPOINT");
+    }
+    const region = this.configService.get<string>("S3_REGION");
     if (!region) {
-      throw new S3ConfigurationException(["AWS_REGION"]);
+      errors.push("S3_REGION");
     }
-    const accessKeyId = this.configService.get<string>("AWS_ACCESS_KEY_ID");
+    const accessKeyId = this.configService.get<string>("S3_ACCESS_KEY_ID");
     if (!accessKeyId) {
-      throw new S3ConfigurationException(["AWS_ACCESS_KEY_ID"]);
+      errors.push("S3_ACCESS_KEY_ID");
     }
-    const secretAccessKey = this.configService.get<string>("AWS_SECRET_ACCESS_KEY");
+    const secretAccessKey = this.configService.get<string>("S3_SECRET_ACCESS_KEY");
     if (!secretAccessKey) {
-      throw new S3ConfigurationException(["AWS_SECRET_ACCESS_KEY"]);
+      errors.push("S3_SECRET_ACCESS_KEY");
+    }
+
+    if (errors.length > 0) {
+      throw new S3ConfigurationException(errors);
     }
 
     const envVars = {
@@ -82,11 +82,13 @@ export class S3Service {
     }
 
     this.s3 = new S3Client({
-      region: region,
+      region: region!,
+      endpoint: endpoint!,
       credentials: {
-        accessKeyId: accessKeyId as string,
-        secretAccessKey: secretAccessKey as string,
+        accessKeyId: accessKeyId!,
+        secretAccessKey: secretAccessKey!,
       },
+      forcePathStyle: true
     });
     this.defaultBucket = this.configService.get<string>("S3_BUCKET_NAME");
   }
@@ -114,11 +116,21 @@ export class S3Service {
     }
   }
 
-  async listObjects(bucketName?: string): Promise<_Object[]> {
+  async listObjects({
+    bucketName,
+    prefix,
+    delimiter
+  }: {
+    bucketName?: string;
+    prefix?: string;
+    delimiter?: string;
+  } = {}): Promise<_Object[]> {
     const resolvedBucketName = this.resolveBucket(bucketName);
     try {
       const input: ListObjectsV2CommandInput = {
         Bucket: resolvedBucketName,
+        Prefix: prefix,
+        Delimiter: delimiter,
       };
       const command = new ListObjectsV2Command(input);
       const result = await this.s3.send(command);
@@ -199,7 +211,13 @@ export class S3Service {
     return `https://${cdnUrl}/${encodeURIComponent(key)}`;
   }
 
-  async downloadFile(key:string, bucketName?: string): Promise<DownloadedFile> {
+  async downloadFile({
+    key,
+    bucketName
+  }: {
+    key: string
+    bucketName?: string
+  }): Promise<DownloadedFile> {
     const resolvedBucketName = this.resolveBucket(bucketName);
     try {
       const headInput: HeadObjectCommandInput = {
@@ -236,25 +254,64 @@ export class S3Service {
     }
   }
 
-  async uploadFile(file: Express.Multer.File, metadata: Record<string, string>, bucketName?: string, keyName?: string): Promise<void> {
+  async uploadFile({
+    file,
+    metadata,
+    bucketName,
+    keyName
+  }: {
+    file: Express.Multer.File | DownloadedFile
+    metadata?: Record<string, string>
+    bucketName?: string
+    keyName?: string
+  }): Promise<void> {
     const resolvedBucketName = this.resolveBucket(bucketName);
-    try {
-      const input: PutObjectCommandInput = {
-        Bucket: resolvedBucketName,
-        Key: keyName ?? file.originalname,
-        Body: file.buffer,
-        ContentType: file.mimetype,
-        Metadata: metadata
-      };
-      const command = new PutObjectCommand(input);
 
-      await this.s3.send(command);
-    } catch (error) {
-      throw new S3UploadException(resolvedBucketName, file.originalname, error);
+    if ("originalname" in file && !file.originalname) {
+      file = <Express.Multer.File>file;
+      try {
+        if (!keyName)
+          keyName = file.originalname;
+
+        const input: PutObjectCommandInput = {
+          Bucket: resolvedBucketName,
+          Key: keyName ?? file.originalname,
+          Body: file.buffer,
+          ContentType: file.mimetype,
+          Metadata: metadata
+        };
+        const command = new PutObjectCommand(input);
+
+        await this.s3.send(command);
+      } catch (error) {
+        throw new S3UploadException(resolvedBucketName, file.originalname, error);
+      }
+    } else {
+      try {
+        file = <DownloadedFile>file;
+        const input: PutObjectCommandInput = {
+          Bucket: resolvedBucketName,
+          Key: keyName,
+          Body: file.body,
+          ContentType: file.contentType,
+          Metadata: metadata
+        };
+        const command = new PutObjectCommand(input);
+
+        await this.s3.send(command);
+      } catch (error) {
+        throw new S3UploadException(resolvedBucketName, keyName ?? "<undefined>", error);
+      }
     }
   }
 
-  async deleteFile(key: string, bucketName?: string): Promise<void> {
+  async deleteFile({
+    key,
+    bucketName
+  }: {
+    key: string
+    bucketName?: string
+  }): Promise<void> {
     const resolvedBucketName = this.resolveBucket(bucketName);
     try {
       const input: DeleteObjectCommandInput = {
@@ -269,7 +326,13 @@ export class S3Service {
     }
   }
 
-  async deleteFiles(keys: string[], bucketName?: string): Promise<_Object[]> {
+  async deleteFiles({
+    keys,
+    bucketName
+  }: {
+    keys: string[]
+    bucketName?: string
+  }): Promise<_Object[]> {
     const resolvedBucketName = this.resolveBucket(bucketName);
     try {
       const input: DeleteObjectsCommandInput = {
@@ -288,31 +351,13 @@ export class S3Service {
     }
   }
 
-  async deleteBucket(bucketName?: string): Promise<void> {
-    const resolvedBucketName = this.resolveBucket(bucketName);
-    try {
-      const input: DeleteBucketCommandInput = { Bucket: resolvedBucketName };
-      const command = new DeleteBucketCommand(input);
-      await this.s3.send(command);
-    } catch (error) {
-      throw new S3DeleteBucketException(resolvedBucketName, error);
-    }
-  }
-
-  async createBucket(bucketName?: string): Promise<void> {
-    const resolvedBucketName = this.resolveBucket(bucketName);
-    try {
-      const input: CreateBucketCommandInput = {
-        Bucket: resolvedBucketName
-      };
-      const command = new CreateBucketCommand(input);
-      await this.s3.send(command);
-    } catch (error) {
-      throw new S3CreateBucketException(resolvedBucketName, error);
-    }
-  }
-
-  async getObjectMetadata(key:string, bucketName?: string): Promise<S3ObjectMetadata> {
+  async getObjectMetadata({
+    key,
+    bucketName
+  }: {
+    key: string
+    bucketName?: string
+  }): Promise<S3ObjectMetadata> {
     const resolvedBucketName = this.resolveBucket(bucketName);
     try {
       const input: HeadObjectCommandInput = {
@@ -341,41 +386,6 @@ export class S3Service {
       };
     } catch (error) {
       throw new S3GetMetadataException(resolvedBucketName, key, error);
-    }
-  }
-
-  generateBucketPolicy(bucketName?: string, actions: string[] = ["s3:GetObject"], effect = "Allow", principal = "*", prefix = "*"): BucketPolicy {
-    const resolvedBucketName = this.resolveBucket(bucketName);
-
-    const statement: BucketPolicyStatement = {
-      Sid: "BucketPolicy",
-      Effect: effect,
-      Principal: principal === "*" ? "*" : { AWS: principal },
-      Action: actions,
-      Resource:
-        prefix === "*"
-          ? `arn:aws:s3:::${resolvedBucketName}/*`
-          : `arn:aws:s3:::${resolvedBucketName}/${prefix}`,
-    };
-
-    return {
-      Version: "2012-10-17",
-      Statement: [ statement ]
-    };
-  }
-
-  async applyBucketPolicy(policy: BucketPolicy, bucketName?: string): Promise<void> {
-    const resolvedBucketName = this.resolveBucket(bucketName);
-    try {
-      const input: PutBucketPolicyCommandInput = {
-        Bucket: resolvedBucketName,
-        Policy: typeof policy === "string" ? policy : JSON.stringify(policy)
-      };
-
-      const command = new PutBucketPolicyCommand(input);
-      await this.s3.send(command);
-    } catch (error) {
-      throw new S3ApplyPolicyException(resolvedBucketName, error);
     }
   }
 }

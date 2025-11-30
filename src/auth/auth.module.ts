@@ -10,10 +10,10 @@ import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { MissingEnvVarError, BadEnvVarError } from "./auth.error";
 
-type DurationString = `${number}${'s'|'m'|'h'|'d'}`;
+type DurationString = `${number}${"s"|"m"|"h"|"d"}`;
 
 function parseExpiresIn(v?: string): number | DurationString {
-  if (!v) return '1h';
+  if (!v) return "1h";
   if (/^\d+$/.test(v)) return Number(v);
   if (/^\d+[smhd]$/.test(v)) return v as DurationString;
   throw new BadEnvVarError(`Invalid JWT_EXPIRES_IN: ${v}`);
