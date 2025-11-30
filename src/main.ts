@@ -11,6 +11,7 @@ import { ConfigService } from '@nestjs/config';
 import * as path from "path";
 import * as dotenv from "dotenv";
 import * as http from "http";
+import cookieParser from "cookie-parser";
 
 if (process.env["NODE_ENV"] === "production") {
   dotenv.config({ path: ".env.production" });
@@ -32,6 +33,7 @@ if (process.env["NODE_ENV"] === "production") {
   const configService = app.get(ConfigService);
   const frontendUrl = configService.get<string>('FRONTEND_URL', 'http://localhost:3000');
 
+  app.use(cookieParser());
   app.useLogger(["log", "error", "warn", "debug"]);
 
   app.useGlobalPipes(
@@ -64,7 +66,6 @@ if (process.env["NODE_ENV"] === "production") {
 
     next();
   });
-
   setupSwagger(app);
 
   await app.init();

@@ -20,6 +20,7 @@ import {
     BadRequestException,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
+import { Response } from "express";
 import { ProjectService } from "@projects/project.service";
 import { CreateProjectDto } from "@projects/dto/create-project.dto";
 import { UpdateProjectDto } from "@projects/dto/update-project.dto";
@@ -28,7 +29,7 @@ import { ProjectCollaboratorGuard, ProjectCreatorGuard } from "@auth/guards/proj
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiParam, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { AddCollaboratorDto, RemoveCollaboratorDto } from "@projects/dto/collaborator-project.dto";
 import { S3Service } from "@s3/s3.service";
-import { Request, Response } from "express";
+import { Request } from "express";
 import { UserDto } from "@auth/dto/user.dto";
 import { Project } from "@prisma/client";
 import { ProjectResponseDto, ProjectWithRelationsResponseDto } from "./dto/project-response.dto";
@@ -52,7 +53,7 @@ export class ProjectController {
     @ApiResponse({
         status: 200,
         description: "A JSON array of projects with collaborators and creator information",
-        type: [ProjectWithRelationsResponseDto]
+        type: [ProjectWithRelationsResponseDto],
     })
     @ApiResponse({ status: 500, description: "Internal server error" })
     async findAll(@Req() request: RequestWithUser): Promise<Project[]> {
@@ -67,7 +68,7 @@ export class ProjectController {
     @ApiResponse({
         status: 200,
         description: "Project object",
-        type: ProjectResponseDto
+        type: ProjectResponseDto,
     })
     @ApiResponse({ status: 404, description: "Project not found" })
     @ApiResponse({ status: 500, description: "Internal server error" })
@@ -82,7 +83,7 @@ export class ProjectController {
     @ApiResponse({
         status: 201,
         description: "Project created successfully",
-        type: ProjectResponseDto
+        type: ProjectResponseDto,
     })
     @ApiResponse({ status: 400, description: "Bad request – invalid input" })
     @HttpCode(HttpStatus.CREATED)
@@ -102,7 +103,7 @@ export class ProjectController {
     @ApiResponse({
         status: 200,
         description: "Updated project object",
-        type: ProjectResponseDto
+        type: ProjectResponseDto,
     })
     @ApiResponse({ status: 404, description: "Project not found" })
     @ApiResponse({ status: 500, description: "Error updating project" })
@@ -115,42 +116,27 @@ export class ProjectController {
 
     @UseGuards(ProjectCreatorGuard)
     @Patch(":id/add-collaborator")
-    @ApiOperation({ 
+    @ApiOperation({
         summary: "Add a new collaborator",
-        description: "Add a collaborator to a project by providing either userId, username, or email. At least one must be provided."
+        description: "Add a collaborator to a project by providing either userId, username, or email. At least one must be provided.",
     })
     @ApiParam({
         name: "id",
         type: "number",
         description: "Numeric ID of the project to update",
     })
-    @ApiBody({ 
+    @ApiBody({
         type: AddCollaboratorDto,
         examples: {
-            byUserId: {
-                summary: "Add by User ID",
-                value: {
-                    userId: 42
-                }
-            },
-            byUsername: {
-                summary: "Add by Username",
-                value: {
-                    username: "john_doe"
-                }
-            },
-            byEmail: {
-                summary: "Add by Email",
-                value: {
-                    email: "john.doe@example.com"
-                }
-            }
-        }
+            byUserId: { summary: "Add by User ID", value: { userId: 42 } },
+            byUsername: { summary: "Add by Username", value: { username: "john_doe" } },
+            byEmail: { summary: "Add by Email", value: { email: "john.doe@example.com" } },
+        },
     })
     @ApiResponse({
         status: 200,
         description: "Updated project object with collaborators",
-        type: ProjectWithRelationsResponseDto
+        type: ProjectWithRelationsResponseDto,
     })
     @ApiResponse({ status: 400, description: "Bad request - no valid identifier provided" })
     @ApiResponse({ status: 404, description: "Project or user not found" })
@@ -164,42 +150,27 @@ export class ProjectController {
 
     @UseGuards(ProjectCreatorGuard)
     @Delete(":id/remove-collaborator")
-    @ApiOperation({ 
+    @ApiOperation({
         summary: "Remove a collaborator",
-        description: "Remove a collaborator from a project by providing either userId, username, or email. At least one must be provided."
+        description: "Remove a collaborator from a project by providing either userId, username, or email. At least one must be provided.",
     })
     @ApiParam({
         name: "id",
         type: "number",
         description: "Numeric ID of the project to update",
     })
-    @ApiBody({ 
+    @ApiBody({
         type: RemoveCollaboratorDto,
         examples: {
-            byUserId: {
-                summary: "Remove by User ID",
-                value: {
-                    userId: 42
-                }
-            },
-            byUsername: {
-                summary: "Remove by Username",
-                value: {
-                    username: "john_doe"
-                }
-            },
-            byEmail: {
-                summary: "Remove by Email",
-                value: {
-                    email: "john.doe@example.com"
-                }
-            }
-        }
+            byUserId: { summary: "Remove by User ID", value: { userId: 42 } },
+            byUsername: { summary: "Remove by Username", value: { username: "john_doe" } },
+            byEmail: { summary: "Remove by Email", value: { email: "john.doe@example.com" } },
+        },
     })
     @ApiResponse({
         status: 200,
         description: "Updated project object with collaborators",
-        type: ProjectWithRelationsResponseDto
+        type: ProjectWithRelationsResponseDto,
     })
     @ApiResponse({ status: 400, description: "Bad request - no valid identifier provided" })
     @ApiResponse({ status: 403, description: "Forbidden - cannot remove project creator" })
@@ -237,7 +208,7 @@ export class ProjectController {
     @Patch(":id/saveContent")
     @UseGuards(ProjectCollaboratorGuard)
     @UseInterceptors(FileInterceptor("file"))
-    @ApiOperation({ summary: "Save project's content" })
+    @ApiOperation({ summary: "Save project's content (Upload)" })
     @ApiConsumes("multipart/form-data")
     @ApiBody({
         schema: {
@@ -246,7 +217,7 @@ export class ProjectController {
                 file: {
                     type: "string",
                     format: "binary",
-                    description: "Project file",
+                    description: "Project file (zip, pdf, png, etc.)",
                 },
             },
         },
@@ -268,14 +239,14 @@ export class ProjectController {
                 }),
         )
         file: Express.Multer.File,
-        @Req() req: RequestWithUser
+        @Req() req: RequestWithUser,
     ): Promise<{ message: string; id: number }> {
-        
+
         const extension = file.originalname.split(".").pop();
         if (!extension) throw new BadRequestException("File has no extension");
 
         const project = await this.projectService.findOne(id);
-        
+
         const newS3Key = id.toString();
 
         if (project.contentKey && project.contentKey !== newS3Key) {
@@ -301,11 +272,14 @@ export class ProjectController {
 
     @Get(":id/fetchContent")
     @UseGuards(ProjectCollaboratorGuard)
-    @ApiOperation({ summary: "Fetch project's content" })
+    @ApiOperation({ summary: "Fetch project's content (Download)" })
     @ApiParam({ name: "id", type: "number" })
     @ApiResponse({ status: 200, description: "File stream" })
     @ApiResponse({ status: 404, description: "File not found (DB or S3)" })
-    async fetchProjectContent(@Param("id", ParseIntPipe) id: number, @Res() res: Response): Promise<void> {
+    async fetchProjectContent(
+        @Param("id", ParseIntPipe) id: number,
+        @Res() res: Response,
+    ): Promise<void> {
         try {
             const project = await this.projectService.findOne(id);
 
@@ -314,18 +288,20 @@ export class ProjectController {
             }
 
             const file = await this.s3Service.downloadFile(project.contentKey);
-            const filename = `${id}.${project.contentExtension || 'bin'}`;
+
+            const filename = `${id}.${project.contentExtension || "bin"}`;
 
             res.set({
                 "Content-Type": file.contentType,
                 "Content-Length": (file.contentLength ?? 0).toString(),
                 "Content-Disposition": `attachment; filename="${filename}"`,
                 "Cache-Control": "no-cache, no-store, must-revalidate",
-                "ETag": project.contentUploadedAt ? `W/"${project.contentUploadedAt.getTime()}"` : undefined
+                "Pragma": "no-cache",
+                "Expires": "0",
+                "ETag": project.contentUploadedAt ? `W/"${project.contentUploadedAt.getTime()}"` : undefined,
             });
 
             file.body.pipe(res);
-
         } catch (error) {
             if (error instanceof S3DownloadException) {
                 this.logger.warn(`S3 File not found for project ${id} (Key: ${error.key})`);
@@ -338,7 +314,7 @@ export class ProjectController {
             } else {
                 this.logger.error(`Download failed: Unknown error`);
             }
-            
+
             if (!res.headersSent) {
                 res.status(500).json({ message: "Internal server error during download" });
             }
