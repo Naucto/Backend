@@ -140,7 +140,6 @@ describe("BucketService", () => {
       mockS3.send.mockResolvedValueOnce({});
       const policy = bucketService.generateBucketPolicy("my-bucket");
 
-      // On passe toujours un objet BucketPolicy
       await bucketService.applyBucketPolicy(policy, "my-bucket");
 
       expect(mockS3.send).toHaveBeenCalledWith(expect.any(PutBucketPolicyCommand));

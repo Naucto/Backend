@@ -72,7 +72,7 @@ describe("CloudfrontService", () => {
       (configService.get as jest.Mock).mockImplementation((key: string) => {
         if (key === "CLOUDFRONT_KEY_PAIR_ID") return "KEYPAIRID";
         if (key === "CLOUDFRONT_PRIVATE_KEY_PATH") return "/fake/path.pem";
-        return undefined; // simulate CDN_URL missing
+        return undefined;
       });
 
       expect(() => cloudfrontService.generateSignedUrl("file.txt"))
@@ -83,7 +83,7 @@ describe("CloudfrontService", () => {
       (configService.get as jest.Mock).mockImplementation((key: string) => {
         if (key === "CDN_URL") return "cdn.example.com";
         if (key === "CLOUDFRONT_PRIVATE_KEY_PATH") return "/fake/path.pem";
-        return undefined; // simulate KEY_PAIR_ID missing
+        return undefined;
       });
 
       expect(() => cloudfrontService.generateSignedUrl("file.txt"))
@@ -94,7 +94,7 @@ describe("CloudfrontService", () => {
       (configService.get as jest.Mock).mockImplementation((key: string) => {
         if (key === "CDN_URL") return "cdn.example.com";
         if (key === "CLOUDFRONT_KEY_PAIR_ID") return "KEYPAIRID";
-        return undefined; // simulate PRIVATE_KEY_PATH missing
+        return undefined;
       });
 
       expect(() => cloudfrontService.generateSignedUrl("file.txt"))
@@ -134,7 +134,7 @@ describe("CloudfrontService", () => {
       (configService.get as jest.Mock).mockImplementation((key: string) => {
         if (key === "CLOUDFRONT_KEY_PAIR_ID") return "KEYPAIRID";
         if (key === "CLOUDFRONT_PRIVATE_KEY_PATH") return "/fake/path.pem";
-        return undefined; // simulate CDN_URL missing
+        return undefined;
       });
 
       expect(() => cloudfrontService.generateSignedCookies())
@@ -145,7 +145,7 @@ describe("CloudfrontService", () => {
       (configService.get as jest.Mock).mockImplementation((key: string) => {
         if (key === "CDN_URL") return "cdn.example.com";
         if (key === "CLOUDFRONT_PRIVATE_KEY_PATH") return "/fake/path.pem";
-        return undefined; // simulate KEY_PAIR_ID missing
+        return undefined;
       });
 
       expect(() => cloudfrontService.generateSignedCookies())
@@ -156,7 +156,7 @@ describe("CloudfrontService", () => {
       (configService.get as jest.Mock).mockImplementation((key: string) => {
         if (key === "CDN_URL") return "cdn.example.com";
         if (key === "CLOUDFRONT_KEY_PAIR_ID") return "KEYPAIRID";
-        return undefined; // simulate PRIVATE_KEY_PATH missing
+        return undefined;
       });
 
       expect(() => cloudfrontService.generateSignedCookies())
@@ -187,7 +187,7 @@ describe("CloudfrontService", () => {
 
     it("throws if signed cookies are incomplete", () => {
       (cloudfrontSigner.getSignedCookies as jest.Mock).mockReturnValue({
-        "CloudFront-Policy": "policy", // Signature et Key-Pair-Id manquants
+        "CloudFront-Policy": "policy",
       });
 
       (configService.get as jest.Mock).mockImplementation((key: string) => {
@@ -226,7 +226,7 @@ describe("CloudfrontService", () => {
     });
 
     it("throws if signed cookies incomplete", () => {
-      (getSignedCookies as jest.Mock).mockReturnValue({}); // simulate incomplete cookies
+      (getSignedCookies as jest.Mock).mockReturnValue({});
       expect(() => cloudfrontService.createSignedCookies("https://cdn.example.com/file.txt", 3600))
         .toThrow("Signed cookies are incomplete");
     });
