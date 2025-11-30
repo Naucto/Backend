@@ -1,0 +1,16 @@
+# Required for OpenSSL 3.x and > to enable legacy algorithms used by Cloudfront Signed URL.
+# Do NOT remove.
+openssl_conf = openssl_init
+
+[openssl_init]
+providers = provider_sect
+
+[provider_sect]
+default = default_sect
+legacy = legacy_sect
+
+[default_sect]
+activate = 1
+
+[legacy_sect]
+activate = 1

@@ -35,8 +35,8 @@ import { UserResponseDto } from "./dto/user-response.dto";
 import { UserListResponseDto } from "./dto/user-list-response.dto";
 import { UserSingleResponseDto } from "./dto/user-single-response.dto";
 import { UserProfileResponseDto } from "./dto/user-profile-response.dto";
-import { RequestWithUser } from "src/auth/auth.types";
-import { UserDto } from "src/auth/dto/user.dto";
+import { RequestWithUser } from "@auth/auth.types";
+import { UserDto } from "@auth/dto/user.dto";
 
 @ApiTags("users")
 @ApiExtraModels(UserResponseDto, UserListResponseDto, UserSingleResponseDto, UserProfileResponseDto)

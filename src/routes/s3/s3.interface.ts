@@ -1,4 +1,17 @@
 import { Readable } from "stream";
+import { _Object } from "@aws-sdk/client-s3";
+
+export interface StorageService {
+  listObjects(bucketName?: string): Promise<_Object[]>;
+  uploadFile(
+    file: Express.Multer.File,
+    metadata: Record<string, string>,
+    bucketName?: string,
+    keyName?: string
+  ): Promise<void>;
+  deleteFile(key: string, bucketName?: string): Promise<void>;
+  getSignedDownloadUrl(key: string, bucketName?: string): Promise<string>;
+}
 
 export interface DownloadedFile {
   body: Readable;
