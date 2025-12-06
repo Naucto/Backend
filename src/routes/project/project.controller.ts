@@ -45,6 +45,30 @@ export class ProjectController {
 
   private readonly logger = new Logger(ProjectController.name);
 
+  @Get("releases")
+  @ApiOperation({ summary: "Get all released projects" })
+  @ApiResponse({
+    status: 200,
+    description: "A JSON array of projects with collaborators and creator information",
+    type: [ProjectResponseDto]
+  })
+  async getAllReleases(): Promise<Project[]> {
+    return this.projectService.fetchPublishedGames();
+  }
+
+  @Get("releases/:id")
+  @ApiOperation({ summary: "Get project release version" })
+  @ApiParam({ name: "id", type: "string" })
+  @ApiResponse({
+    status: 200,
+    description: "Project release file"
+  })
+  async getRelease(@Param("id") id: string): Promise<{ project: DownloadedFile }> {
+    const projectRelease = await this.projectService.fetchRelease(Number(id));
+
+    return { project: projectRelease };
+  }
+
   @Get()
   @ApiOperation({ summary: "Retrieve the list of projects" })
   @ApiResponse({
@@ -414,22 +438,5 @@ export class ProjectController {
     const projectCheckpoint = await this.projectService.fetchCheckpoint(Number(id), checkpoint);
 
     return { project: projectCheckpoint };
-  }
-
-  @Get("releases/:id")
-  @ApiOperation({ summary: "Get project release version" })
-  @ApiParam({ name: "id", type: "string" })
-  @ApiResponse({ status: 200, description: "Project release retrieved successfully" })
-  async getRelease(@Param("id") id: string): Promise<{ project: DownloadedFile }> {
-    const projectRelease = await this.projectService.fetchRelease(Number(id));
-
-    return { project: projectRelease };
-  }
-
-  @Get("releases")
-  @ApiOperation({ summary: "Get all released projects" })
-  @ApiResponse({ status: 200, description: "All released projects retrieved successfully" })
-  async getAllReleases(): Promise<Project[]> {
-    return this.projectService.fetchPublishedGames();
   }
 }
