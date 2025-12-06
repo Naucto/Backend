@@ -267,7 +267,7 @@ export class S3Service {
   }): Promise<void> {
     const resolvedBucketName = this.resolveBucket(bucketName);
 
-    if ("originalname" in file && !file.originalname) {
+    if ("originalname" in file) {
       file = <Express.Multer.File>file;
       try {
         if (!keyName)
