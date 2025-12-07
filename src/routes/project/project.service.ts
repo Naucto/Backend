@@ -371,7 +371,7 @@ export class ProjectService {
 
     await this.s3Service.uploadFile({
       file: file,
-      keyName: name
+      keyName: `checkpoint/${name}`
     });
   }
 
