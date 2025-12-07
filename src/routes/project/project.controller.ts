@@ -30,7 +30,6 @@ import { Request, Response } from "express";
 import { UserDto } from "@auth/dto/user.dto";
 import { Project } from "@prisma/client";
 import { ProjectResponseDto, ProjectWithRelationsResponseDto } from "./dto/project-response.dto";
-import { DownloadedFile } from "@s3/s3.interface";
 
 interface RequestWithUser extends Request {
     user: UserDto;
@@ -454,10 +453,31 @@ export class ProjectController {
   @ApiParam({ name: "version", type: "string" })
   @ApiResponse({ status: 200, description: "Project version retrieved successfully" })
   @ApiResponse({ status: 403, description: "Forbidden" })
-  async getVersion(@Param("id") id: string, @Param("version") version: string): Promise<{ project: DownloadedFile }> {
-    const projectVersion = await this.projectService.fetchSavedVersion(Number(id), version);
+  async getVersion(@Param("id") id: string, @Param("version") version: string, @Res() res: Response): Promise<void> {
+    try {
+      const file = await this.projectService.fetchSavedVersion(Number(id), version);
 
-    return { project: projectVersion };
+      res.set({
+        "Content-Type": file.contentType,
+        "Content-Length": file.contentLength,
+      });
+
+      file.body.pipe(res);
+    } catch (error) {
+
+      if (error instanceof Error) {
+        this.logger.error(`Failed to fetch content for project ${id}: ${error.message}`, error.stack);
+      } else {
+        this.logger.error(`Failed to fetch content for project ${id}: ${JSON.stringify(error)}`);
+      }
+
+      if (error instanceof S3DownloadException) {
+        res.status(404).json({ message: "File not found" });
+        return;
+      }
+      res.status(500).json({ message: "Internal server error" });
+      return;
+    }
   }
 
   @Get(":id/checkpoints/:checkpoint")
@@ -467,9 +487,30 @@ export class ProjectController {
   @ApiParam({ name: "checkpoint", type: "string" })
   @ApiResponse({ status: 200, description: "Project checkpoint retrieved successfully" })
   @ApiResponse({ status: 403, description: "Forbidden" })
-  async getCheckpoint(@Param("id") id: string, @Param("checkpoint") checkpoint: string): Promise<{ project: DownloadedFile }> {
-    const projectCheckpoint = await this.projectService.fetchCheckpoint(Number(id), checkpoint);
+  async getCheckpoint(@Param("id") id: string, @Param("checkpoint") checkpoint: string, @Res() res: Response): Promise<void> {
+    try {
+      const file = await this.projectService.fetchCheckpoint(Number(id), checkpoint);
 
-    return { project: projectCheckpoint };
+      res.set({
+        "Content-Type": file.contentType,
+        "Content-Length": file.contentLength,
+      });
+
+      file.body.pipe(res);
+    } catch (error) {
+
+      if (error instanceof Error) {
+        this.logger.error(`Failed to fetch content for project ${id}: ${error.message}`, error.stack);
+      } else {
+        this.logger.error(`Failed to fetch content for project ${id}: ${JSON.stringify(error)}`);
+      }
+
+      if (error instanceof S3DownloadException) {
+        res.status(404).json({ message: "File not found" });
+        return;
+      }
+      res.status(500).json({ message: "Internal server error" });
+      return;
+    }
   }
 }
