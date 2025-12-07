@@ -294,7 +294,8 @@ export class S3Service {
           Key: keyName,
           Body: file.body,
           ContentType: file.contentType,
-          Metadata: metadata
+          Metadata: metadata,
+          ContentLength: file.contentLength
         };
         const command = new PutObjectCommand(input);
 
@@ -313,6 +314,7 @@ export class S3Service {
     bucketName?: string
   }): Promise<void> {
     const resolvedBucketName = this.resolveBucket(bucketName);
+    console.log(key);
     try {
       const input: DeleteObjectCommandInput = {
         Bucket: resolvedBucketName,
