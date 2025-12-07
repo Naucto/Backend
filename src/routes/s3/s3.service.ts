@@ -314,7 +314,6 @@ export class S3Service {
     bucketName?: string
   }): Promise<void> {
     const resolvedBucketName = this.resolveBucket(bucketName);
-    console.log(key);
     try {
       const input: DeleteObjectCommandInput = {
         Bucket: resolvedBucketName,
