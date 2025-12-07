@@ -38,6 +38,7 @@ import {
 import * as fs from "fs";
 import { base64UrlEncode, createPolicy, rsaSha256Sign } from "./s3.utils";
 import { MissingEnvVarError } from "@auth/auth.error";
+import { Upload } from '@aws-sdk/lib-storage';
 
 @Injectable()
 export class S3Service {
@@ -289,17 +290,19 @@ export class S3Service {
     } else {
       try {
         file = <DownloadedFile>file;
-        const input: PutObjectCommandInput = {
-          Bucket: resolvedBucketName,
-          Key: keyName,
-          Body: file.body,
-          ContentType: file.contentType,
-          Metadata: metadata,
-          ContentLength: file.contentLength
-        };
-        const command = new PutObjectCommand(input);
 
-        await this.s3.send(command);
+        const parallelUpload = new Upload({
+          client: this.s3,
+          params: {
+            Bucket: resolvedBucketName,
+            Key: keyName,
+            Body: file.body,
+            ContentType: file.contentType,
+            Metadata: metadata,
+          },
+        });
+
+        await parallelUpload.done();
       } catch (error) {
         throw new S3UploadException(resolvedBucketName, keyName ?? "<undefined>", error);
       }
