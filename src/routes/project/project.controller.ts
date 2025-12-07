@@ -76,12 +76,31 @@ export class ProjectController {
     status: 200,
     description: "Project release file"
   })
-  async getReleaseContent(@Param("id") id: string): Promise<{ project: DownloadedFile }> {
-    const projectReleaseContent = await this.projectService.fetchReleaseContent(Number(id));
+  async getReleaseContent(@Param("id") id: string, @Res() res: Response): Promise<void> {
+    try {
+      const file = await this.projectService.fetchReleaseContent(Number(id));
+      res.set({
+        "Content-Type": file.contentType,
+        "Content-Length": file.contentLength,
+      });
 
-    return { project: projectReleaseContent };
+      file.body.pipe(res);
+    } catch (error) {
+
+      if (error instanceof Error) {
+        this.logger.error(`Failed to fetch content for project ${id}: ${error.message}`, error.stack);
+      } else {
+        this.logger.error(`Failed to fetch content for project ${id}: ${JSON.stringify(error)}`);
+      }
+
+      if (error instanceof S3DownloadException) {
+        res.status(404).json({ message: "File not found" });
+        return;
+      }
+      res.status(500).json({ message: "Internal server error" });
+      return;
+    }
   }
-
 
   @Get()
   @ApiOperation({ summary: "Retrieve the list of projects" })
