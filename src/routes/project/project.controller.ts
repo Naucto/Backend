@@ -63,11 +63,25 @@ export class ProjectController {
     status: 200,
     description: "Project release file"
   })
-  async getRelease(@Param("id") id: string): Promise<{ project: DownloadedFile }> {
+  async getRelease(@Param("id") id: string): Promise<Project> {
     const projectRelease = await this.projectService.fetchRelease(Number(id));
 
-    return { project: projectRelease };
+    return projectRelease;
   }
+
+  @Get("releases/:id/content")
+  @ApiOperation({ summary: "Get project release version" })
+  @ApiParam({ name: "id", type: "string" })
+  @ApiResponse({
+    status: 200,
+    description: "Project release file"
+  })
+  async getReleaseContent(@Param("id") id: string): Promise<{ project: DownloadedFile }> {
+    const projectReleaseContent = await this.projectService.fetchReleaseContent(Number(id));
+
+    return { project: projectReleaseContent };
+  }
+
 
   @Get()
   @ApiOperation({ summary: "Retrieve the list of projects" })

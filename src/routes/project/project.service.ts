@@ -431,7 +431,29 @@ export class ProjectService {
     return this.s3Service.downloadFile({ key: file });
   }
 
-  async fetchRelease(projectId: number): Promise<DownloadedFile> {
+  async fetchRelease(projectId: number): Promise<Project> {
+    const project = await this.prisma.project.findFirst({
+      where: {
+        id: projectId
+      },
+      include: {
+        collaborators: {
+          select: ProjectService.COLLABORATOR_SELECT,
+        },
+        creator: {
+          select: ProjectService.CREATOR_SELECT,
+        },
+      },
+    });
+
+    if (!project) {
+      throw new NotFoundException(`Project with ID ${projectId} not found`);
+    }
+
+    return project;
+  }
+
+  async fetchReleaseContent(projectId: number): Promise<DownloadedFile> {
     return this.s3Service.downloadFile({ key: `release/${projectId}` });
   }
 
