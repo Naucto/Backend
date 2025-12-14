@@ -7,6 +7,7 @@ import { format } from "date-fns-tz";
 import { setupWebSocketServer } from "./collab/signaling/signal";
 import { Logger } from "@nestjs/common";
 import express, { Request, Response, NextFunction } from "express";
+import { ConfigService } from '@nestjs/config';
 import * as path from "path";
 import * as dotenv from "dotenv";
 import * as http from "http";
@@ -29,6 +30,8 @@ if (process.env["NODE_ENV"] === "production") {
   );
 
   const logger = new Logger("HTTP");
+  const configService = app.get(ConfigService);
+  const frontendUrl = configService.get<string>('FRONTEND_URL', 'http://localhost:3000');
 
   app.use(cookieParser());
   app.useLogger(["log", "error", "warn", "debug"]);
@@ -45,7 +48,12 @@ if (process.env["NODE_ENV"] === "production") {
   app.setBaseViewsDir(path.join(__dirname, "..", "views"));
   app.setViewEngine("ejs");
 
-  app.enableCors();
+  app.enableCors({
+      origin: frontendUrl,
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
+  });
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     const start = Date.now();

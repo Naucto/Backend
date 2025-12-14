@@ -18,7 +18,7 @@ This project is open source. You are welcome to contribute on GitHub at the foll
 2. Install dependencies
 
    ```bash
-   yarn install
+   npm install
    ```
 
 3. Create a `.env` file in the root directory and set the following environment variables:
@@ -60,7 +60,7 @@ This project is open source. You are welcome to contribute on GitHub at the foll
 6. Start the application:
 
    ```bash
-    yarn start:dev
+    npm start:dev
     ```
 
 ### 📁 Project Structure
