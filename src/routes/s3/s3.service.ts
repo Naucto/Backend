@@ -16,6 +16,7 @@ import {
   HeadObjectCommandInput,
   HeadObjectCommandOutput,
   _Object,
+  S3ServiceException,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Readable } from "stream";
@@ -59,17 +60,10 @@ export class S3Service implements StorageService {
       await this.s3.send(command);
       return true;
     } catch (error: unknown) {
-      if (
-        typeof error === "object" && error !== null &&
-        "name" in error && (error as any).name === "NotFound"
-      ) {
-        return false;
-      }
-      if (
-        typeof error === "object" && error !== null &&
-        "$metadata" in error && (error as any).$metadata?.httpStatusCode === 404
-      ) {
-        return false;
+      if (error instanceof S3ServiceException) {
+        if (error.name === "NotFound" || error.$metadata?.httpStatusCode === 404) {
+          return false;
+        }
       }
       throw error;
     }

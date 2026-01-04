@@ -6,6 +6,9 @@ import pluginReact from "eslint-plugin-react";
 
 export default defineConfig([
   {
+    ignores: ["dist/**"],
+  },
+  {
     files: ["**/*.{ts,tsx}"],
     languageOptions: {
       globals: globals.browser,

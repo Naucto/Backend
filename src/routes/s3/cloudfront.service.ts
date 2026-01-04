@@ -46,7 +46,6 @@ export class CloudfrontService {
     return normalizedCookies;
   }
 
-
   generateSignedUrl(fileKey: string): string {
     const cdnUrl = this.configService.get<string>("CDN_URL");
     const keyPairId = this.configService.get<string>("CLOUDFRONT_KEY_PAIR_ID");
