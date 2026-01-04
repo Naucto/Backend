@@ -11,6 +11,7 @@ import { ConfigService } from "@nestjs/config";
 export class BucketService {
   private readonly defaultBucket: string | undefined;
   constructor(private readonly s3: S3Client, private readonly configService: ConfigService) {
+    super();
     this.defaultBucket = this.configService.get<string>("AWS_DEFAULT_BUCKET");
   }
 

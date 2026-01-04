@@ -35,7 +35,7 @@ export class WorkSessionController {
   @ApiResponse({ status: HttpStatus.CREATED, description: "The work session has been successfully created." })
   @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: "Bad request." })
   @ApiParam({ name: "id", description: "Project ID" })
-  async join(@Param("id", ParseIntPipe) projectId: number, @Req() req: unknown): Promise<JoinRoomResult> {
+  async join(@Param("id", ParseIntPipe) projectId: number, @Req() req: any): Promise<JoinRoomResult> {
     return await this.workSessionService.join(projectId, req.user);
   }
 
@@ -44,7 +44,7 @@ export class WorkSessionController {
   @ApiResponse({ status: HttpStatus.NO_CONTENT, description: "Successfully left the work session." })
   @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: "Bad request." })
   @ApiParam({ name: "id", description: "Project ID" })
-  async leave(@Param("id", ParseIntPipe) projectId: number, @Req() req: unknown): Promise<void> {
+  async leave(@Param("id", ParseIntPipe) projectId: number, @Req() req: any): Promise<void> {
     return await this.workSessionService.leave(projectId, req.user);
   }
 

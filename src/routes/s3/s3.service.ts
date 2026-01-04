@@ -59,7 +59,16 @@ export class S3Service implements StorageService {
       await this.s3.send(command);
       return true;
     } catch (error: unknown) {
-      if (error.name === "NotFound" || error.$metadata?.httpStatusCode === 404) {
+      if (
+        typeof error === "object" && error !== null &&
+        "name" in error && (error as any).name === "NotFound"
+      ) {
+        return false;
+      }
+      if (
+        typeof error === "object" && error !== null &&
+        "$metadata" in error && (error as any).$metadata?.httpStatusCode === 404
+      ) {
         return false;
       }
       throw error;

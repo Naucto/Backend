@@ -58,7 +58,13 @@ function parseExpiresIn(v?: string): number | DurationString {
       },
     }),
   ],
-  providers: [JwtAuthGuard, JwtStrategy, RolesGuard, AuthService, GoogleAuthService],
+  providers: [
+    JwtAuthGuard,
+    RolesGuard,
+    AuthService,
+    GoogleAuthService,
+    JwtStrategy,
+  ],
   exports: [JwtAuthGuard, RolesGuard, JwtModule],
   controllers: [AuthController],
 })

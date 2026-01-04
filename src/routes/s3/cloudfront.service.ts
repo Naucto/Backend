@@ -35,15 +35,17 @@ export class CloudfrontService {
   }
     
   private validateCookies(cookies: CloudfrontSignedCookiesOutput): Record<string, string | undefined> {
+    const normalizedCookies: Record<string, string | undefined> = {
+      "CloudFront-Policy": cookies["CloudFront-Policy"],
+      "CloudFront-Signature": cookies["CloudFront-Signature"],
+      "CloudFront-Key-Pair-Id": cookies["CloudFront-Key-Pair-Id"],
+    };
     if (!cookies["CloudFront-Signature"] || !cookies["CloudFront-Key-Pair-Id"]) {
-      const normalizedCookies: Record<string, string | undefined> = {
-        "CloudFront-Policy": cookies["CloudFront-Policy"],
-        "CloudFront-Signature": cookies["CloudFront-Signature"],
-        "CloudFront-Key-Pair-Id": cookies["CloudFront-Key-Pair-Id"],
-      };
       throw new CloudfrontSignedCookiesException(normalizedCookies);
     }
+    return normalizedCookies;
   }
+
 
   generateSignedUrl(fileKey: string): string {
     const cdnUrl = this.configService.get<string>("CDN_URL");
