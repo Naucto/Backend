@@ -38,12 +38,12 @@ describe("BucketService", () => {
 
   describe("resolveBucket", () => {
     it("returns provided bucket name", () => {
-      const result = (bucketService as any).resolveBucket("my-bucket");
+      const result = (bucketService as unknown as { resolveBucket: (bucket: string) => string }).resolveBucket("my-bucket");
       expect(result).toBe("my-bucket");
     });
 
     it("throws when no bucket provided and no default bucket", () => {
-      expect(() => (bucketService as any).resolveBucket()).toThrow(BucketResolutionException);
+      expect(() => (bucketService as unknown as { resolveBucket: () => void }).resolveBucket()).toThrow(BucketResolutionException);
     });
   });
 
