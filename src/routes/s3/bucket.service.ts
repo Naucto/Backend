@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { S3Client, ListBucketsCommand, DeleteBucketCommand, CreateBucketCommand, PutBucketPolicyCommand } from "@aws-sdk/client-s3";
 import { BucketPolicy } from "./s3.interface";
 import { BucketResolutionException, S3ListBucketsException, S3DeleteBucketException, S3CreateBucketException, S3ApplyPolicyException } from "./s3.error";
@@ -10,8 +10,11 @@ import { ConfigService } from "@nestjs/config";
 @Injectable()
 export class BucketService {
   private readonly defaultBucket: string | undefined;
-  constructor(private readonly s3: S3Client, private readonly configService: ConfigService) {
-    super();
+
+  constructor(
+    private readonly s3: S3Client,
+    @Inject(ConfigService) private readonly configService: ConfigService
+  ) {
     this.defaultBucket = this.configService.get<string>("AWS_DEFAULT_BUCKET");
   }
 

@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { PassportStrategy } from "@nestjs/passport";
 import { ExtractJwt, Strategy, StrategyOptions } from "passport-jwt";
 import { ConfigService } from "@nestjs/config";
@@ -9,11 +9,10 @@ import { JwtPayload } from "@auth/auth.types";
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
-    // @ts-expect-error config param cannot be injected otherwise. 
-    private readonly config: ConfigService,
+    @Inject(ConfigService) configService: ConfigService,
     private readonly userService: UserService,
   ) {
-    const secret = config.getOrThrow<string>("JWT_SECRET");
+    const secret = configService.getOrThrow<string>("JWT_SECRET");
     const options: StrategyOptions = {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       secretOrKey: secret,
