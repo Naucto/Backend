@@ -9,7 +9,8 @@ import { JwtPayload } from "@auth/auth.types";
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
-    config: ConfigService,
+    // @ts-expect-error config param cannot be injected otherwise. 
+    private readonly config: ConfigService,
     private readonly userService: UserService,
   ) {
     const secret = config.getOrThrow<string>("JWT_SECRET");
