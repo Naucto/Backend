@@ -17,10 +17,10 @@ interface WSMessage {
 
 export let wss: WebSocketServer;
 
-export const setupWebSocketServer = (server: http.Server) => {
+export const setupWebSocketServer = (server: http.Server): void => {
   wss = new WebSocketServer({ noServer: true });
 
-  const send = (conn: WebSocket, message: WSMessage) => {
+  const send = (conn: WebSocket, message: WSMessage): void => {
     if (
       conn.readyState !== WS_READY_STATE_CONNECTING &&
       conn.readyState !== WS_READY_STATE_OPEN
@@ -29,12 +29,13 @@ export const setupWebSocketServer = (server: http.Server) => {
     }
     try {
       conn.send(JSON.stringify(message));
-    } catch (e) {
+    } catch {
       conn.close();
+      return;
     }
   };
 
-  const onConnection = (conn: WebSocket) => {
+  const onConnection = (conn: WebSocket): void => {
     const subscribedTopics = new Set<string>();
     let closed = false;
     let pongReceived = true;
@@ -46,7 +47,7 @@ export const setupWebSocketServer = (server: http.Server) => {
         pongReceived = false;
         try {
           conn.ping();
-        } catch (e) {
+        } catch {
           conn.close();
         }
       }
@@ -68,7 +69,7 @@ export const setupWebSocketServer = (server: http.Server) => {
       closed = true;
     });
 
-    conn.on("message", (raw: import("ws").RawData) => {
+    conn.on("message", (raw: import("ws").RawData): void => {
       let message: WSMessage;
 
       try {
@@ -76,7 +77,7 @@ export const setupWebSocketServer = (server: http.Server) => {
           typeof raw === "string" ? raw : raw.toString()
         );
         message = parsed as WSMessage;
-      } catch (e) {
+      } catch {
         conn.close();
         return;
       }
@@ -124,7 +125,7 @@ export const setupWebSocketServer = (server: http.Server) => {
   wss.on("connection", onConnection);
 
   server.on("upgrade", (request, socket, head) => {
-    const handleAuth = (ws: WebSocket) => {
+    const handleAuth = (ws: WebSocket): void => {
       wss.emit("connection", ws, request);
     };
     wss.handleUpgrade(request, socket, head, handleAuth);

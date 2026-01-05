@@ -4,7 +4,7 @@ const SCW_API = "https://api.scaleway.com";
 
 dotenv.config();
 
-export async function listServers(token: string) {
+export async function listServers(token: string): Promise<Response> {
   const res = await fetch(
     `${SCW_API}/instance/v1/zones/${process.env["SCW_REGION"]}/servers`,
     {
