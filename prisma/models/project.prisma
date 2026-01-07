@@ -35,7 +35,7 @@ model Project {
   gameSessions  GameSession[]
   workSession   WorkSession?
   
-  // Statistiques agrégées
+  // Aggregate statistics
   uniquePlayers Int @default(0)
   activePlayers Int @default(0)
   likes         Int @default(0)
