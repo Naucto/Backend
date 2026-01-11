@@ -11,3 +11,10 @@ export class BadEnvVarError extends Error {
     this.name = "BadEnvVarError";
   }
 }
+
+export class CloudfrontSignedCookiesException extends Error {
+    constructor(public readonly cookies: Record<string, string | undefined>) {
+        super(`Signed cookies are incomplete: ${JSON.stringify(cookies)}`);
+        this.name = "CloudfrontSignedCookiesException";
+    }
+}

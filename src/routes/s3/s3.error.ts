@@ -141,3 +141,12 @@ export class S3ApplyPolicyException extends Error {
   }
 }
 
+export class CloudFrontPrivateKeyException extends Error {
+  constructor(
+    public readonly path: string,
+    public readonly cause?: unknown,
+  ) {
+    super(`Failed to read CloudFront private key at path: "${path}"`);
+    this.name = "CloudFrontPrivateKeyException";
+  }
+}

@@ -8,16 +8,18 @@ import {
   Logger,
   Param,
   ParseIntPipe,
-  Patch,
+  ParseFilePipeBuilder,Patch,
   Post,
   Put,
-  Req,
-  Res,
+
+  Res,Req,
   UploadedFile,
   UseGuards,
-  UseInterceptors
+  UseInterceptors,
+    BadRequestException,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
+import { Response } from "express";
 import { ProjectSave, ProjectService } from "@projects/project.service";
 import { CreateProjectDto } from "@projects/dto/create-project.dto";
 import { UpdateProjectDto } from "@projects/dto/update-project.dto";
@@ -25,11 +27,11 @@ import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
 import { ProjectCollaboratorGuard, ProjectCreatorGuard } from "@auth/guards/project.guard";
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiParam, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { AddCollaboratorDto, RemoveCollaboratorDto } from "@projects/dto/collaborator-project.dto";
-import { S3DownloadException } from "@s3/s3.error";
-import { Request, Response } from "express";
+import { Request } from "express";
 import { UserDto } from "@auth/dto/user.dto";
 import { Project } from "@prisma/client";
 import { ProjectResponseDto, ProjectWithRelationsResponseDto } from "./dto/project-response.dto";
+import { S3DownloadException } from "@s3/s3.error";
 
 interface RequestWithUser extends Request {
     user: UserDto;
@@ -106,7 +108,7 @@ export class ProjectController {
   @ApiResponse({
     status: 200,
     description: "A JSON array of projects with collaborators and creator information",
-    type: [ProjectWithRelationsResponseDto]
+    type: [ProjectWithRelationsResponseDto],
   })
   @ApiResponse({ status: 500, description: "Internal server error" })
   async findAll(@Req() request: RequestWithUser): Promise<Project[]> {
@@ -121,12 +123,12 @@ export class ProjectController {
   @ApiResponse({
     status: 200,
     description: "Project object",
-    type: ProjectWithRelationsResponseDto
+    type: ProjectResponseDto,
   })
   @ApiResponse({ status: 404, description: "Project not found" })
   @ApiResponse({ status: 500, description: "Internal server error" })
   @ApiResponse({ status: 403, description: "Invalid user or project ID" })
-  async findOne(@Param("id", ParseIntPipe) id: number): Promise<ProjectWithRelationsResponseDto> {
+  async findOne(@Param("id", ParseIntPipe) id: number): Promise<ProjectResponseDto> {
     return this.projectService.findOne(id);
   }
 
@@ -136,7 +138,7 @@ export class ProjectController {
   @ApiResponse({
     status: 201,
     description: "Project created successfully",
-    type: ProjectResponseDto
+    type: ProjectResponseDto,
   })
   @ApiResponse({ status: 400, description: "Bad request – invalid input" })
   @HttpCode(HttpStatus.CREATED)
@@ -156,7 +158,7 @@ export class ProjectController {
   @ApiResponse({
     status: 200,
     description: "Updated project object",
-    type: ProjectResponseDto
+    type: ProjectResponseDto,
   })
   @ApiResponse({ status: 404, description: "Project not found" })
   @ApiResponse({ status: 500, description: "Error updating project" })
@@ -171,7 +173,7 @@ export class ProjectController {
   @Patch(":id/add-collaborator")
   @ApiOperation({
     summary: "Add a new collaborator",
-    description: "Add a collaborator to a project by providing either userId, username, or email. At least one must be provided."
+    description: "Add a collaborator to a project by providing either userId, username, or email. At least one must be provided.",
   })
   @ApiParam({
     name: "id",
@@ -185,26 +187,25 @@ export class ProjectController {
         summary: "Add by User ID",
         value: {
           userId: 42
-        }
-      },
+
+      }},
       byUsername: {
         summary: "Add by Username",
         value: {
-          username: "john_doe"
-        }
-      },
+          username: "john_doe"} },
+
       byEmail: {
         summary: "Add by Email",
         value: {
           email: "john.doe@example.com"
-        }
-      }
-    }
+
+      }},
+    },
   })
   @ApiResponse({
     status: 200,
     description: "Updated project object with collaborators",
-    type: ProjectWithRelationsResponseDto
+    type: ProjectWithRelationsResponseDto,
   })
   @ApiResponse({ status: 400, description: "Bad request - no valid identifier provided" })
   @ApiResponse({ status: 404, description: "Project or user not found" })
@@ -220,7 +221,7 @@ export class ProjectController {
   @Delete(":id/remove-collaborator")
   @ApiOperation({
     summary: "Remove a collaborator",
-    description: "Remove a collaborator from a project by providing either userId, username, or email. At least one must be provided."
+    description: "Remove a collaborator from a project by providing either userId, username, or email. At least one must be provided.",
   })
   @ApiParam({
     name: "id",
@@ -233,27 +234,24 @@ export class ProjectController {
       byUserId: {
         summary: "Remove by User ID",
         value: {
-          userId: 42
-        }
-      },
+          userId: 42} },
+
       byUsername: {
         summary: "Remove by Username",
         value: {
-          username: "john_doe"
-        }
-      },
+          username: "john_doe"} },
+
       byEmail: {
         summary: "Remove by Email",
         value: {
-          email: "john.doe@example.com"
-        }
-      }
-    }
-  })
+          email: "john.doe@example.com"} },
+        },
+      })
+
   @ApiResponse({
     status: 200,
     description: "Updated project object with collaborators",
-    type: ProjectWithRelationsResponseDto
+    type: ProjectWithRelationsResponseDto,
   })
   @ApiResponse({ status: 400, description: "Bad request - no valid identifier provided" })
   @ApiResponse({ status: 403, description: "Forbidden - cannot remove project creator" })
@@ -265,10 +263,10 @@ export class ProjectController {
   async removeCollaborator(
       @Param("id", ParseIntPipe) id: number,
       @Body() removeCollaboratorDto: RemoveCollaboratorDto,
-      @Req() request: RequestWithUser,
+
   ): Promise<Project> {
-    const initiator = request.user.id;
-    return this.projectService.removeCollaborator(id, initiator, removeCollaboratorDto);
+
+    return this.projectService.removeCollaborator(id,  removeCollaboratorDto);
   }
 
   @UseGuards(ProjectCreatorGuard)
@@ -293,7 +291,7 @@ export class ProjectController {
   @Patch(":id/saveContent")
   @UseGuards(ProjectCollaboratorGuard)
   @UseInterceptors(FileInterceptor("file"))
-  @ApiOperation({ summary: "Save project's content" })
+  @ApiOperation({ summary: "Save project's content (Upload)" })
   @ApiConsumes("multipart/form-data")
   @ApiBody({
     schema: {
@@ -302,55 +300,106 @@ export class ProjectController {
         file: {
           type: "string",
           format: "binary",
+          description: "Project file (zip, pdf, png, etc.)",
         },
       },
     },
   })
-  @ApiParam({ name: "id", type: "string" })
+
+  @ApiParam({ name: "id", type: "number" })
   @ApiResponse({ status: 201, description: "File uploaded successfully" })
   @ApiResponse({ status: 403, description: "Forbidden" })
+  @ApiResponse({ status: 422, description: "File validation failed" })
   @HttpCode(HttpStatus.CREATED)
-  async saveProjectContent(@Param("id") id: string, @UploadedFile() file: Express.Multer.File): Promise<{ message: string, id: string }> {
-    //const metadata = {
-    //  uploadedBy: req.user.id.toString(),
-    //  id,
-    //};
-    await this.projectService.save(Number(id), file);
+  async saveProjectContent(
+    @Param("id", ParseIntPipe) id: number,
+    @UploadedFile(
+      new ParseFilePipeBuilder()
+        .addMaxSizeValidator({
+          maxSize: 100 * 1024 * 1024,
+        })
+        .build({
+          errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+        }),
+    )
+      file: Express.Multer.File,
+    @Req() req: RequestWithUser,
+  ): Promise<{ message: string; id: number }> {
+    const extension = file.originalname.split(".").pop();
+    if (!extension) throw new BadRequestException("File has no extension");
+
+    const project = await this.projectService.findOne(id);
+
+    const newS3Key = id.toString();
+
+    if (project.contentKey && project.contentKey !== newS3Key) {
+      this.logger.log(`Deleting old file '${project.contentKey}' for project ${id}`);
+      try {
+        await this.s3Service.deleteFile(project.contentKey);
+      } catch (err) {
+        this.logger.warn(`Failed to delete old file: ${err}`);
+      }
+    }
+
+    const metadata = {
+      uploadedBy: req.user.id.toString(),
+      projectId: id.toString(),
+      originalName: file.originalname,
+    };
+
+    await this.s3Service.uploadFile(file, metadata, undefined, newS3Key);
+    await this.projectService.updateContentInfo(id, newS3Key, extension);
 
     return { message: "File uploaded successfully", id };
   }
 
   @Get(":id/fetchContent")
   @UseGuards(ProjectCollaboratorGuard)
-  @ApiOperation({ summary: "Fetch project's content" })
-  @ApiParam({ name: "id", type: "string" })
-  @ApiResponse({ status: 200, description: "File fetched successfully" })
-  @ApiResponse({ status: 403, description: "Forbidden" })
-  @ApiResponse({ status: 404, description: "File not found" })
-  async fetchProjectContent(@Param("id") id: string, @Res() res: Response): Promise<void> {
+  @ApiOperation({ summary: "Fetch project's content (Download)" })
+  @ApiParam({ name: "id", type: "number" })
+  @ApiResponse({ status: 200, description: "File stream" })
+  @ApiResponse({ status: 404, description: "File not found (DB or S3)" })
+  async fetchProjectContent(
+    @Param("id", ParseIntPipe) id: number,
+    @Res() res: Response,
+  ): Promise<void> {
     try {
+      const project = await this.projectService.findOne(id);
+
+      if (!project.contentKey) {
+        throw new BadRequestException("No content uploaded for this project yet.");
+      }
       const file = await this.projectService.fetchLastVersion(Number(id));
+
+      const filename = `${id}.${project.contentExtension || "bin"}`;
 
       res.set({
         "Content-Type": file.contentType,
-        "Content-Length": file.contentLength,
+        "Content-Length": (file.contentLength ?? 0).toString(),
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+        "ETag": project.contentUploadedAt ? `W/"${project.contentUploadedAt.getTime()}"` : undefined,
       });
 
       file.body.pipe(res);
     } catch (error) {
-
-      if (error instanceof Error) {
-        this.logger.error(`Failed to fetch content for project ${id}: ${error.message}`, error.stack);
-      } else {
-        this.logger.error(`Failed to fetch content for project ${id}: ${JSON.stringify(error)}`);
-      }
-
       if (error instanceof S3DownloadException) {
-        res.status(404).json({ message: "File not found" });
+        this.logger.warn(`S3 File not found for project ${id} (Key: ${error.key})`);
+        res.status(404).json({ message: "File not found on storage server" });
         return;
       }
-      res.status(500).json({ message: "Internal server error" });
-      return;
+
+      if (error instanceof Error) {
+        this.logger.error(`Download failed: ${error.message}`, error.stack);
+      } else {
+        this.logger.error(`Download failed: Unknown error`);
+      }
+
+      if (!res.headersSent) {
+        res.status(500).json({ message: "Internal server error during download" });
+      }
     }
   }
 
@@ -493,24 +542,31 @@ export class ProjectController {
 
       res.set({
         "Content-Type": file.contentType,
-        "Content-Length": file.contentLength,
+        "Content-Length": (file.contentLength ?? 0).toString(),
+                "Content-Disposition": `attachment; filename="${filename}"`,
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+                "ETag": project.contentUploadedAt ? `W/"${project.contentUploadedAt.getTime()}"` : undefined,
       });
 
       file.body.pipe(res);
     } catch (error) {
-
+if (error instanceof S3DownloadException) {
+                this.logger.warn(`S3 File not found for project ${id} (Key: ${error.key})`);
+                res.status(404).json({ message: "File not found on storage server" });
+                return;
+            }
       if (error instanceof Error) {
-        this.logger.error(`Failed to fetch content for project ${id}: ${error.message}`, error.stack);
+        this.logger.error(`Download failed: ${error.message}`, error.stack);
       } else {
-        this.logger.error(`Failed to fetch content for project ${id}: ${JSON.stringify(error)}`);
+        this.logger.error(`Download failed: Unknown error`);
       }
 
-      if (error instanceof S3DownloadException) {
-        res.status(404).json({ message: "File not found" });
-        return;
+      if (!
+        res.headersSent) {
+      res.status(500).json({ message: "Internal server errorduring download" });
       }
-      res.status(500).json({ message: "Internal server error" });
-      return;
     }
   }
 }

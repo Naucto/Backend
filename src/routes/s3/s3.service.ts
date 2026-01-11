@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
   S3Client,
@@ -95,25 +95,32 @@ export class S3Service {
   }
 
   private resolveBucket(bucketName?: string): string {
-    const resolved = bucketName || this.defaultBucket;
-    if (!resolved) {
-      throw new BucketResolutionException("No bucket name provided and no default bucket configured.");
-    }
+    const defaultBucket = this.configService.get<string>("S3_BUCKET_NAME");
+    const resolved = bucketName || defaultBucket;
+    if (!resolved) throw new BucketResolutionException("No bucket provided and no default bucket configured.");
     return resolved;
   }
 
-  async listBuckets(): Promise<Bucket[]> {
+  async headFile(key: string, bucketName?: string): Promise<HeadObjectCommandOutput> {
+    const resolvedBucketName = this.resolveBucket(bucketName);
+    const command = new HeadObjectCommand({ Bucket: resolvedBucketName, Key: key });
+    return this.s3.send(command);
+  }
+
+  async fileExists(key: string, bucketName?: string): Promise<boolean> {
+    const resolvedBucketName = this.resolveBucket(bucketName);
     try {
-      const input: ListBucketsCommandInput = {};
-      const command = new ListBucketsCommand(input);
-      const result = await this.s3.send(command);
-      return result.Buckets || [];
-    } catch (error: unknown) {
-      if (error instanceof Error) {
-        throw new S3ListBucketsException(error.message, { cause: error });
-      } else {
-        throw new S3ListBucketsException("An unknown error occurred while listing buckets.");
+      const command = new HeadObjectCommand({
+        Bucket: resolvedBucketName,
+        Key: key
+      });
+      await this.s3.send(command);
+      return true;
+    } catch (error: any) {
+      if (error.name === "NotFound" || error.$metadata?.httpStatusCode === 404) {
+        return false;
       }
+      throw error;
     }
   }
 
@@ -156,62 +163,6 @@ export class S3Service {
     }
   }
 
-  createSignedCookies(resourceUrl: string, sessionCookieTimeout: number): Record<string, string> {
-    const keyPairId = this.configService.get<string>("CLOUDFRONT_KEY_PAIR_ID");
-    const privateKeyPath = this.configService.get<string>("CLOUDFRONT_PRIVATE_KEY_PATH");
-    if (!keyPairId) {
-      throw new MissingEnvVarError("CLOUDFRONT_KEY_PAIR_ID");
-    }
-    if (!privateKeyPath) {
-      throw new MissingEnvVarError("CLOUDFRONT_PRIVATE_KEY_PATH");
-    }
-
-    const privateKey = fs.readFileSync(privateKeyPath, "utf8");
-    const expires = Math.floor(Date.now() / 1000) + sessionCookieTimeout;
-    const policy = createPolicy(resourceUrl, expires);
-    const signature = rsaSha256Sign(privateKey, policy);
-
-    return {
-      "CloudFront-Policy": base64UrlEncode(policy),
-      "CloudFront-Signature": base64UrlEncode(signature),
-      "CloudFront-Key-Pair-Id": keyPairId,
-    };
-  }
-
-  getSignedCloudfrontUrl(fileKey: string): string {
-    const cdnUrl = this.configService.get<string>("CDN_URL");
-    const keyPairId = this.configService.get<string>("CLOUDFRONT_KEY_PAIR_ID");
-    const privateKeyPath = this.configService.get<string>("CLOUDFRONT_PRIVATE_KEY_PATH");
-    if (!cdnUrl) {
-      throw new MissingEnvVarError("CDN_URL");
-    }
-    if (!keyPairId) {
-      throw new MissingEnvVarError("CLOUDFRONT_KEY_PAIR_ID");
-    }
-    if (!privateKeyPath) {
-      throw new MissingEnvVarError("CLOUDFRONT_PRIVATE_KEY_PATH");
-    }
-
-    if (!/^[\w\-./]+$/.test(fileKey) || fileKey.includes("..")) {
-      throw new BadRequestException("Invalid fileKey format");
-    }
-
-    const privateKey = fs.readFileSync(privateKeyPath, "utf8");
-    const url = `https://${cdnUrl}/${encodeURIComponent(fileKey)}`;
-    const expires = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
-    const policy = createPolicy(url, expires);
-    const signature = rsaSha256Sign(privateKey, policy);
-
-    const signedUrl = `${url}?Policy=${base64UrlEncode(policy)}&Signature=${base64UrlEncode(signature)}&Key-Pair-Id=${keyPairId}`;
-
-    return signedUrl;
-  }
-
-  getCDNUrl(key: string): string {
-    const cdnUrl = this.configService.get<string>("CDN_URL");
-    return `https://${cdnUrl}/${encodeURIComponent(key)}`;
-  }
-
   async downloadFile({
     key,
     bucketName
@@ -239,14 +190,18 @@ export class S3Service {
       const contentType = head.ContentType;
       const contentLength = head.ContentLength;
 
-      if (!contentType || !contentLength) {
-        throw new Error("Missing required metadata in S3 head response");
+      const missingFields = [];
+      if (!contentType) missingFields.push("ContentType");
+      if (!contentLength) missingFields.push("ContentLength");
+
+      if (missingFields.length > 0) {
+        throw new S3MissingMetadataException(resolvedBucketName, key, missingFields);
       }
 
       const downloadedFile: DownloadedFile = {
         body: stream,
-        contentType: contentType,
-        contentLength: contentLength,
+        contentType: contentType!,
+        contentLength: contentLength!,
       };
 
       return downloadedFile;

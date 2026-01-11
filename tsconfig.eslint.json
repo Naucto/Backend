@@ -3,5 +3,8 @@
   "include": [
     "src/**/*.ts",
     "src/**/*.tsx",
-  ],
+    "test/**/*.ts",
+    "jest.config.ts",
+    "jest.setup.ts"
+  ]
 }

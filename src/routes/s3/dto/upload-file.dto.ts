@@ -7,7 +7,7 @@ export class UploadFileDto {
     format: "binary",
     description: "File to upload",
   })
-    file: any;
+    file!: Express.Multer.File;
 
   @ApiProperty({
     description: "Optional metadata for the file",

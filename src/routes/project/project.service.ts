@@ -4,12 +4,23 @@ import { CreateProjectDto } from "./dto/create-project.dto";
 import { UpdateProjectDto } from "./dto/update-project.dto";
 import {
   AddCollaboratorDto,
-  RemoveCollaboratorDto,
-} from "./dto/collaborator-project.dto";
+  RemoveCollaboratorDto } from "./dto/collaborator-project.dto";
 import { S3Service } from "@s3/s3.service";
-import { Project } from "@prisma/client";
+import { Project, User } from "@prisma/client";
 import { ConfigService } from "@nestjs/config";
 import { DownloadedFile } from "@s3/s3.interface";
+
+export const CREATOR_SELECT = {
+  id: true,
+  username: true,
+  email: true,
+};
+
+export const COLLABORATOR_SELECT = {
+  id: true,
+  username: true,
+  email: true,
+};
 
 type ProjectWithRelations = Project & {
     collaborators: Array<{ id: number; username: string; email: string }>;
@@ -23,16 +34,8 @@ export type ProjectSave = {
 
 @Injectable()
 export class ProjectService {
-  static COLLABORATOR_SELECT = {
-    id: true,
-    username: true,
-    email: true,
-  };
-  static CREATOR_SELECT = {
-    id: true,
-    username: true,
-    email: true,
-  };
+  static COLLABORATOR_SELECT = COLLABORATOR_SELECT;
+  static CREATOR_SELECT = CREATOR_SELECT;
 
   private readonly max_history_version;
   private readonly max_checkpoints;
@@ -111,18 +114,10 @@ export class ProjectService {
         },
         include: {
           collaborators: {
-            select: {
-              id: true,
-              username: true,
-              email: true,
-            },
+            select: ProjectService.COLLABORATOR_SELECT,
           },
           creator: {
-            select: {
-              id: true,
-              username: true,
-              email: true,
-            },
+            select: ProjectService.CREATOR_SELECT,
           },
         },
       });
@@ -185,29 +180,35 @@ export class ProjectService {
     return;
   }
 
+  private async findUserByIdentifier(dto: AddCollaboratorDto | RemoveCollaboratorDto): Promise<User> {
+    let user: User | null = null;
+    let identifier: string;
+
+    if ("userId" in dto && dto.userId) {
+      identifier = dto.userId.toString();
+      user = await this.prisma.user.findUnique({ where: { id: dto.userId } });
+    } else if ("username" in dto && dto.username) {
+      identifier = dto.username;
+      user = await this.prisma.user.findUnique({ where: { username: dto.username } });
+    } else if ("email" in dto && dto.email) {
+      identifier = dto.email;
+      user = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    } else {
+      throw new BadRequestException("Either userId, username or email must be provided");
+    }
+
+    if (!user) {
+      throw new NotFoundException(`User with identifier '${identifier}' not found`);
+    }
+
+    return user;
+  }
+
   async addCollaborator(
     id: number,
     addCollaboratorDto: AddCollaboratorDto,
   ): Promise<Project> {
-    let user;
-
-    if (addCollaboratorDto.userId) {
-      user = await this.prisma.user.findUnique({
-        where: { id: addCollaboratorDto.userId },
-      });
-    } else if (addCollaboratorDto.username) {
-      user = await this.prisma.user.findUnique({
-        where: { username: addCollaboratorDto.username },
-      });
-    } else if (addCollaboratorDto.email) {
-      user = await this.prisma.user.findUnique({
-        where: { email: addCollaboratorDto.email },
-      });
-    } else {
-      throw new BadRequestException(
-        "Either userId, username or email must be provided",
-      );
-    }
+    const user = await this.findUserByIdentifier(addCollaboratorDto);
 
     if (!user) {
       const identifier =
@@ -219,12 +220,7 @@ export class ProjectService {
       );
     }
 
-    const project = await this.prisma.project.findUnique({
-      where: { id: id },
-      include: {
-        collaborators: true,
-      },
-    });
+    const project = await this.findOne(id);
 
     if (!project) {
       throw new NotFoundException(`Project with ID ${id} not found`);
@@ -252,57 +248,16 @@ export class ProjectService {
     });
   }
 
-  async removeCollaborator(
-    id: number,
-    initiator: number,
-    removeCollaboratorDto: RemoveCollaboratorDto,
-  ): Promise<Project> {
-    let user;
+  async removeCollaborator(id: number, removeCollaboratorDto: RemoveCollaboratorDto): Promise<Project> {
+    const user = await this.findUserByIdentifier(removeCollaboratorDto);
+    const project = await this.findOne(id);
+    const projectWithRelations = project as any;
 
-    if (removeCollaboratorDto.userId) {
-      user = await this.prisma.user.findUnique({
-        where: { id: removeCollaboratorDto.userId },
-      });
-    } else if (removeCollaboratorDto.username) {
-      user = await this.prisma.user.findUnique({
-        where: { username: removeCollaboratorDto.username },
-      });
-    } else if (removeCollaboratorDto.email) {
-      user = await this.prisma.user.findUnique({
-        where: { email: removeCollaboratorDto.email },
-      });
-    } else {
-      throw new BadRequestException(
-        "Either userId, username or email must be provided",
-      );
-    }
-
-    if (!user) {
-      const identifier =
-        removeCollaboratorDto.userId ||
-        removeCollaboratorDto.username ||
-        removeCollaboratorDto.email;
-      throw new NotFoundException(
-        `User with identifier '${identifier}' not found`,
-      );
-    }
-
-    const project = await this.prisma.project.findUnique({
-      where: { id: id },
-      include: {
-        collaborators: true,
-      },
-    });
-
-    if (!project) {
-      throw new NotFoundException(`Project with ID ${id} not found`);
-    }
-
-    if (user.id === initiator) {
+    if (user.id === project.userId) {
       throw new ForbiddenException("Cannot remove the project creator");
     }
 
-    if (!project.collaborators.some((collab) => collab.id === user.id)) {
+    if (!projectWithRelations.collaborators.some((collab: any) => collab.id === user.id)) {
       throw new BadRequestException(
         "User is not a collaborator on this project",
       );
@@ -336,6 +291,17 @@ export class ProjectService {
         lastSave: new Date(),
       },
       where: { projectId },
+    });
+  }
+
+  async updateContentInfo(projectId: number, contentKey: string, extension: string): Promise<void> {
+    await this.prisma.project.update({
+      where: { id: projectId },
+      data: {
+        contentKey,
+        contentExtension: extension,
+        contentUploadedAt: new Date(),
+      },
     });
   }
 
