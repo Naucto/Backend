@@ -1,6 +1,9 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { AuthService } from "./auth.service";
 import { UserService } from "@user/user.service";
+import { GoogleAuthService } from "./google-auth.service";
+import { ConfigService } from "@nestjs/config";
+import { PrismaService } from "src/prisma/prisma.service";
 import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcryptjs";
 import {
@@ -25,6 +28,28 @@ describe("AuthService", () => {
   const jwtService: jest.Mocked<Pick<JwtService, "sign">> = {
     sign: jest.fn(),
   };
+  
+  const googleAuthService = {
+    verifyGoogleToken: jest.fn(),
+    generateJwt: jest.fn(),
+  };
+  
+  const prismaService = {
+    user: { 
+      findUnique: jest.fn(),
+    },
+    refreshToken: {
+      create: jest.fn(),
+      deleteMany: jest.fn(),
+    },
+    $transaction: jest.fn().mockImplementation(async (callback) => {
+      return await callback(prismaService);
+    }),
+  };
+
+  const configService = {
+    get: jest.fn(),
+  };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -35,6 +60,9 @@ describe("AuthService", () => {
         AuthService,
         { provide: UserService, useValue: userService },
         { provide: JwtService, useValue: jwtService },
+        { provide: GoogleAuthService, useValue: googleAuthService },
+        { provide: PrismaService, useValue: prismaService },
+        { provide: ConfigService, useValue: configService },
       ],
     }).compile();
 
@@ -102,8 +130,18 @@ describe("AuthService", () => {
       jwtService.sign.mockReturnValue("token123");
 
       const result = await authService.login("test@example.com", "password");
-      expect(result).toEqual({ access_token: "token123" });
-      expect(jwtService.sign).toHaveBeenCalledWith({ sub: mockUser.id, email: mockUser.email });
+      expect(result).toEqual({ 
+        access_token: "token123",
+        refresh_token: "token123" 
+      });
+      expect(jwtService.sign).toHaveBeenCalledWith(
+        { sub: mockUser.id, email: mockUser.email },
+        { expiresIn: '1h' }
+      );
+      expect(jwtService.sign).toHaveBeenCalledWith(
+        { sub: mockUser.id, email: mockUser.email },
+        { expiresIn: '7d' }
+      );
     });
   });
 
@@ -199,7 +237,10 @@ describe("AuthService", () => {
       });
 
       expect(userService.create).toHaveBeenCalled();
-      expect(result).toEqual({ access_token: "token123" });
+      expect(result).toEqual({ 
+        access_token: "token123",
+        refresh_token: "token123" 
+      });
     });
   });
 });
