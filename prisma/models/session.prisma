@@ -1,15 +1,22 @@
-// prisma/models/session.prisma
+enum GameSessionVisibility {
+  PUBLIC
+  FRIENDS_ONLY
+  PRIVATE
+}
 
 model GameSession {
   id        Int       @id @default(autoincrement())
-  user      User      @relation(fields: [userId], references: [id])
-  userId    Int
+  host      User      @relation("UserHostedGameSessions", fields: [hostId], references: [id])
+  hostId    Int
   project   Project   @relation(fields: [projectId], references: [id])
   projectId Int
   startedAt DateTime  @default(now())
   endedAt   DateTime?
 
-  @@index([userId])
+  visibility GameSessionVisibility @default(PRIVATE)
+  otherUsers User[]                @relation("UserJoinedGameSessions")
+
+  @@index([hostId])
   @@index([projectId])
 }
 
