@@ -197,7 +197,7 @@ export class S3Controller {
   @ApiResponse({ status: 200, description: "Returns object metadata" })
   @ApiResponse({ status: 500, description: "Server error" })
   async getObjectMetadata(@Param("key") key: string, @Param("bucketName") bucketName?: string): Promise<{metadata: S3ObjectMetadata}> {
-    const metadata = await this.bucketService.getObjectMetadata({
+    const metadata = await this.s3Service.getObjectMetadata({
       key: decodeURIComponent(key),
       bucketName: bucketName!
     });

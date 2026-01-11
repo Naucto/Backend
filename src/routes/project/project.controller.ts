@@ -16,7 +16,7 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
-    BadRequestException,
+  BadRequestException,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
@@ -32,6 +32,7 @@ import { UserDto } from "@auth/dto/user.dto";
 import { Project } from "@prisma/client";
 import { ProjectResponseDto, ProjectWithRelationsResponseDto } from "./dto/project-response.dto";
 import { S3DownloadException } from "@s3/s3.error";
+import { S3Service } from "@s3/s3.service";
 
 interface RequestWithUser extends Request {
     user: UserDto;
@@ -42,7 +43,10 @@ interface RequestWithUser extends Request {
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth("JWT-auth")
 export class ProjectController {
-  constructor(private readonly projectService: ProjectService) {}
+  constructor(
+    private readonly projectService: ProjectService,
+    private readonly s3Service: S3Service,
+  ) {}
 
   private readonly logger = new Logger(ProjectController.name);
 
@@ -186,20 +190,22 @@ export class ProjectController {
       byUserId: {
         summary: "Add by User ID",
         value: {
-          userId: 42
-
-      }},
+          userId: 42,
+        },
+      },
       byUsername: {
         summary: "Add by Username",
         value: {
-          username: "john_doe"} },
+          username: "john_doe",
+        },
+      },
 
       byEmail: {
         summary: "Add by Email",
         value: {
-          email: "john.doe@example.com"
-
-      }},
+          email: "john.doe@example.com",
+        },
+      },
     },
   })
   @ApiResponse({
@@ -234,20 +240,25 @@ export class ProjectController {
       byUserId: {
         summary: "Remove by User ID",
         value: {
-          userId: 42} },
+          userId: 42,
+        },
+      },
 
       byUsername: {
         summary: "Remove by Username",
         value: {
-          username: "john_doe"} },
+          username: "john_doe",
+        },
+      },
 
       byEmail: {
         summary: "Remove by Email",
         value: {
-          email: "john.doe@example.com"} },
+          email: "john.doe@example.com",
         },
-      })
-
+      },
+    },
+  })
   @ApiResponse({
     status: 200,
     description: "Updated project object with collaborators",
@@ -261,12 +272,10 @@ export class ProjectController {
     description: "Error remove collaborator on project",
   })
   async removeCollaborator(
-      @Param("id", ParseIntPipe) id: number,
-      @Body() removeCollaboratorDto: RemoveCollaboratorDto,
-
+    @Param("id", ParseIntPipe) id: number,
+    @Body() removeCollaboratorDto: RemoveCollaboratorDto,
   ): Promise<Project> {
-
-    return this.projectService.removeCollaborator(id,  removeCollaboratorDto);
+    return this.projectService.removeCollaborator(id, removeCollaboratorDto);
   }
 
   @UseGuards(ProjectCreatorGuard)
@@ -335,7 +344,7 @@ export class ProjectController {
     if (project.contentKey && project.contentKey !== newS3Key) {
       this.logger.log(`Deleting old file '${project.contentKey}' for project ${id}`);
       try {
-        await this.s3Service.deleteFile(project.contentKey);
+        await this.s3Service.deleteFile({ key: project.contentKey });
       } catch (err) {
         this.logger.warn(`Failed to delete old file: ${err}`);
       }
@@ -347,7 +356,7 @@ export class ProjectController {
       originalName: file.originalname,
     };
 
-    await this.s3Service.uploadFile(file, metadata, undefined, newS3Key);
+    await this.s3Service.uploadFile({ file, metadata, keyName: newS3Key });
     await this.projectService.updateContentInfo(id, newS3Key, extension);
 
     return { message: "File uploaded successfully", id };
@@ -394,7 +403,7 @@ export class ProjectController {
       if (error instanceof Error) {
         this.logger.error(`Download failed: ${error.message}`, error.stack);
       } else {
-        this.logger.error(`Download failed: Unknown error`);
+        this.logger.error("Download failed: Unknown error");
       }
 
       if (!res.headersSent) {
@@ -424,7 +433,11 @@ export class ProjectController {
   @ApiResponse({ status: 201, description: "File uploaded successfully" })
   @ApiResponse({ status: 403, description: "Forbidden" })
   @HttpCode(HttpStatus.CREATED)
-  async saveCheckpoint(@Param("id") id: string, @Param("name") name: string, @UploadedFile() file: Express.Multer.File): Promise<{ message: string, id: string }> {
+  async saveCheckpoint(
+    @Param("id") id: string,
+    @Param("name") name: string,
+    @UploadedFile() file: Express.Multer.File,
+  ): Promise<{ message: string; id: string }> {
     await this.projectService.save(Number(id), file);
     await this.projectService.checkpoint(Number(id), name);
 
@@ -439,7 +452,10 @@ export class ProjectController {
   @ApiResponse({ status: 201, description: "File deleted successfully" })
   @ApiResponse({ status: 403, description: "Forbidden" })
   @HttpCode(HttpStatus.ACCEPTED)
-  async deleteCheckpoint(@Param("id") id: string, @Param("name") name: string): Promise<{ message: string, id: string }> {
+  async deleteCheckpoint(
+    @Param("id") id: string,
+    @Param("name") name: string,
+  ): Promise<{ message: string; id: string }> {
     await this.projectService.removeCheckpoint(Number(id), name);
 
     return { message: "Checkpoint deleted successfully", id };
@@ -452,7 +468,9 @@ export class ProjectController {
   @ApiResponse({ status: 201, description: "Project published successfully" })
   @ApiResponse({ status: 403, description: "Forbidden" })
   @HttpCode(HttpStatus.CREATED)
-  async publish(@Param("id") id: string): Promise<{ message: string, id: string }> {
+  async publish(
+    @Param("id") id: string,
+  ): Promise<{ message: string; id: string }> {
     await this.projectService.publish(Number(id));
 
     return { message: "Project published successfully", id };
@@ -465,7 +483,9 @@ export class ProjectController {
   @ApiResponse({ status: 201, description: "Project unpublished successfully" })
   @ApiResponse({ status: 403, description: "Forbidden" })
   @HttpCode(HttpStatus.CREATED)
-  async unpublish(@Param("id") id: string): Promise<{ message: string, id: string }> {
+  async unpublish(
+    @Param("id") id: string,
+  ): Promise<{ message: string; id: string }> {
     await this.projectService.unpublish(Number(id));
 
     return { message: "Project unpublished successfully", id };
@@ -513,7 +533,6 @@ export class ProjectController {
 
       file.body.pipe(res);
     } catch (error) {
-
       if (error instanceof Error) {
         this.logger.error(`Failed to fetch content for project ${id}: ${error.message}`, error.stack);
       } else {
@@ -536,36 +555,43 @@ export class ProjectController {
   @ApiParam({ name: "checkpoint", type: "string" })
   @ApiResponse({ status: 200, description: "Project checkpoint retrieved successfully" })
   @ApiResponse({ status: 403, description: "Forbidden" })
-  async getCheckpoint(@Param("id") id: string, @Param("checkpoint") checkpoint: string, @Res() res: Response): Promise<void> {
+  async getCheckpoint(
+    @Param("id") id: number,
+    @Param("checkpoint") checkpoint: string,
+    @Res() res: Response,
+  ): Promise<void> {
     try {
-      const file = await this.projectService.fetchCheckpoint(Number(id), checkpoint);
+      const file = await this.projectService.fetchCheckpoint(
+        Number(id),
+        checkpoint,
+      );
+      const project = await this.projectService.findOne(id);
 
       res.set({
         "Content-Type": file.contentType,
         "Content-Length": (file.contentLength ?? 0).toString(),
-                "Content-Disposition": `attachment; filename="${filename}"`,
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-                "Pragma": "no-cache",
-                "Expires": "0",
-                "ETag": project.contentUploadedAt ? `W/"${project.contentUploadedAt.getTime()}"` : undefined,
+        "Content-Disposition": `attachment; filename="${checkpoint}"`,
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+        "ETag": project.contentUploadedAt ? `W/"${project.contentUploadedAt.getTime()}"` : undefined,
       });
 
       file.body.pipe(res);
     } catch (error) {
-if (error instanceof S3DownloadException) {
-                this.logger.warn(`S3 File not found for project ${id} (Key: ${error.key})`);
-                res.status(404).json({ message: "File not found on storage server" });
-                return;
-            }
+      if (error instanceof S3DownloadException) {
+        this.logger.warn(`S3 File not found for project ${id} (Key: ${error.key})`);
+        res.status(404).json({ message: "File not found on storage server" });
+        return;
+      }
       if (error instanceof Error) {
         this.logger.error(`Download failed: ${error.message}`, error.stack);
       } else {
-        this.logger.error(`Download failed: Unknown error`);
+        this.logger.error("Download failed: Unknown error");
       }
 
-      if (!
-        res.headersSent) {
-      res.status(500).json({ message: "Internal server errorduring download" });
+      if (!res.headersSent) {
+        res.status(500).json({ message: "Internal server error during download" });
       }
     }
   }

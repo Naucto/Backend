@@ -2,8 +2,6 @@ import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
   S3Client,
-  ListBucketsCommand,
-  ListBucketsCommandInput,
   ListObjectsV2Command,
   ListObjectsV2CommandInput,
   GetObjectCommand,
@@ -16,8 +14,8 @@ import {
   DeleteObjectsCommandInput,
   HeadObjectCommand,
   HeadObjectCommandInput,
-  Bucket,
   _Object,
+  HeadObjectCommandOutput,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Readable } from "stream";
@@ -25,7 +23,6 @@ import { DownloadedFile, S3ObjectMetadata } from "./s3.interface";
 import {
   S3ConfigurationException,
   BucketResolutionException,
-  S3ListBucketsException,
   S3ListObjectsException,
   S3SignedUrlException,
   S3DownloadException,
@@ -35,15 +32,11 @@ import {
   S3GetMetadataException,
   S3MissingMetadataException,
 } from "./s3.error";
-import * as fs from "fs";
-import { base64UrlEncode, createPolicy, rsaSha256Sign } from "./s3.utils";
-import { MissingEnvVarError } from "@auth/auth.error";
-import { Upload } from '@aws-sdk/lib-storage';
+import { Upload } from "@aws-sdk/lib-storage";
 
 @Injectable()
 export class S3Service {
   private readonly s3: S3Client;
-  private readonly defaultBucket: string | undefined;
 
   constructor(private readonly configService: ConfigService,) {
     const errors = [];
@@ -91,7 +84,6 @@ export class S3Service {
       },
       forcePathStyle: true
     });
-    this.defaultBucket = this.configService.get<string>("S3_BUCKET_NAME");
   }
 
   private resolveBucket(bucketName?: string): string {
