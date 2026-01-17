@@ -16,6 +16,8 @@ model GameSession {
   visibility GameSessionVisibility @default(PRIVATE)
   otherUsers User[]                @relation("UserJoinedGameSessions")
 
+  sessionId String @unique @default(uuid())
+
   @@index([hostId])
   @@index([projectId])
 }
