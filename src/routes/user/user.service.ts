@@ -68,16 +68,23 @@ export class UserService {
     return this.prisma.user.count(countArgs);
   }
 
-  async findOne(id: number): Promise<User> {
+  async findOne<ComplexFieldsT>(id: number, whatElse: Record<string, boolean> = {}): Promise<User & ComplexFieldsT> {
+    // FIXME: One prime example of why you shouldn't vibe-code an ENTIRE backend lol!
+    //        I had to add the ExtraFieldsT generic so that I could fetch complex fields like hostingGameSessions.
+    //        If we had to write it ourselves, this service would've accounted for this kind of usage.
+    //        I'm not going to constraint the ComplexFieldsT generic any further, as this is already botched anyway.
+    //        Let us thank Microsoft for this.
+
     const user = await this.prisma.user.findUnique({
-      where: { id }
+      where: { id },
+      include: whatElse
     });
 
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
 
-    return user;
+    return user as User & ComplexFieldsT;
   }
 
   async update(id: number, updateUserDto: UpdateUserDto): Promise<User> {
