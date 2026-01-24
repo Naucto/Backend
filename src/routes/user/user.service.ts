@@ -124,4 +124,12 @@ export class UserService {
     });
     return user ?? undefined;
   }
+
+  async attachGameSession(userId: number, gameSessionId: number): Promise<void> {
+
+  }
+
+  async detachGameSession(userId: number, gameSessionId: number): Promise<void> {
+
+  }
 }

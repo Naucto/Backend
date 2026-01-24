@@ -3,7 +3,7 @@ import { GameSession, GameSessionVisibility } from "@prisma/client";
 import { PrismaService } from "@prisma/prisma.service";
 import { UserService } from "../user/user.service";
 import { ProjectService } from "../project/project.service";
-import { MultiplayerHostOpenedError } from "./multiplayer.error";
+import { MultiplayerHostOpenedError, MultiplayerInvalidStateError } from "./multiplayer.error";
 
 @Injectable()
 export class MultiplayerService {
@@ -43,7 +43,9 @@ export class MultiplayerService {
   }
 
   async openHost(userId: number, projectId: number, visibility: GameSessionVisibility): Promise<GameSession> {
-    // Check if the user & project exists 
+    // Check if the user & project exists by simply getting them. If the object does not exist,
+    // the exception throw serves as a guard.
+
     const requestedUser = await this.userService.findOne<{
       hostingGameSessions: GameSession[]
     }>(userId, { hostingGameSessions: true });
@@ -65,12 +67,42 @@ export class MultiplayerService {
       }
     });
 
+    await this.userService.attachGameSession(userId, createdGS.id);
+
     return createdGS;
   }
 
   async closeHost(userId: number, projectId: number): Promise<void> {
-    await this.userService.findOne(userId);
+    // Same as for openHost.
+    const requestedUser = await this.userService.findOne<{
+      hostingGameSessions: GameSession[]
+    }>(userId, { hostingGameSessions: true });
     await this.projectService.findOne(projectId);
+
+    const basicHostedGS =
+      requestedUser.hostingGameSessions.find((hostedGS) => hostedGS.projectId == projectId);
+
+    if (!basicHostedGS) {
+      throw new MultiplayerHostOpenedError("User is not hosting a game session for this project");
+    }
+
+    await this.userService.detachGameSession(userId, basicHostedGS.id);
+
+    const hostedGS = await this.prismaService.gameSession.findUnique({
+      where: { id: basicHostedGS.id },
+      include: { otherUsers: true }
+    });
+
+    if (!hostedGS) {
+      // This can only be reached if the database is in an inconsitent state
+      throw new MultiplayerInvalidStateError("Game session attached to user no longer exists");
+    }
+
+    await Promise.all(
+      hostedGS.otherUsers.map(async (user) => {
+        await this.userService.detachGameSession(user.id, hostedGS.id);
+      })
+    );
   }
 
   async joinHost(hostId: string): Promise<void> {
