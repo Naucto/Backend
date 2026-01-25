@@ -1,6 +1,6 @@
-import { ValidatorConstraint, ValidatorConstraintInterface, ValidationArguments, registerDecorator, ValidationOptions } from 'class-validator';
+import { ValidatorConstraint, ValidatorConstraintInterface, ValidationArguments, registerDecorator, ValidationOptions } from "class-validator";
 
-@ValidatorConstraint({ name: 'atLeastOne', async: false })
+@ValidatorConstraint({ name: "atLeastOne", async: false })
 export class AtLeastOneConstraint implements ValidatorConstraintInterface {
   validate(_value: unknown, args: ValidationArguments): boolean {
     const obj = args.object as Record<string, unknown>;
@@ -8,13 +8,13 @@ export class AtLeastOneConstraint implements ValidatorConstraintInterface {
     
     return properties.some(prop => {
       const value = obj[prop];
-      return value !== undefined && value !== null && value !== '';
+      return value !== undefined && value !== null && value !== "";
     });
   }
 
   defaultMessage(args: ValidationArguments): string {
     const properties = args.constraints[0] as string[];
-    return `At least one of the following fields must be provided: ${properties.join(', ')}`;
+    return `At least one of the following fields must be provided: ${properties.join(", ")}`;
   }
 }
 
