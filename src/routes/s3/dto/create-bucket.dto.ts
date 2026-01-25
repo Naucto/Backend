@@ -4,7 +4,7 @@ import { IsOptional, IsString } from "class-validator";
 export class CreateBucketDto {
   @ApiProperty({
     description: "Optional bucket location constraint",
-    required: false,
+    required: false
   })
   @IsOptional()
   @IsString()

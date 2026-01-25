@@ -5,7 +5,7 @@ export class DeleteS3FilesDto {
   @ApiProperty({
     description: "List of object keys to delete",
     type: [String],
-    example: ["file1.jpg", "documents/report.pdf"],
+    example: ["file1.jpg", "documents/report.pdf"]
   })
   @IsArray()
   @IsString({ each: true })

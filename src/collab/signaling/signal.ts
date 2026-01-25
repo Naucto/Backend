@@ -84,39 +84,39 @@ export const setupWebSocketServer = (server: http.Server): void => {
 
       if (message && message.type && !closed) {
         switch (message.type) {
-        case "subscribe":
-          (message.topics || []).forEach((topicName: string) => {
-            if (typeof topicName === "string") {
-              const topic = map.setIfUndefined(
-                topics,
-                topicName,
-                () => new Set<WebSocket>(),
-              );
-              topic.add(conn);
-              subscribedTopics.add(topicName);
+          case "subscribe":
+            (message.topics || []).forEach((topicName: string) => {
+              if (typeof topicName === "string") {
+                const topic = map.setIfUndefined(
+                  topics,
+                  topicName,
+                  () => new Set<WebSocket>()
+                );
+                topic.add(conn);
+                subscribedTopics.add(topicName);
+              }
+            });
+            break;
+          case "unsubscribe":
+            (message.topics || []).forEach((topicName: string) => {
+              const subs = topics.get(topicName);
+              if (subs) {
+                subs.delete(conn);
+              }
+            });
+            break;
+          case "publish":
+            if (message.topic) {
+              const receivers = topics.get(message.topic);
+              if (receivers) {
+                message.clients = receivers.size;
+                receivers.forEach((receiver) => send(receiver, message));
+              }
             }
-          });
-          break;
-        case "unsubscribe":
-          (message.topics || []).forEach((topicName: string) => {
-            const subs = topics.get(topicName);
-            if (subs) {
-              subs.delete(conn);
-            }
-          });
-          break;
-        case "publish":
-          if (message.topic) {
-            const receivers = topics.get(message.topic);
-            if (receivers) {
-              message.clients = receivers.size;
-              receivers.forEach((receiver) => send(receiver, message));
-            }
-          }
-          break;
-        case "ping":
-          send(conn, { type: "pong" } as WSMessage);
-          break;
+            break;
+          case "ping":
+            send(conn, { type: "pong" } as WSMessage);
+            break;
         }
       }
     });

@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
   S3Client,
@@ -15,7 +15,7 @@ import {
   HeadObjectCommand,
   HeadObjectCommandInput,
   _Object,
-  HeadObjectCommandOutput,
+  HeadObjectCommandOutput
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Readable } from "stream";
@@ -30,7 +30,7 @@ import {
   S3DeleteFileException,
   S3DeleteFilesException,
   S3GetMetadataException,
-  S3MissingMetadataException,
+  S3MissingMetadataException
 } from "./s3.error";
 import { Upload } from "@aws-sdk/lib-storage";
 
@@ -38,7 +38,7 @@ import { Upload } from "@aws-sdk/lib-storage";
 export class S3Service {
   private readonly s3: S3Client;
 
-  constructor(private readonly configService: ConfigService,) {
+  constructor(@Inject(ConfigService) private readonly configService: ConfigService) {
     const errors = [];
     const endpoint = this.configService.get<string>("S3_ENDPOINT");
     if (!endpoint) {
@@ -52,7 +52,9 @@ export class S3Service {
     if (!accessKeyId) {
       errors.push("S3_ACCESS_KEY_ID");
     }
-    const secretAccessKey = this.configService.get<string>("S3_SECRET_ACCESS_KEY");
+    const secretAccessKey = this.configService.get<string>(
+      "S3_SECRET_ACCESS_KEY"
+    );
     if (!secretAccessKey) {
       errors.push("S3_SECRET_ACCESS_KEY");
     }
@@ -64,7 +66,7 @@ export class S3Service {
     const envVars = {
       AWS_REGION: region,
       AWS_ACCESS_KEY_ID: accessKeyId,
-      AWS_SECRET_ACCESS_KEY: secretAccessKey,
+      AWS_SECRET_ACCESS_KEY: secretAccessKey
     };
 
     const missingKeys = Object.entries(envVars)
@@ -80,7 +82,7 @@ export class S3Service {
       endpoint: endpoint!,
       credentials: {
         accessKeyId: accessKeyId!,
-        secretAccessKey: secretAccessKey!,
+        secretAccessKey: secretAccessKey!
       },
       forcePathStyle: true
     });
@@ -89,13 +91,22 @@ export class S3Service {
   private resolveBucket(bucketName?: string): string {
     const defaultBucket = this.configService.get<string>("S3_BUCKET_NAME");
     const resolved = bucketName || defaultBucket;
-    if (!resolved) throw new BucketResolutionException("No bucket provided and no default bucket configured.");
+    if (!resolved)
+      throw new BucketResolutionException(
+        "No bucket provided and no default bucket configured."
+      );
     return resolved;
   }
 
-  async headFile(key: string, bucketName?: string): Promise<HeadObjectCommandOutput> {
+  async headFile(
+    key: string,
+    bucketName?: string
+  ): Promise<HeadObjectCommandOutput> {
     const resolvedBucketName = this.resolveBucket(bucketName);
-    const command = new HeadObjectCommand({ Bucket: resolvedBucketName, Key: key });
+    const command = new HeadObjectCommand({
+      Bucket: resolvedBucketName,
+      Key: key
+    });
     return this.s3.send(command);
   }
 
@@ -109,7 +120,10 @@ export class S3Service {
       await this.s3.send(command);
       return true;
     } catch (error: any) {
-      if (error.name === "NotFound" || error.$metadata?.httpStatusCode === 404) {
+      if (
+        error.name === "NotFound" ||
+        error.$metadata?.httpStatusCode === 404
+      ) {
         return false;
       }
       throw error;
@@ -130,7 +144,7 @@ export class S3Service {
       const input: ListObjectsV2CommandInput = {
         Bucket: resolvedBucketName,
         Prefix: prefix,
-        Delimiter: delimiter,
+        Delimiter: delimiter
       };
       const command = new ListObjectsV2Command(input);
       const result = await this.s3.send(command);
@@ -141,12 +155,15 @@ export class S3Service {
     }
   }
 
-  async getSignedDownloadUrl(key: string, bucketName?: string): Promise<string> {
+  async getSignedDownloadUrl(
+    key: string,
+    bucketName?: string
+  ): Promise<string> {
     const resolvedBucketName = this.resolveBucket(bucketName);
     try {
       const input: GetObjectCommandInput = {
         Bucket: resolvedBucketName,
-        Key: key,
+        Key: key
       };
       const command = new GetObjectCommand(input);
       return await getSignedUrl(this.s3, command, { expiresIn: 3600 });
@@ -159,21 +176,21 @@ export class S3Service {
     key,
     bucketName
   }: {
-    key: string
-    bucketName?: string
+    key: string;
+    bucketName?: string;
   }): Promise<DownloadedFile> {
     const resolvedBucketName = this.resolveBucket(bucketName);
     try {
       const headInput: HeadObjectCommandInput = {
         Bucket: resolvedBucketName,
-        Key: key,
+        Key: key
       };
       const headCommand = new HeadObjectCommand(headInput);
       const head = await this.s3.send(headCommand);
 
       const getObjectInput: GetObjectCommandInput = {
         Bucket: resolvedBucketName,
-        Key: key,
+        Key: key
       };
       const getObjectCommand = new GetObjectCommand(getObjectInput);
       const response = await this.s3.send(getObjectCommand);
@@ -187,13 +204,17 @@ export class S3Service {
       if (!contentLength) missingFields.push("ContentLength");
 
       if (missingFields.length > 0) {
-        throw new S3MissingMetadataException(resolvedBucketName, key, missingFields);
+        throw new S3MissingMetadataException(
+          resolvedBucketName,
+          key,
+          missingFields
+        );
       }
 
       const downloadedFile: DownloadedFile = {
         body: stream,
         contentType: contentType!,
-        contentLength: contentLength!,
+        contentLength: contentLength!
       };
 
       return downloadedFile;
@@ -208,18 +229,17 @@ export class S3Service {
     bucketName,
     keyName
   }: {
-    file: Express.Multer.File | DownloadedFile
-    metadata?: Record<string, string>
-    bucketName?: string
-    keyName?: string
+    file: Express.Multer.File | DownloadedFile;
+    metadata?: Record<string, string>;
+    bucketName?: string;
+    keyName?: string;
   }): Promise<void> {
     const resolvedBucketName = this.resolveBucket(bucketName);
 
     if ("originalname" in file) {
       file = <Express.Multer.File>file;
       try {
-        if (!keyName)
-          keyName = file.originalname;
+        if (!keyName) keyName = file.originalname;
 
         const input: PutObjectCommandInput = {
           Bucket: resolvedBucketName,
@@ -232,7 +252,11 @@ export class S3Service {
 
         await this.s3.send(command);
       } catch (error) {
-        throw new S3UploadException(resolvedBucketName, file.originalname, error);
+        throw new S3UploadException(
+          resolvedBucketName,
+          file.originalname,
+          error
+        );
       }
     } else {
       try {
@@ -245,13 +269,17 @@ export class S3Service {
             Key: keyName,
             Body: file.body,
             ContentType: file.contentType,
-            Metadata: metadata,
-          },
+            Metadata: metadata
+          }
         });
 
         await parallelUpload.done();
       } catch (error) {
-        throw new S3UploadException(resolvedBucketName, keyName ?? "<undefined>", error);
+        throw new S3UploadException(
+          resolvedBucketName,
+          keyName ?? "<undefined>",
+          error
+        );
       }
     }
   }
@@ -260,8 +288,8 @@ export class S3Service {
     key,
     bucketName
   }: {
-    key: string
-    bucketName?: string
+    key: string;
+    bucketName?: string;
   }): Promise<void> {
     const resolvedBucketName = this.resolveBucket(bucketName);
     try {
@@ -281,8 +309,8 @@ export class S3Service {
     keys,
     bucketName
   }: {
-    keys: string[]
-    bucketName?: string
+    keys: string[];
+    bucketName?: string;
   }): Promise<_Object[]> {
     const resolvedBucketName = this.resolveBucket(bucketName);
     try {
@@ -306,26 +334,35 @@ export class S3Service {
     key,
     bucketName
   }: {
-    key: string
-    bucketName?: string
+    key: string;
+    bucketName?: string;
   }): Promise<S3ObjectMetadata> {
     const resolvedBucketName = this.resolveBucket(bucketName);
     try {
       const input: HeadObjectCommandInput = {
         Bucket: resolvedBucketName,
-        Key: key,
+        Key: key
       };
       const command = new HeadObjectCommand(input);
       const result = await this.s3.send(command);
 
-      if (!result.ContentType || !result.ContentLength || !result.LastModified || !result.ETag) {
+      if (
+        !result.ContentType ||
+        !result.ContentLength ||
+        !result.LastModified ||
+        !result.ETag
+      ) {
         const missingFields = [];
         if (!result.ContentType) missingFields.push("ContentType");
         if (!result.ContentLength) missingFields.push("ContentLength");
         if (!result.LastModified) missingFields.push("LastModified");
         if (!result.ETag) missingFields.push("ETag");
 
-        throw new S3MissingMetadataException(resolvedBucketName, key, missingFields);
+        throw new S3MissingMetadataException(
+          resolvedBucketName,
+          key,
+          missingFields
+        );
       }
 
       return {
@@ -333,7 +370,7 @@ export class S3Service {
         contentLength: result.ContentLength,
         lastModified: result.LastModified,
         metadata: result.Metadata ?? {},
-        eTag: result.ETag,
+        eTag: result.ETag
       };
     } catch (error) {
       throw new S3GetMetadataException(resolvedBucketName, key, error);

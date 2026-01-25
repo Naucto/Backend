@@ -6,7 +6,7 @@ export class GeneratePolicyDto {
     description: "S3 actions to include in the policy",
     type: [String],
     example: ["s3:GetObject", "s3:PutObject"],
-    required: false,
+    required: false
   })
   @IsOptional()
   @IsArray()
@@ -16,7 +16,7 @@ export class GeneratePolicyDto {
   @ApiProperty({
     description: "Policy effect (Allow or Deny)",
     example: "Allow",
-    required: false,
+    required: false
   })
   @IsOptional()
   @IsString()
@@ -25,7 +25,7 @@ export class GeneratePolicyDto {
   @ApiProperty({
     description: "AWS principal",
     example: "*",
-    required: false,
+    required: false
   })
   @IsOptional()
   @IsString()
@@ -34,7 +34,7 @@ export class GeneratePolicyDto {
   @ApiProperty({
     description: "Object key prefix",
     example: "public/",
-    required: false,
+    required: false
   })
   @IsOptional()
   @IsString()

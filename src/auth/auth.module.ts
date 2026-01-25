@@ -11,7 +11,7 @@ import { MissingEnvVarError, BadEnvVarError } from "./auth.error";
 import { GoogleAuthService } from "./google-auth.service";
 import { Module, Logger } from "@nestjs/common";
 
-type DurationString = `${number}${"s"|"m"|"h"|"d"}`;
+type DurationString = `${number}${"s" | "m" | "h" | "d"}`;
 
 function parseExpiresIn(v?: string): number | DurationString {
   if (!v) return "1h";
@@ -38,7 +38,9 @@ function parseExpiresIn(v?: string): number | DurationString {
           throw new MissingEnvVarError("JWT_SECRET");
         }
         if (env === "development" && secret.length < 16) {
-          logger.warn(`JWT_SECRET is quite short (${secret.length} chars). Consider using a longer, more secure secret.`);
+          logger.warn(
+            `JWT_SECRET is quite short (${secret.length} chars). Consider using a longer, more secure secret.`
+          );
         }
 
         const expiresIn = parseExpiresIn(expiresInRaw);
@@ -52,20 +54,20 @@ function parseExpiresIn(v?: string): number | DurationString {
         return {
           secret,
           signOptions: {
-            expiresIn: expiresIn,
-          },
+            expiresIn: expiresIn
+          }
         };
-      },
-    }),
+      }
+    })
   ],
   providers: [
     JwtAuthGuard,
     RolesGuard,
     AuthService,
     GoogleAuthService,
-    JwtStrategy,
+    JwtStrategy
   ],
   exports: [JwtAuthGuard, RolesGuard, JwtModule],
-  controllers: [AuthController],
+  controllers: [AuthController]
 })
 export class AuthModule {}

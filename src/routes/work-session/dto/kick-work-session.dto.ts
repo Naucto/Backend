@@ -4,8 +4,8 @@ import { IsNumber } from "class-validator";
 export class KickWorkSessionDto {
   @ApiProperty({
     description: "The ID of the user participating in the work session",
-    example: 1,
+    example: 1
   })
   @IsNumber()
-    userId!: number;
+  userId!: number;
 }

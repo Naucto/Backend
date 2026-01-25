@@ -10,7 +10,7 @@ describe("UserController", () => {
     const module: TestingModule = await Test.createTestingModule({
       imports: [PrismaModule],
       controllers: [UserController],
-      providers: [UserService],
+      providers: [UserService]
     }).compile();
 
     controller = module.get<UserController>(UserController);

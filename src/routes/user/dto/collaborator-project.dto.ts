@@ -4,17 +4,17 @@ import { IsNumber } from "class-validator";
 export class AddCollaboratorDto {
   @ApiProperty({
     description: "The User to add to the project as collaborator",
-    example: "1234",
+    example: "1234"
   })
   @IsNumber()
-    userId!: number;
+  userId!: number;
 }
 
 export class RemoveCollaboratorDto {
   @ApiProperty({
     description: "The User to add to the project as collaborator",
-    example: "1234",
+    example: "1234"
   })
   @IsNumber()
-    userId!: number;
+  userId!: number;
 }
