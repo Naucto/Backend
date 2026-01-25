@@ -3,7 +3,7 @@ import { GameSession, GameSessionVisibility } from "@prisma/client";
 import { PrismaService } from "@prisma/prisma.service";
 import { UserService } from "../user/user.service";
 import { ProjectService } from "../project/project.service";
-import { MultiplayerHostOpenedError, MultiplayerInvalidStateError } from "./multiplayer.error";
+import { MultiplayerHostNotFoundError, MultiplayerHostOpenedError, MultiplayerInvalidStateError, MultiplayerUserAlreadyJoinedError } from "./multiplayer.error";
 
 @Injectable()
 export class MultiplayerService {
@@ -80,7 +80,7 @@ export class MultiplayerService {
     await this.projectService.findOne(projectId);
 
     const basicHostedGS =
-      requestedUser.hostingGameSessions.find((hostedGS) => hostedGS.projectId == projectId);
+      requestedUser.hostingGameSessions.find((hostedGS) => hostedGS.projectId === projectId);
 
     if (!basicHostedGS) {
       throw new MultiplayerHostOpenedError("User is not hosting a game session for this project");
@@ -105,11 +105,33 @@ export class MultiplayerService {
     );
   }
 
-  async joinHost(hostId: string): Promise<void> {
+  async joinHost(joiningUserId: number, hostUuid: string): Promise<void> {
+    // Same as for openHost.
+    const joiningUser = await this.userService.findOne<{
+      joinedGameSessions: GameSession[]
+    }>(joiningUserId, { joinedGameSessions: true });
+    const hostedGS = await this.prismaService.gameSession.findUnique({
+      where: { sessionId: hostUuid },
+    });
 
+    if (!hostedGS) {
+      throw new MultiplayerHostNotFoundError("No game session found for the provided host UUID");
+    } else if (hostedGS.hostId === joiningUserId) {
+      throw new MultiplayerUserAlreadyJoinedError("User is already the host of this game session");
+    } else if (joiningUser.joinedGameSessions.some(joinedGS => joinedGS.id === hostedGS.id)) {
+      throw new MultiplayerUserAlreadyJoinedError("User has already joined this game session");
+    }
+
+    // Concat the joining user to the game session's otherUsers
+    await this.prismaService.gameSession.update({
+      where: { id: hostedGS.id },
+      data: {
+        otherUsers: { connect: { id: joiningUserId } }
+      }
+    });
   }
 
-  async leaveHost(hostId: string): Promise<void> {
-    
+  async leaveHost(leavingUserId: number, hostUuid: string): Promise<void> {
+    // Same as for openHost.
   }
 }

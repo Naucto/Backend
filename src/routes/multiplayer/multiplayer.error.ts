@@ -25,3 +25,17 @@ export class MultiplayerHostInvalidError extends MultiplayerError {
     this.name = this.constructor.name;
   }
 }
+
+export class MultiplayerHostNotFoundError extends MultiplayerError {
+  constructor(message: string) {
+    super(message);
+    this.name = this.constructor.name;
+  }
+}
+
+export class MultiplayerUserAlreadyJoinedError extends MultiplayerError {
+  constructor(message: string) {
+    super(message);
+    this.name = this.constructor.name;
+  }
+}
