@@ -23,13 +23,13 @@ const controllers = process.env["NODE_ENV"] === "production" ? [] : [S3Controlle
     {
       provide: S3Client,
       useFactory: (configService: ConfigService) => {
-        const region = configService.get<string>("AWS_REGION");
-        const accessKeyId = configService.get<string>("AWS_ACCESS_KEY_ID");
-        const secretAccessKey = configService.get<string>("AWS_SECRET_ACCESS_KEY");
+        const region = configService.get<string>("S3_REGION");
+        const accessKeyId = configService.get<string>("S3_ACCESS_KEY_ID");
+        const secretAccessKey = configService.get<string>("S3_SECRET_ACCESS_KEY");
         const envVars = {
-          AWS_REGION: region,
-          AWS_ACCESS_KEY_ID: accessKeyId,
-          AWS_SECRET_ACCESS_KEY: secretAccessKey,
+          REGION: region,
+          ACCESS_KEY_ID: accessKeyId,
+          SECRET_ACCESS_KEY: secretAccessKey,
         };
 
         const missingKeys = Object.entries(envVars)

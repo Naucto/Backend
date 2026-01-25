@@ -14,14 +14,15 @@ import {
   DeleteObjectsCommandInput,
   HeadObjectCommand,
   HeadObjectCommandInput,
-  HeadObjectCommandOutput,
   _Object,
-  S3ServiceException,
+  HeadObjectCommandOutput,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Readable } from "stream";
-import { DownloadedFile, S3ObjectMetadata, StorageService } from "./s3.interface";
+import { DownloadedFile, S3ObjectMetadata } from "./s3.interface";
 import {
+  S3ConfigurationException,
+  BucketResolutionException,
   S3ListObjectsException,
   S3SignedUrlException,
   S3DownloadException,
@@ -30,12 +31,60 @@ import {
   S3DeleteFilesException,
   S3GetMetadataException,
   S3MissingMetadataException,
-  BucketResolutionException,
 } from "./s3.error";
+import { Upload } from "@aws-sdk/lib-storage";
 
 @Injectable()
-export class S3Service implements StorageService {
-  constructor(private readonly s3: S3Client, private readonly configService: ConfigService) {}
+export class S3Service {
+  private readonly s3: S3Client;
+
+  constructor(private readonly configService: ConfigService,) {
+    const errors = [];
+    const endpoint = this.configService.get<string>("S3_ENDPOINT");
+    if (!endpoint) {
+      errors.push("S3_ENDPOINT");
+    }
+    const region = this.configService.get<string>("S3_REGION");
+    if (!region) {
+      errors.push("S3_REGION");
+    }
+    const accessKeyId = this.configService.get<string>("S3_ACCESS_KEY_ID");
+    if (!accessKeyId) {
+      errors.push("S3_ACCESS_KEY_ID");
+    }
+    const secretAccessKey = this.configService.get<string>("S3_SECRET_ACCESS_KEY");
+    if (!secretAccessKey) {
+      errors.push("S3_SECRET_ACCESS_KEY");
+    }
+
+    if (errors.length > 0) {
+      throw new S3ConfigurationException(errors);
+    }
+
+    const envVars = {
+      AWS_REGION: region,
+      AWS_ACCESS_KEY_ID: accessKeyId,
+      AWS_SECRET_ACCESS_KEY: secretAccessKey,
+    };
+
+    const missingKeys = Object.entries(envVars)
+      .filter(([, value]) => !value)
+      .map(([key]) => key);
+
+    if (missingKeys.length > 0) {
+      throw new S3ConfigurationException(missingKeys);
+    }
+
+    this.s3 = new S3Client({
+      region: region!,
+      endpoint: endpoint!,
+      credentials: {
+        accessKeyId: accessKeyId!,
+        secretAccessKey: secretAccessKey!,
+      },
+      forcePathStyle: true
+    });
+  }
 
   private resolveBucket(bucketName?: string): string {
     const defaultBucket = this.configService.get<string>("S3_BUCKET_NAME");
@@ -53,27 +102,35 @@ export class S3Service implements StorageService {
   async fileExists(key: string, bucketName?: string): Promise<boolean> {
     const resolvedBucketName = this.resolveBucket(bucketName);
     try {
-      const command = new HeadObjectCommand({ 
-        Bucket: resolvedBucketName, 
-        Key: key 
+      const command = new HeadObjectCommand({
+        Bucket: resolvedBucketName,
+        Key: key
       });
       await this.s3.send(command);
       return true;
-    } catch (error: unknown) {
-      if (error instanceof S3ServiceException) {
-        if (error.name === "NotFound" || error.$metadata?.httpStatusCode === 404) {
-          return false;
-        }
+    } catch (error: any) {
+      if (error.name === "NotFound" || error.$metadata?.httpStatusCode === 404) {
+        return false;
       }
       throw error;
     }
   }
 
-  async listObjects(bucketName?: string): Promise<_Object[]> {
+  async listObjects({
+    bucketName,
+    prefix,
+    delimiter
+  }: {
+    bucketName?: string;
+    prefix?: string;
+    delimiter?: string;
+  } = {}): Promise<_Object[]> {
     const resolvedBucketName = this.resolveBucket(bucketName);
     try {
       const input: ListObjectsV2CommandInput = {
         Bucket: resolvedBucketName,
+        Prefix: prefix,
+        Delimiter: delimiter,
       };
       const command = new ListObjectsV2Command(input);
       const result = await this.s3.send(command);
@@ -98,7 +155,13 @@ export class S3Service implements StorageService {
     }
   }
 
-  async downloadFile(key:string, bucketName?: string): Promise<DownloadedFile> {
+  async downloadFile({
+    key,
+    bucketName
+  }: {
+    key: string
+    bucketName?: string
+  }): Promise<DownloadedFile> {
     const resolvedBucketName = this.resolveBucket(bucketName);
     try {
       const headInput: HeadObjectCommandInput = {
@@ -139,25 +202,67 @@ export class S3Service implements StorageService {
     }
   }
 
-  async uploadFile(file: Express.Multer.File, metadata: Record<string, string>, bucketName?: string, keyName?: string): Promise<void> {
+  async uploadFile({
+    file,
+    metadata,
+    bucketName,
+    keyName
+  }: {
+    file: Express.Multer.File | DownloadedFile
+    metadata?: Record<string, string>
+    bucketName?: string
+    keyName?: string
+  }): Promise<void> {
     const resolvedBucketName = this.resolveBucket(bucketName);
-    try {
-      const input: PutObjectCommandInput = {
-        Bucket: resolvedBucketName,
-        Key: keyName ?? file.originalname,
-        Body: file.buffer,
-        ContentType: file.mimetype,
-        Metadata: metadata
-      };
-      const command = new PutObjectCommand(input);
 
-      await this.s3.send(command);
-    } catch (error) {
-      throw new S3UploadException(resolvedBucketName, file.originalname, error);
+    if ("originalname" in file) {
+      file = <Express.Multer.File>file;
+      try {
+        if (!keyName)
+          keyName = file.originalname;
+
+        const input: PutObjectCommandInput = {
+          Bucket: resolvedBucketName,
+          Key: keyName ?? file.originalname,
+          Body: file.buffer,
+          ContentType: file.mimetype,
+          Metadata: metadata
+        };
+        const command = new PutObjectCommand(input);
+
+        await this.s3.send(command);
+      } catch (error) {
+        throw new S3UploadException(resolvedBucketName, file.originalname, error);
+      }
+    } else {
+      try {
+        file = <DownloadedFile>file;
+
+        const parallelUpload = new Upload({
+          client: this.s3,
+          params: {
+            Bucket: resolvedBucketName,
+            Key: keyName,
+            Body: file.body,
+            ContentType: file.contentType,
+            Metadata: metadata,
+          },
+        });
+
+        await parallelUpload.done();
+      } catch (error) {
+        throw new S3UploadException(resolvedBucketName, keyName ?? "<undefined>", error);
+      }
     }
   }
 
-  async deleteFile(key: string, bucketName?: string): Promise<void> {
+  async deleteFile({
+    key,
+    bucketName
+  }: {
+    key: string
+    bucketName?: string
+  }): Promise<void> {
     const resolvedBucketName = this.resolveBucket(bucketName);
     try {
       const input: DeleteObjectCommandInput = {
@@ -172,7 +277,13 @@ export class S3Service implements StorageService {
     }
   }
 
-  async deleteFiles(keys: string[], bucketName?: string): Promise<_Object[]> {
+  async deleteFiles({
+    keys,
+    bucketName
+  }: {
+    keys: string[]
+    bucketName?: string
+  }): Promise<_Object[]> {
     const resolvedBucketName = this.resolveBucket(bucketName);
     try {
       const input: DeleteObjectsCommandInput = {
@@ -191,7 +302,13 @@ export class S3Service implements StorageService {
     }
   }
 
-  async getObjectMetadata(key:string, bucketName?: string): Promise<S3ObjectMetadata> {
+  async getObjectMetadata({
+    key,
+    bucketName
+  }: {
+    key: string
+    bucketName?: string
+  }): Promise<S3ObjectMetadata> {
     const resolvedBucketName = this.resolveBucket(bucketName);
     try {
       const input: HeadObjectCommandInput = {
