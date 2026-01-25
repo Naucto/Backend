@@ -11,7 +11,7 @@ describe("ProjectController", () => {
     const module: TestingModule = await Test.createTestingModule({
       imports: [PrismaModule, S3Module],
       controllers: [ProjectController],
-      providers: [ProjectService],
+      providers: [ProjectService]
     }).compile();
 
     controller = module.get<ProjectController>(ProjectController);

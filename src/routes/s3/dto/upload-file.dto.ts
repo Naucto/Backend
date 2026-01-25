@@ -5,15 +5,15 @@ export class UploadFileDto {
   @ApiProperty({
     type: "string",
     format: "binary",
-    description: "File to upload",
+    description: "File to upload"
   })
-    file!: Express.Multer.File;
+  file!: Express.Multer.File;
 
   @ApiProperty({
     description: "Optional metadata for the file",
     required: false,
     type: "string",
-    additionalProperties: { type: "string" },
+    additionalProperties: { type: "string" }
   })
   @IsOptional()
   readonly metadata?: Record<string, string>;

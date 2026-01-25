@@ -13,8 +13,8 @@ export class BadEnvVarError extends Error {
 }
 
 export class CloudfrontSignedCookiesException extends Error {
-    constructor(public readonly cookies: Record<string, string | undefined>) {
-        super(`Signed cookies are incomplete: ${JSON.stringify(cookies)}`);
-        this.name = "CloudfrontSignedCookiesException";
-    }
+  constructor(public readonly cookies: Record<string, string | undefined>) {
+    super(`Signed cookies are incomplete: ${JSON.stringify(cookies)}`);
+    this.name = "CloudfrontSignedCookiesException";
+  }
 }

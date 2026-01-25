@@ -1,11 +1,11 @@
 services:
   db:
-    image: postgres:15
+    image: postgres
     restart: always
     env_file:
       - .env
     volumes:
-      - db-data:/var/lib/postgresql/data
+      - db-data:/var/lib/postgresql
     ports:
       - "5432:5432"
     healthcheck:
@@ -18,6 +18,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        - BACKEND_PORT=${BACKEND_PORT}
+
+        - POSTGRES_USER=${POSTGRES_USER}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        - POSTGRES_DB=${POSTGRES_DB}
+        - POSTGRES_HOST=${POSTGRES_HOST}
+        - POSTGRES_PORT=${POSTGRES_PORT}
     depends_on:
       db:
         condition: service_healthy

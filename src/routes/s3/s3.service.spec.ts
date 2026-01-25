@@ -5,7 +5,7 @@ import { S3Client, ListObjectsV2Command } from "@aws-sdk/client-s3";
 
 jest.mock("@aws-sdk/client-s3", () => ({
   S3Client: jest.fn().mockImplementation(() => ({ send: jest.fn() })),
-  ListObjectsV2Command: jest.fn(),
+  ListObjectsV2Command: jest.fn()
 }));
 
 describe("S3Service", () => {
@@ -16,7 +16,7 @@ describe("S3Service", () => {
   beforeEach(() => {
     mockConfig = {
       get: (key: string) =>
-        key === "S3_BUCKET_NAME" ? "my-default-bucket" : "us-east-1",
+        key === "S3_BUCKET_NAME" ? "my-default-bucket" : "us-east-1"
     };
     mockS3 = { send: jest.fn() } as unknown as S3Client & { send: jest.Mock };
     s3Service = new S3Service(mockS3, mockConfig as ConfigService);
@@ -34,7 +34,9 @@ describe("S3Service", () => {
     it("throws when no bucket", () => {
       const emptyConfig: Pick<ConfigService, "get"> = { get: () => undefined };
       const service = new S3Service(mockS3, emptyConfig as ConfigService);
-      expect(() => service["resolveBucket"]()).toThrow(BucketResolutionException);
+      expect(() => service["resolveBucket"]()).toThrow(
+        BucketResolutionException
+      );
     });
   });
 
@@ -43,7 +45,9 @@ describe("S3Service", () => {
       mockS3.send.mockResolvedValueOnce({ Contents: [{ Key: "file.txt" }] });
       const result = await s3Service.listObjects();
       expect(result).toEqual([{ Key: "file.txt" }]);
-      expect(ListObjectsV2Command).toHaveBeenCalledWith({ Bucket: "my-default-bucket" });
+      expect(ListObjectsV2Command).toHaveBeenCalledWith({
+        Bucket: "my-default-bucket"
+      });
     });
 
     it("returns empty array when no contents", async () => {
@@ -55,7 +59,9 @@ describe("S3Service", () => {
     it("throws S3ListObjectsException on error", async () => {
       const err = new Error("Access Denied");
       mockS3.send.mockRejectedValueOnce(err);
-      await expect(s3Service.listObjects("bucket")).rejects.toThrow(S3ListObjectsException);
+      await expect(s3Service.listObjects("bucket")).rejects.toThrow(
+        S3ListObjectsException
+      );
     });
   });
 });

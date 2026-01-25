@@ -14,7 +14,6 @@ export default defineConfig({
   typedSql: { 
     path: path.join("db", "queries"),
   },
-  engine: "classic",
   datasource: { 
     url: env("DATABASE_URL") 
   }

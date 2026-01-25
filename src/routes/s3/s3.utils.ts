@@ -9,14 +9,20 @@ export function base64UrlEncode(input: string | Buffer): string {
 }
 
 export function createPolicy(resourceUrl: string, expires: number): string {
-  return JSON.stringify({
-    Statement: [{
-      Resource: resourceUrl,
-      Condition: {
-        DateLessThan: { "AWS:EpochTime": expires },
-      },
-    }],
-  }, null, 0);
+  return JSON.stringify(
+    {
+      Statement: [
+        {
+          Resource: resourceUrl,
+          Condition: {
+            DateLessThan: { "AWS:EpochTime": expires }
+          }
+        }
+      ]
+    },
+    null,
+    0
+  );
 }
 
 export function rsaSha256Sign(privateKey: string, policy: string): Buffer {

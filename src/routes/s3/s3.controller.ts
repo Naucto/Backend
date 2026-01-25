@@ -20,7 +20,7 @@ import {
   ApiResponse,
   ApiConsumes,
   ApiBody,
-  ApiParam,
+  ApiParam
 } from "@nestjs/swagger";
 import { S3Service } from "./s3.service";
 import { BucketService } from "./bucket.service";
@@ -60,11 +60,15 @@ export class S3Controller {
   @ApiParam({ name: "bucketName", description: "Name of the bucket" })
   @ApiResponse({
     status: 200,
-    description: "Returns a list of objects in the bucket",
+    description: "Returns a list of objects in the bucket"
   })
   @ApiResponse({ status: 500, description: "Server error" })
-  async listObjects(@Param("bucketName") bucketName?: string): Promise<{ contents: _Object[] | [] }> {
-    const contents = await this.s3Service.listObjects({ bucketName: bucketName! });
+  async listObjects(
+    @Param("bucketName") bucketName?: string
+  ): Promise<{ contents: _Object[] | [] }> {
+    const contents = await this.s3Service.listObjects({
+      bucketName: bucketName!
+    });
     return { contents };
   }
 
@@ -72,12 +76,18 @@ export class S3Controller {
   @ApiOperation({ summary: "Generate a signed download URL" })
   @ApiParam({ name: "key", description: "Object key" })
   @ApiParam({ name: "bucketName", description: "Name of the bucket" })
-  @ApiResponse({ status: 200, description: "Returns a signed URL for downloading the file" })
+  @ApiResponse({
+    status: 200,
+    description: "Returns a signed URL for downloading the file"
+  })
   @ApiResponse({ status: 500, description: "Server error" })
-  async getSignedDownloadUrl(@Param("key") key: string, @Param("bucketName") bucketName?: string): Promise<{url: string}> {
+  async getSignedDownloadUrl(
+    @Param("key") key: string,
+    @Param("bucketName") bucketName?: string
+  ): Promise<{ url: string }> {
     const url = await this.s3Service.getSignedDownloadUrl(
       decodeURIComponent(key),
-      bucketName,
+      bucketName
     );
     return { url };
   }
@@ -88,14 +98,24 @@ export class S3Controller {
   @ApiParam({ name: "bucketName", description: "Name of the bucket" })
   @ApiResponse({ status: 200, description: "File stream" })
   @ApiResponse({ status: 500, description: "Server error" })
-  async downloadFile(@Param("key") key: string, @Res() res: Response, @Param("bucketName") bucketName?: string): Promise<void> {
+  async downloadFile(
+    @Param("key") key: string,
+    @Res() res: Response,
+    @Param("bucketName") bucketName?: string
+  ): Promise<void> {
     const decodedKey = decodeURIComponent(key);
     try {
       const { body, contentType, contentLength } =
-        await this.s3Service.downloadFile({ key: decodedKey, bucketName: bucketName! });
+        await this.s3Service.downloadFile({
+          key: decodedKey,
+          bucketName: bucketName!
+        });
 
       res.setHeader("Content-Type", contentType || "application/octet-stream");
-      res.setHeader("Content-Disposition", `attachment; filename="${decodedKey.split("/").pop()}"`);
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${decodedKey.split("/").pop()}"`
+      );
 
       if (contentLength) {
         res.setHeader("Content-Length", contentLength.toString());
@@ -104,15 +124,26 @@ export class S3Controller {
       body.pipe(res);
     } catch (error: unknown) {
       if (error instanceof Error) {
-        this.logger.error(`Error downloading project's content ${decodedKey} from bucket ${bucketName}: ${error.message}`, error.stack);
+        this.logger.error(
+          `Error downloading project's content ${decodedKey} from bucket ${bucketName}: ${error.message}`,
+          error.stack
+        );
         res
           .status(HttpStatus.INTERNAL_SERVER_ERROR)
-          .json({ error: "Server error while downloading file", message: error.message });
+          .json({
+            error: "Server error while downloading file",
+            message: error.message
+          });
       } else {
-        this.logger.error(`Unknown error downloading content ${decodedKey} from bucket ${bucketName}`);
+        this.logger.error(
+          `Unknown error downloading content ${decodedKey} from bucket ${bucketName}`
+        );
         res
           .status(HttpStatus.INTERNAL_SERVER_ERROR)
-          .json({ error: "Server error while downloading file", message: "Unknown error occurred" });
+          .json({
+            error: "Server error while downloading file",
+            message: "Unknown error occurred"
+          });
       }
       return;
     }
@@ -127,11 +158,15 @@ export class S3Controller {
   @ApiResponse({ status: 200, description: "File uploaded successfully" })
   @ApiResponse({ status: 400, description: "No file provided" })
   @ApiResponse({ status: 500, description: "Server error" })
-  async uploadFile(@UploadedFile() file: Express.Multer.File, @Body() uploadFileDto: UploadFileDto, @Param("bucketName") bucketName?: string): Promise<{ message: string } | { statusCode: number; error: string }> {
+  async uploadFile(
+    @UploadedFile() file: Express.Multer.File,
+    @Body() uploadFileDto: UploadFileDto,
+    @Param("bucketName") bucketName?: string
+  ): Promise<{ message: string } | { statusCode: number; error: string }> {
     if (!file) {
       return {
         statusCode: HttpStatus.BAD_REQUEST,
-        error: "No file provided",
+        error: "No file provided"
       };
     }
 
@@ -149,7 +184,10 @@ export class S3Controller {
   @ApiParam({ name: "bucketName", description: "Name of the bucket" })
   @ApiResponse({ status: 200, description: "File deleted successfully" })
   @ApiResponse({ status: 500, description: "Server error" })
-  async deleteFile(@Param("key") key: string, @Param("bucketName") bucketName?: string): Promise<{ message: string }> {
+  async deleteFile(
+    @Param("key") key: string,
+    @Param("bucketName") bucketName?: string
+  ): Promise<{ message: string }> {
     await this.s3Service.deleteFile({
       key: decodeURIComponent(key),
       bucketName: bucketName!
@@ -162,10 +200,13 @@ export class S3Controller {
   @ApiParam({ name: "bucketName", description: "Name of the bucket" })
   @ApiResponse({ status: 200, description: "Files deleted successfully" })
   @ApiResponse({ status: 500, description: "Server error" })
-  async deleteFiles(@Body() deleteFilesDto: DeleteS3FilesDto, @Param("bucketName") bucketName?: string): Promise<{ message: string; deleted: _Object[] }> {
+  async deleteFiles(
+    @Body() deleteFilesDto: DeleteS3FilesDto,
+    @Param("bucketName") bucketName?: string
+  ): Promise<{ message: string; deleted: _Object[] }> {
     const result = await this.s3Service.deleteFiles({
-      keys: deleteFilesDto.keys.map(key => decodeURIComponent(key)),
-      bucketName: bucketName!,
+      keys: deleteFilesDto.keys.map((key) => decodeURIComponent(key)),
+      bucketName: bucketName!
     });
     return { message: "Files deleted successfully", deleted: result };
   }
@@ -175,7 +216,9 @@ export class S3Controller {
   @ApiParam({ name: "bucketName", description: "Name of the bucket" })
   @ApiResponse({ status: 200, description: "Bucket deleted successfully" })
   @ApiResponse({ status: 500, description: "Server error" })
-  async deleteBucket(@Param("bucketName") bucketName?: string): Promise<{ message: string }> {
+  async deleteBucket(
+    @Param("bucketName") bucketName?: string
+  ): Promise<{ message: string }> {
     await this.bucketService.deleteBucket(bucketName);
     return { message: "Bucket deleted successfully" };
   }
@@ -185,7 +228,9 @@ export class S3Controller {
   @ApiParam({ name: "bucketName", description: "Name of the bucket" })
   @ApiResponse({ status: 201, description: "Bucket created successfully" })
   @ApiResponse({ status: 500, description: "Server error" })
-  async createBucket(@Param("bucketName") bucketName?: string): Promise<{ message: string }> {
+  async createBucket(
+    @Param("bucketName") bucketName?: string
+  ): Promise<{ message: string }> {
     await this.bucketService.createBucket(bucketName);
     return { message: "Bucket created successfully" };
   }
@@ -196,7 +241,10 @@ export class S3Controller {
   @ApiParam({ name: "bucketName", description: "Name of the bucket" })
   @ApiResponse({ status: 200, description: "Returns object metadata" })
   @ApiResponse({ status: 500, description: "Server error" })
-  async getObjectMetadata(@Param("key") key: string, @Param("bucketName") bucketName?: string): Promise<{metadata: S3ObjectMetadata}> {
+  async getObjectMetadata(
+    @Param("key") key: string,
+    @Param("bucketName") bucketName?: string
+  ): Promise<{ metadata: S3ObjectMetadata }> {
     const metadata = await this.s3Service.getObjectMetadata({
       key: decodeURIComponent(key),
       bucketName: bucketName!
@@ -210,16 +258,23 @@ export class S3Controller {
   @ApiResponse({ status: 200, description: "Returns the CDN URL" })
   @ApiResponse({ status: 500, description: "Server error" })
   async getCdnUrl(@Param("key") key: string): Promise<{ url: string }> {
-    const url = this.cloudfrontService.generateSignedUrl(decodeURIComponent(key));
+    const url = this.cloudfrontService.generateSignedUrl(
+      decodeURIComponent(key)
+    );
     return { url };
   }
 
   @Get("signed-cookies/:key")
-  @ApiOperation({ summary: "Generate CloudFront signed cookies for a resource" })
+  @ApiOperation({
+    summary: "Generate CloudFront signed cookies for a resource"
+  })
   @ApiParam({ name: "key", description: "Object key (relative path in CDN)" })
   @ApiResponse({ status: 200, description: "Returns signed cookies" })
   @ApiResponse({ status: 500, description: "Server error" })
-  async getSignedCookies(@Param("key") key: string, @Res() res: Response): Promise<void> {
+  async getSignedCookies(
+    @Param("key") key: string,
+    @Res() res: Response
+  ): Promise<void> {
     try {
       const cdnUrl = this.configService.get<string>("CDN_URL");
       if (!cdnUrl) {
@@ -229,7 +284,7 @@ export class S3Controller {
 
       const cookies = this.cloudfrontService.createSignedCookies(
         resourceUrl,
-        this.sessionCookieTimeout,
+        this.sessionCookieTimeout
       );
 
       const cookieOptions = {
@@ -238,12 +293,24 @@ export class S3Controller {
         path: "/",
         domain: `.${cdnUrl}`,
         sameSite: "lax" as const,
-        maxAge: 60 * 60 * 1000,
+        maxAge: 60 * 60 * 1000
       };
 
-      res.cookie("CloudFront-Expires", cookies["CloudFront-Expires"], cookieOptions);
-      res.cookie("CloudFront-Signature", cookies["CloudFront-Signature"], cookieOptions);
-      res.cookie("CloudFront-Key-Pair-Id", cookies["CloudFront-Key-Pair-Id"], cookieOptions);
+      res.cookie(
+        "CloudFront-Expires",
+        cookies["CloudFront-Expires"],
+        cookieOptions
+      );
+      res.cookie(
+        "CloudFront-Signature",
+        cookies["CloudFront-Signature"],
+        cookieOptions
+      );
+      res.cookie(
+        "CloudFront-Key-Pair-Id",
+        cookies["CloudFront-Key-Pair-Id"],
+        cookieOptions
+      );
 
       const response = {
         message: "Signed cookies set successfully",
@@ -251,8 +318,8 @@ export class S3Controller {
         cookies: {
           "CloudFront-Expires": cookies["CloudFront-Expires"],
           "CloudFront-Signature": cookies["CloudFront-Signature"],
-          "CloudFront-Key-Pair-Id": cookies["CloudFront-Key-Pair-Id"],
-        },
+          "CloudFront-Key-Pair-Id": cookies["CloudFront-Key-Pair-Id"]
+        }
       };
       this.logger.debug("Response JSON:", JSON.stringify(response));
       res.status(HttpStatus.OK).json(response);
@@ -260,13 +327,15 @@ export class S3Controller {
       this.logger.error("Error generating signed cookies:", error);
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         error: "Could not generate signed cookies",
-        message: error instanceof Error ? error.message : "Unknown error",
+        message: error instanceof Error ? error.message : "Unknown error"
       });
     }
   }
 
   @Get("/signed-cookies")
-  async setSignedCookies(@Res({ passthrough: true }) res: Response): Promise<{ success: boolean, cookies: CloudfrontSignedCookiesOutput}> {
+  async setSignedCookies(
+    @Res({ passthrough: true }) res: Response
+  ): Promise<{ success: boolean; cookies: CloudfrontSignedCookiesOutput }> {
     const cookies = this.cloudfrontService.generateSignedCookies();
 
     Object.entries(cookies).forEach(([name, value]) => {
@@ -276,7 +345,7 @@ export class S3Controller {
         secure: false,
         path: "/",
         sameSite: "lax",
-        maxAge: 60 * 60 * 1000,
+        maxAge: 60 * 60 * 1000
       });
     });
 

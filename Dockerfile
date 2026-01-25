@@ -11,12 +11,13 @@ WORKDIR /app
 
 RUN apk add --no-cache python3 make g++
 
-ENV DATABASE_URL="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/$POSTGRES_DB"
+ENV DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}"
 
 COPY package.json ./
 COPY prisma ./prisma
 
-RUN npm install && npx prisma generate
+RUN npm install
+RUN npx prisma generate
 COPY . .
 
 ENV PORT=${BACKEND_PORT}

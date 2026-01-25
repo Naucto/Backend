@@ -16,7 +16,7 @@ export class GoogleAuthService {
 
       const ticket: LoginTicket = await this.client.verifyIdToken({
         idToken: token,
-        audience,
+        audience
       });
 
       const payload = ticket.getPayload();
@@ -28,7 +28,7 @@ export class GoogleAuthService {
         email: payload.email ?? "",
         name: payload.name ?? "",
         picture: payload.picture ?? undefined,
-        googleId: payload.sub ?? "",
+        googleId: payload.sub ?? ""
       };
     } catch {
       throw new UnauthorizedException("Google token verification failed");

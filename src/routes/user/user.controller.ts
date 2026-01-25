@@ -11,7 +11,7 @@ import {
   HttpCode,
   ParseIntPipe,
   ValidationPipe,
-  Logger,
+  Logger
 } from "@nestjs/common";
 import { UserService } from "./user.service";
 import { UpdateUserDto } from "./dto/update-user.dto";
@@ -24,7 +24,7 @@ import {
   ApiBearerAuth,
   ApiParam,
   ApiBody,
-  ApiExtraModels,
+  ApiExtraModels
 } from "@nestjs/swagger";
 import { Request } from "@nestjs/common";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
@@ -39,7 +39,12 @@ import { RequestWithUser } from "@auth/auth.types";
 import { UserDto } from "@auth/dto/user.dto";
 
 @ApiTags("users")
-@ApiExtraModels(UserResponseDto, UserListResponseDto, UserSingleResponseDto, UserProfileResponseDto)
+@ApiExtraModels(
+  UserResponseDto,
+  UserListResponseDto,
+  UserSingleResponseDto,
+  UserProfileResponseDto
+)
 @ApiBearerAuth("JWT-auth")
 @Controller("users")
 export class UserController {
@@ -52,7 +57,7 @@ export class UserController {
   @ApiResponse({
     status: HttpStatus.OK,
     description: "Returns the current user profile",
-    type: UserProfileResponseDto,
+    type: UserProfileResponseDto
   })
   @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
   @UseGuards(JwtAuthGuard)
@@ -65,26 +70,26 @@ export class UserController {
   @ApiResponse({
     status: HttpStatus.OK,
     description: "Returns paginated list of users",
-    type: UserListResponseDto,
+    type: UserListResponseDto
   })
   @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
   @ApiQuery({ type: UserFilterDto })
   @UseGuards(JwtAuthGuard)
-  async findAll(@Query() filterDto: UserFilterDto): Promise<{statusCode: number, message: string, data: UserDto[], meta: { page: number, limit: number, total: number, totalPages: number} }>{
-    const {
-      page = 1,
-      limit = 10,
-      nickname,
-      email,
-      sortBy,
-      order,
-    } = filterDto;
+  async findAll(
+    @Query() filterDto: UserFilterDto
+  ): Promise<{
+    statusCode: number;
+    message: string;
+    data: UserDto[];
+    meta: { page: number; limit: number; total: number; totalPages: number };
+  }> {
+    const { page = 1, limit = 10, nickname, email, sortBy, order } = filterDto;
 
     const pageNumber = Number(page) || 1;
     const limitNumber = Number(limit) || 10;
 
     this.logger.debug(
-      `Fetching users with pagination: ${JSON.stringify(filterDto)}`,
+      `Fetching users with pagination: ${JSON.stringify(filterDto)}`
     );
 
     const skip = (pageNumber - 1) * limitNumber;
@@ -93,7 +98,9 @@ export class UserController {
     if (nickname) filter.nickname = { contains: nickname };
     if (email) filter.email = { contains: email };
 
-    const orderBy: Prisma.UserOrderByWithRelationInput & {[id: string]: string} = {};
+    const orderBy: Prisma.UserOrderByWithRelationInput & {
+      [id: string]: string;
+    } = {};
     if (sortBy) {
       orderBy[sortBy] = order || "asc";
     } else {
@@ -105,9 +112,9 @@ export class UserController {
         skip,
         take: limitNumber,
         where: Object.keys(filter).length ? filter : {},
-        orderBy,
+        orderBy
       }),
-      this.userService.count(filter),
+      this.userService.count(filter)
     ]);
 
     return {
@@ -118,8 +125,8 @@ export class UserController {
         page: +pageNumber,
         limit: +limitNumber,
         total,
-        totalPages: Math.ceil(total / limitNumber),
-      },
+        totalPages: Math.ceil(total / limitNumber)
+      }
     };
   }
 
@@ -129,23 +136,25 @@ export class UserController {
   @ApiResponse({
     status: HttpStatus.OK,
     description: "Returns the user",
-    type: UserSingleResponseDto,
+    type: UserSingleResponseDto
   })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: "User not found" })
   @ApiResponse({
     status: HttpStatus.BAD_REQUEST,
-    description: "Invalid ID format",
+    description: "Invalid ID format"
   })
   @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
   @UseGuards(JwtAuthGuard)
-  async findOne(@Param("id", ParseIntPipe) id: number): Promise<{ statusCode: number, message: string, data: UserDto }> {
+  async findOne(
+    @Param("id", ParseIntPipe) id: number
+  ): Promise<{ statusCode: number; message: string; data: UserDto }> {
     this.logger.debug(`Fetching user with ID: ${id}`);
     const user = await this.userService.findOne(id);
 
     return {
       statusCode: HttpStatus.OK,
       message: "User retrieved successfully",
-      data: user,
+      data: user
     };
   }
 
@@ -156,22 +165,28 @@ export class UserController {
   @ApiResponse({
     status: HttpStatus.OK,
     description: "User updated successfully",
-    type: UserSingleResponseDto,
+    type: UserSingleResponseDto
   })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: "User not found" })
   @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: "Invalid input" })
   @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
-  @ApiResponse({ status: HttpStatus.FORBIDDEN, description: "Insufficient permissions" })
+  @ApiResponse({
+    status: HttpStatus.FORBIDDEN,
+    description: "Insufficient permissions"
+  })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles("Admin")
-  async update(@Param("id", ParseIntPipe) id: number, @Body(ValidationPipe) updateUserDto: UpdateUserDto): Promise<{statusCode: number, message: string, data: UserDto}> {
+  async update(
+    @Param("id", ParseIntPipe) id: number,
+    @Body(ValidationPipe) updateUserDto: UpdateUserDto
+  ): Promise<{ statusCode: number; message: string; data: UserDto }> {
     this.logger.debug(`Updating user with ID: ${id}`);
     const user = await this.userService.update(id, updateUserDto);
 
     return {
       statusCode: HttpStatus.OK,
       message: "User updated successfully",
-      data: user,
+      data: user
     };
   }
 
@@ -194,17 +209,19 @@ export class UserController {
   @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
   @ApiResponse({
     status: HttpStatus.FORBIDDEN,
-    description: "Insufficient permissions",
+    description: "Insufficient permissions"
   })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles("Admin")
-  async remove(@Param("id", ParseIntPipe) id: number): Promise<{ statusCode: number, message: string }> {
+  async remove(
+    @Param("id", ParseIntPipe) id: number
+  ): Promise<{ statusCode: number; message: string }> {
     this.logger.debug(`Deleting user with ID: ${id}`);
     await this.userService.remove(id);
 
     return {
       statusCode: HttpStatus.OK,
-      message: "User deleted successfully",
+      message: "User deleted successfully"
     };
   }
 }
