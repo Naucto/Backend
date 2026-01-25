@@ -3,7 +3,7 @@ import { GameSession, GameSessionVisibility } from "@prisma/client";
 import { PrismaService } from "@prisma/prisma.service";
 import { UserService } from "../user/user.service";
 import { ProjectService } from "../project/project.service";
-import { MultiplayerHostNotFoundError, MultiplayerHostOpenedError, MultiplayerInvalidStateError, MultiplayerUserAlreadyJoinedError } from "./multiplayer.error";
+import { MultiplayerHostNotFoundError, MultiplayerHostOpenedError, MultiplayerInvalidStateError, MultiplayerUserAlreadyJoinedError, MultiplayerUserNotInSessionError } from "./multiplayer.error";
 
 @Injectable()
 export class MultiplayerService {
@@ -73,7 +73,7 @@ export class MultiplayerService {
   }
 
   async closeHost(userId: number, projectId: number): Promise<void> {
-    // Same as for openHost.
+    // Same as for openHost
     const requestedUser = await this.userService.findOne<{
       hostingGameSessions: GameSession[]
     }>(userId, { hostingGameSessions: true });
@@ -106,7 +106,7 @@ export class MultiplayerService {
   }
 
   async joinHost(joiningUserId: number, hostUuid: string): Promise<void> {
-    // Same as for openHost.
+    // Same as for openHost
     const joiningUser = await this.userService.findOne<{
       joinedGameSessions: GameSession[]
     }>(joiningUserId, { joinedGameSessions: true });
@@ -122,7 +122,6 @@ export class MultiplayerService {
       throw new MultiplayerUserAlreadyJoinedError("User has already joined this game session");
     }
 
-    // Concat the joining user to the game session's otherUsers
     await this.prismaService.gameSession.update({
       where: { id: hostedGS.id },
       data: {
@@ -132,6 +131,28 @@ export class MultiplayerService {
   }
 
   async leaveHost(leavingUserId: number, hostUuid: string): Promise<void> {
-    // Same as for openHost.
+    // Same as for openHost
+    const leavingUser = await this.userService.findOne<{
+      joinedGameSessions: GameSession[]
+    }>(leavingUserId, { joinedGameSessions: true });
+    const hostedGS = await this.prismaService.gameSession.findUnique({
+      where: { sessionId: hostUuid },
+      include: { otherUsers: true }
+    });
+
+    if (!hostedGS) {
+      throw new MultiplayerHostNotFoundError("No game session found for the provided host UUID");
+    } else if (hostedGS.hostId === leavingUserId) {
+      throw new MultiplayerUserNotInSessionError("Host user cannot leave their own game session");
+    } else if (!leavingUser.joinedGameSessions.some(joinedGS => joinedGS.id === hostedGS.id)) {
+      throw new MultiplayerUserNotInSessionError("User is not part of this game session");
+    }
+
+    await this.prismaService.gameSession.update({
+      where: { id: hostedGS.id },
+      data: {
+        otherUsers: { disconnect: { id: leavingUserId } }
+      }
+    });
   }
 }
