@@ -3,7 +3,7 @@ import {
   CanActivate,
   ExecutionContext,
   ForbiddenException,
-  NotFoundException,
+  NotFoundException
 } from "@nestjs/common";
 import { PrismaService } from "@prisma/prisma.service";
 
@@ -22,7 +22,7 @@ export class ProjectCreatorGuard implements CanActivate {
 
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      select: { creator: { select: { id: true } } },
+      select: { creator: { select: { id: true } } }
     });
 
     if (!project) {
@@ -52,14 +52,14 @@ export class ProjectCollaboratorGuard implements CanActivate {
 
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      include: { collaborators: true },
+      include: { collaborators: true }
     });
 
     if (!project) {
       throw new NotFoundException("Project not found");
     }
 
-    const isCollaborator = project.collaborators.some(c => c.id === user.id);
+    const isCollaborator = project.collaborators.some((c) => c.id === user.id);
     if (!isCollaborator) {
       throw new ForbiddenException("No access to this project");
     }

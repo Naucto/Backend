@@ -10,17 +10,17 @@ import { JwtPayload } from "@auth/auth.types";
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
     @Inject(ConfigService) configService: ConfigService,
-    private readonly userService: UserService,
+    private readonly userService: UserService
   ) {
     const secret = configService.getOrThrow<string>("JWT_SECRET");
     const options: StrategyOptions = {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
-      secretOrKey: secret,
+      secretOrKey: secret
     };
     super(options);
   }
 
-  async validate(payload: JwtPayload): Promise<User | undefined>  {
+  async validate(payload: JwtPayload): Promise<User | undefined> {
     return this.userService.findOne(payload.sub);
   }
 }

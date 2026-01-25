@@ -8,7 +8,10 @@ export function isStringValue(value: string): value is TimeSpanString {
   return /^\d+(s|m|h|d|w|y)$/.test(value);
 }
 
-export function parseExpiresIn(value: string | undefined, defaultValue: TimeSpan): TimeSpan {
+export function parseExpiresIn(
+  value: string | undefined,
+  defaultValue: TimeSpan
+): TimeSpan {
   if (!value) return defaultValue;
 
   if (isStringValue(value)) {
@@ -42,7 +45,7 @@ export function timespanToMs(value: TimeSpan): number {
     h: 60 * 60 * 1000,
     d: 24 * 60 * 60 * 1000,
     w: 7 * 24 * 60 * 60 * 1000,
-    y: 365 * 24 * 60 * 60 * 1000,
+    y: 365 * 24 * 60 * 60 * 1000
   };
 
   return amount * multipliers[unit];

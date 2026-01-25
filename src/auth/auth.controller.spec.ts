@@ -16,10 +16,10 @@ describe("AuthController", () => {
           provide: AuthService,
           useValue: {
             login: jest.fn(),
-            register: jest.fn(),
-          },
-        },
-      ],
+            register: jest.fn()
+          }
+        }
+      ]
     }).compile();
 
     controller = module.get<AuthController>(AuthController);
@@ -29,16 +29,19 @@ describe("AuthController", () => {
   it("should be defined", () => {
     expect(controller).toBeDefined();
   });
-  
+
   it("should call authService.login and return access_token", async () => {
     const loginDto = { email: "test@example.com", password: "password" };
     const expectedResult = { access_token: "token123" };
-    
+
     (authService.login as jest.Mock).mockResolvedValue(expectedResult);
 
     const result = await controller.login(loginDto);
 
-    expect(authService.login).toHaveBeenCalledWith(loginDto.email, loginDto.password);
+    expect(authService.login).toHaveBeenCalledWith(
+      loginDto.email,
+      loginDto.password
+    );
     expect(result).toEqual(expectedResult);
   });
 });

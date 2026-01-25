@@ -9,27 +9,30 @@ import { CloudfrontService } from "./cloudfront.service";
 import { PrismaService } from "@prisma/prisma.service";
 import { S3ConfigurationException } from "./s3.error";
 
-const controllers = process.env["NODE_ENV"] === "production" ? [] : [S3Controller];
+const controllers =
+  process.env["NODE_ENV"] === "production" ? [] : [S3Controller];
 
 @Module({
   imports: [
     ConfigModule,
     MulterModule.register({
-      limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
-    }),
+      limits: { fileSize: 10 * 1024 * 1024 } // 10MB
+    })
   ],
   controllers,
   providers: [
     {
       provide: S3Client,
       useFactory: (configService: ConfigService) => {
-        const region = configService.get<string>("AWS_REGION");
-        const accessKeyId = configService.get<string>("AWS_ACCESS_KEY_ID");
-        const secretAccessKey = configService.get<string>("AWS_SECRET_ACCESS_KEY");
+        const region = configService.get<string>("S3_REGION");
+        const accessKeyId = configService.get<string>("S3_ACCESS_KEY_ID");
+        const secretAccessKey = configService.get<string>(
+          "S3_SECRET_ACCESS_KEY"
+        );
         const envVars = {
-          AWS_REGION: region,
-          AWS_ACCESS_KEY_ID: accessKeyId,
-          AWS_SECRET_ACCESS_KEY: secretAccessKey,
+          S3_REGION: region,
+          S3_ACCESS_KEY_ID: accessKeyId,
+          S3_SECRET_ACCESS_KEY: secretAccessKey
         };
 
         const missingKeys = Object.entries(envVars)
@@ -44,17 +47,17 @@ const controllers = process.env["NODE_ENV"] === "production" ? [] : [S3Controlle
           region: region!,
           credentials: {
             accessKeyId: accessKeyId!,
-            secretAccessKey: secretAccessKey!,
-          },
+            secretAccessKey: secretAccessKey!
+          }
         });
       },
-      inject: [ConfigService],
+      inject: [ConfigService]
     },
     S3Service,
     BucketService,
     CloudfrontService,
-    PrismaService,
+    PrismaService
   ],
-  exports: [S3Service, BucketService, CloudfrontService],
+  exports: [S3Service, BucketService, CloudfrontService]
 })
 export class S3Module {}

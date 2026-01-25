@@ -19,7 +19,7 @@ describe("S3Controller", () => {
     applyBucketPolicy: jest.fn(),
     generateSignedUrl: jest.fn(),
     createSignedCookies: jest.fn(),
-    generateSignedCookies: jest.fn(),
+    generateSignedCookies: jest.fn()
   };
 
   const mockBucketService = {
@@ -27,14 +27,13 @@ describe("S3Controller", () => {
     createBucket: jest.fn(),
     deleteBucket: jest.fn(),
     applyBucketPolicy: jest.fn(),
-    generateBucketPolicy: jest.fn(),
+    generateBucketPolicy: jest.fn()
   };
 
-  const mockCloudfrontService = {
-  };
+  const mockCloudfrontService = {};
 
   const mockConfigService = {
-    get: jest.fn(),
+    get: jest.fn()
   };
 
   beforeEach(async () => {
@@ -43,25 +42,25 @@ describe("S3Controller", () => {
       providers: [
         {
           provide: S3Service,
-          useValue: mockS3Service,
+          useValue: mockS3Service
         },
         {
           provide: BucketService,
-          useValue: mockBucketService,
+          useValue: mockBucketService
         },
         {
           provide: CloudfrontService,
-          useValue: mockCloudfrontService,
+          useValue: mockCloudfrontService
         },
         {
           provide: ConfigService,
-          useValue: mockConfigService,
+          useValue: mockConfigService
         },
         {
           provide: S3Client,
-          useValue: mockS3Client,
-        },
-      ],
+          useValue: mockS3Client
+        }
+      ]
     }).compile();
 
     controller = module.get<S3Controller>(S3Controller);
@@ -71,4 +70,3 @@ describe("S3Controller", () => {
     expect(controller).toBeDefined();
   });
 });
-

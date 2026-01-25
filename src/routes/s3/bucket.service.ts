@@ -1,9 +1,26 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { S3Client, ListBucketsCommand, DeleteBucketCommand, CreateBucketCommand, PutBucketPolicyCommand } from "@aws-sdk/client-s3";
+import {
+  S3Client,
+  ListBucketsCommand,
+  DeleteBucketCommand,
+  CreateBucketCommand,
+  PutBucketPolicyCommand
+} from "@aws-sdk/client-s3";
 import { BucketPolicy } from "./s3.interface";
-import { BucketResolutionException, S3ListBucketsException, S3DeleteBucketException, S3CreateBucketException, S3ApplyPolicyException } from "./s3.error";
+import {
+  BucketResolutionException,
+  S3ListBucketsException,
+  S3DeleteBucketException,
+  S3CreateBucketException,
+  S3ApplyPolicyException
+} from "./s3.error";
 import { Bucket } from "@aws-sdk/client-s3";
-import { ListBucketsCommandInput, DeleteBucketCommandInput, CreateBucketCommandInput, PutBucketPolicyCommandInput } from "@aws-sdk/client-s3";
+import {
+  ListBucketsCommandInput,
+  DeleteBucketCommandInput,
+  CreateBucketCommandInput,
+  PutBucketPolicyCommandInput
+} from "@aws-sdk/client-s3";
 import { BucketPolicyStatement } from "./s3.interface";
 import { ConfigService } from "@nestjs/config";
 
@@ -21,7 +38,9 @@ export class BucketService {
   private resolveBucket(bucketName?: string): string {
     const resolved = bucketName || this.defaultBucket;
     if (!resolved) {
-      throw new BucketResolutionException("No bucket name provided and no default bucket configured.");
+      throw new BucketResolutionException(
+        "No bucket name provided and no default bucket configured."
+      );
     }
     return resolved;
   }
@@ -36,7 +55,9 @@ export class BucketService {
       if (error instanceof Error) {
         throw new S3ListBucketsException(error.message, { cause: error });
       } else {
-        throw new S3ListBucketsException("An unknown error occurred while listing buckets.");
+        throw new S3ListBucketsException(
+          "An unknown error occurred while listing buckets."
+        );
       }
     }
   }
@@ -65,7 +86,13 @@ export class BucketService {
     }
   }
 
-  generateBucketPolicy(bucketName?: string, actions: string[] = ["s3:GetObject"], effect = "Allow", principal = "*", prefix = "*"): BucketPolicy {
+  generateBucketPolicy(
+    bucketName?: string,
+    actions: string[] = ["s3:GetObject"],
+    effect = "Allow",
+    principal = "*",
+    prefix = "*"
+  ): BucketPolicy {
     const resolvedBucketName = this.resolveBucket(bucketName);
 
     const statement: BucketPolicyStatement = {
@@ -76,16 +103,19 @@ export class BucketService {
       Resource:
         prefix === "*"
           ? `arn:aws:s3:::${resolvedBucketName}/*`
-          : `arn:aws:s3:::${resolvedBucketName}/${prefix}`,
+          : `arn:aws:s3:::${resolvedBucketName}/${prefix}`
     };
 
     return {
       Version: "2012-10-17",
-      Statement: [ statement ]
+      Statement: [statement]
     };
   }
 
-  async applyBucketPolicy(policy: BucketPolicy, bucketName?: string): Promise<void> {
+  async applyBucketPolicy(
+    policy: BucketPolicy,
+    bucketName?: string
+  ): Promise<void> {
     const resolvedBucketName = this.resolveBucket(bucketName);
     try {
       const input: PutBucketPolicyCommandInput = {

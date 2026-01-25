@@ -1,4 +1,8 @@
-import { Injectable, ConflictException, UnauthorizedException } from "@nestjs/common";
+import {
+  Injectable,
+  ConflictException,
+  UnauthorizedException
+} from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { UserService } from "@user/user.service";
 import { GoogleAuthService } from "./google-auth.service";
@@ -18,27 +22,36 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly googleAuthService: GoogleAuthService,
     private readonly prisma: PrismaService,
-    private readonly configService: ConfigService,
+    private readonly configService: ConfigService
   ) {}
 
-  async generateTokens(payload: JwtPayload, userId: number): Promise<AuthResponseDto> {
-    const accessTokenExpiresIn = parseExpiresIn(this.configService.get<string>("JWT_EXPIRES_IN"), "1h");
-    const refreshTokenExpiresIn = parseExpiresIn(this.configService.get<string>("JWT_REFRESH_EXPIRES_IN"), "7d");
+  async generateTokens(
+    payload: JwtPayload,
+    userId: number
+  ): Promise<AuthResponseDto> {
+    const accessTokenExpiresIn = parseExpiresIn(
+      this.configService.get<string>("JWT_EXPIRES_IN"),
+      "1h"
+    );
+    const refreshTokenExpiresIn = parseExpiresIn(
+      this.configService.get<string>("JWT_REFRESH_EXPIRES_IN"),
+      "7d"
+    );
 
     const access_token = this.jwtService.sign(payload, {
-      expiresIn: accessTokenExpiresIn,
+      expiresIn: accessTokenExpiresIn
     });
 
     const refresh_token = this.jwtService.sign(payload, {
-      expiresIn: refreshTokenExpiresIn,
+      expiresIn: refreshTokenExpiresIn
     });
 
     await this.prisma.refreshToken.create({
       data: {
         token: refresh_token,
         userId,
-        expiresAt: new Date(Date.now() + timespanToMs(refreshTokenExpiresIn)),
-      },
+        expiresAt: new Date(Date.now() + timespanToMs(refreshTokenExpiresIn))
+      }
     });
 
     return { access_token, refresh_token };
@@ -50,7 +63,9 @@ export class AuthService {
       throw new UnauthorizedException("Invalid email or password");
     }
     if (!user.password) {
-      throw new UnauthorizedException("This account cannot authenticate with a password.");
+      throw new UnauthorizedException(
+        "This account cannot authenticate with a password."
+      );
     }
 
     const passwordValid = await bcrypt.compare(password, user.password);
@@ -68,11 +83,14 @@ export class AuthService {
       await tx.refreshToken.deleteMany({ where: { userId: user.id } });
 
       const payload: JwtPayload = { sub: user.id, email: user.email };
-      const { access_token, refresh_token } = await this.generateTokens(payload, user.id);
+      const { access_token, refresh_token } = await this.generateTokens(
+        payload,
+        user.id
+      );
 
       return {
         access_token,
-        refresh_token,
+        refresh_token
       };
     });
   }
@@ -80,7 +98,7 @@ export class AuthService {
   async register(createUserDto: CreateUserDto): Promise<AuthResponseDto> {
     const [existingByEmail, existingByUsername] = await Promise.all([
       this.userService.findAll({ where: { email: createUserDto.email } }),
-      this.userService.findAll({ where: { username: createUserDto.username } }),
+      this.userService.findAll({ where: { username: createUserDto.username } })
     ]);
 
     if (existingByEmail.length > 0) {
@@ -96,7 +114,10 @@ export class AuthService {
     const newUser = await this.userService.create(createUserDto);
 
     const payload = { sub: newUser.id, email: newUser.email };
-    const { access_token, refresh_token } = await this.generateTokens(payload, newUser.id);
+    const { access_token, refresh_token } = await this.generateTokens(
+      payload,
+      newUser.id
+    );
 
     const response: AuthResponseDto = {
       access_token: access_token,
@@ -107,7 +128,8 @@ export class AuthService {
   }
 
   async loginWithGoogle(googleToken: string): Promise<AuthResponseDto> {
-    const googleUser = await this.googleAuthService.verifyGoogleToken(googleToken);
+    const googleUser =
+      await this.googleAuthService.verifyGoogleToken(googleToken);
 
     let user = await this.userService.findByEmail(googleUser.email);
 
@@ -116,12 +138,15 @@ export class AuthService {
         email: googleUser.email,
         username: googleUser.name.replace(/\s+/g, "_"),
         password: "",
-        roles: [],
+        roles: []
       });
     }
 
     const payload: JwtPayload = { sub: user.id, email: user.email };
-    const { access_token, refresh_token } = await this.generateTokens(payload, user.id);
+    const { access_token, refresh_token } = await this.generateTokens(
+      payload,
+      user.id
+    );
 
     return { access_token, refresh_token };
   }
@@ -129,7 +154,7 @@ export class AuthService {
   async refreshToken(oldToken: string): Promise<AuthResponseDto> {
     const storedToken = await this.prisma.refreshToken.findUnique({
       where: { token: oldToken },
-      include: { user: true },
+      include: { user: true }
     });
 
     if (!storedToken) {
@@ -144,12 +169,12 @@ export class AuthService {
     return this.prisma.$transaction(async (tx) => {
       const payload: JwtPayload = {
         sub: storedToken.user.id,
-        email: storedToken.user.email,
+        email: storedToken.user.email
       };
 
       const { access_token, refresh_token } = await this.generateTokens(
         payload,
-        storedToken.user.id,
+        storedToken.user.id
       );
 
       await tx.refreshToken.delete({ where: { id: storedToken.id } });

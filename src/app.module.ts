@@ -19,7 +19,7 @@ import { TasksModule } from "./tasks/tasks.module";
     UserModule,
     ProjectModule,
     WorkSessionModule,
-    TasksModule,
-  ],
+    TasksModule
+  ]
 })
 export class AppModule {}
