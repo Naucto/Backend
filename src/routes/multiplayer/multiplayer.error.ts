@@ -39,3 +39,10 @@ export class MultiplayerUserAlreadyJoinedError extends MultiplayerError {
     this.name = this.constructor.name;
   }
 }
+
+export class MultiplayerUserNotInSessionError extends MultiplayerError {
+  constructor(message: string) {
+    super(message);
+    this.name = this.constructor.name;
+  }
+}
