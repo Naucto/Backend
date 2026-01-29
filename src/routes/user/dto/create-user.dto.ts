@@ -27,6 +27,12 @@ export class CreateUserDto {
   @IsNotEmpty()
     password!: string;
   
+  @ApiProperty({ description: "Description of the user", example: "I love coding", required: false })
+  @IsString()
+  @IsOptional()
+  @Length(0, 200, { message: "Description must be less than 200 characters" })
+    description?: string;
+  
   @IsOptional()
   @IsArray()
     roles?: string[];

@@ -37,6 +37,7 @@ import { UserSingleResponseDto } from "./dto/user-single-response.dto";
 import { UserProfileResponseDto } from "./dto/user-profile-response.dto";
 import { RequestWithUser } from "@auth/auth.types";
 import { UserDto } from "@auth/dto/user.dto";
+import { UpdateUserProfileDto } from "./dto/update-user-profile.dto";
 
 @ApiTags("users")
 @ApiExtraModels(UserResponseDto, UserListResponseDto, UserSingleResponseDto, UserProfileResponseDto)
@@ -58,6 +59,25 @@ export class UserController {
   @UseGuards(JwtAuthGuard)
   getProfile(@Request() req: RequestWithUser): UserDto {
     return req.user;
+  }
+
+  @Patch("profile")
+  @ApiOperation({ summary: "Update current user profile" })
+  @ApiBody({ type: UpdateUserProfileDto })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "User profile updated successfully",
+    type: UserProfileResponseDto,
+  })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
+  @UseGuards(JwtAuthGuard)
+  async updateProfile(
+    @Request() req: RequestWithUser,
+    @Body(ValidationPipe) updateUserProfileDto: UpdateUserProfileDto,
+  ): Promise<UserDto> {    
+    this.logger.debug(`Updating profile for user ID: ${req.user.id}`);
+    const user = await this.userService.updateProfile(req.user.id, updateUserProfileDto);
+    return user;
   }
 
   @Get()

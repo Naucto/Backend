@@ -6,6 +6,7 @@ import { User } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
 import { Prisma } from "@prisma/client";
 import { Role } from "@prisma/client";
+import { UpdateUserProfileDto } from "./dto/update-user-profile.dto";
 
 @Injectable()
 export class UserService {
@@ -116,5 +117,19 @@ export class UserService {
       where: { email }
     });
     return user ?? undefined;
+  }
+
+  async updateProfile(id: number, profileData: UpdateUserProfileDto): Promise<User> {    
+    try {
+      return await this.prisma.user.update({
+        where: { id },
+        data: profileData,
+      });
+    } catch (error: unknown) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+        throw new NotFoundException(`User with ID ${id} not found`);
+      }
+      throw error;
+    }
   }
 }
