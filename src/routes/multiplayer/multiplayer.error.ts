@@ -33,6 +33,13 @@ export class MultiplayerHostNotFoundError extends MultiplayerError {
   }
 }
 
+export class MultiplayerUserDoesNotExistError extends MultiplayerError {
+  constructor(message: string) {
+    super(message);
+    this.name = this.constructor.name;
+  }
+}
+
 export class MultiplayerUserAlreadyJoinedError extends MultiplayerError {
   constructor(message: string) {
     super(message);
@@ -41,6 +48,13 @@ export class MultiplayerUserAlreadyJoinedError extends MultiplayerError {
 }
 
 export class MultiplayerUserNotInSessionError extends MultiplayerError {
+  constructor(message: string) {
+    super(message);
+    this.name = this.constructor.name;
+  }
+}
+
+export class MultiplayerGameSessionNotFoundError extends MultiplayerError {
   constructor(message: string) {
     super(message);
     this.name = this.constructor.name;

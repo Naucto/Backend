@@ -6,6 +6,8 @@ import { User } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
 import { Prisma } from "@prisma/client";
 import { Role } from "@prisma/client";
+import { UserNotFoundError } from "./user.error";
+import { MultiplayerGameSessionNotFoundError } from "../multiplayer/multiplayer.error";
 
 @Injectable()
 export class UserService {
@@ -125,11 +127,45 @@ export class UserService {
     return user ?? undefined;
   }
 
-  async attachGameSession(userId: number, gameSessionId: number): Promise<void> {
+  async attachGameSession(userId: number, gameSessionId: number, hosted: boolean): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new UserNotFoundError("User not found");
+    }
 
+    const gameSession = await this.prisma.gameSession.findUnique({ where: { id: gameSessionId } });
+    if (!gameSession) {
+      throw new MultiplayerGameSessionNotFoundError("Game session not found");
+    }
+
+    this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        [hosted ? "hostedGameSessions" : "joinedGameSessions"]: {
+          connect: { id: gameSessionId }
+        }
+      }
+    });
   }
 
-  async detachGameSession(userId: number, gameSessionId: number): Promise<void> {
+  async detachGameSession(userId: number, gameSessionId: number, hosted: boolean): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new UserNotFoundError("User not found");
+    }
 
+    const gameSession = await this.prisma.gameSession.findUnique({ where: { id: gameSessionId } });
+    if (!gameSession) {
+      throw new MultiplayerGameSessionNotFoundError("Game session not found");
+    }
+
+    this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        [hosted ? "hostedGameSessions" : "joinedGameSessions"]: {
+          disconnect: { id: gameSessionId }
+        }
+      }
+    });
   }
 }
