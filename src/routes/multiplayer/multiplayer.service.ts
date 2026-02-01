@@ -1,10 +1,16 @@
 import { Injectable } from "@nestjs/common";
-import { GameSession, GameSessionVisibility } from "@prisma/client";
+import { GameSession, GameSessionVisibility, User } from "@prisma/client";
 import { PrismaService } from "@prisma/prisma.service";
 import { UserService } from "../user/user.service";
 import { ProjectService } from "../project/project.service";
 import { MultiplayerHostNotFoundError, MultiplayerHostOpenedError, MultiplayerInvalidStateError, MultiplayerUserAlreadyJoinedError, MultiplayerUserDoesNotExistError, MultiplayerUserNotInSessionError } from "./multiplayer.error";
 import { ProjectNotFoundError } from "../project/project.error";
+
+// I made this "extended" type (Ex) for complex fields that do relations with
+// other stuff.
+export type GameSessionEx = GameSession & {
+  otherUsers: User[]
+};
 
 @Injectable()
 export class MultiplayerService {
@@ -14,7 +20,7 @@ export class MultiplayerService {
     private prismaService: PrismaService
   ) {}
 
-  async lookupHosts(projectId: number, userId: number): Promise<GameSession[]> {
+  async lookupHosts(projectId: number, userId: number): Promise<GameSessionEx[]> {
     const matchingGSes = await this.prismaService.gameSession.findMany({
       include: { otherUsers: true },
       where: { projectId: projectId }
@@ -24,7 +30,7 @@ export class MultiplayerService {
       throw new ProjectNotFoundError(`Project ID ${projectId} not found`);
     }
 
-    const userAvailableGSes = new Array<GameSession>();
+    const userAvailableGSes = new Array<GameSessionEx>();
 
     matchingGSes.forEach((gameSession) => {
       switch (gameSession.visibility) {

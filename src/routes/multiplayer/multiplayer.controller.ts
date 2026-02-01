@@ -1,5 +1,5 @@
 import { ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
-import { MultiplayerService } from "./multiplayer.service";
+import { GameSessionEx, MultiplayerService } from "./multiplayer.service";
 import {
   BadRequestException,
   Controller,
@@ -15,6 +15,7 @@ import { JwtAuthGuard } from "../../auth/guards/jwt-auth.guard";
 import { RequestWithUser } from "../../auth/auth.types";
 import { ProjectNotFoundError } from "../project/project.error";
 import { OpenHostRequestDto } from "./dto/open-host.dto";
+import { LookupHostsResponseDto, LookupHostsResponseDtoHost } from "./dto/lookup-hosts.dto";
 
 @ApiTags("multiplayer")
 @Controller("multiplayer")
@@ -38,9 +39,9 @@ export class MultiplayerController {
     status: HttpStatus.INTERNAL_SERVER_ERROR,
     description: "Unhandled server error."
   })
-  async lookupHosts(requestCtx: RequestWithUser, projectId: number): Promise<GameSession[]>
+  async lookupHosts(requestCtx: RequestWithUser, projectId: number): Promise<LookupHostsResponseDto>
   {
-    let hosts: GameSession[];
+    let hosts: GameSessionEx[];
 
     try {
       hosts = await this.multiplayerService.lookupHosts(projectId, requestCtx.user.id);
@@ -55,7 +56,17 @@ export class MultiplayerController {
       }
     }
 
-    return hosts;
+    const responseDto = new LookupHostsResponseDto();
+    responseDto.hosts = hosts.map((host) => {
+      const hostDto = new LookupHostsResponseDtoHost();
+      hostDto.sessionUuid = host.sessionId;
+      hostDto.sessionVisibility = host.visibility;
+      hostDto.playerCount = host.otherUsers.length + 1;
+    
+      return hostDto;
+    });
+
+    return responseDto;
   }
 
   @Post("open-host")
