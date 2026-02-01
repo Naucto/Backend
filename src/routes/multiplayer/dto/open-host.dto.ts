@@ -1,4 +1,5 @@
-import { IsInt } from "class-validator";
+import { GameSessionVisibility } from "@prisma/client";
+import { IsEnum, IsInt } from "class-validator";
 
 export class OpenHostRequestDto {
   @IsInt()
@@ -6,4 +7,7 @@ export class OpenHostRequestDto {
 
   @IsInt()
     gameId!: number;
+
+  @IsEnum(GameSessionVisibility)
+    visibility!: GameSessionVisibility;
 };

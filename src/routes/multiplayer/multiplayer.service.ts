@@ -4,6 +4,7 @@ import { PrismaService } from "@prisma/prisma.service";
 import { UserService } from "../user/user.service";
 import { ProjectService } from "../project/project.service";
 import { MultiplayerHostNotFoundError, MultiplayerHostOpenedError, MultiplayerInvalidStateError, MultiplayerUserAlreadyJoinedError, MultiplayerUserDoesNotExistError, MultiplayerUserNotInSessionError } from "./multiplayer.error";
+import { ProjectNotFoundError } from "../project/project.error";
 
 @Injectable()
 export class MultiplayerService {
@@ -18,6 +19,10 @@ export class MultiplayerService {
       include: { otherUsers: true },
       where: { projectId: projectId }
     });
+
+    if (!matchingGSes) {
+      throw new ProjectNotFoundError(`Project ID ${projectId} not found`);
+    }
 
     const userAvailableGSes = new Array<GameSession>();
 
