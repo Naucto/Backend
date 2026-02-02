@@ -65,7 +65,7 @@ export class MultiplayerService {
     }
     const project = await this.projectService.findOne(projectId);
     if (!project) {
-      throw new MultiplayerHostInvalidError(`Project with ID ${projectId} not found`);
+      throw new ProjectNotFoundError(`Project with ID ${projectId} not found`);
     }
 
     requestedUser.hostingGameSessions.forEach((hostedGSes) => {
@@ -99,14 +99,14 @@ export class MultiplayerService {
     }
     const project = await this.projectService.findOne(projectId);
     if (!project) {
-      throw new MultiplayerHostNotFoundError(`Project with ID ${projectId} not found`);
+      throw new ProjectNotFoundError(`Project with ID ${projectId} not found`);
     }
 
     const basicHostedGS =
       requestedUser.hostingGameSessions.find((hostedGS) => hostedGS.projectId === projectId);
 
     if (!basicHostedGS) {
-      throw new MultiplayerHostOpenedError("User is not hosting a game session for this project");
+      throw new MultiplayerHostNotFoundError("User is not hosting a game session for this project");
     }
 
     await this.userService.detachGameSession(userId, basicHostedGS.id, true);
