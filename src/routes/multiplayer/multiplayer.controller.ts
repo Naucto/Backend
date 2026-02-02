@@ -17,10 +17,11 @@ import { RequestWithUser } from "../../auth/auth.types";
 import { ProjectNotFoundError } from "../project/project.error";
 import { OpenHostRequestDto, OpenHostResponseDto } from "./dto/open-host.dto";
 import { LookupHostsResponseDto, LookupHostsResponseDtoHost } from "./dto/lookup-hosts.dto";
-import { MultiplayerHostNotFoundError, MultiplayerHostOpenedError, MultiplayerInvalidStateError, MultiplayerUserAlreadyJoinedError, MultiplayerUserDoesNotExistError } from "./multiplayer.error";
+import { MultiplayerHostNotFoundError, MultiplayerHostOpenedError, MultiplayerInvalidStateError, MultiplayerUserAlreadyJoinedError, MultiplayerUserDoesNotExistError, MultiplayerUserNotInSessionError } from "./multiplayer.error";
 import { CloseHostRequestDto } from "./dto/close-host.dto";
 import { getExcerrMessage as getExcerrMessage } from "../../util/errors";
 import { JoinHostRequestDto } from "./dto/join-host.dto";
+import { LeaveHostRequestDto } from "./dto/leave-host.dto";
 
 @ApiTags("multiplayer")
 @Controller("multiplayer")
@@ -178,5 +179,35 @@ export class MultiplayerController {
     }
 
     // FIXME: Return more info on the WebRTC side of things?
+  }
+
+  @Post("leave-host")
+  @ApiOperation({ summary: "Leave a game host/session as a player" })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Successfully left the game session."
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Game session or user not found."
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "User is not part of the session or is the host."
+  })
+  async leaveHost(requestCtx: RequestWithUser, request: LeaveHostRequestDto): Promise<void> {
+    try {
+      await this.multiplayerService.leaveHost(requestCtx.user.id, request.sessionUuid);
+    } catch (error) {
+      if (error instanceof MultiplayerUserNotInSessionError ||
+          error instanceof MultiplayerHostNotFoundError) {
+        throw new NotFoundException(error.message);
+      }
+
+      this.logger.error(`Error while leaving host for user ID ${requestCtx.user.id} and session UUID ${request.sessionUuid}`);
+      this.logger.error(error);
+
+      throw new InternalServerErrorException(getExcerrMessage(error));
+    }
   }
 }
