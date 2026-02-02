@@ -17,9 +17,10 @@ import { RequestWithUser } from "../../auth/auth.types";
 import { ProjectNotFoundError } from "../project/project.error";
 import { OpenHostRequestDto, OpenHostResponseDto } from "./dto/open-host.dto";
 import { LookupHostsResponseDto, LookupHostsResponseDtoHost } from "./dto/lookup-hosts.dto";
-import { MultiplayerHostNotFoundError, MultiplayerHostOpenedError, MultiplayerInvalidStateError, MultiplayerUserDoesNotExistError } from "./multiplayer.error";
+import { MultiplayerHostNotFoundError, MultiplayerHostOpenedError, MultiplayerInvalidStateError, MultiplayerUserAlreadyJoinedError, MultiplayerUserDoesNotExistError } from "./multiplayer.error";
 import { CloseHostRequestDto } from "./dto/close-host.dto";
 import { getExcerrMessage as getExcerrMessage } from "../../util/errors";
+import { JoinHostRequestDto } from "./dto/join-host.dto";
 
 @ApiTags("multiplayer")
 @Controller("multiplayer")
@@ -112,7 +113,7 @@ export class MultiplayerController {
     const responseDto = new OpenHostResponseDto();
     responseDto.sessionUuid = gameSession.sessionId;
 
-    // TODO: Return more info on the WebRTC side of things?
+    // FIXME: Return more info on the WebRTC side of things?
 
     return responseDto;
   }
@@ -143,5 +144,39 @@ export class MultiplayerController {
 
       throw new InternalServerErrorException(getExcerrMessage(error));
     }
+  }
+
+  @Post("join-host")
+  @ApiOperation({ summary: "Join an existing game host/session as a player" })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Successfully joined the game session."
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Game session or user not found."
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "User is already in the session or is the host."
+  })
+  async joinHost(requestCtx: RequestWithUser, request: JoinHostRequestDto): Promise<void> {
+    try {
+      await this.multiplayerService.joinHost(requestCtx.user.id, request.sessionUuid);
+    } catch (error) {
+      if (error instanceof MultiplayerUserDoesNotExistError ||
+          error instanceof MultiplayerHostNotFoundError) {
+        throw new NotFoundException(error.message);
+      } else if (error instanceof MultiplayerUserAlreadyJoinedError) {
+        throw new BadRequestException(error.message);
+      }
+
+      this.logger.error(`Error while joining host for user ID ${requestCtx.user.id} and session UUID ${request.sessionUuid}`);
+      this.logger.error(error);
+
+      throw new InternalServerErrorException(getExcerrMessage(error));
+    }
+
+    // FIXME: Return more info on the WebRTC side of things?
   }
 }
