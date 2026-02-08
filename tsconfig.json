@@ -34,7 +34,7 @@
         "src/*": ["./*"],
         "@prisma/*": ["prisma/*"],
         "@auth/*": ["auth/*"],
-        "@projects/*": ["routes/project/*"],
+        "@project/*": ["routes/project/*"],
         "@multiplayer/*": ["routes/multiplayer/*"],
         "@user/*": ["routes/user/*"],
         "@work-session/*": ["routes/work-session/*"],
