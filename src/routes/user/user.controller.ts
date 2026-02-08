@@ -12,7 +12,12 @@ import {
   ParseIntPipe,
   ValidationPipe,
   Logger,
+  UseInterceptors,
+  UploadedFile,
+  ParseFilePipeBuilder,
+  BadRequestException,
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import { UserService } from "./user.service";
 import { UpdateUserDto } from "./dto/update-user.dto";
 import { UserFilterDto } from "./dto/user-filter.dto";
@@ -25,6 +30,7 @@ import {
   ApiParam,
   ApiBody,
   ApiExtraModels,
+  ApiConsumes,
 } from "@nestjs/swagger";
 import { Request } from "@nestjs/common";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
@@ -38,6 +44,7 @@ import { UserProfileResponseDto } from "./dto/user-profile-response.dto";
 import { RequestWithUser } from "@auth/auth.types";
 import { UserDto } from "@auth/dto/user.dto";
 import { UpdateUserProfileDto } from "./dto/update-user-profile.dto";
+import { S3Service } from "@s3/s3.service";
 
 @ApiTags("users")
 @ApiExtraModels(UserResponseDto, UserListResponseDto, UserSingleResponseDto, UserProfileResponseDto)
@@ -46,7 +53,10 @@ import { UpdateUserProfileDto } from "./dto/update-user-profile.dto";
 export class UserController {
   private readonly logger = new Logger(UserController.name);
 
-  constructor(private readonly userService: UserService) {}
+  constructor(
+    private readonly userService: UserService,
+    private readonly s3Service: S3Service,
+  ) {}
 
   @Get("profile")
   @ApiOperation({ summary: "Get current user profile" })
@@ -77,6 +87,85 @@ export class UserController {
   ): Promise<UserDto> {    
     this.logger.debug(`Updating profile for user ID: ${req.user.id}`);
     const user = await this.userService.updateProfile(req.user.id, updateUserProfileDto);
+    return user;
+  }
+
+  @Patch("profile/photo")
+  @ApiOperation({ summary: "Update current user profile photo" })
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({
+    schema: {
+      type: "object",
+      properties: {
+        file: {
+          type: "string",
+          format: "binary",
+          description: "Profile image (jpg, png, webp)",
+        },
+      },
+      required: ["file"],
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "User profile photo updated successfully",
+    type: UserProfileResponseDto,
+  })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(FileInterceptor("file"))
+  async updateProfilePhoto(
+    @Request() req: RequestWithUser,
+    @UploadedFile(
+      new ParseFilePipeBuilder()
+        .addMaxSizeValidator({
+          maxSize: 5 * 1024 * 1024,
+        })
+        .addFileTypeValidator({
+          fileType: /^image\/(jpeg|png|webp)$/i,
+        })
+        .build({
+          errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+        }),
+    )
+      file: Express.Multer.File,
+  ): Promise<UserDto> {
+    if (!file) {
+      throw new BadRequestException("No file provided");
+    }
+
+    const extensionMap: Record<string, string> = {
+      "image/jpeg": "jpg",
+      "image/png": "png",
+      "image/webp": "webp",
+    };
+
+    const extension =
+      extensionMap[file.mimetype] || file.originalname.split(".").pop();
+    if (!extension) {
+      throw new BadRequestException("File has no extension");
+    }
+
+    const key = `users/${req.user.id}/profile/profile_picture.${extension}`;
+    const metadata = {
+      uploadedBy: req.user.id.toString(),
+      originalName: file.originalname,
+    };
+
+    if (req.user.profileImageUrl) {
+      try {
+        const existingKey = new URL(req.user.profileImageUrl).pathname.replace(/^\/+/, "");
+        if (existingKey) {
+          await this.s3Service.deleteFile(existingKey);
+        }
+      } catch (error) {
+        this.logger.warn(`Failed to delete old profile image for user ${req.user.id}: ${error}`);
+      }
+    }
+
+    await this.s3Service.uploadFile(file, metadata, undefined, key);
+    const profileImageUrl = await this.s3Service.getSignedDownloadUrl(key);
+    const user = await this.userService.updateProfile(req.user.id, { profileImageUrl });
     return user;
   }
 

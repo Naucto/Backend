@@ -1,4 +1,4 @@
-import { IsEmail, IsNotEmpty, IsString, MinLength, IsOptional, IsArray, Length } from "class-validator";
+import { IsEmail, IsNotEmpty, IsString, MinLength, IsOptional, IsArray, Length, IsUrl } from "class-validator";
 import { ApiProperty } from "@nestjs/swagger";
 
 export class CreateUserDto {
@@ -32,6 +32,11 @@ export class CreateUserDto {
   @IsOptional()
   @Length(0, 200, { message: "Description must be less than 200 characters" })
     description?: string;
+
+  @ApiProperty({ description: "Profile image URL", example: "https://cdn.example.com/users/1/profile.jpg", required: false })
+  @IsOptional()
+  @IsUrl()
+    profileImageUrl?: string;
   
   @IsOptional()
   @IsArray()

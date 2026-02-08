@@ -31,6 +31,10 @@ export class UserResponseDto {
   @ApiProperty({ description: "User description", example: "here is my description", nullable: true })
   @Expose()
     description?: string;
+
+  @ApiProperty({ description: "Profile image URL", example: "https://cdn.example.com/users/1/profile.jpg", nullable: true })
+  @Expose()
+    profileImageUrl?: string;
   
   @ApiProperty({ description: "User roles", type: [UserRoleDto], required: false })
   @Expose()

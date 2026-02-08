@@ -17,6 +17,9 @@ export class UserDto {
     @ApiProperty({ example: "here is my description", required: false, description: "User description" })
     description?: string | null;
 
+    @ApiProperty({ example: "https://cdn.example.com/users/1/profile.jpg", required: false, description: "Profile image URL" })
+    profileImageUrl?: string | null;
+
     @ApiProperty({ example: "2025-05-05T12:51:04.098Z", description: "Date of creation" })
     createdAt!: Date;
 

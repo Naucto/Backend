@@ -44,6 +44,8 @@ export class UserService {
         email: createUserDto.email,
         username: createUserDto.username,
         nickname: createUserDto.nickname ?? null,
+        description: createUserDto.description ?? null,
+        profileImageUrl: createUserDto.profileImageUrl ?? null,
         password: hashedPassword,
         roles: {
           connect: rolesToAssign
