@@ -14,15 +14,15 @@ import {
   UseGuards
 } from "@nestjs/common";
 import { GameSession } from "@prisma/client";
-import { JwtAuthGuard } from "../../auth/guards/jwt-auth.guard";
-import { RequestWithUser } from "../../auth/auth.types";
-import { ProjectNotFoundError } from "../project/project.error";
+import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
+import { RequestWithUser } from "@auth/auth.types";
+import { ProjectNotFoundError } from "@project/project.error";
 import { OpenHostRequestDto, OpenHostResponseDto } from "./dto/open-host.dto";
 import { LookupHostsResponseDto, LookupHostsResponseDtoHost } from "./dto/lookup-hosts.dto";
-import { MultiplayerHostNotFoundError, MultiplayerHostOpenedError, MultiplayerInvalidStateError, MultiplayerUserAlreadyJoinedError, MultiplayerUserDoesNotExistError, MultiplayerUserNotInSessionError } from "./multiplayer.error";
+import { MultiplayerHostNotFoundError, MultiplayerHostOpenedError, MultiplayerUserAlreadyJoinedError, MultiplayerUserDoesNotExistError, MultiplayerUserNotInSessionError } from "./multiplayer.error";
 import { CloseHostRequestDto } from "./dto/close-host.dto";
 import { getExcerrMessage as getExcerrMessage } from "../../util/errors";
-import { JoinHostRequestDto } from "./dto/join-host.dto";
+import { JoinHostRequestDto, JoinHostResponseDto } from "./dto/join-host.dto";
 import { LeaveHostRequestDto } from "./dto/leave-host.dto";
 
 @ApiTags("multiplayer")
@@ -115,6 +115,7 @@ export class MultiplayerController {
 
     const responseDto = new OpenHostResponseDto();
     responseDto.sessionUuid = gameSession.sessionId;
+    responseDto.webrtcConfig = this.webrtcService.buildOffer();
 
     // FIXME: Return more info on the WebRTC side of things?
 
@@ -163,7 +164,7 @@ export class MultiplayerController {
     status: HttpStatus.BAD_REQUEST,
     description: "User is already in the session or is the host."
   })
-  async joinHost(requestCtx: RequestWithUser, request: JoinHostRequestDto): Promise<void> {
+  async joinHost(requestCtx: RequestWithUser, request: JoinHostRequestDto): Promise<JoinHostResponseDto> {
     try {
       await this.multiplayerService.joinHost(requestCtx.user.id, request.sessionUuid);
     } catch (error) {
@@ -180,7 +181,10 @@ export class MultiplayerController {
       throw new InternalServerErrorException(getExcerrMessage(error));
     }
 
-    // FIXME: Return more info on the WebRTC side of things?
+    const responseDto = new JoinHostResponseDto();
+    responseDto.webrtcConfig = this.webrtcService.buildOffer();
+
+    return responseDto;
   }
 
   @Patch("leave-host")

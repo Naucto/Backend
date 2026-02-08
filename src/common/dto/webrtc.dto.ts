@@ -24,7 +24,7 @@ export class WebRTCOfferPeerOpts {
     config!: WebRTCOfferPeerOptsConfig;
 };
 
-export class WebRTCOfferDTO {
+export class WebRTCOfferDto {
   @IsUrl()
     signaling!: string;
   @IsInt()

@@ -3,7 +3,7 @@ import { GameSession, GameSessionVisibility, User } from "@prisma/client";
 import { PrismaService } from "@prisma/prisma.service";
 import { UserService } from "../user/user.service";
 import { ProjectService } from "../project/project.service";
-import { MultiplayerHostInvalidError, MultiplayerHostNotFoundError, MultiplayerHostOpenedError, MultiplayerInvalidStateError, MultiplayerUserAlreadyJoinedError, MultiplayerUserDoesNotExistError, MultiplayerUserNotInSessionError } from "./multiplayer.error";
+import { MultiplayerHostNotFoundError, MultiplayerHostOpenedError, MultiplayerInvalidStateError, MultiplayerUserAlreadyJoinedError, MultiplayerUserDoesNotExistError, MultiplayerUserNotInSessionError } from "./multiplayer.error";
 import { ProjectNotFoundError } from "../project/project.error";
 
 // I made this "extended" type (Ex) for complex fields that do relations with
