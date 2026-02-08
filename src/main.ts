@@ -31,7 +31,7 @@ if (process.env["NODE_ENV"] === "production") {
 
   const logger = new Logger("HTTP");
   const configService = app.get(ConfigService);
-  const frontendUrl = configService.get<string>('FRONTEND_URL', 'http://localhost:3000');
+  const frontendUrl = configService.get<string>('FRONTEND_URL', 'http://localhost:3001');
 
   app.use(cookieParser());
   app.useLogger(["log", "error", "warn", "debug"]);
