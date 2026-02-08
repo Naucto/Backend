@@ -15,22 +15,22 @@ import {
 describe("S3 Error Classes", () => {
   describe("S3ConfigurationException", () => {
     it("should create exception with missing keys", () => {
-      const error = new S3ConfigurationException(["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]);
+      const error = new S3ConfigurationException(["S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"]);
       
       expect(error).toBeInstanceOf(S3ConfigurationException);
       expect(error).toBeInstanceOf(Error);
       expect(error.name).toBe("S3ConfigurationException");
-      expect(error.message).toContain("AWS credentials are not properly configured");
-      expect(error.message).toContain("AWS_ACCESS_KEY_ID");
-      expect(error.message).toContain("AWS_SECRET_ACCESS_KEY");
-      expect(error.missingKeys).toEqual(["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]);
+      expect(error.message).toContain("S3 credentials are not properly configured");
+      expect(error.message).toContain("S3_ACCESS_KEY_ID");
+      expect(error.message).toContain("S3_SECRET_ACCESS_KEY");
+      expect(error.missingKeys).toEqual(["S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"]);
     });
 
     it("should create exception with no missing keys", () => {
       const error = new S3ConfigurationException();
       
       expect(error).toBeInstanceOf(S3ConfigurationException);
-      expect(error.message).toBe("AWS credentials are not properly configured.");
+      expect(error.message).toBe("S3 credentials are not properly configured.");
       expect(error.missingKeys).toEqual([]);
     });
   });

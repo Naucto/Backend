@@ -30,7 +30,7 @@ export interface S3ObjectMetadata {
 export type BucketPolicyStatement = {
   Sid: string;
   Effect: string;
-  Principal: "*" | { AWS: string };
+  Principal: "*" | { AWS: string } | { SCW: string };
   Action: string[];
   Resource: string;
 };

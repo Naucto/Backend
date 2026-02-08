@@ -1,6 +1,6 @@
 export class S3ConfigurationException extends Error {
   constructor(public readonly missingKeys: string[] = []) {
-    super(`AWS credentials are not properly configured.${missingKeys.length > 0 ? " Missing keys: " + missingKeys.join(", ") : ""}`);
+    super(`S3 credentials are not properly configured.${missingKeys.length > 0 ? " Missing keys: " + missingKeys.join(", ") : ""}`);
     this.name = "S3ConfigurationException";
   }
 }
@@ -138,15 +138,5 @@ export class S3ApplyPolicyException extends Error {
   ) {
     super(`Error applying policy to bucket: ${bucketName}`);
     this.name = "S3ApplyPolicyException";
-  }
-}
-
-export class CloudFrontPrivateKeyException extends Error {
-  constructor(
-    public readonly path: string,
-    public readonly cause?: unknown,
-  ) {
-    super(`Failed to read CloudFront private key at path: "${path}"`);
-    this.name = "CloudFrontPrivateKeyException";
   }
 }

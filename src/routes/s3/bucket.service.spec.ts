@@ -112,7 +112,7 @@ describe("BucketService", () => {
       const [statement] = bucketService.generateBucketPolicy("my-bucket").Statement;
       if (!statement) throw new Error("Statement is undefined");
 
-      expect(statement.Resource).toBe("arn:aws:s3:::my-bucket/*");
+      expect(statement.Resource).toBe("arn:scw:s3:::my-bucket/*");
       expect(statement.Effect).toBe("Allow");
       expect(statement.Principal).toBe("*");
       expect(statement.Action).toEqual(["s3:GetObject"]);
@@ -129,8 +129,8 @@ describe("BucketService", () => {
 
       if (!statement) throw new Error("Statement is undefined");
       expect(statement.Effect).toBe("Deny");
-      expect(statement.Principal).toEqual({ AWS: "123" });
-      expect(statement.Resource).toBe("arn:aws:s3:::my-bucket/prefix/*");
+      expect(statement.Principal).toEqual({ SCW: "123" });
+      expect(statement.Resource).toBe("arn:scw:s3:::my-bucket/prefix/*");
       expect(statement.Action).toEqual(["s3:PutObject"]);
     });
   });

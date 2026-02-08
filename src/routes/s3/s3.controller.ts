@@ -11,7 +11,6 @@ import {
   HttpStatus,
   Logger
 } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
 import {
@@ -24,29 +23,21 @@ import {
 } from "@nestjs/swagger";
 import { S3Service } from "./s3.service";
 import { BucketService } from "./bucket.service";
-import { CloudfrontService } from "./cloudfront.service";
 import { DeleteS3FilesDto } from "./dto/delete-files.dto";
 import { ApplyPolicyDto } from "./dto/apply-policy.dto";
 import { GeneratePolicyDto } from "./dto/generate-policy.dto";
 import { UploadFileDto } from "./dto/upload-file.dto";
 import { Readable } from "stream";
-
 import { Bucket, _Object } from "@aws-sdk/client-s3";
-import { CloudfrontSignedCookiesOutput } from "@aws-sdk/cloudfront-signer";
-
 import { S3ObjectMetadata, BucketPolicy } from "./s3.interface";
-import { MissingEnvVarError } from "@auth/auth.error";
 
 @ApiTags("s3")
 @Controller("s3")
 export class S3Controller {
-  private readonly sessionCookieTimeout = 600;
   private readonly logger = new Logger(S3Controller.name);
   constructor(
     private readonly s3Service: S3Service,
     private readonly bucketService: BucketService,
-    private readonly cloudfrontService: CloudfrontService,
-    private readonly configService: ConfigService
   ) {}
 
   @Get("list")
@@ -86,7 +77,7 @@ export class S3Controller {
   }
 
   @Get("download/:bucketName/:key")
-  @ApiOperation({ summary: "Download a file directly" })
+  @ApiOperation({ summary: "Download a file" })
   @ApiParam({ name: "key", description: "Object key" })
   @ApiParam({ name: "bucketName", description: "Name of the bucket" })
   @ApiResponse({ status: 200, description: "File stream" })
@@ -242,84 +233,5 @@ export class S3Controller {
     }
     await this.bucketService.applyBucketPolicy(applyPolicyDto.policy, bucketName);
     return { message: "Policy applied successfully" };
-  }
-
-  @Get("cdn-url/:key")
-  @ApiOperation({ summary: "Get the CDN URL for a file" })
-  @ApiParam({ name: "key", description: "Object key" })
-  @ApiResponse({ status: 200, description: "Returns the CDN URL" })
-  @ApiResponse({ status: 500, description: "Server error" })
-  async getCdnUrl(@Param("key") key: string): Promise<{ url: string }> {
-    const url = this.cloudfrontService.generateSignedUrl(decodeURIComponent(key));
-    return { url };
-  }
-
-  @Get("signed-cookies/:key")
-  @ApiOperation({ summary: "Generate CloudFront signed cookies for a resource" })
-  @ApiParam({ name: "key", description: "Object key (relative path in CDN)" })
-  @ApiResponse({ status: 200, description: "Returns signed cookies" })
-  @ApiResponse({ status: 500, description: "Server error" })
-  async getSignedCookies(@Param("key") key: string, @Res() res: Response): Promise<void> {
-    try {
-      const cdnUrl = this.configService.get<string>("CDN_URL");
-      if (!cdnUrl) {
-        throw new MissingEnvVarError("CDN_URL");
-      }
-      const resourceUrl = `https://${cdnUrl}/${key.split("/").map(encodeURIComponent).join("/")}`;
-
-      const cookies = this.cloudfrontService.createSignedCookies(
-        resourceUrl,
-        this.sessionCookieTimeout,
-      );
-
-      const cookieOptions = {
-        httpOnly: true,
-        secure: true,
-        path: "/",
-        domain: `.${cdnUrl}`,
-        sameSite: "lax" as const,
-        maxAge: 60 * 60 * 1000,
-      };
-
-      res.cookie("CloudFront-Expires", cookies["CloudFront-Expires"], cookieOptions);
-      res.cookie("CloudFront-Signature", cookies["CloudFront-Signature"], cookieOptions);
-      res.cookie("CloudFront-Key-Pair-Id", cookies["CloudFront-Key-Pair-Id"], cookieOptions);
-
-      const response = {
-        message: "Signed cookies set successfully",
-        resourceUrl,
-        cookies: {
-          "CloudFront-Expires": cookies["CloudFront-Expires"],
-          "CloudFront-Signature": cookies["CloudFront-Signature"],
-          "CloudFront-Key-Pair-Id": cookies["CloudFront-Key-Pair-Id"],
-        },
-      };
-      this.logger.debug("Response JSON:", JSON.stringify(response));
-      res.status(HttpStatus.OK).json(response);
-    } catch (error) {
-      this.logger.error("Error generating signed cookies:", error);
-      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
-        error: "Could not generate signed cookies",
-        message: error instanceof Error ? error.message : "Unknown error",
-      });
-    }
-  }
-
-  @Get("/signed-cookies")
-  async setSignedCookies(@Res({ passthrough: true }) res: Response): Promise<{ success: boolean, cookies: CloudfrontSignedCookiesOutput}> {
-    const cookies = this.cloudfrontService.generateSignedCookies();
-
-    Object.entries(cookies).forEach(([name, value]) => {
-      res.cookie(name, value, {
-        // domain: "d3puh88kxjv1qg.cloudfront.net",
-        httpOnly: true,
-        secure: false,
-        path: "/",
-        sameSite: "lax",
-        maxAge: 60 * 60 * 1000,
-      });
-    });
-
-    return { success: true, cookies };
   }
 }

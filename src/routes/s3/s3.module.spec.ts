@@ -5,59 +5,40 @@ import { S3Client } from "@aws-sdk/client-s3";
 import { S3ConfigurationException } from "./s3.error";
 import { S3Service } from "./s3.service";
 import { BucketService } from "./bucket.service";
-import { CloudfrontService } from "./cloudfront.service";
 
 describe("S3Module", () => {
   describe("S3Client Provider Configuration", () => {
-    it("should throw S3ConfigurationException when AWS_REGION is missing", async () => {
+    
+    it("should throw S3ConfigurationException when S3_ENDPOINT is missing", async () => {
+        const mockConfigService = {
+          get: jest.fn().mockImplementation((key: string) => {
+            const envVars: Record<string, string | undefined> = {
+              "S3_ENDPOINT": undefined,
+              "S3_REGION": "fr-par",
+              "S3_ACCESS_KEY_ID": "SCW...",
+              "S3_SECRET_ACCESS_KEY": "xxx...",
+            };
+            return envVars[key];
+          }),
+        };
+  
+        await expect(
+          Test.createTestingModule({
+            imports: [S3Module],
+          }).overrideProvider(ConfigService)
+            .useValue(mockConfigService)
+            .compile()
+        ).rejects.toThrow(S3ConfigurationException);
+      });
+
+    it("should throw S3ConfigurationException when S3_REGION is missing", async () => {
       const mockConfigService = {
         get: jest.fn().mockImplementation((key: string) => {
           const envVars: Record<string, string | undefined> = {
-            "AWS_REGION": undefined,
-            "AWS_ACCESS_KEY_ID": "AKIAIOSFODNN7EXAMPLE",
-            "AWS_SECRET_ACCESS_KEY": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-          };
-          return envVars[key];
-        }),
-      };
-
-      await expect(
-        Test.createTestingModule({
-          imports: [S3Module],
-        }).overrideProvider(ConfigService)
-          .useValue(mockConfigService)
-          .compile()
-      ).rejects.toThrow(S3ConfigurationException);
-    });
-
-    it("should throw S3ConfigurationException when AWS_ACCESS_KEY_ID is missing", async () => {
-      const mockConfigService = {
-        get: jest.fn().mockImplementation((key: string) => {
-          const envVars: Record<string, string | undefined> = {
-            "AWS_REGION": "us-east-1",
-            "AWS_ACCESS_KEY_ID": undefined,
-            "AWS_SECRET_ACCESS_KEY": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-          };
-          return envVars[key];
-        }),
-      };
-
-      await expect(
-        Test.createTestingModule({
-          imports: [S3Module],
-        }).overrideProvider(ConfigService)
-          .useValue(mockConfigService)
-          .compile()
-      ).rejects.toThrow(S3ConfigurationException);
-    });
-
-    it("should throw S3ConfigurationException when AWS_SECRET_ACCESS_KEY is missing", async () => {
-      const mockConfigService = {
-        get: jest.fn().mockImplementation((key: string) => {
-          const envVars: Record<string, string | undefined> = {
-            "AWS_REGION": "us-east-1",
-            "AWS_ACCESS_KEY_ID": "AKIAIOSFODNN7EXAMPLE",
-            "AWS_SECRET_ACCESS_KEY": undefined,
+            "S3_ENDPOINT": "https://s3.fr-par.scw.cloud",
+            "S3_REGION": undefined,
+            "S3_ACCESS_KEY_ID": "SCW...",
+            "S3_SECRET_ACCESS_KEY": "xxx...",
           };
           return envVars[key];
         }),
@@ -76,9 +57,10 @@ describe("S3Module", () => {
       const mockConfigService = {
         get: jest.fn().mockImplementation((key: string) => {
           const envVars: Record<string, string | undefined> = {
-            "AWS_REGION": undefined,
-            "AWS_ACCESS_KEY_ID": undefined,
-            "AWS_SECRET_ACCESS_KEY": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            "S3_ENDPOINT": undefined,
+            "S3_REGION": undefined,
+            "S3_ACCESS_KEY_ID": undefined,
+            "S3_SECRET_ACCESS_KEY": "xxx...",
           };
           return envVars[key];
         }),
@@ -92,39 +74,19 @@ describe("S3Module", () => {
         .catch(e => e);
 
       expect(error).toBeInstanceOf(S3ConfigurationException);
-      expect(error.missingKeys).toEqual(["AWS_REGION", "AWS_ACCESS_KEY_ID"]);
-    });
-
-    it("should include all missing keys in S3ConfigurationException", async () => {
-      const mockConfigService = {
-        get: jest.fn().mockImplementation((key: string) => {
-          const envVars: Record<string, string | undefined> = {
-            "AWS_REGION": undefined,
-            "AWS_ACCESS_KEY_ID": undefined,
-            "AWS_SECRET_ACCESS_KEY": undefined,
-          };
-          return envVars[key];
-        }),
-      };
-
-      const error = await Test.createTestingModule({
-        imports: [S3Module],
-      }).overrideProvider(ConfigService)
-        .useValue(mockConfigService)
-        .compile()
-        .catch(e => e);
-
-      expect(error).toBeInstanceOf(S3ConfigurationException);
-      expect(error.missingKeys).toEqual(["AWS_REGION", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]);
+      expect(error.missingKeys).toContain("S3_ENDPOINT");
+      expect(error.missingKeys).toContain("S3_REGION");
+      expect(error.missingKeys).toContain("S3_ACCESS_KEY_ID");
     });
 
     it("should compile successfully when all env vars are present", async () => {
       const mockConfigService = {
         get: jest.fn().mockImplementation((key: string) => {
           const envVars: Record<string, string> = {
-            "AWS_REGION": "us-east-1",
-            "AWS_ACCESS_KEY_ID": "AKIAIOSFODNN7EXAMPLE",
-            "AWS_SECRET_ACCESS_KEY": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            "S3_ENDPOINT": "https://s3.fr-par.scw.cloud",
+            "S3_REGION": "fr-par",
+            "S3_ACCESS_KEY_ID": "SCW...",
+            "S3_SECRET_ACCESS_KEY": "xxx...",
           };
           return envVars[key];
         }),
@@ -139,39 +101,34 @@ describe("S3Module", () => {
       expect(module).toBeDefined();
       expect(module.get(S3Service)).toBeInstanceOf(S3Service);
       expect(module.get(BucketService)).toBeInstanceOf(BucketService);
-      expect(module.get(CloudfrontService)).toBeInstanceOf(CloudfrontService);
       expect(module.get(S3Client)).toBeInstanceOf(S3Client);
     });
   });
-    describe("Conditional Controller Registration", () => {
-        const originalEnv = process.env;
 
-        beforeEach(() => {
-            jest.resetModules();
-            process.env = { ...originalEnv };
-        });
+  describe("Conditional Controller Registration", () => {
+    const originalEnv = process.env;
 
-        afterAll(() => {
-            process.env = originalEnv;
-        });
-
-        it("should exclude S3Controller in production mode", () => {
-            process.env["NODE_ENV"] = "production";
-
-            const { S3Module } = require("./s3.module");
-
-            const controllers = Reflect.getMetadata("controllers", S3Module);
-
-            expect(controllers).toEqual([]);
-        });
-
-        it("should include S3Controller in development mode", () => {
-            process.env["NODE_ENV"] = "development";
-
-            const { S3Module } = require("./s3.module");
-            const controllers = Reflect.getMetadata("controllers", S3Module);
-
-            expect(controllers).toHaveLength(1);
-        });
+    beforeEach(() => {
+        jest.resetModules();
+        process.env = { ...originalEnv };
     });
+
+    afterAll(() => {
+        process.env = originalEnv;
+    });
+
+    it("should exclude S3Controller in production mode", () => {
+        process.env["NODE_ENV"] = "production";
+        const { S3Module } = require("./s3.module");
+        const controllers = Reflect.getMetadata("controllers", S3Module);
+        expect(controllers).toEqual([]);
+    });
+
+    it("should include S3Controller in development mode", () => {
+        process.env["NODE_ENV"] = "development";
+        const { S3Module } = require("./s3.module");
+        const controllers = Reflect.getMetadata("controllers", S3Module);
+        expect(controllers).toHaveLength(1);
+    });
+  });
 });

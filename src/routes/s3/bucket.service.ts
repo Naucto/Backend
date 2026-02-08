@@ -11,7 +11,7 @@ import { ConfigService } from "@nestjs/config";
 export class BucketService {
   private readonly defaultBucket: string | undefined;
   constructor(private readonly s3: S3Client, private readonly configService: ConfigService) {
-    this.defaultBucket = this.configService.get<string>("AWS_DEFAULT_BUCKET");
+    this.defaultBucket = this.configService.get<string>("S3_BUCKET_NAME");
   }
 
   private resolveBucket(bucketName?: string): string {
@@ -63,16 +63,17 @@ export class BucketService {
 
   generateBucketPolicy(bucketName?: string, actions: string[] = ["s3:GetObject"], effect = "Allow", principal = "*", prefix = "*"): BucketPolicy {
     const resolvedBucketName = this.resolveBucket(bucketName);
+    const principalObject = principal === "*" ? "*" : { SCW: principal };
 
     const statement: BucketPolicyStatement = {
       Sid: "BucketPolicy",
       Effect: effect,
-      Principal: principal === "*" ? "*" : { AWS: principal },
+      Principal: principalObject as any,
       Action: actions,
       Resource:
         prefix === "*"
-          ? `arn:aws:s3:::${resolvedBucketName}/*`
-          : `arn:aws:s3:::${resolvedBucketName}/${prefix}`,
+          ? `arn:scw:s3:::${resolvedBucketName}/*`
+          : `arn:scw:s3:::${resolvedBucketName}/${prefix}`,
     };
 
     return {

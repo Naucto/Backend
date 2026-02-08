@@ -23,7 +23,7 @@ export class GeneratePolicyDto {
   readonly effect?: string;
 
   @ApiProperty({
-    description: "AWS principal",
+    description: "S3 principal",
     example: "*",
     required: false,
   })
