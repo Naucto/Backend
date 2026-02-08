@@ -7,6 +7,6 @@ import { PrismaModule } from "@prisma/prisma.module";
   imports: [PrismaModule],
   controllers: [WorkSessionController],
   providers: [WorkSessionService],
-  exports: [WorkSessionService],
+  exports: [WorkSessionService]
 })
 export class WorkSessionModule {}

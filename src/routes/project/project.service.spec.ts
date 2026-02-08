@@ -29,7 +29,7 @@ const mockProjects: any[] = [
     uniquePlayers: 0,
     activePlayers: 0,
     likes: 0,
-    contentKey: "file-key-1", 
+    contentKey: "file-key-1",
     contentExtension: null,
     contentUploadedAt: null,
     creator: {
@@ -277,6 +277,7 @@ describe("ProjectService", () => {
         where: { id: 1 },
         include: EXPECTED_INCLUDE 
       });
+      // Ici, HEAD vérifie que la bonne clé (contentKey) est supprimée, pas juste l'ID
       expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith("file-key-1");
       expect(prismaMock.project.delete).toHaveBeenCalledWith({ where: { id: 1 } });
     });
@@ -344,6 +345,7 @@ describe("ProjectService", () => {
       prismaMock.project.findUnique.mockResolvedValue({ ...mockProjects[0], collaborators: [{ id: 2 }] });
       prismaMock.project.update.mockResolvedValue(mockProjects[0]);
 
+      // Note : On garde la signature de HEAD (2 arguments)
       await service.removeCollaborator(1, { userId: 2 });
 
       expect(prismaMock.project.findUnique).toHaveBeenCalledWith({

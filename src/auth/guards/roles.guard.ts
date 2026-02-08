@@ -7,13 +7,13 @@ import { UserService } from "@user/user.service";
 export class RolesGuard implements CanActivate {
   constructor(
     private reflector: Reflector,
-    private userService: UserService,
+    private userService: UserService
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const requiredRoles = this.reflector.getAllAndOverride<string[]>(
       ROLES_KEY,
-      [context.getHandler(), context.getClass()],
+      [context.getHandler(), context.getClass()]
     );
 
     if (!requiredRoles) {

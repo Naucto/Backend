@@ -66,17 +66,21 @@ export class S3Service implements StorageService {
         }
     }
 
-    async listObjects(bucketName?: string): Promise<_Object[]> {
+    async listObjects(bucketName?: string, prefix?: string): Promise<_Object[]> {
         const resolvedBucketName = this.resolveBucket(bucketName);
         try {
             const input: ListObjectsV2CommandInput = {
                 Bucket: resolvedBucketName,
+                Prefix: prefix,
             };
             const command = new ListObjectsV2Command(input);
             const result = await this.s3.send(command);
 
             return result.Contents || [];
         } catch (error) {
+            if (error instanceof Error) {
+                throw new S3ListObjectsException(resolvedBucketName, error);
+            }
             throw new S3ListObjectsException(resolvedBucketName, error);
         }
     }

@@ -1,7 +1,9 @@
 import { applyDecorators, Type } from "@nestjs/common";
 import { ApiOkResponse, ApiExtraModels, getSchemaPath } from "@nestjs/swagger";
 
-export function ApiPaginatedResponse<TModel extends Type<unknown>>(model: TModel): MethodDecorator & ClassDecorator {
+export function ApiPaginatedResponse<TModel extends Type<unknown>>(
+  model: TModel
+): MethodDecorator & ClassDecorator {
   return applyDecorators(
     ApiExtraModels(model),
     ApiOkResponse({
@@ -12,7 +14,7 @@ export function ApiPaginatedResponse<TModel extends Type<unknown>>(model: TModel
           message: { type: "string", example: "Success" },
           data: {
             type: "array",
-            items: { $ref: getSchemaPath(model) },
+            items: { $ref: getSchemaPath(model) }
           },
           meta: {
             type: "object",
@@ -20,11 +22,11 @@ export function ApiPaginatedResponse<TModel extends Type<unknown>>(model: TModel
               page: { type: "number", example: 1 },
               limit: { type: "number", example: 10 },
               total: { type: "number", example: 42 },
-              totalPages: { type: "number", example: 5 },
-            },
-          },
-        },
-      },
-    }),
+              totalPages: { type: "number", example: 5 }
+            }
+          }
+        }
+      }
+    })
   );
 }

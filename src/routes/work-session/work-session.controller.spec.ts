@@ -10,7 +10,7 @@ describe("WorkSessionController", () => {
     const module: TestingModule = await Test.createTestingModule({
       imports: [PrismaModule],
       controllers: [WorkSessionController],
-      providers: [WorkSessionService],
+      providers: [WorkSessionService]
     }).compile();
 
     controller = module.get<WorkSessionController>(WorkSessionController);
