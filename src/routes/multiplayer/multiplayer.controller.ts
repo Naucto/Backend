@@ -3,11 +3,13 @@ import { GameSessionEx, MultiplayerService } from "./multiplayer.service";
 import {
   BadRequestException,
   Controller,
+  Delete,
   Get,
   HttpStatus,
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  Patch,
   Post,
   UseGuards
 } from "@nestjs/common";
@@ -119,7 +121,7 @@ export class MultiplayerController {
     return responseDto;
   }
 
-  @Post("close-host")
+  @Delete("close-host")
   @ApiOperation({ summary: "Close an existing game host/session, with the caller being the game host" })
   @ApiResponse({
     status: HttpStatus.OK,
@@ -147,7 +149,7 @@ export class MultiplayerController {
     }
   }
 
-  @Post("join-host")
+  @Patch("join-host")
   @ApiOperation({ summary: "Join an existing game host/session as a player" })
   @ApiResponse({
     status: HttpStatus.OK,
@@ -181,7 +183,7 @@ export class MultiplayerController {
     // FIXME: Return more info on the WebRTC side of things?
   }
 
-  @Post("leave-host")
+  @Patch("leave-host")
   @ApiOperation({ summary: "Leave a game host/session as a player" })
   @ApiResponse({
     status: HttpStatus.OK,
