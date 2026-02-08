@@ -392,7 +392,7 @@ export class ProjectController {
         `Deleting old file '${project.contentKey}' for project ${id}`
       );
       try {
-        await this.s3Service.deleteFile({ key: project.contentKey });
+        await this.s3Service.deleteFile(project.contentKey);
       } catch (err) {
         this.logger.warn(`Failed to delete old file: ${err}`);
       }
@@ -404,7 +404,7 @@ export class ProjectController {
       originalName: file.originalname
     };
 
-    await this.s3Service.uploadFile({ file, metadata, keyName: newS3Key });
+    await this.s3Service.uploadFile(file, metadata, undefined, newS3Key);
     await this.projectService.updateContentInfo(id, newS3Key, extension);
 
     return { message: "File uploaded successfully", id };

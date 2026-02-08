@@ -11,9 +11,12 @@ const config: Config = {
   rootDir: "./src",
   moduleFileExtensions: ["js", "json", "ts"],
   testRegex: ".*\\.spec\\.ts$",
-  moduleNameMapper: pathsToModuleNameMapper(compilerOptions.paths || {}, {
-    prefix: "<rootDir>/",
-  }),
+  moduleNameMapper: {
+    "^@prisma/client$": "<rootDir>/../node_modules/@prisma/client",
+    ...pathsToModuleNameMapper(compilerOptions.paths || {}, {
+      prefix: "<rootDir>/",
+    }),
+  },
   transform: {
     "^.+\\.(t|j)s$": [
       "ts-jest",

@@ -2,7 +2,6 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { S3Controller } from "./s3.controller";
 import { S3Service } from "./s3.service";
 import { BucketService } from "./bucket.service";
-import { CloudfrontService } from "./cloudfront.service";
 import { ConfigService } from "@nestjs/config";
 import { S3Client } from "@aws-sdk/client-s3";
 
@@ -12,14 +11,13 @@ describe("S3Controller", () => {
   const mockS3Client = { send: jest.fn() } as unknown as S3Client;
 
   const mockS3Service = {
-    listBuckets: jest.fn(),
-    createBucket: jest.fn(),
-    deleteBucket: jest.fn(),
-    generateBucketPolicy: jest.fn(),
-    applyBucketPolicy: jest.fn(),
-    generateSignedUrl: jest.fn(),
-    createSignedCookies: jest.fn(),
-    generateSignedCookies: jest.fn()
+    listObjects: jest.fn(),
+    getSignedDownloadUrl: jest.fn(),
+    downloadFile: jest.fn(),
+    uploadFile: jest.fn(),
+    deleteFile: jest.fn(),
+    deleteFiles: jest.fn(),
+    getObjectMetadata: jest.fn(),
   };
 
   const mockBucketService = {
@@ -27,13 +25,11 @@ describe("S3Controller", () => {
     createBucket: jest.fn(),
     deleteBucket: jest.fn(),
     applyBucketPolicy: jest.fn(),
-    generateBucketPolicy: jest.fn()
+    generateBucketPolicy: jest.fn(),
   };
 
-  const mockCloudfrontService = {};
-
   const mockConfigService = {
-    get: jest.fn()
+    get: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -42,25 +38,21 @@ describe("S3Controller", () => {
       providers: [
         {
           provide: S3Service,
-          useValue: mockS3Service
+          useValue: mockS3Service,
         },
         {
           provide: BucketService,
-          useValue: mockBucketService
-        },
-        {
-          provide: CloudfrontService,
-          useValue: mockCloudfrontService
+          useValue: mockBucketService,
         },
         {
           provide: ConfigService,
-          useValue: mockConfigService
+          useValue: mockConfigService,
         },
         {
           provide: S3Client,
-          useValue: mockS3Client
-        }
-      ]
+          useValue: mockS3Client,
+        },
+      ],
     }).compile();
 
     controller = module.get<S3Controller>(S3Controller);
