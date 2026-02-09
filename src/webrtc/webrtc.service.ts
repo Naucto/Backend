@@ -73,7 +73,7 @@ export class WebRTCService {
       });
   }
 
-  async createOffer(): Promise<WebRTCOfferDto> {
+  buildOffer(): WebRTCOfferDto {
     if (!this.config) {
       this.logger.error("Attempt at creating WebRTC offer without a valid initialization, bailing out.");
       throw new WebRTCServiceOfferError("WebRTC service is not properly initialized");

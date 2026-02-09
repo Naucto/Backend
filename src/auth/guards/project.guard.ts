@@ -5,7 +5,7 @@ import {
   ForbiddenException,
   NotFoundException
 } from "@nestjs/common";
-import { PrismaService } from "@prisma/prisma.service";
+import { PrismaService } from "@ourPrisma/prisma.service";
 
 @Injectable()
 export class ProjectCreatorGuard implements CanActivate {

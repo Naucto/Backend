@@ -1,6 +1,6 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { AuthController } from "./auth.controller";
-import { PrismaModule } from "@prisma/prisma.module";
+import { PrismaModule } from "@ourPrisma/prisma.module";
 import { AuthService } from "./auth.service";
 
 describe("AuthController", () => {
@@ -36,7 +36,8 @@ describe("AuthController", () => {
 
     (authService.login as jest.Mock).mockResolvedValue(expectedResult);
 
-    const result = await controller.login(loginDto);
+    const mockRes = { cookie: jest.fn() } as any;
+    const result = await controller.login(loginDto, mockRes);
 
     expect(authService.login).toHaveBeenCalledWith(
       loginDto.email,

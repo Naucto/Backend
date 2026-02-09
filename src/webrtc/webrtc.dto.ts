@@ -6,10 +6,10 @@ export class WebRTCOfferPeerICEServerConfig {
     urls!: string;
   @IsString()
   @IsOptional()
-    username?: string;
+    username?: string | undefined;
   @IsString()
   @IsOptional()
-    credentials?: string;
+    credentials?: string | undefined;
 };
 
 export class WebRTCOfferPeerOptsConfig {

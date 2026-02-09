@@ -1,6 +1,6 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { WorkSessionService } from "./work-session.service";
-import { PrismaModule } from "@prisma/prisma.module";
+import { PrismaModule } from "@ourPrisma/prisma.module";
 
 describe("WorkSessionService", () => {
   let service: WorkSessionService;

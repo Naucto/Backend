@@ -19,7 +19,9 @@ describe("S3Service", () => {
         key === "S3_BUCKET_NAME" ? "my-default-bucket" : "us-east-1"
     };
     mockS3 = { send: jest.fn() } as unknown as S3Client & { send: jest.Mock };
-    s3Service = new S3Service(mockS3, mockConfig as ConfigService);
+    s3Service = new S3Service(mockConfig as unknown as ConfigService);
+    // Mock the S3 client on the instance
+    (s3Service as any).s3 = mockS3;
   });
 
   describe("resolveBucket", () => {
@@ -33,7 +35,8 @@ describe("S3Service", () => {
 
     it("throws when no bucket", () => {
       const emptyConfig: Pick<ConfigService, "get"> = { get: () => undefined };
-      const service = new S3Service(mockS3, emptyConfig as ConfigService);
+      const service = new S3Service(emptyConfig as unknown as ConfigService);
+      (service as any).s3 = mockS3;
       expect(() => service["resolveBucket"]()).toThrow(
         BucketResolutionException
       );

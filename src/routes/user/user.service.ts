@@ -1,10 +1,10 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import { PrismaService } from "@prisma/prisma.service";
+import { PrismaService } from "@ourPrisma/prisma.service";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
-import { User } from "@prisma/client";
+import { User, Prisma } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
-import { Prisma } from "@prisma/client";
+
 import { Role } from "@prisma/client";
 import { UserNotFoundError } from "./user.error";
 import { MultiplayerGameSessionNotFoundError } from "@multiplayer/multiplayer.error";
