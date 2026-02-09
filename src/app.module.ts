@@ -8,6 +8,8 @@ import { PrismaModule } from "@prisma/prisma.module";
 import { AuthModule } from "@auth/auth.module";
 import { ScheduleModule } from "@nestjs/schedule";
 import { TasksModule } from "src/tasks/tasks.module";
+import { AppConfig } from "src/app.config";
+import { WebRTCModule } from "@webrtc/webrtc.module";
 
 @Module({
   imports: [
@@ -19,7 +21,12 @@ import { TasksModule } from "src/tasks/tasks.module";
     UserModule,
     ProjectModule,
     WorkSessionModule,
-    TasksModule
-  ]
+    TasksModule,
+    WebRTCModule
+  ],
+  providers: [
+    AppConfig
+  ],
+  exports: [AppConfig]
 })
 export class AppModule {}
