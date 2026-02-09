@@ -31,7 +31,10 @@ import { LeaveHostRequestDto } from "./dto/leave-host.dto";
 export class MultiplayerController {
   private readonly logger = new Logger(MultiplayerController.name);
 
-  constructor(private readonly multiplayerService: MultiplayerService) {}
+  constructor(
+    private readonly multiplayerService: MultiplayerService,
+    private readonly webrtcService: WebRTCService
+  ) {}
 
   @Get("list-hosts")
   @ApiOperation({ summary: "List available game hosts/sessions from the user's perspective" })
@@ -116,8 +119,6 @@ export class MultiplayerController {
     const responseDto = new OpenHostResponseDto();
     responseDto.sessionUuid = gameSession.sessionId;
     responseDto.webrtcConfig = this.webrtcService.buildOffer();
-
-    // FIXME: Return more info on the WebRTC side of things?
 
     return responseDto;
   }
