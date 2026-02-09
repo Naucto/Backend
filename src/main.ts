@@ -90,7 +90,6 @@ if (process.env["NODE_ENV"] === "production") {
         ? address.port
         : Number(PORT);
 
-    // Set the port in AppConfig service
     const appConfig = app.get(AppConfig);
     appConfig.setPort(actualPort);
 
