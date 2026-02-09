@@ -7,7 +7,7 @@ import * as bcrypt from "bcryptjs";
 import { Prisma } from "@prisma/client";
 import { Role } from "@prisma/client";
 import { UserNotFoundError } from "./user.error";
-import { MultiplayerGameSessionNotFoundError } from "../multiplayer/multiplayer.error";
+import { MultiplayerGameSessionNotFoundError } from "@multiplayer/multiplayer.error";
 
 @Injectable()
 export class UserService {

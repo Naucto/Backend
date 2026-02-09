@@ -1,5 +1,5 @@
 import { Module } from "@nestjs/common";
-import { TasksService } from "./tasks/tasks.service";
+import { TasksService } from "src/tasks/tasks/tasks.service";
 
 @Module({
   providers: [TasksService]

@@ -1,13 +1,13 @@
 import { NestFactory } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
-import { AppModule } from "./app.module";
+import { AppModule } from "src/app.module";
 import {
   NestExpressApplication,
   ExpressAdapter
 } from "@nestjs/platform-express";
-import { setupSwagger } from "./swagger";
+import { setupSwagger } from "src/swagger";
 import { format } from "date-fns-tz";
-import { setupWebSocketServer } from "./collab/signaling/signal";
+import { setupWebSocketServer } from "src/webrtc/signal";
 import { Logger } from "@nestjs/common";
 import express, { Request, Response, NextFunction } from "express";
 import { ConfigService } from "@nestjs/config";

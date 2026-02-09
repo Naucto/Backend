@@ -1,5 +1,6 @@
 import { ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { GameSessionEx, MultiplayerService } from "./multiplayer.service";
+import { WebRTCService } from "src/webrtc/webrtc.service";
 import {
   BadRequestException,
   Controller,
@@ -21,7 +22,7 @@ import { OpenHostRequestDto, OpenHostResponseDto } from "./dto/open-host.dto";
 import { LookupHostsResponseDto, LookupHostsResponseDtoHost } from "./dto/lookup-hosts.dto";
 import { MultiplayerHostNotFoundError, MultiplayerHostOpenedError, MultiplayerUserAlreadyJoinedError, MultiplayerUserDoesNotExistError, MultiplayerUserNotInSessionError } from "./multiplayer.error";
 import { CloseHostRequestDto } from "./dto/close-host.dto";
-import { getExcerrMessage as getExcerrMessage } from "../../util/errors";
+import { getExcerrMessage as getExcerrMessage } from "src/util/errors";
 import { JoinHostRequestDto, JoinHostResponseDto } from "./dto/join-host.dto";
 import { LeaveHostRequestDto } from "./dto/leave-host.dto";
 
