@@ -62,7 +62,7 @@ describe("S3Service", () => {
     it("throws S3ListObjectsException on error", async () => {
       const err = new Error("Access Denied");
       mockS3.send.mockRejectedValueOnce(err);
-      await expect(s3Service.listObjects("bucket")).rejects.toThrow(
+      await expect(s3Service.listObjects({ bucketName: "bucket" })).rejects.toThrow(
         S3ListObjectsException
       );
     });

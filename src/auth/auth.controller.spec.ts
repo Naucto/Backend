@@ -1,6 +1,6 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { AuthController } from "./auth.controller";
-import { PrismaModule } from "@ourPrisma/prisma.module";
+import { PrismaService } from "@ourPrisma/prisma.service";
 import { AuthService } from "./auth.service";
 
 describe("AuthController", () => {
@@ -9,7 +9,6 @@ describe("AuthController", () => {
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      imports: [PrismaModule],
       controllers: [AuthController],
       providers: [
         {
@@ -17,6 +16,13 @@ describe("AuthController", () => {
           useValue: {
             login: jest.fn(),
             register: jest.fn()
+          }
+        },
+        {
+          provide: PrismaService,
+          useValue: {
+            $connect: jest.fn(),
+            $disconnect: jest.fn()
           }
         }
       ]

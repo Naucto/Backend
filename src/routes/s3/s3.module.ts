@@ -6,7 +6,7 @@ import { S3Controller } from "./s3.controller";
 import { S3Service } from "./s3.service";
 import { BucketService } from "./bucket.service";
 import { CloudfrontService } from "./cloudfront.service";
-import { PrismaService } from "@prisma/prisma.service";
+import { PrismaService } from "@ourPrisma/prisma.service";
 import { S3ConfigurationException } from "./s3.error";
 
 const controllers =
