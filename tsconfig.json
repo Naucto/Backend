@@ -39,7 +39,8 @@
         "@user/*": ["routes/user/*"],
         "@work-session/*": ["routes/work-session/*"],
         "@s3/*": ["routes/s3/*"],
-        "@common/*": ["common/*"]
+        "@common/*": ["common/*"],
+        "@webrtc/*": ["webrtc/*"]
     },                                                   /* Specify a set of entries that re-map imports to additional lookup locations. */
     // "rootDirs": [],                                   /* Allow multiple folders to be treated as one when resolving modules. */
     // "typeRoots": [],                                  /* Specify multiple folders that act like './node_modules/@types'. */
