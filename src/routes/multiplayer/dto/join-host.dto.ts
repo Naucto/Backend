@@ -1,6 +1,6 @@
 import { Type } from "class-transformer";
 import { IsUUID } from "class-validator";
-import { WebRTCOfferDto } from "@common/dto/webrtc.dto";
+import { WebRTCOfferDto } from "@webrtc/webrtc.dto";
 
 export class JoinHostRequestDto {
   @IsUUID()

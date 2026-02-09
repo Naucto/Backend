@@ -1,6 +1,6 @@
 import { ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { GameSessionEx, MultiplayerService } from "./multiplayer.service";
-import { WebRTCService } from "src/webrtc/webrtc.service";
+import { WebRTCService } from "@webrtc/webrtc.service";
 import {
   BadRequestException,
   Controller,

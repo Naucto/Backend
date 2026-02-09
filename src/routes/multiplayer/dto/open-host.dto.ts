@@ -1,6 +1,6 @@
 import { GameSessionVisibility } from "@prisma/client";
 import { IsEnum, IsInt, IsUUID } from "class-validator";
-import { WebRTCOfferDto } from "@common/dto/webrtc.dto";
+import { WebRTCOfferDto } from "@webrtc/webrtc.dto";
 import { Type } from "class-transformer";
 
 export class OpenHostRequestDto {
