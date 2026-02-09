@@ -5,6 +5,9 @@ import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcryptjs";
 import { ConflictException, UnauthorizedException } from "@nestjs/common";
 import { Prisma, User } from "@prisma/client";
+import { GoogleAuthService } from "./google-auth.service";
+import { PrismaService } from "@ourPrisma/prisma.service";
+import { ConfigService } from "@nestjs/config";
 
 jest.mock("bcryptjs", () => ({
   compare: jest.fn()
@@ -33,7 +36,10 @@ describe("AuthService", () => {
       providers: [
         AuthService,
         { provide: UserService, useValue: userService },
-        { provide: JwtService, useValue: jwtService }
+        { provide: JwtService, useValue: jwtService },
+        { provide: GoogleAuthService, useValue: {} },
+        { provide: PrismaService, useValue: { $transaction: jest.fn() } },
+        { provide: ConfigService, useValue: { get: jest.fn() } }
       ]
     }).compile();
 

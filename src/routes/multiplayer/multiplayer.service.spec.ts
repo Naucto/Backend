@@ -9,8 +9,8 @@ describe("MultiplayerService", () => {
 
   beforeEach(async () => {
     const module = await Test.createTestingModule({
-      imports: [ProjectService, UserService, PrismaModule],
-      providers: [MultiplayerService]
+      imports: [PrismaModule],
+      providers: [MultiplayerService, ProjectService, UserService]
     }).compile();
 
     service = module.get<MultiplayerService>(MultiplayerService);
