@@ -20,7 +20,13 @@ import { RequestWithUser } from "@auth/auth.types";
 import { ProjectNotFoundError } from "@project/project.error";
 import { OpenHostRequestDto, OpenHostResponseDto } from "./dto/open-host.dto";
 import { LookupHostsResponseDto, LookupHostsResponseDtoHost } from "./dto/lookup-hosts.dto";
-import { MultiplayerHostNotFoundError, MultiplayerHostOpenedError, MultiplayerUserAlreadyJoinedError, MultiplayerUserDoesNotExistError, MultiplayerUserNotInSessionError } from "./multiplayer.error";
+import {
+  MultiplayerHostNotFoundError,
+  MultiplayerHostOpenedError,
+  MultiplayerUserAlreadyJoinedError,
+  MultiplayerUserDoesNotExistError,
+  MultiplayerUserNotInSessionError
+} from "./multiplayer.error";
 import { CloseHostRequestDto } from "./dto/close-host.dto";
 import { getExcerrMessage as getExcerrMessage } from "src/util/errors";
 import { JoinHostRequestDto, JoinHostResponseDto } from "./dto/join-host.dto";
