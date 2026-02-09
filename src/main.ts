@@ -1,13 +1,14 @@
 import { NestFactory } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
 import { AppModule } from "src/app.module";
+import { AppConfig } from "src/app.config";
 import {
   NestExpressApplication,
   ExpressAdapter
 } from "@nestjs/platform-express";
 import { setupSwagger } from "src/swagger";
 import { format } from "date-fns-tz";
-import { setupWebSocketServer } from "src/webrtc/signal";
+import { setupWebSocketServer } from "@webrtc/signal";
 import { Logger } from "@nestjs/common";
 import express, { Request, Response, NextFunction } from "express";
 import { ConfigService } from "@nestjs/config";
@@ -81,7 +82,18 @@ if (process.env["NODE_ENV"] === "production") {
   setupWebSocketServer(server);
 
   const PORT = process.env["PORT"] || 3000;
+
   server.listen(PORT, () => {
-    logger.log(`Server listening on port ${PORT}`);
+    const address = server.address();
+    const actualPort =
+      typeof address === "object" && address !== null
+        ? address.port
+        : Number(PORT);
+
+    // Set the port in AppConfig service
+    const appConfig = app.get(AppConfig);
+    appConfig.setPort(actualPort);
+
+    logger.log(`Server listening on port ${actualPort}`);
   });
 })();
