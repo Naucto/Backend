@@ -17,11 +17,13 @@ import * as dotenv from "dotenv";
 import * as http from "http";
 import cookieParser from "cookie-parser";
 
+// NOTE: dotenv must load before ConfigService is available
 if (process.env["NODE_ENV"] === "production") {
   dotenv.config({ path: ".env.production" });
 } else {
   dotenv.config();
 }
+// After this, use configService.get('NODE_ENV') elsewhere
 
 (async () => {
   const expressApp = express();
@@ -81,7 +83,7 @@ if (process.env["NODE_ENV"] === "production") {
 
   setupWebSocketServer(server);
 
-  const PORT = process.env["PORT"] || 3000;
+  const PORT = configService.get<number>("PORT") || 3000;
 
   server.listen(PORT, () => {
     const address = server.address();

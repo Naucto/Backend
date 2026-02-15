@@ -6,14 +6,8 @@ export class PrismaService
   extends PrismaClient
   implements OnModuleInit, OnModuleDestroy
 {
-  constructor() {
-    // Check if we're in test mode using bracket notation
-    // @ts-ignore - Prisma accepts empty constructor in test mode
-    if (process.env["NODE_ENV"] === "test") {
-      super({});
-    } else {
-      super();
-    }
+  constructor(readonly configService: import("@nestjs/config").ConfigService) {
+    super();
   }
 
   async onModuleInit(): Promise<void> {

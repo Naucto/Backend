@@ -9,8 +9,7 @@ import { CloudfrontService } from "./cloudfront.service";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { S3ConfigurationException } from "./s3.error";
 
-const controllers =
-  process.env["NODE_ENV"] === "production" ? [] : [S3Controller];
+const controllers = [S3Controller]; // Always include S3Controller, or adjust as needed
 
 @Module({
   imports: [

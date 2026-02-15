@@ -2,6 +2,9 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { AuthController } from "./auth.controller";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { AuthService } from "./auth.service";
+import { ConfigService } from "@nestjs/config";
+
+import { Response } from "express";
 
 describe("AuthController", () => {
   let controller: AuthController;
@@ -24,7 +27,8 @@ describe("AuthController", () => {
             $connect: jest.fn(),
             $disconnect: jest.fn()
           }
-        }
+        },
+        ConfigService,
       ]
     }).compile();
 
@@ -42,8 +46,8 @@ describe("AuthController", () => {
 
     (authService.login as jest.Mock).mockResolvedValue(expectedResult);
 
-    const mockRes = { cookie: jest.fn() } as any;
-    const result = await controller.login(loginDto, mockRes);
+    const mockRes: Partial<Response> = { cookie: jest.fn() };
+    const result = await controller.login(loginDto, mockRes as Response);
 
     expect(authService.login).toHaveBeenCalledWith(
       loginDto.email,
