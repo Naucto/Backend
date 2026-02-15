@@ -44,7 +44,7 @@ import { UserProfileResponseDto } from "./dto/user-profile-response.dto";
 import { RequestWithUser } from "@auth/auth.types";
 import { UserDto } from "@auth/dto/user.dto";
 import { UpdateUserProfileDto } from "./dto/update-user-profile.dto";
-import { S3Service } from "@s3/s3.service";
+import { MB } from "src/utils/file-utils";
 
 @ApiTags("users")
 @ApiExtraModels(UserResponseDto, UserListResponseDto, UserSingleResponseDto, UserProfileResponseDto)
@@ -55,7 +55,6 @@ export class UserController {
 
   constructor(
     private readonly userService: UserService,
-    private readonly s3Service: S3Service,
   ) {}
 
   @Get("profile")
@@ -119,7 +118,7 @@ export class UserController {
     @UploadedFile(
       new ParseFilePipeBuilder()
         .addMaxSizeValidator({
-          maxSize: 5 * 1024 * 1024,
+          maxSize: 5 * MB,
         })
         .addFileTypeValidator({
           fileType: /^image\/(jpeg|png|webp)$/i,
@@ -133,40 +132,7 @@ export class UserController {
     if (!file) {
       throw new BadRequestException("No file provided");
     }
-
-    const extensionMap: Record<string, string> = {
-      "image/jpeg": "jpg",
-      "image/png": "png",
-      "image/webp": "webp",
-    };
-
-    const extension =
-      extensionMap[file.mimetype] || file.originalname.split(".").pop();
-    if (!extension) {
-      throw new BadRequestException("File has no extension");
-    }
-
-    const key = `users/${req.user.id}/profile/profile_picture.${extension}`;
-    const metadata = {
-      uploadedBy: req.user.id.toString(),
-      originalName: file.originalname,
-    };
-
-    if (req.user.profileImageUrl) {
-      try {
-        const existingKey = new URL(req.user.profileImageUrl).pathname.replace(/^\/+/, "");
-        if (existingKey) {
-          await this.s3Service.deleteFile(existingKey);
-        }
-      } catch (error) {
-        this.logger.warn(`Failed to delete old profile image for user ${req.user.id}: ${error}`);
-      }
-    }
-
-    await this.s3Service.uploadFile(file, metadata, undefined, key);
-    const profileImageUrl = await this.s3Service.getSignedDownloadUrl(key);
-    const user = await this.userService.updateProfile(req.user.id, { profileImageUrl });
-    return user;
+    return this.userService.updateProfilePhoto(req.user.id, file);
   }
 
   @Get()

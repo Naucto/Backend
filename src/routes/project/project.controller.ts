@@ -34,6 +34,7 @@ import { UserDto } from "@auth/dto/user.dto";
 import { Project } from "@prisma/client";
 import { ProjectResponseDto, ProjectWithRelationsResponseDto } from "./dto/project-response.dto";
 import { S3DownloadException } from "@s3/s3.error";
+import { getFileExtension } from "../../utils/file-utils";
 
 interface RequestWithUser extends Request {
     user: UserDto;
@@ -242,7 +243,7 @@ export class ProjectController {
         @Req() req: RequestWithUser,
     ): Promise<{ message: string; id: number }> {
 
-        const extension = file.originalname.split(".").pop();
+        const extension = getFileExtension(file);
         if (!extension) throw new BadRequestException("File has no extension");
 
         const project = await this.projectService.findOne(id);

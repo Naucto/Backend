@@ -7,10 +7,18 @@ import * as bcrypt from "bcryptjs";
 import { Prisma } from "@prisma/client";
 import { Role } from "@prisma/client";
 import { UpdateUserProfileDto } from "./dto/update-user-profile.dto";
+import { S3Service } from "@s3/s3.service";
+import { CloudfrontService } from "@s3/cloudfront.service";
+import { BadRequestException } from "@nestjs/common";
+import { getFileExtension } from "utils/file-utils";
 
 @Injectable()
 export class UserService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly s3Service: S3Service,
+    private readonly cloudfrontService: CloudfrontService,
+  ) {}
   private static readonly BCRYPT_SALT_ROUNDS = 10;
 
   async findRolesByNames(names: string[]): Promise<Role[]> {
@@ -133,5 +141,34 @@ export class UserService {
       }
       throw error;
     }
+  }
+
+  async updateProfilePhoto(userId: number, file: Express.Multer.File): Promise<User> {
+    const extension = getFileExtension(file);
+    if (!extension) {
+      throw new BadRequestException("File has no extension");
+    }
+
+    const user = await this.findOne(userId);
+    const key = `public/users/${userId}/profile/profile_picture.${extension}`;
+    const metadata = {
+      uploadedBy: userId.toString(),
+      originalName: file.originalname,
+    };
+
+    if (user.profileImageUrl) {
+      try {
+        const existingKey = new URL(user.profileImageUrl).pathname.replace(/^\/+/, "");
+        if (existingKey) {
+          await this.s3Service.deleteFile(existingKey);
+        }
+      } catch {
+        // Best-effort cleanup only.
+      }
+    }
+
+    await this.s3Service.uploadFile(file, metadata, undefined, key);
+    const profileImageUrl = this.cloudfrontService.getCDNUrl(key);
+    return this.updateProfile(userId, { profileImageUrl });
   }
 }
