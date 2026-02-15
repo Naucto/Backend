@@ -8,7 +8,6 @@ import {
   InternalServerErrorException,
   NotFoundException
 } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
 
 import { CREATOR_SELECT, COLLABORATOR_SELECT } from "./project.service";
 import { ProjectStatus, MonetizationType, Prisma } from "@prisma/client";

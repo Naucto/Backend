@@ -15,8 +15,11 @@ describe("S3Service", () => {
 
   beforeEach(() => {
     mockConfig = {
-      get: (key: string) =>
-        key === "S3_BUCKET_NAME" ? "my-default-bucket" : "us-east-1"
+      get: (key: string) => {
+        if (key === "S3_BUCKET_NAME") return "my-default-bucket";
+        if (key === "S3_REGION") return "fr-par";
+        return undefined;
+      }
     };
     mockS3 = { send: jest.fn() } as unknown as S3Client & { send: jest.Mock };
     s3Service = new S3Service(mockConfig as unknown as ConfigService);
