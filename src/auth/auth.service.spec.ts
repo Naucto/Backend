@@ -28,6 +28,23 @@ describe("AuthService", () => {
     sign: jest.fn()
   };
 
+  const prismaService = {
+    $transaction: jest.fn((callback: any) => {
+      // Create a mock transaction client
+      const txClient = {
+        refreshToken: {
+          create: jest.fn().mockResolvedValue({ id: 1, token: "refresh_token123", userId: 1, expiresAt: new Date() }),
+          deleteMany: jest.fn().mockResolvedValue({ count: 0 })
+        }
+      };
+      return callback(txClient);
+    }),
+    refreshToken: {
+      create: jest.fn(),
+      deleteMany: jest.fn()
+    }
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
     (bcrypt.compare as jest.Mock).mockResolvedValue(true);
@@ -38,8 +55,12 @@ describe("AuthService", () => {
         { provide: UserService, useValue: userService },
         { provide: JwtService, useValue: jwtService },
         { provide: GoogleAuthService, useValue: {} },
-        { provide: PrismaService, useValue: { $transaction: jest.fn() } },
-        { provide: ConfigService, useValue: { get: jest.fn() } }
+        { provide: PrismaService, useValue: prismaService },
+        { provide: ConfigService, useValue: { get: jest.fn((key: string) => {
+          if (key === "JWT_EXPIRES_IN") return "1h";
+          if (key === "JWT_REFRESH_EXPIRES_IN") return "7d";
+          return undefined;
+        }) } }
       ]
     }).compile();
 
@@ -110,11 +131,11 @@ describe("AuthService", () => {
       jwtService.sign.mockReturnValue("token123");
 
       const result = await authService.login("test@example.com", "password");
-      expect(result).toEqual({ access_token: "token123" });
+      expect(result).toEqual({ access_token: "token123", refresh_token: "token123" });
       expect(jwtService.sign).toHaveBeenCalledWith({
         sub: mockUser.id,
         email: mockUser.email
-      });
+      }, expect.any(Object));
     });
   });
 
@@ -228,7 +249,7 @@ describe("AuthService", () => {
       });
 
       expect(userService.create).toHaveBeenCalled();
-      expect(result).toEqual({ access_token: "token123" });
+      expect(result).toEqual({ access_token: "token123", refresh_token: "token123" });
     });
   });
 });

@@ -18,6 +18,9 @@ describe("S3Service", () => {
       get: (key: string) => {
         if (key === "S3_BUCKET_NAME") return "my-default-bucket";
         if (key === "S3_REGION") return "fr-par";
+        if (key === "S3_ENDPOINT") return "https://s3.fr-par.scw.cloud";
+        if (key === "S3_ACCESS_KEY_ID") return "test-access-key";
+        if (key === "S3_SECRET_ACCESS_KEY") return "test-secret-key";
         return undefined;
       }
     };
@@ -37,7 +40,15 @@ describe("S3Service", () => {
     });
 
     it("throws when no bucket", () => {
-      const emptyConfig: Pick<ConfigService, "get"> = { get: () => undefined };
+      const emptyConfig: Pick<ConfigService, "get"> = { 
+        get: (key: string) => {
+          if (key === "S3_ENDPOINT") return "https://s3.fr-par.scw.cloud";
+          if (key === "S3_REGION") return "fr-par";
+          if (key === "S3_ACCESS_KEY_ID") return "test-access-key";
+          if (key === "S3_SECRET_ACCESS_KEY") return "test-secret-key";
+          return undefined;
+        }
+      };
       const service = new S3Service(emptyConfig as unknown as ConfigService);
       (service as any).s3 = mockS3;
       expect(() => service["resolveBucket"]()).toThrow(

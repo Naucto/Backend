@@ -2,6 +2,7 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { ProjectService } from "./project.service";
 import { S3Service } from "@s3/s3.service";
 import { PrismaService } from "@ourPrisma/prisma.service";
+import { ConfigService } from "@nestjs/config";
 import {
   BadRequestException,
   ForbiddenException,
@@ -107,7 +108,18 @@ describe("ProjectService", () => {
   };
 
   const s3ServiceMock = {
-    deleteFile: jest.fn()
+    deleteFile: jest.fn(),
+    listObjects: jest.fn(),
+    deleteFiles: jest.fn()
+  };
+
+  const configServiceMock = {
+    get: jest.fn((key: string) => {
+      if (key === "S3_MAX_AUTO_HISTORY_VERSION") return "5";
+      if (key === "S3_AUTO_HISTORY_DELAY") return "10";
+      if (key === "S3_MAX_CHECKPOINTS") return "5";
+      return undefined;
+    })
   };
 
   beforeEach(async () => {
@@ -121,6 +133,10 @@ describe("ProjectService", () => {
         {
           provide: S3Service,
           useValue: s3ServiceMock
+        },
+        {
+          provide: ConfigService,
+          useValue: configServiceMock
         }
       ]
     }).compile();
@@ -167,7 +183,23 @@ describe("ProjectService", () => {
       const result = await service.findOne(projectId);
 
       expect(prismaMock.project.findUnique).toHaveBeenCalledWith({
-        where: { id: projectId }
+        where: { id: projectId },
+        include: {
+          creator: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
+          },
+          collaborators: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
+          }
+        }
       });
       expect(result).toEqual(mockProjects[0]);
     });
@@ -182,7 +214,23 @@ describe("ProjectService", () => {
       );
 
       expect(prismaMock.project.findUnique).toHaveBeenCalledWith({
-        where: { id: projectId }
+        where: { id: projectId },
+        include: {
+          creator: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
+          },
+          collaborators: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
+          }
+        }
       });
     });
   });
@@ -281,7 +329,23 @@ describe("ProjectService", () => {
       const result = await service.update(projectId, updateDto);
 
       expect(prismaMock.project.findUnique).toHaveBeenCalledWith({
-        where: { id: projectId }
+        where: { id: projectId },
+        include: {
+          creator: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
+          },
+          collaborators: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
+          }
+        }
       });
       expect(prismaMock.project.update).toHaveBeenCalledWith({
         where: { id: projectId },
@@ -309,15 +373,33 @@ describe("ProjectService", () => {
       prismaMock.project.findUnique.mockResolvedValue(mockProjects[0]);
       prismaMock.project.delete.mockResolvedValue(mockProjects[0]);
       s3ServiceMock.deleteFile.mockResolvedValue(undefined);
+      s3ServiceMock.listObjects.mockResolvedValue([]);
+      s3ServiceMock.deleteFiles.mockResolvedValue(undefined);
 
       await service.remove(projectId);
 
       expect(prismaMock.project.findUnique).toHaveBeenCalledWith({
-        where: { id: projectId }
+        where: { id: projectId },
+        include: {
+          creator: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
+          },
+          collaborators: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
+          }
+        }
       });
-      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith(
-        projectId.toString()
-      );
+      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({
+        key: `release/${projectId}`
+      });
       expect(prismaMock.project.delete).toHaveBeenCalledWith({
         where: { id: projectId }
       });
@@ -362,11 +444,27 @@ describe("ProjectService", () => {
       );
 
       expect(prismaMock.project.findUnique).toHaveBeenCalledWith({
-        where: { id: projectId }
+        where: { id: projectId },
+        include: {
+          creator: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
+          },
+          collaborators: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
+          }
+        }
       });
-      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith(
-        projectId.toString()
-      );
+      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({
+        key: `release/${projectId}`
+      });
     });
   });
 
@@ -388,7 +486,22 @@ describe("ProjectService", () => {
       });
       expect(prismaMock.project.findUnique).toHaveBeenCalledWith({
         where: { id: 1 },
-        include: { collaborators: true }
+        include: {
+          creator: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
+          },
+          collaborators: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
+          }
+        }
       });
       expect(prismaMock.project.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -448,7 +561,22 @@ describe("ProjectService", () => {
       });
       expect(prismaMock.project.findUnique).toHaveBeenCalledWith({
         where: { id: 1 },
-        include: { collaborators: true }
+        include: {
+          creator: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
+          },
+          collaborators: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
+          }
+        }
       });
       expect(prismaMock.project.update).toHaveBeenCalledWith(
         expect.objectContaining({
