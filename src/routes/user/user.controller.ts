@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Post,
   Body,
   Patch,
   Param,
@@ -11,7 +12,12 @@ import {
   HttpCode,
   ParseIntPipe,
   ValidationPipe,
-  Logger
+  Logger,
+  UseInterceptors,
+  UploadedFile,
+  ParseFilePipeBuilder,
+  Res,
+  HttpException
 } from "@nestjs/common";
 import { UserService } from "./user.service";
 import { UpdateUserDto } from "./dto/update-user.dto";
@@ -24,7 +30,8 @@ import {
   ApiBearerAuth,
   ApiParam,
   ApiBody,
-  ApiExtraModels
+  ApiExtraModels,
+  ApiConsumes
 } from "@nestjs/swagger";
 import { Request } from "@nestjs/common";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
@@ -37,6 +44,13 @@ import { UserSingleResponseDto } from "./dto/user-single-response.dto";
 import { UserProfileResponseDto } from "./dto/user-profile-response.dto";
 import { RequestWithUser } from "@auth/auth.types";
 import { UserDto } from "@auth/dto/user.dto";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { Response } from "express";
+import { S3Service } from "@s3/s3.service";
+import { CloudfrontService } from "@s3/cloudfront.service";
+import { ConfigService } from "@nestjs/config";
+import { SignedCdnResourceDto } from "@common/dto/signed-cdn-resource.dto";
+import { MissingEnvVarError } from "@auth/auth.error";
 
 @ApiTags("users")
 @ApiExtraModels(
@@ -49,8 +63,14 @@ import { UserDto } from "@auth/dto/user.dto";
 @Controller("users")
 export class UserController {
   private readonly logger = new Logger(UserController.name);
+  private readonly sessionCookieTimeout = 600;
 
-  constructor(private readonly userService: UserService) {}
+  constructor(
+    private readonly userService: UserService,
+    private readonly s3Service: S3Service,
+    private readonly cloudfrontService: CloudfrontService,
+    private readonly configService: ConfigService
+  ) {}
 
   @Get("profile")
   @ApiOperation({ summary: "Get current user profile" })
@@ -63,6 +83,118 @@ export class UserController {
   @UseGuards(JwtAuthGuard)
   getProfile(@Request() req: RequestWithUser): UserDto {
     return req.user;
+  }
+
+  @Post(":id/profile-picture")
+  @ApiOperation({ summary: "Upload a user's profile picture" })
+  @ApiParam({ name: "id", description: "User ID" })
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({
+    schema: {
+      type: "object",
+      properties: {
+        file: {
+          type: "string",
+          format: "binary",
+          description: "Profile picture file"
+        }
+      }
+    }
+  })
+  @ApiResponse({ status: HttpStatus.CREATED, description: "Profile uploaded" })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(FileInterceptor("file"))
+  @HttpCode(HttpStatus.CREATED)
+  async uploadProfilePicture(
+    @Param("id", ParseIntPipe) id: number,
+    @UploadedFile(
+      new ParseFilePipeBuilder()
+        .addMaxSizeValidator({ maxSize: 5 * 1024 * 1024 })
+        .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY })
+    )
+    file: Express.Multer.File,
+    @Request() req: RequestWithUser
+  ): Promise<{ message: string; id: number }> {
+    if (req.user.id !== id) {
+      throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    }
+
+    const key = `users/${id}/profile`;
+
+    await this.s3Service.uploadFile({
+      file,
+      keyName: key,
+      metadata: {
+        uploadedBy: req.user.id.toString(),
+        userId: id.toString(),
+        originalName: file.originalname
+      }
+    });
+
+    return { message: "Profile picture uploaded successfully", id };
+  }
+
+  @Get(":id/profile-picture")
+  @ApiOperation({ summary: "Get signed CDN access to a user's profile picture" })
+  @ApiParam({ name: "id", description: "User ID" })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Signed cookies and CDN resource URL",
+    type: SignedCdnResourceDto
+  })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: "Not found" })
+  @UseGuards(JwtAuthGuard)
+  async getProfilePicture(
+    @Param("id", ParseIntPipe) id: number,
+    @Res() res: Response
+  ): Promise<void> {
+    const key = `users/${id}/profile`;
+    const exists = await this.s3Service.fileExists(key);
+    if (!exists) {
+      res.status(HttpStatus.NOT_FOUND).json({ message: "Profile picture not found" });
+      return;
+    }
+
+    const cdnUrl = this.configService.get<string>("CDN_URL");
+    if (!cdnUrl) {
+      throw new MissingEnvVarError("CDN_URL");
+    }
+
+    const resourceUrl = this.cloudfrontService.getCDNUrl(key);
+    const cookies = this.cloudfrontService.createSignedCookies(
+      resourceUrl,
+      this.sessionCookieTimeout
+    );
+
+    const cookieOptions = {
+      httpOnly: true,
+      secure: true,
+      path: "/",
+      domain: `.${cdnUrl}`,
+      sameSite: "lax" as const,
+      maxAge: 60 * 60 * 1000
+    };
+
+    res.cookie("CloudFront-Expires", cookies["CloudFront-Expires"], cookieOptions);
+    res.cookie(
+      "CloudFront-Signature",
+      cookies["CloudFront-Signature"],
+      cookieOptions
+    );
+    res.cookie(
+      "CloudFront-Key-Pair-Id",
+      cookies["CloudFront-Key-Pair-Id"],
+      cookieOptions
+    );
+    if (cookies["CloudFront-Policy"]) {
+      res.cookie("CloudFront-Policy", cookies["CloudFront-Policy"], cookieOptions);
+    }
+
+    res.status(HttpStatus.OK).json({
+      resourceUrl,
+      cookies
+    });
   }
 
   @Get()

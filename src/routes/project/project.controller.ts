@@ -17,7 +17,7 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
-  BadRequestException
+  HttpException
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
@@ -47,10 +47,15 @@ import { UserDto } from "@auth/dto/user.dto";
 import { Project } from "@prisma/client";
 import {
   ProjectResponseDto,
-  ProjectWithRelationsResponseDto
+  ProjectWithRelationsResponseDto,
+  SignedUrlResponseDto
 } from "./dto/project-response.dto";
 import { S3DownloadException } from "@s3/s3.error";
 import { S3Service } from "@s3/s3.service";
+import { CloudfrontService } from "@s3/cloudfront.service";
+import { ConfigService } from "@nestjs/config";
+import { SignedCdnResourceDto } from "@common/dto/signed-cdn-resource.dto";
+import { MissingEnvVarError } from "@auth/auth.error";
 
 interface RequestWithUser extends Request {
   user: UserDto;
@@ -63,10 +68,13 @@ interface RequestWithUser extends Request {
 export class ProjectController {
   constructor(
     private readonly projectService: ProjectService,
-    private readonly s3Service: S3Service
+    private readonly s3Service: S3Service,
+    private readonly cloudfrontService: CloudfrontService,
+    private readonly configService: ConfigService
   ) {}
 
   private readonly logger = new Logger(ProjectController.name);
+  private readonly sessionCookieTimeout = 600;
 
   @Get("releases")
   @ApiOperation({ summary: "Get all released projects" })
@@ -131,6 +139,27 @@ export class ProjectController {
       res.status(500).json({ message: "Internal server error" });
       return;
     }
+  }
+
+  @Get("releases/:id/content-url")
+  @ApiOperation({ summary: "Get signed CDN URL for a release" })
+  @ApiParam({ name: "id", type: "string" })
+  @ApiResponse({
+    status: 200,
+    description: "Signed CloudFront URL for the release",
+    type: SignedUrlResponseDto
+  })
+  async getReleaseContentUrl(
+    @Param("id") id: string
+  ): Promise<SignedUrlResponseDto> {
+    const key = `release/${id}`;
+    const exists = await this.s3Service.fileExists(key);
+    if (!exists) {
+      throw new HttpException("Release not found", HttpStatus.NOT_FOUND);
+    }
+
+    const signedUrl = this.cloudfrontService.generateSignedUrl(key);
+    return { signedUrl };
   }
 
   @Get()
@@ -378,93 +407,151 @@ export class ProjectController {
         })
     )
     file: Express.Multer.File,
-    @Req() req: RequestWithUser
+    @Req() _: RequestWithUser
   ): Promise<{ message: string; id: number }> {
-    const extension = file.originalname.split(".").pop();
-    if (!extension) throw new BadRequestException("File has no extension");
-
-    const project = await this.projectService.findOne(id);
-
-    const newS3Key = id.toString();
-
-    if (project.contentKey && project.contentKey !== newS3Key) {
-      this.logger.log(
-        `Deleting old file '${project.contentKey}' for project ${id}`
-      );
-      try {
-        await this.s3Service.deleteFile({ key: project.contentKey });
-      } catch (err) {
-        this.logger.warn(`Failed to delete old file: ${err}`);
-      }
-    }
-
-    const metadata = {
-      uploadedBy: req.user.id.toString(),
-      projectId: id.toString(),
-      originalName: file.originalname
-    };
-
-    await this.s3Service.uploadFile({ file, metadata, keyName: newS3Key });
-    await this.projectService.updateContentInfo(id, newS3Key, extension);
+    await this.projectService.save(id, file);
 
     return { message: "File uploaded successfully", id };
   }
 
-  @Get(":id/fetchContent")
-  @UseGuards(ProjectCollaboratorGuard)
-  @ApiOperation({ summary: "Fetch project's content (Download)" })
+  @Post(":id/image")
+  @UseInterceptors(FileInterceptor("file"))
+  @ApiOperation({ summary: "Upload project image" })
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({
+    schema: {
+      type: "object",
+      properties: {
+        file: {
+          type: "string",
+          format: "binary",
+          description: "Project image file"
+        }
+      }
+    }
+  })
   @ApiParam({ name: "id", type: "number" })
-  @ApiResponse({ status: 200, description: "File stream" })
-  @ApiResponse({ status: 404, description: "File not found (DB or S3)" })
-  async fetchProjectContent(
+  @ApiResponse({ status: 201, description: "Image uploaded successfully" })
+  @ApiResponse({ status: 403, description: "Forbidden" })
+  @HttpCode(HttpStatus.CREATED)
+  async uploadProjectImage(
+    @Param("id", ParseIntPipe) id: number,
+    @UploadedFile(
+      new ParseFilePipeBuilder()
+        .addMaxSizeValidator({ maxSize: 5 * 1024 * 1024 })
+        .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY })
+    )
+    file: Express.Multer.File,
+    @Req() req: RequestWithUser
+  ): Promise<{ message: string; id: number }> {
+    await this.projectService.findOne(id);
+
+    const key = `projects/${id}/image`;
+    await this.s3Service.uploadFile({
+      file,
+      keyName: key,
+      metadata: {
+        uploadedBy: req.user.id.toString(),
+        projectId: id.toString(),
+        originalName: file.originalname
+      }
+    });
+
+    return { message: "Project image uploaded successfully", id };
+  }
+
+  @Get(":id/image")
+  @ApiOperation({ summary: "Get signed CDN access to project image" })
+  @ApiParam({ name: "id", type: "number" })
+  @ApiResponse({
+    status: 200,
+    description: "Signed cookies and CDN resource URL",
+    type: SignedCdnResourceDto
+  })
+  @ApiResponse({ status: 404, description: "Image not found" })
+  async getProjectImage(
     @Param("id", ParseIntPipe) id: number,
     @Res() res: Response
   ): Promise<void> {
+    const key = `projects/${id}/image`;
+    const exists = await this.s3Service.fileExists(key);
+    if (!exists) {
+      res.status(HttpStatus.NOT_FOUND).json({ message: "Project image not found" });
+      return;
+    }
+
+    const cdnUrl = this.configService.get<string>("CDN_URL");
+    if (!cdnUrl) {
+      throw new MissingEnvVarError("CDN_URL");
+    }
+
+    const resourceUrl = this.cloudfrontService.getCDNUrl(key);
+    const cookies = this.cloudfrontService.createSignedCookies(
+      resourceUrl,
+      this.sessionCookieTimeout
+    );
+
+    const cookieOptions = {
+      httpOnly: true,
+      secure: true,
+      path: "/",
+      domain: `.${cdnUrl}`,
+      sameSite: "lax" as const,
+      maxAge: 60 * 60 * 1000
+    };
+
+    res.cookie("CloudFront-Expires", cookies["CloudFront-Expires"], cookieOptions);
+    res.cookie(
+      "CloudFront-Signature",
+      cookies["CloudFront-Signature"],
+      cookieOptions
+    );
+    res.cookie(
+      "CloudFront-Key-Pair-Id",
+      cookies["CloudFront-Key-Pair-Id"],
+      cookieOptions
+    );
+    if (cookies["CloudFront-Policy"]) {
+      res.cookie("CloudFront-Policy", cookies["CloudFront-Policy"], cookieOptions);
+    }
+
+    res.status(HttpStatus.OK).json({
+      resourceUrl,
+      cookies
+    });
+  }
+
+  @Get(":id/fetchContent")
+  @UseGuards(ProjectCollaboratorGuard)
+  @ApiOperation({ summary: "Fetch project's content" })
+  @ApiParam({ name: "id", type: "string" })
+  @ApiResponse({ status: 200, description: "File fetched successfully" })
+  @ApiResponse({ status: 403, description: "Forbidden" })
+  @ApiResponse({ status: 404, description: "File not found" })
+  async fetchProjectContent(@Param("id") id: string, @Res() res: Response): Promise<void> {
     try {
-      const project = await this.projectService.findOne(id);
-
-      if (!project.contentKey) {
-        throw new BadRequestException(
-          "No content uploaded for this project yet."
-        );
-      }
       const file = await this.projectService.fetchLastVersion(Number(id));
-
-      const filename = `${id}.${project.contentExtension || "bin"}`;
 
       res.set({
         "Content-Type": file.contentType,
-        "Content-Length": (file.contentLength ?? 0).toString(),
-        "Content-Disposition": `attachment; filename="${filename}"`,
-        "Cache-Control": "no-cache, no-store, must-revalidate",
-        Pragma: "no-cache",
-        Expires: "0",
-        ETag: project.contentUploadedAt
-          ? `W/"${project.contentUploadedAt.getTime()}"`
-          : undefined
+        "Content-Length": file.contentLength,
       });
 
       file.body.pipe(res);
     } catch (error) {
-      if (error instanceof S3DownloadException) {
-        this.logger.warn(
-          `S3 File not found for project ${id} (Key: ${error.key})`
-        );
-        res.status(404).json({ message: "File not found on storage server" });
-        return;
-      }
 
       if (error instanceof Error) {
-        this.logger.error(`Download failed: ${error.message}`, error.stack);
+        this.logger.error(`Failed to fetch content for project ${id}: ${error.message}`, error.stack);
       } else {
-        this.logger.error("Download failed: Unknown error");
+        this.logger.error(`Failed to fetch content for project ${id}: ${JSON.stringify(error)}`);
       }
 
-      if (!res.headersSent) {
-        res
-          .status(500)
-          .json({ message: "Internal server error during download" });
+      if (error instanceof S3DownloadException) {
+        res.status(404).json({ message: "File not found" });
+        return;
       }
+      res.status(500).json({ message: "Internal server error" });
+      return;
     }
   }
 

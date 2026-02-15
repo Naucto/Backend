@@ -18,8 +18,35 @@ export class CloudfrontService {
   private privateKey: string | null = null;
   constructor(private readonly configService: ConfigService) {}
 
+  private buildResourceUrl(
+    key: string,
+    options?: { allowWildcard?: boolean }
+  ): string {
+    const cdnUrl = this.configService.get<string>("CDN_URL");
+    if (!cdnUrl) throw new MissingEnvVarError("CDN_URL");
+
+    if (options?.allowWildcard && key === "*") {
+      return `https://${cdnUrl}/*`;
+    }
+
+    const encodedKey = key
+      .split("/")
+      .map((segment) => encodeURIComponent(segment))
+      .join("/");
+
+    return `https://${cdnUrl}/${encodedKey}`;
+  }
+
   private getPrivateKey(): string {
     if (this.privateKey) {
+      return this.privateKey;
+    }
+
+    const envPrivateKey = this.configService.get<string>(
+      "CLOUDFRONT_PRIVATE_KEY"
+    );
+    if (envPrivateKey) {
+      this.privateKey = envPrivateKey.replace(/\\n/g, "\n");
       return this.privateKey;
     }
 
@@ -65,13 +92,10 @@ export class CloudfrontService {
   }
 
   generateSignedUrl(fileKey: string): string {
-    const cdnUrl = this.configService.get<string>("CDN_URL");
     const keyPairId = this.configService.get<string>("CLOUDFRONT_KEY_PAIR_ID");
-
-    if (!cdnUrl) throw new MissingEnvVarError("CDN_URL");
     if (!keyPairId) throw new MissingEnvVarError("CLOUDFRONT_KEY_PAIR_ID");
 
-    const resourceUrl = `https://${cdnUrl}/${fileKey}`;
+    const resourceUrl = this.buildResourceUrl(fileKey);
     const privateKey = this.getPrivateKey();
 
     const signedUrl = getSignedCFUrl({
@@ -85,17 +109,13 @@ export class CloudfrontService {
   }
 
   getCDNUrl(key: string): string {
-    const cdnUrl = this.configService.get<string>("CDN_URL");
-    return `https://${cdnUrl}/${key}`;
+    return this.buildResourceUrl(key);
   }
 
   generateSignedCookies(
     expiresInSeconds: number = 86400
   ): CloudfrontSignedCookiesOutput {
-    const cdnUrl = this.configService.get<string>("CDN_URL");
     const keyPairId = this.configService.get<string>("CLOUDFRONT_KEY_PAIR_ID");
-
-    if (!cdnUrl) throw new MissingEnvVarError("CDN_URL");
     if (!keyPairId) throw new MissingEnvVarError("CLOUDFRONT_KEY_PAIR_ID");
 
     const privateKey = this.getPrivateKey();
@@ -104,7 +124,7 @@ export class CloudfrontService {
     ).toISOString();
 
     const cookies = getSignedCookies({
-      url: `https://${cdnUrl}/*`,
+      url: this.buildResourceUrl("*", { allowWildcard: true }),
       keyPairId,
       privateKey,
       dateLessThan

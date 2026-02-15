@@ -34,10 +34,13 @@ if (process.env["NODE_ENV"] === "production") {
 
   const logger = new Logger("HTTP");
   const configService = app.get(ConfigService);
-  const frontendUrl = configService.get<string>(
+  const frontendUrls = (configService.get<string>(
     "FRONTEND_URL",
-    "http://localhost:3000"
-  );
+    "http://localhost:5173,http://localhost:3000"
+  ) || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
 
   app.use(cookieParser());
   app.useLogger(["log", "error", "warn", "debug"]);
@@ -55,7 +58,7 @@ if (process.env["NODE_ENV"] === "production") {
   app.setViewEngine("ejs");
 
   app.enableCors({
-    origin: frontendUrl,
+    origin: frontendUrls.length > 0 ? frontendUrls : true,
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"]
