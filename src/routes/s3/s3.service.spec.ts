@@ -15,11 +15,19 @@ describe("S3Service", () => {
 
   beforeEach(() => {
     mockConfig = {
-      get: (key: string) =>
-        key === "S3_BUCKET_NAME" ? "my-default-bucket" : "us-east-1"
+      get: (key: string) => {
+        if (key === "S3_BUCKET_NAME") return "my-default-bucket";
+        if (key === "S3_REGION") return "fr-par";
+        if (key === "S3_ENDPOINT") return "https://s3.fr-par.scw.cloud";
+        if (key === "S3_ACCESS_KEY_ID") return "test-access-key";
+        if (key === "S3_SECRET_ACCESS_KEY") return "test-secret-key";
+        return undefined;
+      }
     };
     mockS3 = { send: jest.fn() } as unknown as S3Client & { send: jest.Mock };
-    s3Service = new S3Service(mockS3, mockConfig as ConfigService);
+    s3Service = new S3Service(mockConfig as unknown as ConfigService);
+    // Mock the S3 client on the instance
+    (s3Service as any).s3 = mockS3;
   });
 
   describe("resolveBucket", () => {
@@ -32,8 +40,17 @@ describe("S3Service", () => {
     });
 
     it("throws when no bucket", () => {
-      const emptyConfig: Pick<ConfigService, "get"> = { get: () => undefined };
-      const service = new S3Service(mockS3, emptyConfig as ConfigService);
+      const emptyConfig: Pick<ConfigService, "get"> = { 
+        get: (key: string) => {
+          if (key === "S3_ENDPOINT") return "https://s3.fr-par.scw.cloud";
+          if (key === "S3_REGION") return "fr-par";
+          if (key === "S3_ACCESS_KEY_ID") return "test-access-key";
+          if (key === "S3_SECRET_ACCESS_KEY") return "test-secret-key";
+          return undefined;
+        }
+      };
+      const service = new S3Service(emptyConfig as unknown as ConfigService);
+      (service as any).s3 = mockS3;
       expect(() => service["resolveBucket"]()).toThrow(
         BucketResolutionException
       );
@@ -59,7 +76,7 @@ describe("S3Service", () => {
     it("throws S3ListObjectsException on error", async () => {
       const err = new Error("Access Denied");
       mockS3.send.mockRejectedValueOnce(err);
-      await expect(s3Service.listObjects("bucket")).rejects.toThrow(
+      await expect(s3Service.listObjects({ bucketName: "bucket" })).rejects.toThrow(
         S3ListObjectsException
       );
     });

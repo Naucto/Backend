@@ -21,9 +21,9 @@ import {
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
-import { ProjectSave, ProjectService } from "@projects/project.service";
-import { CreateProjectDto } from "@projects/dto/create-project.dto";
-import { UpdateProjectDto } from "@projects/dto/update-project.dto";
+import { ProjectSave, ProjectService } from "@project/project.service";
+import { CreateProjectDto } from "@project/dto/create-project.dto";
+import { UpdateProjectDto } from "@project/dto/update-project.dto";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
 import {
   ProjectCollaboratorGuard,
@@ -41,7 +41,7 @@ import {
 import {
   AddCollaboratorDto,
   RemoveCollaboratorDto
-} from "@projects/dto/collaborator-project.dto";
+} from "@project/dto/collaborator-project.dto";
 import { Request } from "express";
 import { UserDto } from "@auth/dto/user.dto";
 import { Project } from "@prisma/client";

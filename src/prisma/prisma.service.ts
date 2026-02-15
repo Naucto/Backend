@@ -6,6 +6,10 @@ export class PrismaService
   extends PrismaClient
   implements OnModuleInit, OnModuleDestroy
 {
+  constructor(readonly configService: import("@nestjs/config").ConfigService) {
+    super();
+  }
+
   async onModuleInit(): Promise<void> {
     await this.$connect();
   }

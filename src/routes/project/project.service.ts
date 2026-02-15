@@ -6,7 +6,7 @@ import {
   InternalServerErrorException,
   NotFoundException
 } from "@nestjs/common";
-import { PrismaService } from "@prisma/prisma.service";
+import { PrismaService } from "@ourPrisma/prisma.service";
 import { CreateProjectDto } from "./dto/create-project.dto";
 import { UpdateProjectDto } from "./dto/update-project.dto";
 import {

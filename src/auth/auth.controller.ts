@@ -12,14 +12,18 @@ import { AuthResponseDto } from "./dto/auth-response.dto";
 import { CreateUserDto } from "@user/dto/create-user.dto";
 import { ApiOperation, ApiResponse, ApiTags, ApiBody } from "@nestjs/swagger";
 import { Response, Request } from "express";
+import { ConfigService } from "@nestjs/config";
 
 @ApiTags("auth")
 @Controller("auth")
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly configService: ConfigService
+  ) {}
 
   private setRefreshCookie(res: Response, token: string): void {
-    const nodeEnv = process.env["NODE_ENV"] ?? "development";
+    const nodeEnv = this.configService.get<string>("NODE_ENV") ?? "development";
     res.cookie("refresh_token", token, {
       httpOnly: true,
       secure: nodeEnv === "production",
@@ -137,7 +141,7 @@ export class AuthController {
     const refresh_token = req.cookies["refresh_token"];
     if (refresh_token) {
       await this.authService.revokeRefreshToken(refresh_token);
-      const nodeEnv = process.env["NODE_ENV"] ?? "development";
+      const nodeEnv = this.configService.get<string>("NODE_ENV") ?? "development";
 
       res.clearCookie("refresh_token", {
         httpOnly: true,
