@@ -23,14 +23,14 @@ describe("BucketService", () => {
 
   beforeEach(() => {
     mockS3 = {
-      send: jest.fn()
+      send: jest.fn(),
     } as unknown as S3Client & { send: jest.Mock };
 
     mockConfigService = {
       get: jest.fn((key: string) => {
         if (key === "S3_BUCKET_NAME") return undefined;
         return undefined;
-      })
+      }),
     } as unknown as ConfigService;
 
     bucketService = new BucketService(mockS3, mockConfigService);
@@ -38,20 +38,12 @@ describe("BucketService", () => {
 
   describe("resolveBucket", () => {
     it("returns provided bucket name", () => {
-      const result = (
-        bucketService as unknown as {
-          resolveBucket: (bucket: string) => string;
-        }
-      ).resolveBucket("my-bucket");
+      const result = (bucketService as any).resolveBucket("my-bucket");
       expect(result).toBe("my-bucket");
     });
 
     it("throws when no bucket provided and no default bucket", () => {
-      expect(() =>
-        (
-          bucketService as unknown as { resolveBucket: () => void }
-        ).resolveBucket()
-      ).toThrow(BucketResolutionException);
+      expect(() => (bucketService as any).resolveBucket()).toThrow(BucketResolutionException);
     });
   });
 
@@ -77,9 +69,7 @@ describe("BucketService", () => {
       const err = new Error("Access denied");
       mockS3.send.mockRejectedValueOnce(err);
 
-      await expect(bucketService.listBuckets()).rejects.toThrow(
-        S3ListBucketsException
-      );
+      await expect(bucketService.listBuckets()).rejects.toThrow(S3ListBucketsException);
     });
 
     it("throws S3ListBucketsException on unknown error", async () => {
@@ -100,9 +90,7 @@ describe("BucketService", () => {
 
     it("throws S3DeleteBucketException on error", async () => {
       mockS3.send.mockRejectedValueOnce(new Error("fail"));
-      await expect(bucketService.deleteBucket("my-bucket")).rejects.toThrow(
-        S3DeleteBucketException
-      );
+      await expect(bucketService.deleteBucket("my-bucket")).rejects.toThrow(S3DeleteBucketException);
     });
   });
 
@@ -115,19 +103,16 @@ describe("BucketService", () => {
 
     it("throws S3CreateBucketException on error", async () => {
       mockS3.send.mockRejectedValueOnce(new Error("fail"));
-      await expect(bucketService.createBucket("my-bucket")).rejects.toThrow(
-        S3CreateBucketException
-      );
+      await expect(bucketService.createBucket("my-bucket")).rejects.toThrow(S3CreateBucketException);
     });
   });
 
   describe("generateBucketPolicy", () => {
     it("generates default policy", () => {
-      const [statement] =
-        bucketService.generateBucketPolicy("my-bucket").Statement;
+      const [statement] = bucketService.generateBucketPolicy("my-bucket").Statement;
       if (!statement) throw new Error("Statement is undefined");
 
-      expect(statement.Resource).toBe("arn:aws:s3:::my-bucket/*");
+      expect(statement.Resource).toBe("arn:scw:s3:::my-bucket/*");
       expect(statement.Effect).toBe("Allow");
       expect(statement.Principal).toBe("*");
       expect(statement.Action).toEqual(["s3:GetObject"]);
@@ -144,12 +129,12 @@ describe("BucketService", () => {
 
       if (!statement) throw new Error("Statement is undefined");
       expect(statement.Effect).toBe("Deny");
-      expect(statement.Principal).toEqual({ AWS: "123" });
-      expect(statement.Resource).toBe("arn:aws:s3:::my-bucket/prefix/*");
+      expect(statement.Principal).toEqual({ SCW: "123" });
+      expect(statement.Resource).toBe("arn:scw:s3:::my-bucket/prefix/*");
       expect(statement.Action).toEqual(["s3:PutObject"]);
     });
   });
-
+  
   describe("applyBucketPolicy", () => {
     it("applies a bucket policy (object)", async () => {
       mockS3.send.mockResolvedValueOnce({});
@@ -157,9 +142,7 @@ describe("BucketService", () => {
 
       await bucketService.applyBucketPolicy(policy, "my-bucket");
 
-      expect(mockS3.send).toHaveBeenCalledWith(
-        expect.any(PutBucketPolicyCommand)
-      );
+      expect(mockS3.send).toHaveBeenCalledWith(expect.any(PutBucketPolicyCommand));
     });
 
     it("throws S3ApplyPolicyException on error", async () => {
@@ -174,18 +157,11 @@ describe("BucketService", () => {
     it("applies a bucket policy passed as a string", async () => {
       mockS3.send.mockResolvedValueOnce({});
 
-      const policyString = JSON.stringify(
-        bucketService.generateBucketPolicy("my-bucket")
-      );
+      const policyString = JSON.stringify(bucketService.generateBucketPolicy("my-bucket"));
 
-      await bucketService.applyBucketPolicy(
-        policyString as unknown as BucketPolicy,
-        "my-bucket"
-      );
+      await bucketService.applyBucketPolicy(policyString as unknown as BucketPolicy, "my-bucket");
 
-      expect(mockS3.send).toHaveBeenCalledWith(
-        expect.any(PutBucketPolicyCommand)
-      );
+      expect(mockS3.send).toHaveBeenCalledWith(expect.any(PutBucketPolicyCommand));
     });
   });
 });
