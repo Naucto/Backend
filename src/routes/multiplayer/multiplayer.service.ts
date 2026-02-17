@@ -38,7 +38,7 @@ export class MultiplayerService {
         break;
 
       case GameSessionVisibility.FRIENDS_ONLY:
-        // FIXME: Check if otherUsers
+        // FIXME: Check if otherUsers contains at least userId in their friend list
         // gameSession.otherUsers.some(otherUser => userService.areFriends(userId, otherUserId));
         void userId;
         break;

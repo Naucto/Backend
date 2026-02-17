@@ -47,7 +47,7 @@ import { UserDto } from "@auth/dto/user.dto";
 import { Project } from "@prisma/client";
 import {
   ProjectResponseDto,
-  ProjectWithRelationsResponseDto
+  ProjectExResponseDto
 } from "./dto/project-response.dto";
 import { S3DownloadException } from "@s3/s3.error";
 import { S3Service } from "@s3/s3.service";
@@ -139,7 +139,7 @@ export class ProjectController {
     status: 200,
     description:
       "A JSON array of projects with collaborators and creator information",
-    type: [ProjectWithRelationsResponseDto]
+    type: [ProjectExResponseDto]
   })
   @ApiResponse({ status: 500, description: "Internal server error" })
   async findAll(@Req() request: RequestWithUser): Promise<Project[]> {
@@ -248,7 +248,7 @@ export class ProjectController {
   @ApiResponse({
     status: 200,
     description: "Updated project object with collaborators",
-    type: ProjectWithRelationsResponseDto
+    type: ProjectExResponseDto
   })
   @ApiResponse({
     status: 400,
@@ -303,7 +303,7 @@ export class ProjectController {
   @ApiResponse({
     status: 200,
     description: "Updated project object with collaborators",
-    type: ProjectWithRelationsResponseDto
+    type: ProjectExResponseDto
   })
   @ApiResponse({
     status: 400,
