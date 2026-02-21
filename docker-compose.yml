@@ -18,9 +18,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: prod
       args:
         - BACKEND_PORT=${BACKEND_PORT}
-
         - POSTGRES_USER=${POSTGRES_USER}
         - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
         - POSTGRES_DB=${POSTGRES_DB}
@@ -33,9 +33,24 @@ services:
       - .env
     ports:
       - "${BACKEND_PORT}:3000"
-    volumes:
-      - .:/app
     restart: on-failure
+    develop:
+      watch:
+        - action: sync
+          path: ./src
+          target: /app/src
+
+        - action: sync
+          path: ./prisma
+          target: /app/prisma
+          ignore:
+            - prisma/migrations
+
+        - action: rebuild
+          path: package.json
+
+        - action: rebuild
+          path: prisma/schema.prisma
 
 volumes:
   db-data:

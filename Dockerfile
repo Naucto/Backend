@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:20-alpine AS base
 
 ARG BACKEND_PORT=3000
 ARG POSTGRES_HOST
@@ -18,7 +18,14 @@ COPY prisma ./prisma
 
 RUN npm install
 RUN npx prisma generate
-COPY . .
 
+FROM base AS dev
 ENV PORT=${BACKEND_PORT}
-CMD ["sh", "-c", "npx prisma migrate deploy && npm run start"]
+COPY . .
+CMD ["sh", "-c", "npx prisma migrate deploy && npm run start:dev"]
+
+FROM base AS prod
+COPY . .
+RUN npm run build
+ENV PORT=${BACKEND_PORT}
+CMD ["sh", "-c", "npx prisma migrate deploy && node --openssl-legacy-provider dist/main"]
