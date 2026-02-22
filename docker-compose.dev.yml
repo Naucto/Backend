@@ -1,4 +1,14 @@
+networks:
+  naucto-dev:
+    driver: bridge
+
 services:
+  db:
+    networks:
+      - naucto-dev
+
   backend:
     build:
       target: dev
+    networks:
+      - naucto-dev
