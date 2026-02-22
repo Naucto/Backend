@@ -31,4 +31,4 @@ FROM base AS prod
 COPY . .
 RUN npm run build
 ENV PORT=${BACKEND_PORT}
-CMD ["sh", "-c", "npx prisma migrate deploy && node --openssl-legacy-provider dist/main"]
+CMD ["sh", "-c", "npx prisma migrate deploy && npm run start:prod"]
