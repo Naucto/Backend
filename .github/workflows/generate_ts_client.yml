@@ -37,7 +37,7 @@ jobs:
       - name: Zip API client
         run: |
           mkdir -p artifacts
-          zip -r artifacts/api_ts_client_$(date +"%Y%m%d_%H%M%S").zip ./generated-client
+          zip -r artifacts/api_ts_client_$(date +"%Y%m%d_%H%M%S").zip ./generated_client
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
