@@ -25,6 +25,7 @@ model User {
   hostingSession WorkSession[] @relation("WorkSessionHost")
 
   refreshTokens RefreshToken[]
+  notifications Notification[]
 }
 
 model Role {

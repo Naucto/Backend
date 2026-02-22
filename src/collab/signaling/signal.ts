@@ -124,7 +124,11 @@ export const setupWebSocketServer = (server: http.Server) => {
   wss.on("connection", onConnection);
 
   server.on("upgrade", (request, socket, head) => {
-    const handleAuth = (ws: WebSocket) => {
+    const url = request.url ?? "";
+    if (!url.startsWith("/socket/webrtc")) {
+      return;
+    }
+    const handleAuth = (ws: WebSocket) : void => {
       wss.emit("connection", ws, request);
     };
     wss.handleUpgrade(request, socket, head, handleAuth);
