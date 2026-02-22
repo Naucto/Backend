@@ -1,3 +1,6 @@
+import { ApiProperty } from "@nestjs/swagger";
+
 export class LeaveHostRequestDto {
-  sessionUuid!: string;
+  @ApiProperty()
+    sessionUuid!: string;
 };
