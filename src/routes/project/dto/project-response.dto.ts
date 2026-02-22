@@ -109,7 +109,7 @@ export class ProjectResponseDto {
   likes!: number;
 }
 
-export class ProjectWithRelationsResponseDto extends ProjectResponseDto {
+export class ProjectExResponseDto extends ProjectResponseDto {
   @ApiProperty({
     description: "The users collaborating on this project",
     type: [UserBasicInfoDto]

@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import { PrismaService } from "@prisma/prisma.service";
+import { PrismaService } from "@ourPrisma/prisma.service";
 import { CreateWorkSessionDto } from "./dto/create-work-session.dto";
 import { UpdateWorkSessionDto } from "./dto/update-work-session.dto";
 import { uuidv4 } from "lib0/random";

@@ -1,13 +1,15 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { ProjectService } from "./project.service";
 import { S3Service } from "@s3/s3.service";
-import { PrismaService } from "@prisma/prisma.service";
+import { PrismaService } from "@ourPrisma/prisma.service";
+import { ConfigService } from "@nestjs/config";
 import {
   BadRequestException,
   ForbiddenException,
   InternalServerErrorException,
   NotFoundException
 } from "@nestjs/common";
+
 import { CREATOR_SELECT, COLLABORATOR_SELECT } from "./project.service";
 import { ProjectStatus, MonetizationType, Prisma } from "@prisma/client";
 
@@ -37,6 +39,9 @@ const mockProjects: ProjectWithCreatorAndCollaborators[] = [
     uniquePlayers: 0,
     activePlayers: 0,
     likes: 0,
+    contentKey: "keyA",
+    contentExtension: ".zip",
+    contentUploadedAt: new Date(),
     creator: {
       id: 42,
       email: "creator@example.com",
@@ -64,6 +69,9 @@ const mockProjects: ProjectWithCreatorAndCollaborators[] = [
     uniquePlayers: 10897,
     activePlayers: 600,
     likes: 187,
+    contentKey: "keyB",
+    contentExtension: ".zip",
+    contentUploadedAt: new Date(),
     creator: {
       id: 42,
       email: "creator@example.com",
@@ -100,7 +108,18 @@ describe("ProjectService", () => {
   };
 
   const s3ServiceMock = {
-    deleteFile: jest.fn()
+    deleteFile: jest.fn(),
+    listObjects: jest.fn(),
+    deleteFiles: jest.fn()
+  };
+
+  const configServiceMock = {
+    get: jest.fn((key: string) => {
+      if (key === "S3_MAX_AUTO_HISTORY_VERSION") return "5";
+      if (key === "S3_AUTO_HISTORY_DELAY") return "10";
+      if (key === "S3_MAX_CHECKPOINTS") return "5";
+      return undefined;
+    })
   };
 
   beforeEach(async () => {
@@ -114,6 +133,10 @@ describe("ProjectService", () => {
         {
           provide: S3Service,
           useValue: s3ServiceMock
+        },
+        {
+          provide: ConfigService,
+          useValue: configServiceMock
         }
       ]
     }).compile();
@@ -160,7 +183,23 @@ describe("ProjectService", () => {
       const result = await service.findOne(projectId);
 
       expect(prismaMock.project.findUnique).toHaveBeenCalledWith({
-        where: { id: projectId }
+        where: { id: projectId },
+        include: {
+          creator: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
+          },
+          collaborators: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
+          }
+        }
       });
       expect(result).toEqual(mockProjects[0]);
     });
@@ -175,7 +214,23 @@ describe("ProjectService", () => {
       );
 
       expect(prismaMock.project.findUnique).toHaveBeenCalledWith({
-        where: { id: projectId }
+        where: { id: projectId },
+        include: {
+          creator: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
+          },
+          collaborators: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
+          }
+        }
       });
     });
   });
@@ -274,7 +329,23 @@ describe("ProjectService", () => {
       const result = await service.update(projectId, updateDto);
 
       expect(prismaMock.project.findUnique).toHaveBeenCalledWith({
-        where: { id: projectId }
+        where: { id: projectId },
+        include: {
+          creator: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
+          },
+          collaborators: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
+          }
+        }
       });
       expect(prismaMock.project.update).toHaveBeenCalledWith({
         where: { id: projectId },
@@ -302,15 +373,33 @@ describe("ProjectService", () => {
       prismaMock.project.findUnique.mockResolvedValue(mockProjects[0]);
       prismaMock.project.delete.mockResolvedValue(mockProjects[0]);
       s3ServiceMock.deleteFile.mockResolvedValue(undefined);
+      s3ServiceMock.listObjects.mockResolvedValue([]);
+      s3ServiceMock.deleteFiles.mockResolvedValue(undefined);
 
       await service.remove(projectId);
 
       expect(prismaMock.project.findUnique).toHaveBeenCalledWith({
-        where: { id: projectId }
+        where: { id: projectId },
+        include: {
+          creator: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
+          },
+          collaborators: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
+          }
+        }
       });
-      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith(
-        projectId.toString()
-      );
+      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({
+        key: `release/${projectId}`
+      });
       expect(prismaMock.project.delete).toHaveBeenCalledWith({
         where: { id: projectId }
       });
@@ -355,11 +444,27 @@ describe("ProjectService", () => {
       );
 
       expect(prismaMock.project.findUnique).toHaveBeenCalledWith({
-        where: { id: projectId }
+        where: { id: projectId },
+        include: {
+          creator: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
+          },
+          collaborators: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
+          }
+        }
       });
-      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith(
-        projectId.toString()
-      );
+      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({
+        key: `release/${projectId}`
+      });
     });
   });
 
@@ -381,7 +486,22 @@ describe("ProjectService", () => {
       });
       expect(prismaMock.project.findUnique).toHaveBeenCalledWith({
         where: { id: 1 },
-        include: { collaborators: true }
+        include: {
+          creator: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
+          },
+          collaborators: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
+          }
+        }
       });
       expect(prismaMock.project.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -425,7 +545,6 @@ describe("ProjectService", () => {
 
   describe("removeCollaborator", () => {
     const removeDto = { userId: 2 };
-    const initiator = 1;
 
     it("should remove collaborator successfully", async () => {
       prismaMock.user.findUnique.mockResolvedValue({ id: 2 });
@@ -435,14 +554,29 @@ describe("ProjectService", () => {
       });
       prismaMock.project.update.mockResolvedValue(mockProjects[0]);
 
-      const result = await service.removeCollaborator(1, initiator, removeDto);
+      const result = await service.removeCollaborator(1, removeDto);
 
       expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
         where: { id: removeDto.userId }
       });
       expect(prismaMock.project.findUnique).toHaveBeenCalledWith({
         where: { id: 1 },
-        include: { collaborators: true }
+        include: {
+          creator: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
+          },
+          collaborators: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
+          }
+        }
       });
       expect(prismaMock.project.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -458,7 +592,7 @@ describe("ProjectService", () => {
       prismaMock.user.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.removeCollaborator(1, initiator, removeDto)
+        service.removeCollaborator(1, removeDto)
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -467,19 +601,20 @@ describe("ProjectService", () => {
       prismaMock.project.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.removeCollaborator(1, initiator, removeDto)
+        service.removeCollaborator(1, removeDto)
       ).rejects.toThrow(NotFoundException);
     });
 
     it("should throw ForbiddenException if trying to remove creator", async () => {
-      prismaMock.user.findUnique.mockResolvedValue({ id: initiator });
+      const creatorId = (mockProjects && mockProjects[0]) ? mockProjects[0].userId : 1;
+      prismaMock.user.findUnique.mockResolvedValue({ id: creatorId });
       prismaMock.project.findUnique.mockResolvedValue({
         ...mockProjects[0],
-        collaborators: [{ id: initiator }]
+        collaborators: [{ id: creatorId }]
       });
 
       await expect(
-        service.removeCollaborator(1, initiator, { userId: initiator })
+        service.removeCollaborator(1, { userId: creatorId })
       ).rejects.toThrow(ForbiddenException);
     });
 
@@ -491,7 +626,7 @@ describe("ProjectService", () => {
       });
 
       await expect(
-        service.removeCollaborator(1, initiator, removeDto)
+        service.removeCollaborator(1, removeDto)
       ).rejects.toThrow(BadRequestException);
     });
   });

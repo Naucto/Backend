@@ -13,7 +13,7 @@ const config: Config = {
   testRegex: ".*\\.spec\\.ts$",
   moduleNameMapper: pathsToModuleNameMapper(compilerOptions.paths || {}, {
     prefix: "<rootDir>/",
-  }),
+  }) || {},
   transform: {
     "^.+\\.(t|j)s$": [
       "ts-jest",

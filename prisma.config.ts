@@ -1,5 +1,5 @@
 import path from "node:path";
-import { defineConfig, env } from "prisma/config";
+import { defineConfig } from "prisma/config";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -8,13 +8,9 @@ export default defineConfig({
   migrations: { 
     path: path.join("prisma", "migrations"),
   },
-  views: { 
-    path: path.join("db", "views"),
-  },
-  typedSql: { 
-    path: path.join("db", "queries"),
-  },
   datasource: { 
-    url: env("DATABASE_URL") 
+    // ?? "" -> so that we can launch Prsima without necessarily setting up the DATABASE_URL connx.
+    url: process.env.DATABASE_URL ?? ""
   }
 });
+
