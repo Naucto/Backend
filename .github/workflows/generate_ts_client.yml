@@ -1,0 +1,45 @@
+name: Generate TypeScript client for the frontend
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  generate_ts_client:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 25
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Generate Swagger JSON
+        run: npm run generate:swagger
+
+      - name: Generate TypeScript client
+        run: npx openapi-typescript swagger.json -o generated-client/api.ts
+
+      - name: Zip API client
+        run: |
+          mkdir -p artifacts
+          zip -r artifacts/api_ts_client_$(date +"%Y%m%d_%H%M%S").zip ./generated-client
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-client-artifacts
+          path: artifacts/api_ts_client_*.zip
+
