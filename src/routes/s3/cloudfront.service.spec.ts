@@ -121,14 +121,14 @@ describe("CloudfrontService", () => {
     beforeEach(() => {
       (configService.get as jest.Mock).mockImplementation((key: string) => {
         switch (key) {
-          case "CDN_URL":
-            return "cdn.example.com";
-          case "CLOUDFRONT_KEY_PAIR_ID":
-            return "KEYPAIRID";
-          case "CLOUDFRONT_PRIVATE_KEY_PATH":
-            return "/fake/path.pem";
-          default:
-            return undefined;
+        case "CDN_URL":
+          return "cdn.example.com";
+        case "CLOUDFRONT_KEY_PAIR_ID":
+          return "KEYPAIRID";
+        case "CLOUDFRONT_PRIVATE_KEY_PATH":
+          return "/fake/path.pem";
+        default:
+          return undefined;
         }
       });
 
