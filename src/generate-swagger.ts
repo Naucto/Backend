@@ -10,8 +10,8 @@ process.env["FRONTEND_URL"] = "http://localhost:3000";
 
   try {
     const { NestFactory } = await import("@nestjs/core");
-    const { SwaggerAppModule: AppModule } = await import("src/swagger-app.module");
-    const { buildSwaggerDocument } = await import("src/swagger");
+    const { SwaggerAppModule: AppModule } = await import("./swagger-app.module");
+    const { buildSwaggerDocument } = await import("./swagger");
     const fs = await import("fs");
 
     const app = await NestFactory.create(AppModule, { logger: false });
