@@ -36,7 +36,7 @@ if (process.env["NODE_ENV"] === "production") {
   const configService = app.get(ConfigService);
   const frontendUrl = configService.get<string>(
     "FRONTEND_URL",
-    "http://localhost:3000"
+    "http://localhost:3001"
   );
 
   app.use(cookieParser());
