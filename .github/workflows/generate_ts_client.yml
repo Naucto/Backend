@@ -32,7 +32,7 @@ jobs:
         run: npm run generate:swagger
 
       - name: Generate TypeScript client
-        run: npx openapi-typescript swagger.json -o generated-client/api.ts
+        run: npm run generate:client
 
       - name: Zip API client
         run: |

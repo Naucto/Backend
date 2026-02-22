@@ -8,6 +8,7 @@
     "scripts": {
         "build": "nest build",
         "generate:swagger": "ts-node -r tsconfig-paths/register src/generate-swagger.ts",
+        "generate:client": "npx openapi-typescript-codegen --input swagger.json --output generated-client --client axios",
         "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
         "start": "npm run build && node --openssl-legacy-provider dist/main",
         "start:dev": "NODE_OPTIONS='--openssl-legacy-provider' tsx watch src/main.ts",
@@ -76,6 +77,7 @@
         "jest": "^30.2.0",
         "nest": "^0.1.6",
         "npm-check-updates": "^19.3.1",
+        "openapi-typescript-codegen": "^0.30.0",
         "prettier": "^3.8.1",
         "prisma": "^7.3.0",
         "supertest": "^7.2.2",
