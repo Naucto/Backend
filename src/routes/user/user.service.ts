@@ -6,7 +6,7 @@ import { User, Prisma } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
 
 import { Role } from "@prisma/client";
-import { UserNotFoundError } from "./user.error";
+import { UserNotFoundError, UserGameSessionNotFoundError } from "./user.error";
 
 @Injectable()
 export class UserService {
@@ -137,7 +137,7 @@ export class UserService {
       throw new UserGameSessionNotFoundError("Game session not found");
     }
 
-    this.prisma.user.update({
+    await this.prisma.user.update({
       where: { id: userId },
       data: {
         [hosted ? "hostedGameSessions" : "joinedGameSessions"]: {
@@ -155,10 +155,10 @@ export class UserService {
 
     const gameSession = await this.prisma.gameSession.findUnique({ where: { id: gameSessionId } });
     if (!gameSession) {
-      throw new MultiplayerGameSessionNotFoundError("Game session not found");
+      throw new UserGameSessionNotFoundError("Game session not found");
     }
 
-    this.prisma.user.update({
+    await this.prisma.user.update({
       where: { id: userId },
       data: {
         [hosted ? "hostedGameSessions" : "joinedGameSessions"]: {

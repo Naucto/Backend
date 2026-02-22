@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import * as fs from "fs";
 import {
@@ -16,7 +16,7 @@ import { CloudFrontPrivateKeyException } from "./s3.error";
 export class CloudfrontService {
   private readonly logger = new Logger(CloudfrontService.name);
   private privateKey: string | null = null;
-  constructor(private readonly configService: ConfigService) {}
+  constructor(@Inject(ConfigService) private readonly configService: ConfigService) {}
 
   private getPrivateKey(): string {
     if (this.privateKey) {

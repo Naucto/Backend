@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { WebRTCOfferDto, WebRTCOfferPeerICEServerConfig } from "./webrtc.dto";
 import { IsArray, IsInt, IsOptional, IsString, IsUrl, validateSync } from "class-validator";
 import { plainToInstance } from "class-transformer";
@@ -7,7 +7,6 @@ import { AppConfig } from "src/app.config";
 
 import path from "path";
 import fs from "fs/promises";
-import fetch from "node-fetch";
 
 class WebRTCServiceConfigRelay {
   @IsUrl()
@@ -33,44 +32,63 @@ type IpifyResponse = {
 };
 
 @Injectable()
-export class WebRTCService {
+export class WebRTCService implements OnModuleInit {
   private readonly logger = new Logger(WebRTCService.name);
 
   private config?: WebRTCServiceConfig;
   private publicAddress?: string;
 
-  constructor(private readonly appConfig: AppConfig) {
-    fetch("https://api.ipify.org?format=json")
-      .then(res => res.json() as Promise<IpifyResponse>)
-      .then(data => this.publicAddress = data.ip)
-      .catch(err => {
-        this.logger.error(`Failed to fetch public IP address for WebRTC service: ${err.message}`);
-        this.logger.error(err);
-      });
+  constructor(private readonly appConfig: AppConfig) {}
 
+  async onModuleInit(): Promise<void> {
+    await Promise.all([
+      this.fetchPublicAddress(),
+      this.loadConfig(),
+    ]);
+  }
+
+  private async fetchPublicAddress(): Promise<void> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+
+    try {
+      const res = await fetch("https://api.ipify.org?format=json", { signal: controller.signal });
+      const data = await res.json() as IpifyResponse;
+      this.publicAddress = data.ip;
+    } catch (err) {
+      if (err instanceof Error) {
+        this.logger.error(`Failed to fetch public IP address for WebRTC service: ${err.message}`);
+      }
+      this.logger.error(err);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private async loadConfig(): Promise<void> {
     const configPath = path.resolve(process.cwd(), "config", "webrtc.json");
 
-    fs.readFile(configPath, "utf-8")
-      .then(rawFile => {
-        const parsedRawObject = JSON.parse(rawFile);
+    try {
+      const rawFile = await fs.readFile(configPath, "utf-8");
+      const parsedRawObject = JSON.parse(rawFile);
 
-        const configInstance = plainToInstance(WebRTCServiceConfig, parsedRawObject);
-        const configErrors = validateSync(configInstance, { whitelist: true, forbidNonWhitelisted: true });
+      const configInstance = plainToInstance(WebRTCServiceConfig, parsedRawObject);
+      const configErrors = validateSync(configInstance, { whitelist: true, forbidNonWhitelisted: true });
 
-        if (configErrors.length > 0) {
-          this.logger.error(`Invalid WebRTC service config in ${configPath}`);
-          this.logger.error(JSON.stringify(configErrors));
+      if (configErrors.length > 0) {
+        this.logger.error(`Invalid WebRTC service config in ${configPath}`);
+        this.logger.error(JSON.stringify(configErrors));
+        return;
+      }
 
-          return;
-        }
-
-        this.config = configInstance;
-        this.logger.log(`WebRTC service config loaded successfully from ${configPath}`);
-      })
-      .catch(err => {
+      this.config = configInstance;
+      this.logger.log(`WebRTC service config loaded successfully from ${configPath}`);
+    } catch (err) {
+      if (err instanceof Error) {
         this.logger.error(`Failed to read WebRTC service config from ${configPath}: ${err.message}`);
-        this.logger.error(err);
-      });
+      }
+      this.logger.error(err);
+    }
   }
 
   buildOffer(): WebRTCOfferDto {

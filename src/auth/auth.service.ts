@@ -1,7 +1,8 @@
 import {
   Injectable,
   ConflictException,
-  UnauthorizedException
+  UnauthorizedException,
+  Inject
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { UserService } from "@user/user.service";
@@ -22,7 +23,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly googleAuthService: GoogleAuthService,
     private readonly prisma: PrismaService,
-    private readonly configService: ConfigService
+    @Inject(ConfigService) private readonly configService: ConfigService
   ) {}
 
   async generateTokens(

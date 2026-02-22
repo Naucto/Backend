@@ -4,7 +4,8 @@ import {
   Body,
   Req,
   Res,
-  UnauthorizedException
+  UnauthorizedException,
+  Inject
 } from "@nestjs/common";
 import { AuthService } from "./auth.service";
 import { LoginDto } from "./dto/login.dto";
@@ -19,7 +20,7 @@ import { ConfigService } from "@nestjs/config";
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
-    private readonly configService: ConfigService
+    @Inject(ConfigService) private readonly configService: ConfigService
   ) {}
 
   private setRefreshCookie(res: Response, token: string): void {
