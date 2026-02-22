@@ -5,7 +5,7 @@ export class MultiplayerError extends Error {
   }
 }
 
-export class MultiplayerInvalidStateError extends Error {
+export class MultiplayerInvalidStateError extends MultiplayerError {
   constructor(message: string) {
     super(message);
     this.name = this.constructor.name;

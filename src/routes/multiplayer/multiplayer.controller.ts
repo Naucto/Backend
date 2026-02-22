@@ -13,6 +13,7 @@ import {
   NotFoundException,
   Patch,
   Post,
+  Req,
   UseGuards
 } from "@nestjs/common";
 import { GameSession } from "@prisma/client";
@@ -59,7 +60,10 @@ export class MultiplayerController {
     status: HttpStatus.INTERNAL_SERVER_ERROR,
     description: "Unhandled server error."
   })
-  async lookupHosts(requestCtx: RequestWithUser, @Body() request: { projectId: number }): Promise<LookupHostsResponseDto>
+  async lookupHosts(
+    @Req() requestCtx: RequestWithUser,
+    @Body() request: { projectId: number }
+  ): Promise<LookupHostsResponseDto>
   {
     let hosts: GameSessionEx[];
 
@@ -106,7 +110,10 @@ export class MultiplayerController {
     status: HttpStatus.BAD_REQUEST,
     description: "The user is already hosting a game session for this project."
   })
-  async openHost(requestCtx: RequestWithUser, @Body() request: OpenHostRequestDto): Promise<OpenHostResponseDto>
+  async openHost(
+    @Req() requestCtx: RequestWithUser,
+    @Body() request: OpenHostRequestDto
+  ): Promise<OpenHostResponseDto>
   {
     let gameSession: GameSession;
 
@@ -144,7 +151,10 @@ export class MultiplayerController {
     status: HttpStatus.NOT_FOUND,
     description: "The user, project, or game session was not found."
   })
-  async closeHost(requestCtx: RequestWithUser, @Body() request: CloseHostRequestDto): Promise<void> {
+  async closeHost(
+    @Req() requestCtx: RequestWithUser,
+    @Body() request: CloseHostRequestDto
+  ): Promise<void> {
     try {
       await this.multiplayerService.closeHost(requestCtx.user.id, request.projectId);
     } catch (error) {
@@ -178,7 +188,10 @@ export class MultiplayerController {
     status: HttpStatus.BAD_REQUEST,
     description: "User is already in the session or is the host."
   })
-  async joinHost(requestCtx: RequestWithUser, @Body() request: JoinHostRequestDto): Promise<JoinHostResponseDto> {
+  async joinHost(
+    @Req() requestCtx: RequestWithUser,
+    @Body() request: JoinHostRequestDto
+  ): Promise<JoinHostResponseDto> {
     try {
       await this.multiplayerService.joinHost(requestCtx.user.id, request.sessionUuid);
     } catch (error) {
@@ -216,7 +229,10 @@ export class MultiplayerController {
     status: HttpStatus.BAD_REQUEST,
     description: "User is not part of the session or is the host."
   })
-  async leaveHost(requestCtx: RequestWithUser, @Body() request: LeaveHostRequestDto): Promise<void> {
+  async leaveHost(
+    @Req() requestCtx: RequestWithUser,
+    @Body() request: LeaveHostRequestDto
+  ): Promise<void> {
     try {
       await this.multiplayerService.leaveHost(requestCtx.user.id, request.sessionUuid);
     } catch (error) {

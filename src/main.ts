@@ -12,24 +12,21 @@ import { setupWebSocketServer } from "@webrtc/signal";
 import { Logger } from "@nestjs/common";
 import express, { Request, Response, NextFunction } from "express";
 import { ConfigService } from "@nestjs/config";
-import * as path from "path";
+
+//import * as path from "path";
 import * as dotenv from "dotenv";
 import * as http from "http";
 import cookieParser from "cookie-parser";
 
-// NOTE: dotenv must load before ConfigService is available
 if (process.env["NODE_ENV"] === "production") {
   dotenv.config({ path: ".env.production" });
 } else {
   dotenv.config();
 }
-// After this, use configService.get('NODE_ENV') elsewhere
 
 (async () => {
   const expressApp = express();
-
   const server = http.createServer(expressApp);
-
   const app = await NestFactory.create<NestExpressApplication>(
     AppModule,
     new ExpressAdapter(expressApp)
@@ -53,9 +50,9 @@ if (process.env["NODE_ENV"] === "production") {
     })
   );
 
-  app.useStaticAssets(path.join(__dirname, "..", "public"));
-  app.setBaseViewsDir(path.join(__dirname, "..", "views"));
-  app.setViewEngine("ejs");
+  //app.useStaticAssets(path.join(__dirname, "..", "public"));
+  //app.setBaseViewsDir(path.join(__dirname, "..", "views"));
+  //app.setViewEngine("ejs");
 
   app.enableCors({
     origin: frontendUrl,
@@ -77,11 +74,11 @@ if (process.env["NODE_ENV"] === "production") {
 
     next();
   });
+
   setupSwagger(app);
+  setupWebSocketServer(server);
 
   await app.init();
-
-  setupWebSocketServer(server);
 
   const PORT = configService.get<number>("PORT") || 3000;
 

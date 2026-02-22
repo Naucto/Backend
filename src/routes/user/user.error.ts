@@ -11,3 +11,10 @@ export class UserNotFoundError extends Error {
     this.name = this.constructor.name;
   }
 };
+
+export class UserGameSessionNotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = this.constructor.name;
+  }
+};
