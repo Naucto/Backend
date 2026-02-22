@@ -1,8 +1,10 @@
 name: Generate TypeScript client for the frontend
 
 on:
-  workflow_dispatch:
   push:
+    branches:
+      - main
+  pull_request:
     branches:
       - main
 
