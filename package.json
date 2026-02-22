@@ -11,7 +11,7 @@
         "generate:client": "npx openapi-typescript-codegen --input swagger.json --output generated_client --client axios",
         "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
         "start": "npm run build && node --openssl-legacy-provider dist/main",
-        "start:dev": "NODE_OPTIONS='--openssl-legacy-provider' tsx watch src/main.ts",
+        "start:dev": "NODE_OPTIONS='--openssl-legacy-provider' node --watch -r ts-node/register -r tsconfig-paths/register src/main.ts",
         "start:debug": "nest start --debug --watch --exec \"node --openssl-legacy-provider\"",
         "start:prod": "node --openssl-legacy-provider dist/main",
         "clean": "find ./src -type f \\( -name '*.js' -o -name '*.js.map' -o -name '*.d.ts' -o -name '*.d.ts.map' \\) -delete",
