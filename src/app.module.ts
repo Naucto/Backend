@@ -8,6 +8,7 @@ import { PrismaModule } from "@prisma/prisma.module";
 import { AuthModule } from "@auth/auth.module";
 import { ScheduleModule } from "@nestjs/schedule";
 import { TasksModule } from "./tasks/tasks.module";
+import { NotificationsModule } from "./notifications/notifications.module";
 
 @Module({
   imports: [
@@ -19,7 +20,8 @@ import { TasksModule } from "./tasks/tasks.module";
     UserModule,
     ProjectModule,
     WorkSessionModule,
-    TasksModule
+    TasksModule,
+    NotificationsModule,
   ]
 })
 export class AppModule {}

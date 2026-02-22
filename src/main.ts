@@ -15,6 +15,8 @@ import * as path from "path";
 import * as dotenv from "dotenv";
 import * as http from "http";
 import cookieParser from "cookie-parser";
+import { NotificationsService } from "./notifications/notifications.service";
+import { setupNotificationSocket } from "./notifications/notifications.socket";
 
 if (process.env["NODE_ENV"] === "production") {
   dotenv.config({ path: ".env.production" });
@@ -78,8 +80,14 @@ if (process.env["NODE_ENV"] === "production") {
 
   await app.init();
 
-  setupWebSocketServer(server);
+  const notificationsService = app.get(NotificationsService);
+  const jwtSecret = configService.getOrThrow<string>("JWT_SECRET");
 
+  setupWebSocketServer(server);
+  setupNotificationSocket(server, {
+    notificationsService,
+    jwtSecret,
+  });
   const PORT = process.env["PORT"] || 3000;
   server.listen(PORT, () => {
     logger.log(`Server listening on port ${PORT}`);
