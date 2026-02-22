@@ -1,6 +1,8 @@
 networks:
   naucto-dev:
     driver: bridge
+    name: naucto-dev
+    attachable: true
 
 services:
   db:
