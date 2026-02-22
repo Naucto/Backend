@@ -14,6 +14,7 @@ RUN apk add --no-cache python3 make g++
 ENV DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}"
 
 COPY package.json ./
+COPY prisma.config.ts ./
 COPY prisma ./prisma
 
 RUN npm install
