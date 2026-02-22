@@ -5,3 +5,5 @@
 esling.config.js
 README.md
 license.txt
+dist
+node_modules
