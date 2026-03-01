@@ -34,10 +34,16 @@ if (process.env["NODE_ENV"] === "production") {
 
   const logger = new Logger("HTTP");
   const configService = app.get(ConfigService);
-  const frontendUrl = configService.get<string>(
-    "FRONTEND_URL",
-    "http://localhost:3000"
-  );
+  const frontendUrls = (configService.get<string>("FRONTEND_URL") || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  if (frontendUrls.length === 0) {
+    logger.warn(
+      "FRONTEND_URL is not configured. CORS will reject browser origins until it is set."
+    );
+  }
 
   app.use(cookieParser());
   app.useLogger(["log", "error", "warn", "debug"]);
@@ -55,7 +61,7 @@ if (process.env["NODE_ENV"] === "production") {
   app.setViewEngine("ejs");
 
   app.enableCors({
-    origin: frontendUrl,
+    origin: frontendUrls,
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"]
@@ -80,7 +86,7 @@ if (process.env["NODE_ENV"] === "production") {
 
   setupWebSocketServer(server);
 
-  const PORT = process.env["PORT"] || 3000;
+  const PORT = configService.get<number>("PORT", 3000);
   server.listen(PORT, () => {
     logger.log(`Server listening on port ${PORT}`);
   });

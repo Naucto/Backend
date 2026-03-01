@@ -135,7 +135,7 @@ export class SignedUrlResponseDto {
   @ApiProperty({
     example:
       "https://cdn.example.com/files/project-123?Expires=1640995200&Signature=abc123",
-    description: "The signed CloudFront URL for accessing the protected file"
+    description: "The signed Edge URL for accessing the protected file"
   })
   signedUrl!: string;
 }

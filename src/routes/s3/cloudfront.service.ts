@@ -7,6 +7,7 @@ import {
   CloudfrontSignedCookiesOutput
 } from "@aws-sdk/cloudfront-signer";
 import {
+  BadEnvVarError,
   MissingEnvVarError,
   CloudfrontSignedCookiesException
 } from "@auth/auth.error";
@@ -18,16 +19,83 @@ export class CloudfrontService {
   private privateKey: string | null = null;
   constructor(private readonly configService: ConfigService) {}
 
+  private hasSigningConfiguration(): boolean {
+    const keyPairId =
+      this.configService.get<string>("EDGE_KEY_PAIR_ID") ??
+      this.configService.get<string>("CLOUDFRONT_KEY_PAIR_ID");
+    const inlinePrivateKey =
+      this.configService.get<string>("EDGE_PRIVATE_KEY") ??
+      this.configService.get<string>("CLOUDFRONT_PRIVATE_KEY");
+    const privateKeyPath =
+      this.configService.get<string>("EDGE_PRIVATE_KEY_PATH") ??
+      this.configService.get<string>("CLOUDFRONT_PRIVATE_KEY_PATH");
+
+    return Boolean(keyPairId && (inlinePrivateKey || privateKeyPath));
+  }
+
+  private getEdgeEndpointRaw(): string {
+    const endpoint =
+      this.configService.get<string>("EDGE_ENDPOINT") ??
+      this.configService.get<string>("CDN_URL");
+    if (!endpoint) throw new MissingEnvVarError("EDGE_ENDPOINT");
+    return endpoint;
+  }
+
+  private normalizeEndpoint(endpoint: string): string {
+    const trimmed = endpoint.trim().replace(/\/+$/, "");
+    if (/^https?:\/\//i.test(trimmed)) {
+      return trimmed;
+    }
+    return `https://${trimmed}`;
+  }
+
+  private getEdgeEndpointUrl(): string {
+    return this.normalizeEndpoint(this.getEdgeEndpointRaw());
+  }
+
+  private getKeyPairId(): string {
+    const keyPairId =
+      this.configService.get<string>("EDGE_KEY_PAIR_ID") ??
+      this.configService.get<string>("CLOUDFRONT_KEY_PAIR_ID");
+    if (!keyPairId) throw new MissingEnvVarError("EDGE_KEY_PAIR_ID");
+    return keyPairId;
+  }
+
+  private buildResourceUrl(
+    key: string,
+    options?: { allowWildcard?: boolean }
+  ): string {
+    const endpoint = this.getEdgeEndpointUrl();
+
+    if (options?.allowWildcard && key === "*") {
+      return `${endpoint}/*`;
+    }
+
+    const encodedKey = key
+      .split("/")
+      .map((segment) => encodeURIComponent(segment))
+      .join("/");
+
+    return `${endpoint}/${encodedKey}`;
+  }
+
   private getPrivateKey(): string {
     if (this.privateKey) {
       return this.privateKey;
     }
 
-    const privateKeyPath = this.configService.get<string>(
-      "CLOUDFRONT_PRIVATE_KEY_PATH"
-    );
-    if (!privateKeyPath)
-      throw new MissingEnvVarError("CLOUDFRONT_PRIVATE_KEY_PATH");
+    const envPrivateKey =
+      this.configService.get<string>("EDGE_PRIVATE_KEY") ??
+      this.configService.get<string>("CLOUDFRONT_PRIVATE_KEY");
+    if (envPrivateKey) {
+      this.privateKey = envPrivateKey.replace(/\\n/g, "\n");
+      return this.privateKey;
+    }
+
+    const privateKeyPath =
+      this.configService.get<string>("EDGE_PRIVATE_KEY_PATH") ??
+      this.configService.get<string>("CLOUDFRONT_PRIVATE_KEY_PATH");
+    if (!privateKeyPath) throw new MissingEnvVarError("EDGE_PRIVATE_KEY_PATH");
 
     try {
       if (!fs.existsSync(privateKeyPath)) {
@@ -42,8 +110,16 @@ export class CloudfrontService {
       if (error instanceof CloudFrontPrivateKeyException) {
         throw error;
       }
-      this.logger.error(`Failed to read CloudFront private key: ${error}`);
+      this.logger.error(`Failed to read Edge private key: ${error}`);
       throw new CloudFrontPrivateKeyException(privateKeyPath, error);
+    }
+  }
+
+  getCookieDomain(): string {
+    try {
+      return new URL(this.getEdgeEndpointUrl()).hostname;
+    } catch {
+      throw new BadEnvVarError("EDGE_ENDPOINT");
     }
   }
 
@@ -65,13 +141,13 @@ export class CloudfrontService {
   }
 
   generateSignedUrl(fileKey: string): string {
-    const cdnUrl = this.configService.get<string>("CDN_URL");
-    const keyPairId = this.configService.get<string>("CLOUDFRONT_KEY_PAIR_ID");
+    if (!this.hasSigningConfiguration()) {
+      return this.buildResourceUrl(fileKey);
+    }
 
-    if (!cdnUrl) throw new MissingEnvVarError("CDN_URL");
-    if (!keyPairId) throw new MissingEnvVarError("CLOUDFRONT_KEY_PAIR_ID");
+    const keyPairId = this.getKeyPairId();
 
-    const resourceUrl = `https://${cdnUrl}/${fileKey}`;
+    const resourceUrl = this.buildResourceUrl(fileKey);
     const privateKey = this.getPrivateKey();
 
     const signedUrl = getSignedCFUrl({
@@ -85,18 +161,17 @@ export class CloudfrontService {
   }
 
   getCDNUrl(key: string): string {
-    const cdnUrl = this.configService.get<string>("CDN_URL");
-    return `https://${cdnUrl}/${key}`;
+    return this.buildResourceUrl(key);
   }
 
   generateSignedCookies(
     expiresInSeconds: number = 86400
   ): CloudfrontSignedCookiesOutput {
-    const cdnUrl = this.configService.get<string>("CDN_URL");
-    const keyPairId = this.configService.get<string>("CLOUDFRONT_KEY_PAIR_ID");
+    if (!this.hasSigningConfiguration()) {
+      return {} as CloudfrontSignedCookiesOutput;
+    }
 
-    if (!cdnUrl) throw new MissingEnvVarError("CDN_URL");
-    if (!keyPairId) throw new MissingEnvVarError("CLOUDFRONT_KEY_PAIR_ID");
+    const keyPairId = this.getKeyPairId();
 
     const privateKey = this.getPrivateKey();
     const dateLessThan = new Date(
@@ -104,7 +179,7 @@ export class CloudfrontService {
     ).toISOString();
 
     const cookies = getSignedCookies({
-      url: `https://${cdnUrl}/*`,
+      url: this.buildResourceUrl("*", { allowWildcard: true }),
       keyPairId,
       privateKey,
       dateLessThan
@@ -118,8 +193,11 @@ export class CloudfrontService {
     resourceUrl: string,
     sessionCookieTimeout: number
   ): Record<string, string> {
-    const keyPairId = this.configService.get<string>("CLOUDFRONT_KEY_PAIR_ID");
-    if (!keyPairId) throw new MissingEnvVarError("CLOUDFRONT_KEY_PAIR_ID");
+    if (!this.hasSigningConfiguration()) {
+      return {};
+    }
+
+    const keyPairId = this.getKeyPairId();
 
     const privateKey = this.getPrivateKey();
     const expires = Math.floor(Date.now() / 1000) + sessionCookieTimeout;

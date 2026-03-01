@@ -14,6 +14,8 @@ import {
   DeleteObjectsCommandInput,
   HeadObjectCommand,
   HeadObjectCommandInput,
+  PutObjectAclCommand,
+  PutObjectAclCommandInput,
   _Object,
   HeadObjectCommandOutput
 } from "@aws-sdk/client-s3";
@@ -375,5 +377,17 @@ export class S3Service {
     } catch (error) {
       throw new S3GetMetadataException(resolvedBucketName, key, error);
     }
+  }
+
+  async setObjectPublicRead(key: string, bucketName?: string): Promise<void> {
+    const resolvedBucketName = this.resolveBucket(bucketName);
+
+    const input: PutObjectAclCommandInput = {
+      Bucket: resolvedBucketName,
+      Key: key,
+      ACL: "public-read"
+    };
+    const command = new PutObjectAclCommand(input);
+    await this.s3.send(command);
   }
 }
