@@ -31,11 +31,11 @@ Object.assign(process.env, stubEnv);
     console.log("[swag-gen] Imported @nestjs/core.");
 
     console.log("[swag-gen] Importing SwaggerAppModule...");
-    const { SwaggerAppModule: AppModule } = await import("./swagger.app.module");
+    const { SwaggerAppModule: AppModule } = await import("../src/swagger.app.module");
     console.log("[swag-gen] Imported SwaggerAppModule.");
 
     console.log("[swag-gen] Importing buildSwaggerDocument...");
-    const { buildSwaggerDocument } = await import("./swagger");
+    const { buildSwaggerDocument } = await import("../src/swagger");
     console.log("[swag-gen] Imported buildSwaggerDocument.");
 
     const fs = await import("fs");
