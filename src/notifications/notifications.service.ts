@@ -72,14 +72,19 @@ export class NotificationsService {
       throw new NotFoundException("Notification not found");
     }
 
-    if (notification.read) {
-      return this.toPayload(notification);
-    }
-
-    const updated = await this.prisma.notification.update({
-      where: { id: notificationId },
+    const result = await this.prisma.notification.updateMany({
+      where: { id: notificationId, userId },
       data: { read: true },
     });
+
+    if (result.count === 0) {
+      throw new NotFoundException("Notification not found");
+    }
+
+    const updated = await this.prisma.notification.findUnique({ where: { id: notificationId } });
+    if (!updated) {
+      throw new NotFoundException("Notification not found");
+    }
 
     return this.toPayload(updated);
   }
