@@ -31,6 +31,13 @@ jobs:
       - name: Generate Swagger JSON
         run: npm run generate:swagger
 
+      - name: Breakpoint if tests failed
+        if: failure()
+        uses: namespacelabs/breakpoint-action@v0
+        with:
+          duration: 30m
+          authorized-users: alexis-belmonte
+
       - name: Generate TypeScript client
         run: npm run generate:client
 
