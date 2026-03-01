@@ -1,3 +1,8 @@
+networks:
+  naucto:
+    name: naucto
+    driver: bridge
+
 services:
   db:
     image: postgres
@@ -13,6 +18,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - naucto
 
   backend:
     build:
@@ -34,23 +41,9 @@ services:
     ports:
       - "${BACKEND_PORT}:3000"
     restart: on-failure
-    develop:
-      watch:
-        - action: sync
-          path: ./src
-          target: /app/src
-
-        - action: sync
-          path: ./prisma
-          target: /app/prisma
-          ignore:
-            - prisma/migrations
-
-        - action: rebuild
-          path: package.json
-
-        - action: rebuild
-          path: prisma/schema.prisma
+    networks:
+      - naucto
 
 volumes:
   db-data:
+

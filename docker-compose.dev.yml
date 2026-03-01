@@ -1,8 +1,7 @@
 networks:
   naucto-dev:
-    driver: bridge
     name: naucto-dev
-    attachable: true
+    driver: bridge
 
 services:
   db:
@@ -14,3 +13,21 @@ services:
       target: dev
     networks:
       - naucto-dev
+    develop:
+      watch:
+        - action: sync
+          path: ./src
+          target: /app/src
+
+        - action: sync
+          path: ./prisma
+          target: /app/prisma
+          ignore:
+            - prisma/migrations
+
+        - action: rebuild
+          path: package.json
+
+        - action: rebuild
+          path: prisma/schema.prisma
+
