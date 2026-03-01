@@ -85,9 +85,31 @@ const onConnection = async (socket: WebSocket, _request: http.IncomingMessage, o
     }, PING_TIMEOUT);
   };
 
+  const normalizeRawDataToString = (raw: import("ws").RawData): string | null => {
+    if (typeof raw === "string") {
+      return raw;
+    }
+    if (raw instanceof Buffer) {
+      return raw.toString();
+    }
+    if (Array.isArray(raw)) {
+      return Buffer.concat(raw).toString();
+    }
+    if (raw instanceof ArrayBuffer) {
+      return Buffer.from(raw).toString();
+    }
+    return null;
+  };
+
   const handleAuthMessage = async (raw: import("ws").RawData): Promise<void> => {
     try {
-      const parsed = JSON.parse(typeof raw === "string" ? raw : raw.toString()) as ClientAuthMessage;
+      const rawString = normalizeRawDataToString(raw);
+      if (rawString === null) {
+        socket.close();
+        return;
+      }
+
+      const parsed = JSON.parse(rawString) as ClientAuthMessage;
       if (parsed?.type !== "auth" || typeof parsed.token !== "string") {
         socket.close();
         return;
