@@ -89,7 +89,7 @@ if (process.env["NODE_ENV"] === "production") {
     jwtSecret,
   });
 
-  server.on("upgrade", (request, socket) => {
+  server.on("upgrade", (_request, socket) => {
     socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
     socket.destroy();
   });
