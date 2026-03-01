@@ -31,12 +31,10 @@ jobs:
       - name: Generate Swagger JSON
         run: npm run generate:swagger
 
-      - name: Breakpoint if tests failed
-        if: failure()
-        uses: namespacelabs/breakpoint-action@v0
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
         with:
-          duration: 30m
-          authorized-users: alexis-belmonte
+          limit-access-to-actor: true # Optional: Restricts access to your GitHub user only
 
       - name: Generate TypeScript client
         run: npm run generate:client
