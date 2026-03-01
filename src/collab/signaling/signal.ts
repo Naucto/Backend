@@ -16,6 +16,7 @@ interface WSMessage {
 }
 
 export let wss: WebSocketServer;
+type UpgradeRequest = http.IncomingMessage & { _wsHandled?: boolean };
 
 export const setupWebSocketServer = (server: http.Server): void => {
   wss = new WebSocketServer({ noServer: true });
@@ -124,11 +125,12 @@ export const setupWebSocketServer = (server: http.Server): void => {
 
   wss.on("connection", onConnection);
 
-  server.on("upgrade", (request, socket, head) => {
+  server.on("upgrade", (request: UpgradeRequest, socket, head) => {
     const url = request.url ?? "";
     if (!url.startsWith("/socket/webrtc")) {
       return;
     }
+    request._wsHandled = true;
     const handleAuth = (ws: WebSocket): void => {
       wss.emit("connection", ws, request);
     };

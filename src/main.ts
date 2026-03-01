@@ -16,7 +16,7 @@ import * as dotenv from "dotenv";
 import * as http from "http";
 import cookieParser from "cookie-parser";
 import { NotificationsService } from "./notifications/notifications.service";
-import { setupNotificationSocket } from "./notifications/notifications.socket";
+import { setupNotificationSocket, UpgradeRequest } from "./notifications/notifications.socket";
 
 if (process.env["NODE_ENV"] === "production") {
   dotenv.config({ path: ".env.production" });
@@ -89,7 +89,10 @@ if (process.env["NODE_ENV"] === "production") {
     jwtSecret,
   });
 
-  server.on("upgrade", (_request, socket) => {
+  server.on("upgrade", (request: UpgradeRequest, socket) => {
+    if (request._wsHandled || socket.destroyed || socket.writableEnded) {
+      return;
+    }
     socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
     socket.destroy();
   });
