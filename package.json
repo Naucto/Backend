@@ -7,7 +7,7 @@
     "license": "GPLv3",
     "scripts": {
         "build": "nest build",
-        "generate:swagger": "ts-node -r tsconfig-paths/register src/generate-swagger.ts",
+        "generate:swagger": "ts-node -r tsconfig-paths/register tool/generate-swagger.ts",
         "generate:client": "npx openapi-typescript-codegen --input swagger.json --output generated_client --client axios",
         "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
         "start": "npm run build && node --openssl-legacy-provider dist/main",
