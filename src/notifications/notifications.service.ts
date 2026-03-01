@@ -13,6 +13,7 @@ export class NotificationsService {
     const notifications = await this.prisma.notification.findMany({
       where: { userId },
       orderBy: { createdAt: "desc" },
+      take: MAX_NOTIFICATIONS_PER_USER,
     });
 
     return notifications.map((notification) => this.toPayload(notification));
