@@ -113,7 +113,7 @@ export class UserController {
         .addMaxSizeValidator({ maxSize: 5 * 1024 * 1024 })
         .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY })
     )
-    file: Express.Multer.File,
+      file: Express.Multer.File,
     @Request() req: RequestWithUser
   ): Promise<{ message: string; id: number }> {
     if (req.user.id !== id) {

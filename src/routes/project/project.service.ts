@@ -275,16 +275,14 @@ export class ProjectService {
   ): Promise<Project> {
     const user = await this.findUserByIdentifier(removeCollaboratorDto);
     const project = await this.findOne(id);
-    const projectWithRelations = project as any;
+    const projectWithRelations = project;
 
     if (user.id === project.userId) {
       throw new ForbiddenException("Cannot remove the project creator");
     }
 
     if (
-      !projectWithRelations.collaborators.some(
-        (collab: any) => collab.id === user.id
-      )
+      !projectWithRelations.collaborators.some((collab) => collab.id === user.id)
     ) {
       throw new BadRequestException(
         "User is not a collaborator on this project"

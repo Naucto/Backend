@@ -121,10 +121,14 @@ export class S3Service {
       });
       await this.s3.send(command);
       return true;
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const s3Error = error as {
+        name?: string;
+        $metadata?: { httpStatusCode?: number };
+      };
       if (
-        error.name === "NotFound" ||
-        error.$metadata?.httpStatusCode === 404
+        s3Error.name === "NotFound" ||
+        s3Error.$metadata?.httpStatusCode === 404
       ) {
         return false;
       }
