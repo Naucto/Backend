@@ -31,12 +31,6 @@ jobs:
       - name: Generate Swagger JSON
         run: npm run generate:swagger
 
-#     - name: Setup tmate session
-#       if: failure() && !env.ACT
-#       uses: mxschmitt/action-tmate@v3
-#       with:
-#         limit-access-to-actor: true
-
       - name: Generate TypeScript client
         run: npm run generate:client
 

@@ -1,11 +1,26 @@
 /* eslint-disable no-console */
 // Fine for this file, not part of the main project
 
-process.env["DATABASE_URL"] = "postgresql://stub:stub@localhost:5432/stub";
-process.env["JWT_SECRET"] = "stub-secret-for-swagger-generation-only";
-process.env["JWT_EXPIRES_IN"] = "7d";
-process.env["NODE_ENV"] = "development";
-process.env["FRONTEND_URL"] = "http://localhost:3001";
+// This is only necessary for services that explicitly rely on ConfigService
+const stubEnv: NodeJS.ProcessEnv = {
+  DATABASE_URL: "postgresql://stub:stub@localhost:5432/stub",
+  JWT_SECRET: "stub-secret-for-swagger-generation-only",
+  JWT_EXPIRES_IN: "7d",
+  JWT_REFRESH_EXPIRES_IN: "30d",
+  NODE_ENV: "development",
+  FRONTEND_URL: "http://localhost:3001",
+  GOOGLE_CLIENT_ID: "stub-google-client-id",
+  S3_ENDPOINT: "http://localhost:9000",
+  S3_REGION: "stub-region",
+  S3_ACCESS_KEY_ID: "stub-key",
+  S3_SECRET_ACCESS_KEY: "stub",
+  S3_BUCKET_NAME: "stub-bucket",
+  CDN_URL: "stub.cloudfront.net",
+  CLOUDFRONT_KEY_PAIR_ID: "stub-key-pair-id",
+  CLOUDFRONT_PRIVATE_KEY_PATH: "/dev/null",
+};
+
+Object.assign(process.env, stubEnv);
 
 (async () => {
   try {
@@ -16,11 +31,11 @@ process.env["FRONTEND_URL"] = "http://localhost:3001";
     console.log("[swag-gen] Imported @nestjs/core.");
 
     console.log("[swag-gen] Importing SwaggerAppModule...");
-    const { SwaggerAppModule: AppModule } = await import("../src/swagger.app.module");
+    const { SwaggerAppModule: AppModule } = await import("./swagger.app.module");
     console.log("[swag-gen] Imported SwaggerAppModule.");
 
     console.log("[swag-gen] Importing buildSwaggerDocument...");
-    const { buildSwaggerDocument } = await import("../src/swagger");
+    const { buildSwaggerDocument } = await import("./swagger");
     console.log("[swag-gen] Imported buildSwaggerDocument.");
 
     const fs = await import("fs");
@@ -41,7 +56,9 @@ process.env["FRONTEND_URL"] = "http://localhost:3001";
     await app.close();
     console.log("[swag-gen] Done.");
   } catch (err) {
-    console.error("[swag-gen] Failed to generate swagger.json", err instanceof Error ? err.stack : String(err));
+    console.error("[swag-gen] Failed to generate swagger.json",
+                  err instanceof Error ? err.stack : String(err));
     process.exit(1);
   }
 })();
+
