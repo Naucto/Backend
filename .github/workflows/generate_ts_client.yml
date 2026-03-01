@@ -35,8 +35,7 @@ jobs:
         if: failure()
         uses: mxschmitt/action-tmate@v3
         with:
-          limit-access-to-actor: true # Optional: Restricts access to your GitHub user only
-
+          limit-access-to-actor: true
 
       - name: Generate TypeScript client
         run: npm run generate:client
