@@ -84,6 +84,13 @@ export class CloudfrontService {
     return signedUrl;
   }
 
+  getCookieDomain(): string {
+    const cdnUrl = this.configService.get<string>("CDN_URL");
+    if (!cdnUrl) throw new MissingEnvVarError("CDN_URL");
+    // Strip any protocol prefix if present, return bare hostname
+    return cdnUrl.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  }
+
   getCDNUrl(key: string): string {
     const cdnUrl = this.configService.get<string>("CDN_URL");
     return `https://${cdnUrl}/${key}`;

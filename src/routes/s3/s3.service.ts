@@ -14,8 +14,6 @@ import {
   DeleteObjectsCommandInput,
   HeadObjectCommand,
   HeadObjectCommandInput,
-  HeadObjectCommand,
-  HeadObjectCommandInput,
   PutObjectAclCommand,
   PutObjectAclCommandInput,
   _Object,

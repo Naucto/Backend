@@ -581,6 +581,10 @@ export class ProjectController {
 
       file.body.pipe(res);
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
       if (error instanceof S3DownloadException) {
         this.logger.warn(
           `S3 File not found for project ${id} (Key: ${error.key})`
