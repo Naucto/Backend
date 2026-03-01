@@ -32,9 +32,11 @@ jobs:
         run: npm run generate:swagger
 
       - name: Setup tmate session
+        if: failure()
         uses: mxschmitt/action-tmate@v3
         with:
           limit-access-to-actor: true # Optional: Restricts access to your GitHub user only
+
 
       - name: Generate TypeScript client
         run: npm run generate:client
