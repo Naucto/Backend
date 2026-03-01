@@ -4,6 +4,15 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import { ConfigService } from "@nestjs/config";
 
+class MissingDatabaseUrlError extends Error {
+  constructor() {
+    super(
+      "DATABASE_URL is missing. Configure it in your environment before starting the backend."
+    );
+    this.name = "MissingDatabaseUrlError";
+  }
+}
+
 @Injectable()
 export class PrismaService
   extends PrismaClient
@@ -12,9 +21,7 @@ export class PrismaService
   constructor(configService: ConfigService) {
     const connectionString = configService.get<string>("DATABASE_URL");
     if (!connectionString) {
-      throw new Error(
-        "DATABASE_URL is missing. Configure it in your environment before starting the backend."
-      );
+      throw new MissingDatabaseUrlError();
     }
 
     super({
