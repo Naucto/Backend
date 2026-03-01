@@ -88,6 +88,12 @@ if (process.env["NODE_ENV"] === "production") {
     notificationsService,
     jwtSecret,
   });
+
+  server.on("upgrade", (request, socket) => {
+    socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+    socket.destroy();
+  });
+
   const PORT = process.env["PORT"] || 3000;
   server.listen(PORT, () => {
     logger.log(`Server listening on port ${PORT}`);
