@@ -38,14 +38,14 @@ describe("CloudfrontService", () => {
     beforeEach(() => {
       (configService.get as jest.Mock).mockImplementation((key: string) => {
         switch (key) {
-          case "EDGE_ENDPOINT":
-            return "https://cdn.example.com";
-          case "EDGE_KEY_PAIR_ID":
-            return "KEYPAIRID";
-          case "EDGE_PRIVATE_KEY_PATH":
-            return "/fake/path.pem";
-          default:
-            return undefined;
+        case "EDGE_ENDPOINT":
+          return "https://cdn.example.com";
+        case "EDGE_KEY_PAIR_ID":
+          return "KEYPAIRID";
+        case "EDGE_PRIVATE_KEY_PATH":
+          return "/fake/path.pem";
+        default:
+          return undefined;
         }
       });
 
@@ -81,14 +81,14 @@ describe("CloudfrontService", () => {
     it("supports legacy CLOUDFRONT_* variables as fallback", () => {
       (configService.get as jest.Mock).mockImplementation((key: string) => {
         switch (key) {
-          case "CDN_URL":
-            return "cdn.example.com";
-          case "CLOUDFRONT_KEY_PAIR_ID":
-            return "LEGACY_KEYPAIR";
-          case "CLOUDFRONT_PRIVATE_KEY_PATH":
-            return "/legacy/path.pem";
-          default:
-            return undefined;
+        case "CDN_URL":
+          return "cdn.example.com";
+        case "CLOUDFRONT_KEY_PAIR_ID":
+          return "LEGACY_KEYPAIR";
+        case "CLOUDFRONT_PRIVATE_KEY_PATH":
+          return "/legacy/path.pem";
+        default:
+          return undefined;
         }
       });
 
@@ -149,14 +149,14 @@ describe("CloudfrontService", () => {
     beforeEach(() => {
       (configService.get as jest.Mock).mockImplementation((key: string) => {
         switch (key) {
-          case "EDGE_ENDPOINT":
-            return "https://cdn.example.com";
-          case "EDGE_KEY_PAIR_ID":
-            return "KEYPAIRID";
-          case "EDGE_PRIVATE_KEY_PATH":
-            return "/fake/path.pem";
-          default:
-            return undefined;
+        case "EDGE_ENDPOINT":
+          return "https://cdn.example.com";
+        case "EDGE_KEY_PAIR_ID":
+          return "KEYPAIRID";
+        case "EDGE_PRIVATE_KEY_PATH":
+          return "/fake/path.pem";
+        default:
+          return undefined;
         }
       });
 
@@ -250,12 +250,12 @@ describe("CloudfrontService", () => {
     beforeEach(() => {
       (configService.get as jest.Mock).mockImplementation((key: string) => {
         switch (key) {
-          case "EDGE_KEY_PAIR_ID":
-            return "KEYPAIRID";
-          case "EDGE_PRIVATE_KEY_PATH":
-            return "/fake/path.pem";
-          default:
-            return undefined;
+        case "EDGE_KEY_PAIR_ID":
+          return "KEYPAIRID";
+        case "EDGE_PRIVATE_KEY_PATH":
+          return "/fake/path.pem";
+        default:
+          return undefined;
         }
       });
 

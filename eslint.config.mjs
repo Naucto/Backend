@@ -26,6 +26,7 @@ export default defineConfig([
     rules: {
       indent: ["error", 2],
       quotes: ["error", "double"],
+      "linebreak-style": ["error", "unix"],
       "@typescript-eslint/no-unused-vars": "warn",
       "no-console": "warn",
       "react/react-in-jsx-scope": "off",
@@ -55,6 +56,7 @@ export default defineConfig([
     rules: {
       indent: ["error", 2],
       quotes: ["error", "double"],
+      "linebreak-style": ["error", "unix"],
       "no-console": "warn",
       "react/react-in-jsx-scope": "off",
       "react/self-closing-comp": "error",

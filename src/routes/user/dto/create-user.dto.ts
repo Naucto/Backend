@@ -16,12 +16,12 @@ export class CreateUserDto {
   })
   @IsEmail()
   @IsNotEmpty()
-  email!: string;
+    email!: string;
 
   @ApiProperty({ description: "User username", example: "xX_DarkGamer_Xx" })
   @IsString()
   @Length(3, 20, { message: "Username must be between 3 and 20 characters" })
-  username!: string;
+    username!: string;
 
   @ApiProperty({
     description: "User nick name",
@@ -31,15 +31,15 @@ export class CreateUserDto {
   @IsString()
   @IsOptional()
   @Length(3, 30, { message: "Nickname must be between 3 and 30 characters" })
-  nickname?: string;
+    nickname?: string;
 
   @ApiProperty({ description: "User password", example: "password123" })
   @IsString()
   @MinLength(6, { message: "Password must be at least 6 characters" })
   @IsNotEmpty()
-  password!: string;
+    password!: string;
 
   @IsOptional()
   @IsArray()
-  roles?: string[];
+    roles?: string[];
 }
