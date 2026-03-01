@@ -14,6 +14,10 @@ import {
   DeleteObjectsCommandInput,
   HeadObjectCommand,
   HeadObjectCommandInput,
+  HeadObjectCommand,
+  HeadObjectCommandInput,
+  PutObjectAclCommand,
+  PutObjectAclCommandInput,
   _Object,
   HeadObjectCommandOutput
 } from "@aws-sdk/client-s3";
@@ -119,10 +123,14 @@ export class S3Service {
       });
       await this.s3.send(command);
       return true;
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const s3Error = error as {
+        name?: string;
+        $metadata?: { httpStatusCode?: number };
+      };
       if (
-        error.name === "NotFound" ||
-        error.$metadata?.httpStatusCode === 404
+        s3Error.name === "NotFound" ||
+        s3Error.$metadata?.httpStatusCode === 404
       ) {
         return false;
       }
@@ -375,5 +383,17 @@ export class S3Service {
     } catch (error) {
       throw new S3GetMetadataException(resolvedBucketName, key, error);
     }
+  }
+
+  async setObjectPublicRead(key: string, bucketName?: string): Promise<void> {
+    const resolvedBucketName = this.resolveBucket(bucketName);
+
+    const input: PutObjectAclCommandInput = {
+      Bucket: resolvedBucketName,
+      Key: key,
+      ACL: "public-read"
+    };
+    const command = new PutObjectAclCommand(input);
+    await this.s3.send(command);
   }
 }

@@ -129,4 +129,20 @@ export class BucketService {
       throw new S3ApplyPolicyException(resolvedBucketName, error);
     }
   }
+
+  async applyPublicReadPrefixPolicy(
+    prefix: string = "release/*",
+    bucketName?: string
+  ): Promise<void> {
+    const normalizedPrefix = prefix.trim() || "release/*";
+    const policy = this.generateBucketPolicy(
+      bucketName,
+      ["s3:GetObject"],
+      "Allow",
+      "*",
+      normalizedPrefix
+    );
+
+    await this.applyBucketPolicy(policy, bucketName);
+  }
 }

@@ -188,4 +188,27 @@ describe("BucketService", () => {
       );
     });
   });
+
+
+  describe("applyPublicReadPrefixPolicy", () => {
+    it("applies policy for release/* by default", async () => {
+      mockS3.send.mockResolvedValueOnce({});
+
+      await bucketService.applyPublicReadPrefixPolicy(undefined, "my-bucket");
+
+      expect(mockS3.send).toHaveBeenCalledWith(
+        expect.any(PutBucketPolicyCommand)
+      );
+    });
+
+    it("applies policy for a custom prefix", async () => {
+      mockS3.send.mockResolvedValueOnce({});
+
+      await bucketService.applyPublicReadPrefixPolicy("release/special/*", "my-bucket");
+
+      expect(mockS3.send).toHaveBeenCalledWith(
+        expect.any(PutBucketPolicyCommand)
+      );
+    });
+  });
 });
