@@ -235,6 +235,86 @@ export class S3Controller {
     return { message: "Bucket created successfully" };
   }
 
+  @Post("policy/public-read")
+  @ApiOperation({
+    summary: "Apply public read policy for a prefix (default: release/*)"
+  })
+  @ApiBody({
+    schema: {
+      type: "object",
+      properties: {
+        bucketName: {
+          type: "string",
+          description: "Target bucket name (optional, defaults to S3_BUCKET_NAME)"
+        },
+        prefix: {
+          type: "string",
+          description: "Object key prefix to expose publicly",
+          default: "release/*"
+        }
+      }
+    }
+  })
+  @ApiResponse({ status: 201, description: "Policy applied successfully" })
+  async applyPublicReadPolicy(
+    @Body() body: { bucketName?: string; prefix?: string }
+  ): Promise<{
+    message: string;
+    bucketName?: string;
+    prefix: string;
+    mode: "bucket-policy" | "object-acl";
+    updatedObjects?: number;
+  }> {
+    const prefix = body?.prefix?.trim() || "release/*";
+    const bucketName = body?.bucketName;
+
+    const response: {
+      message: string;
+      bucketName?: string;
+      prefix: string;
+      mode: "bucket-policy" | "object-acl";
+      updatedObjects?: number;
+    } = {
+      message: "Public read policy applied successfully",
+      prefix,
+      mode: "bucket-policy"
+    };
+
+    try {
+      await this.bucketService.applyPublicReadPrefixPolicy(prefix, bucketName);
+    } catch (error) {
+      const normalizedPrefix = prefix.replace(/\*+$/, "");
+      const listOptions: { bucketName?: string; prefix?: string } = {
+        prefix: normalizedPrefix
+      };
+      if (bucketName) {
+        listOptions.bucketName = bucketName;
+      }
+
+      const objects = await this.s3Service.listObjects(listOptions);
+
+      await Promise.all(
+        objects
+          .map((object) => object.Key)
+          .filter((key): key is string => Boolean(key))
+          .map((key) => this.s3Service.setObjectPublicRead(key, bucketName))
+      );
+
+      response.mode = "object-acl";
+      response.updatedObjects = objects.length;
+      response.message =
+        error instanceof Error
+          ? `Bucket policy denied; applied object ACL fallback instead (${error.message})`
+          : "Bucket policy denied; applied object ACL fallback instead";
+    }
+
+    if (bucketName) {
+      response.bucketName = bucketName;
+    }
+
+    return response;
+  }
+
   @Get("metadata/:bucketName/:key")
   @ApiOperation({ summary: "Get object metadata" })
   @ApiParam({ name: "key", description: "Object key" })

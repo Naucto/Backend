@@ -32,7 +32,7 @@ export class BucketService {
     private readonly s3: S3Client,
     @Inject(ConfigService) private readonly configService: ConfigService
   ) {
-    this.defaultBucket = this.configService.get<string>("AWS_DEFAULT_BUCKET");
+    this.defaultBucket = this.configService.get<string>("S3_BUCKET_NAME");
   }
 
   private resolveBucket(bucketName?: string): string {
@@ -128,5 +128,21 @@ export class BucketService {
     } catch (error) {
       throw new S3ApplyPolicyException(resolvedBucketName, error);
     }
+  }
+
+  async applyPublicReadPrefixPolicy(
+    prefix: string = "release/*",
+    bucketName?: string
+  ): Promise<void> {
+    const normalizedPrefix = prefix.trim() || "release/*";
+    const policy = this.generateBucketPolicy(
+      bucketName,
+      ["s3:GetObject"],
+      "Allow",
+      "*",
+      normalizedPrefix
+    );
+
+    await this.applyBucketPolicy(policy, bucketName);
   }
 }

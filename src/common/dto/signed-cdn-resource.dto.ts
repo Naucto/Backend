@@ -8,7 +8,7 @@ export class SignedCdnResourceDto {
   resourceUrl!: string;
 
   @ApiProperty({
-    description: "Signed CloudFront cookies (also set as HTTP-only cookies)",
+    description: "Signed Edge cookies (also set as HTTP-only cookies)",
     example: {
       "CloudFront-Expires": "1735660800",
       "CloudFront-Signature": "base64-signature",

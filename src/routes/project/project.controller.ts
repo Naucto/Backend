@@ -53,9 +53,7 @@ import {
 import { S3DownloadException } from "@s3/s3.error";
 import { S3Service } from "@s3/s3.service";
 import { CloudfrontService } from "@s3/cloudfront.service";
-import { ConfigService } from "@nestjs/config";
 import { SignedCdnResourceDto } from "@common/dto/signed-cdn-resource.dto";
-import { MissingEnvVarError } from "@auth/auth.error";
 
 interface RequestWithUser extends Request {
   user: UserDto;
@@ -69,8 +67,7 @@ export class ProjectController {
   constructor(
     private readonly projectService: ProjectService,
     private readonly s3Service: S3Service,
-    private readonly cloudfrontService: CloudfrontService,
-    private readonly configService: ConfigService
+    private readonly cloudfrontService: CloudfrontService
   ) {}
 
   private readonly logger = new Logger(ProjectController.name);
@@ -146,7 +143,7 @@ export class ProjectController {
   @ApiParam({ name: "id", type: "string" })
   @ApiResponse({
     status: 200,
-    description: "Signed CloudFront URL for the release",
+    description: "Signed Edge URL for the release",
     type: SignedUrlResponseDto
   })
   async getReleaseContentUrl(
@@ -480,11 +477,6 @@ export class ProjectController {
       return;
     }
 
-    const cdnUrl = this.configService.get<string>("CDN_URL");
-    if (!cdnUrl) {
-      throw new MissingEnvVarError("CDN_URL");
-    }
-
     const resourceUrl = this.cloudfrontService.getCDNUrl(key);
     const cookies = this.cloudfrontService.createSignedCookies(
       resourceUrl,
@@ -495,22 +487,28 @@ export class ProjectController {
       httpOnly: true,
       secure: true,
       path: "/",
-      domain: `.${cdnUrl}`,
+      domain: this.cloudfrontService.getCookieDomain(),
       sameSite: "lax" as const,
       maxAge: 60 * 60 * 1000
     };
 
-    res.cookie("CloudFront-Expires", cookies["CloudFront-Expires"], cookieOptions);
-    res.cookie(
-      "CloudFront-Signature",
-      cookies["CloudFront-Signature"],
-      cookieOptions
-    );
-    res.cookie(
-      "CloudFront-Key-Pair-Id",
-      cookies["CloudFront-Key-Pair-Id"],
-      cookieOptions
-    );
+    if (cookies["CloudFront-Expires"]) {
+      res.cookie("CloudFront-Expires", cookies["CloudFront-Expires"], cookieOptions);
+    }
+    if (cookies["CloudFront-Signature"]) {
+      res.cookie(
+        "CloudFront-Signature",
+        cookies["CloudFront-Signature"],
+        cookieOptions
+      );
+    }
+    if (cookies["CloudFront-Key-Pair-Id"]) {
+      res.cookie(
+        "CloudFront-Key-Pair-Id",
+        cookies["CloudFront-Key-Pair-Id"],
+        cookieOptions
+      );
+    }
     if (cookies["CloudFront-Policy"]) {
       res.cookie("CloudFront-Policy", cookies["CloudFront-Policy"], cookieOptions);
     }
