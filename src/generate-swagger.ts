@@ -1,15 +1,23 @@
 /* eslint-disable no-console */
 // Fine for this file, not part of the main project
 
+// This is only necessary for services that explicitly rely on ConfigService
 const stubEnv: NodeJS.ProcessEnv = {
   DATABASE_URL: "postgresql://stub:stub@localhost:5432/stub",
   JWT_SECRET: "stub-secret-for-swagger-generation-only",
   JWT_EXPIRES_IN: "7d",
+  JWT_REFRESH_EXPIRES_IN: "30d",
   NODE_ENV: "development",
   FRONTEND_URL: "http://localhost:3001",
+  GOOGLE_CLIENT_ID: "stub-google-client-id",
+  S3_ENDPOINT: "http://localhost:9000",
   S3_REGION: "stub-region",
   S3_ACCESS_KEY_ID: "stub-key",
   S3_SECRET_ACCESS_KEY: "stub",
+  S3_BUCKET_NAME: "stub-bucket",
+  CDN_URL: "stub.cloudfront.net",
+  CLOUDFRONT_KEY_PAIR_ID: "stub-key-pair-id",
+  CLOUDFRONT_PRIVATE_KEY_PATH: "/dev/null",
 };
 
 Object.assign(process.env, stubEnv);
