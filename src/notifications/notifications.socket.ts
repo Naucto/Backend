@@ -13,6 +13,8 @@ type NotificationSocketOptions = {
   jwtSecret: string;
 };
 
+export type UpgradeRequest = http.IncomingMessage & { _wsHandled?: boolean };
+
 type NotificationJwtPayload = JwtLibPayload & {
   sub?: number;
   email?: string;
@@ -121,14 +123,14 @@ const onConnection = async (socket: WebSocket, _request: http.IncomingMessage, o
         return;
       }
 
-      socket.off("message", handleAuthMessage as any);
+      socket.off("message", handleAuthMessage);
       await startSession(authenticatedUserId);
     } catch {
       socket.close();
     }
   };
 
-  socket.on("message", handleAuthMessage as any);
+  socket.on("message", handleAuthMessage);
 
   socket.on("pong", () => {
     pongReceived = true;
@@ -176,12 +178,13 @@ export const setupNotificationSocket = (
 
   notificationWss.on("connection", (socket, request) => onConnection(socket, request, options));
 
-  server.on("upgrade", (request, socket, head) => {
+  server.on("upgrade", (request: UpgradeRequest, socket, head) => {
     const requestUrl = new URL(request.url ?? "/", "http://localhost");
     if (!requestUrl.pathname.startsWith(NOTIFICATION_SOCKET_PATH)) {
       return;
     }
 
+    request._wsHandled = true;
     notificationWss?.handleUpgrade(request, socket, head, (websocket) => {
       notificationWss?.emit("connection", websocket, request);
     });
