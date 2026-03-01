@@ -22,6 +22,8 @@ type NotificationWsMessage =
   | { type: "notification"; payload: NotificationPayload }
   | { type: "notifications:init"; payload: NotificationPayload[] };
 
+type ClientAuthMessage = { type: "auth"; token: string };
+
 let notificationWss: WebSocketServer | undefined;
 const userSockets = new Map<number, Set<WebSocket>>();
 
@@ -36,52 +38,82 @@ const roomSet = (userId: number): Set<WebSocket> => {
   return created;
 };
 
-const onConnection = async (socket: WebSocket, request: http.IncomingMessage, options: NotificationSocketOptions) => {
-  const userId = authenticateUser(request, options.jwtSecret);
-  if (!userId) {
-    socket.close();
-    return;
-  }
-
-  roomSet(userId).add(socket);
-
-  try {
-    const notifications = await options.notificationsService.getUserNotifications(userId);
-    send(socket, { type: "notifications:init", payload: notifications });
-  } catch {
-    send(socket, { type: "notifications:init", payload: [] });
-  }
-
+const onConnection = async (socket: WebSocket, _request: http.IncomingMessage, options: NotificationSocketOptions) : Promise<void> => {
+  let userId: number | null = null;
   let pongReceived = true;
-  const pingInterval = setInterval(() => {
-    if (!pongReceived) {
-      socket.close();
+  let pingInterval: NodeJS.Timeout | null = null;
+
+  const cleanup = (): void => {
+    if (pingInterval) {
       clearInterval(pingInterval);
-      return;
+      pingInterval = null;
+    }
+    if (userId !== null) {
+      const sockets = userSockets.get(userId);
+      sockets?.delete(socket);
+      if (sockets && sockets.size === 0) {
+        userSockets.delete(userId);
+      }
+    }
+  };
+
+  const startSession = async (authenticatedUserId: number): Promise<void> => {
+    userId = authenticatedUserId;
+    roomSet(userId).add(socket);
+
+    try {
+      const notifications = await options.notificationsService.getUserNotifications(userId);
+      send(socket, { type: "notifications:init", payload: notifications });
+    } catch {
+      send(socket, { type: "notifications:init", payload: [] });
     }
 
-    pongReceived = false;
+    pingInterval = setInterval(() => {
+      if (!pongReceived) {
+        socket.close();
+        cleanup();
+        return;
+      }
+
+      pongReceived = false;
+      try {
+        socket.ping();
+      } catch {
+        socket.close();
+        cleanup();
+      }
+    }, PING_TIMEOUT);
+  };
+
+  const handleAuthMessage = async (raw: import("ws").RawData): Promise<void> => {
     try {
-      socket.ping();
+      const parsed = JSON.parse(typeof raw === "string" ? raw : raw.toString()) as ClientAuthMessage;
+      if (parsed?.type !== "auth" || typeof parsed.token !== "string") {
+        socket.close();
+        return;
+      }
+
+      const authenticatedUserId = authenticateToken(parsed.token, options.jwtSecret);
+      if (!authenticatedUserId) {
+        socket.close();
+        return;
+      }
+
+      socket.off("message", handleAuthMessage as any);
+      await startSession(authenticatedUserId);
     } catch {
       socket.close();
     }
-  }, PING_TIMEOUT);
+  };
+
+  socket.on("message", handleAuthMessage as any);
 
   socket.on("pong", () => {
     pongReceived = true;
   });
 
   socket.on("close", () => {
-    clearInterval(pingInterval);
-    const sockets = userSockets.get(userId);
-    if (!sockets) {
-      return;
-    }
-    sockets.delete(socket);
-    if (sockets.size === 0) {
-      userSockets.delete(userId);
-    }
+    cleanup();
   });
 };
 
@@ -97,33 +129,8 @@ const send = (socket: WebSocket, message: NotificationWsMessage): void => {
   }
 };
 
-const readTokenFromRequest = (request: http.IncomingMessage): string | null => {
-  const requestUrl = new URL(request.url ?? "/", "http://localhost");
-  const queryToken = requestUrl.searchParams.get("token");
-  if (typeof queryToken === "string" && queryToken.trim().length > 0) {
-    return queryToken.trim();
-  }
-
-  const authHeader = request.headers.authorization;
-  if (!authHeader) {
-    return null;
-  }
-
-  const [scheme, token] = authHeader.split(" ");
-  if (scheme?.toLowerCase() !== "bearer" || !token) {
-    return null;
-  }
-
-  return token;
-};
-
-const authenticateUser = (request: http.IncomingMessage, jwtSecret: string): number | null => {
+const authenticateToken = (token: string, jwtSecret: string): number | null => {
   try {
-    const token = readTokenFromRequest(request);
-    if (!token) {
-      return null;
-    }
-
     const payload = verify(token, jwtSecret) as NotificationJwtPayload;
     if (typeof payload?.sub !== "number") {
       return null;
