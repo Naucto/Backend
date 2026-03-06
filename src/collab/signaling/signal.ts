@@ -18,7 +18,7 @@ interface WSMessage {
 export let wss: WebSocketServer;
 type UpgradeRequest = http.IncomingMessage & { _wsHandled?: boolean };
 
-export const setupWebSocketServer = (server: http.Server): void => {
+export const setupCollaborationSocket = (server: http.Server): void => {
   wss = new WebSocketServer({ noServer: true });
 
   const send = (conn: WebSocket, message: WSMessage): void => {

@@ -7,7 +7,7 @@ import {
 } from "@nestjs/platform-express";
 import { setupSwagger } from "./swagger";
 import { format } from "date-fns-tz";
-import { setupWebSocketServer } from "./collab/signaling/signal";
+import { setupCollaborationSocket } from "./collab/signaling/signal";
 import { Logger } from "@nestjs/common";
 import express, { Request, Response, NextFunction } from "express";
 import { ConfigService } from "@nestjs/config";
@@ -83,7 +83,7 @@ if (process.env["NODE_ENV"] === "production") {
   const notificationsService = app.get(NotificationsService);
   const jwtSecret = configService.getOrThrow<string>("JWT_SECRET");
 
-  setupWebSocketServer(server);
+  setupCollaborationSocket(server);
   setupNotificationSocket(server, {
     notificationsService,
     jwtSecret,
