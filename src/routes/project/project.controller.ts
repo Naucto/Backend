@@ -17,7 +17,6 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
-  BadRequestException,
   HttpException
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
@@ -404,35 +403,9 @@ export class ProjectController {
           errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY
         })
     )
-    file: Express.Multer.File,
-    @Req() req: RequestWithUser
+      file: Express.Multer.File
   ): Promise<{ message: string; id: number }> {
-    const extension = file.originalname.split(".").pop();
-    if (!extension) throw new BadRequestException("File has no extension");
-
-    const project = await this.projectService.findOne(id);
-
-    const newS3Key = id.toString();
-
-    if (project.contentKey && project.contentKey !== newS3Key) {
-      this.logger.log(
-        `Deleting old file '${project.contentKey}' for project ${id}`
-      );
-      try {
-        await this.s3Service.deleteFile({ key: project.contentKey });
-      } catch (err) {
-        this.logger.warn(`Failed to delete old file: ${err}`);
-      }
-    }
-
-    const metadata = {
-      uploadedBy: req.user.id.toString(),
-      projectId: id.toString(),
-      originalName: file.originalname
-    };
-
-    await this.s3Service.uploadFile({ file, metadata, keyName: newS3Key });
-    await this.projectService.updateContentInfo(id, newS3Key, extension);
+    await this.projectService.save(id, file);
 
     return { message: "File uploaded successfully", id };
   }
@@ -547,63 +520,35 @@ export class ProjectController {
 
   @Get(":id/fetchContent")
   @UseGuards(ProjectCollaboratorGuard)
-  @ApiOperation({ summary: "Fetch project's content (Download)" })
-  @ApiParam({ name: "id", type: "number" })
-  @ApiResponse({ status: 200, description: "File stream" })
-  @ApiResponse({ status: 404, description: "File not found (DB or S3)" })
-  async fetchProjectContent(
-    @Param("id", ParseIntPipe) id: number,
-    @Res() res: Response
-  ): Promise<void> {
+  @ApiOperation({ summary: "Fetch project's content" })
+  @ApiParam({ name: "id", type: "string" })
+  @ApiResponse({ status: 200, description: "File fetched successfully" })
+  @ApiResponse({ status: 403, description: "Forbidden" })
+  @ApiResponse({ status: 404, description: "File not found" })
+  async fetchProjectContent(@Param("id") id: string, @Res() res: Response): Promise<void> {
     try {
-      const project = await this.projectService.findOne(id);
-
-      if (!project.contentKey) {
-        throw new BadRequestException(
-          "No content uploaded for this project yet."
-        );
-      }
       const file = await this.projectService.fetchLastVersion(Number(id));
-
-      const filename = `${id}.${project.contentExtension || "bin"}`;
 
       res.set({
         "Content-Type": file.contentType,
-        "Content-Length": (file.contentLength ?? 0).toString(),
-        "Content-Disposition": `attachment; filename="${filename}"`,
-        "Cache-Control": "no-cache, no-store, must-revalidate",
-        Pragma: "no-cache",
-        Expires: "0",
-        ETag: project.contentUploadedAt
-          ? `W/"${project.contentUploadedAt.getTime()}"`
-          : undefined
+        "Content-Length": file.contentLength,
       });
 
       file.body.pipe(res);
     } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
+
+      if (error instanceof Error) {
+        this.logger.error(`Failed to fetch content for project ${id}: ${error.message}`, error.stack);
+      } else {
+        this.logger.error(`Failed to fetch content for project ${id}: ${JSON.stringify(error)}`);
       }
 
       if (error instanceof S3DownloadException) {
-        this.logger.warn(
-          `S3 File not found for project ${id} (Key: ${error.key})`
-        );
-        res.status(404).json({ message: "File not found on storage server" });
+        res.status(404).json({ message: "File not found" });
         return;
       }
-
-      if (error instanceof Error) {
-        this.logger.error(`Download failed: ${error.message}`, error.stack);
-      } else {
-        this.logger.error("Download failed: Unknown error");
-      }
-
-      if (!res.headersSent) {
-        res
-          .status(500)
-          .json({ message: "Internal server error during download" });
-      }
+      res.status(500).json({ message: "Internal server error" });
+      return;
     }
   }
 
