@@ -1,5 +1,6 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { IsString, MaxLength } from "class-validator";
+import { IsEnum, IsString, MaxLength } from "class-validator";
+import { NOTIFICATION_TYPES, NotificationType } from "../notifications.types";
 
 export class NotificationTestDto {
   @ApiProperty({
@@ -19,10 +20,10 @@ export class NotificationTestDto {
     message!: string;
 
   @ApiProperty({
-    example: "notification",
-    description: "The type of the notification (friend request, message, etc.)"
+    example: "INFO",
+    description: "The type of the notification",
+    enum: NOTIFICATION_TYPES
   })
-  @IsString()
-  @MaxLength(100)
-    type!: string;
+  @IsEnum(NOTIFICATION_TYPES)
+    type!: NotificationType;
 }
