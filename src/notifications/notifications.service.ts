@@ -114,7 +114,7 @@ export class NotificationsService {
     createdAt: Date;
   }): NotificationPayload {
     return {
-      id: String(notification.id),
+      id: notification.id.toString(),
       userId: notification.userId,
       title: notification.title,
       message: notification.message,
