@@ -30,7 +30,7 @@ export const COLLABORATOR_SELECT = {
   email: true
 };
 
-type ProjectWithRelations = Project & {
+export type ProjectEx = Project & {
   collaborators: Array<{ id: number; username: string; email: string }>;
   creator: { id: number; username: string; email: string };
 };
@@ -82,7 +82,7 @@ export class ProjectService {
     });
   }
 
-  async findOne(id: number): Promise<ProjectWithRelations> {
+  async findOne(id: number): Promise<ProjectEx> {
     const project = await this.prisma.project.findUnique({
       where: { id },
       include: {
