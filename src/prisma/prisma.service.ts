@@ -1,32 +1,19 @@
 import { Injectable, OnModuleInit, OnModuleDestroy } from "@nestjs/common";
-import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { Pool } from "pg";
-import { ConfigService } from "@nestjs/config";
-
-class MissingDatabaseUrlError extends Error {
-  constructor() {
-    super(
-      "DATABASE_URL is missing. Configure it in your environment before starting the backend."
-    );
-    this.name = "MissingDatabaseUrlError";
-  }
-}
+import { PrismaClient } from "@prisma/client";
 
 @Injectable()
 export class PrismaService
   extends PrismaClient
   implements OnModuleInit, OnModuleDestroy
 {
-  constructor(configService: ConfigService) {
-    const connectionString = configService.get<string>("DATABASE_URL");
+  constructor() {
+    const connectionString = process.env["DATABASE_URL"];
     if (!connectionString) {
-      throw new MissingDatabaseUrlError();
+      throw new ReferenceError("DATABASE_URL environment variable is not set");
     }
-
-    super({
-      adapter: new PrismaPg(new Pool({ connectionString })),
-    });
+    const adapter = new PrismaPg({ connectionString });
+    super({ adapter });
   }
 
   async onModuleInit(): Promise<void> {

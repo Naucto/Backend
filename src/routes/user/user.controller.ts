@@ -26,7 +26,6 @@ import {
   ApiOperation,
   ApiResponse,
   ApiTags,
-  ApiQuery,
   ApiBearerAuth,
   ApiParam,
   ApiBody,
@@ -205,7 +204,6 @@ export class UserController {
     type: UserListResponseDto
   })
   @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
-  @ApiQuery({ type: UserFilterDto })
   @UseGuards(JwtAuthGuard)
   async findAll(
     @Query() filterDto: UserFilterDto

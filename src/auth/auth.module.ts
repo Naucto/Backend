@@ -24,7 +24,7 @@ function parseExpiresIn(v?: string): number | DurationString {
   imports: [
     ConfigModule,
     UserModule,
-    PassportModule.register({ defaultStrategy: "jwt" }),
+    PassportModule.register({}),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

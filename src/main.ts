@@ -1,17 +1,19 @@
 import { NestFactory } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
-import { AppModule } from "./app.module";
+import { AppModule } from "src/app.module";
+import { AppConfig } from "src/app.config";
 import {
   NestExpressApplication,
   ExpressAdapter
 } from "@nestjs/platform-express";
-import { setupSwagger } from "./swagger";
+import { setupSwagger } from "src/swagger";
 import { format } from "date-fns-tz";
-import { setupWebSocketServer } from "./collab/signaling/signal";
+import { setupWebSocketServer } from "@webrtc/signal";
 import { Logger } from "@nestjs/common";
 import express, { Request, Response, NextFunction } from "express";
 import { ConfigService } from "@nestjs/config";
-import * as path from "path";
+
+//import * as path from "path";
 import * as dotenv from "dotenv";
 import * as http from "http";
 import cookieParser from "cookie-parser";
@@ -24,9 +26,7 @@ if (process.env["NODE_ENV"] === "production") {
 
 (async () => {
   const expressApp = express();
-
   const server = http.createServer(expressApp);
-
   const app = await NestFactory.create<NestExpressApplication>(
     AppModule,
     new ExpressAdapter(expressApp)
@@ -34,16 +34,10 @@ if (process.env["NODE_ENV"] === "production") {
 
   const logger = new Logger("HTTP");
   const configService = app.get(ConfigService);
-  const frontendUrls = (configService.get<string>("FRONTEND_URL") || "")
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
-
-  if (frontendUrls.length === 0) {
-    logger.warn(
-      "FRONTEND_URL is not configured. CORS will reject browser origins until it is set."
-    );
-  }
+  const frontendUrl = configService.get<string>(
+    "FRONTEND_URL",
+    "http://localhost:3001"
+  );
 
   app.use(cookieParser());
   app.useLogger(["log", "error", "warn", "debug"]);
@@ -56,12 +50,12 @@ if (process.env["NODE_ENV"] === "production") {
     })
   );
 
-  app.useStaticAssets(path.join(__dirname, "..", "public"));
-  app.setBaseViewsDir(path.join(__dirname, "..", "views"));
-  app.setViewEngine("ejs");
+  //app.useStaticAssets(path.join(__dirname, "..", "public"));
+  //app.setBaseViewsDir(path.join(__dirname, "..", "views"));
+  //app.setViewEngine("ejs");
 
   app.enableCors({
-    origin: frontendUrls,
+    origin: frontendUrl,
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"]
@@ -80,14 +74,25 @@ if (process.env["NODE_ENV"] === "production") {
 
     next();
   });
+
   setupSwagger(app);
+  setupWebSocketServer(server);
 
   await app.init();
 
-  setupWebSocketServer(server);
+  const PORT = configService.get<number>("PORT") || 3000;
 
-  const PORT = configService.get<number>("PORT", 3000);
   server.listen(PORT, () => {
-    logger.log(`Server listening on port ${PORT}`);
+    const address = server.address();
+    const actualPort =
+      typeof address === "object" && address !== null
+        ? address.port
+        : Number(PORT);
+
+    const appConfig = app.get(AppConfig);
+    appConfig.setPort(actualPort);
+
+    logger.log(`Server listening on port ${actualPort}`);
   });
 })();
+

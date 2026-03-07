@@ -1,5 +1,3 @@
-// prisma/models/user.prisma
-
 model User {
   id        Int      @id @default(autoincrement())
   email     String   @unique
@@ -10,19 +8,21 @@ model User {
 
   roles Role[] @relation("UserRoles")
 
-  // Relations
   friendsInitiated Friendship[]    @relation("UserAFriends")
   friendsReceived  Friendship[]    @relation("UserBFriends")
   sentRequests     FriendRequest[] @relation("SentFriendRequests")
   receivedRequests FriendRequest[] @relation("ReceivedFriendRequests")
   subscriptions    Subscription[]
   comments         Comment[]
-  gameSessions     GameSession[]
   creator          Project[]       @relation("ProjectCreator")
   collaborators    Project[]       @relation("ProjectCollaborators")
 
+  // FIXME: After merge, refactor those fields to joinedWorkSessions/hostingWorkSessions
   workSession    WorkSession[] @relation("WorkSessionUsers")
   hostingSession WorkSession[] @relation("WorkSessionHost")
+
+  joinedGameSessions  GameSession[] @relation("UserJoinedGameSessions")
+  hostingGameSessions GameSession[] @relation("UserHostedGameSessions")
 
   refreshTokens RefreshToken[]
 }

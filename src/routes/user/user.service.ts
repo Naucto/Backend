@@ -1,11 +1,12 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import { PrismaService } from "@prisma/prisma.service";
+import { PrismaService } from "@ourPrisma/prisma.service";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
-import { User } from "@prisma/client";
+import { User, Prisma } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
-import { Prisma } from "@prisma/client";
+
 import { Role } from "@prisma/client";
+import { UserNotFoundError, UserGameSessionNotFoundError } from "./user.error";
 
 @Injectable()
 export class UserService {
@@ -16,7 +17,7 @@ export class UserService {
     return this.prisma.role.findMany({
       where: {
         name: { in: names }
-      }
+      },
     });
   }
 
@@ -30,14 +31,11 @@ export class UserService {
       throw new NotFoundException(`User with ID ${userId} not found`);
     }
 
-    return user.roles.map((role) => role.name);
+    return user.roles.map(role => role.name);
   }
 
   async create(createUserDto: CreateUserDto): Promise<User> {
-    const hashedPassword = await bcrypt.hash(
-      createUserDto.password,
-      UserService.BCRYPT_SALT_ROUNDS
-    );
+    const hashedPassword = await bcrypt.hash(createUserDto.password, UserService.BCRYPT_SALT_ROUNDS);
 
     const rolesToAssign: { id: number }[] = [];
 
@@ -54,12 +52,7 @@ export class UserService {
     });
   }
 
-  async findAll(params?: {
-    skip?: number;
-    take?: number;
-    where?: Prisma.UserWhereInput;
-    orderBy?: Prisma.UserOrderByWithRelationInput;
-  }): Promise<User[]> {
+  async findAll(params?: {skip?: number, take?: number, where?: Prisma.UserWhereInput, orderBy?: Prisma.UserOrderByWithRelationInput }): Promise<User[]> {
     const query: Prisma.UserFindManyArgs = {};
     if (params?.skip !== undefined) query.skip = params.skip;
     if (params?.take !== undefined) query.take = params.take;
@@ -76,45 +69,38 @@ export class UserService {
     return this.prisma.user.count(countArgs);
   }
 
-  async findOne(id: number): Promise<User> {
+  async findOne<ComplexFieldsT>(id: number, whatElse: Record<string, boolean> = {}): Promise<User & ComplexFieldsT> {
     const user = await this.prisma.user.findUnique({
-      where: { id }
+      where: { id },
+      include: whatElse
     });
 
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
 
-    return user;
+    return user as User & ComplexFieldsT;
   }
 
   async update(id: number, updateUserDto: UpdateUserDto): Promise<User> {
     const { roles, ...rest } = updateUserDto;
-
+    
     const data: Prisma.UserUpdateInput = {
       ...rest,
-      ...(roles
-        ? { roles: { connect: roles.map((roleName) => ({ name: roleName })) } }
-        : {})
+      ...(roles ? { roles: { connect: roles.map(roleName => ({ name: roleName })) } } : {}),
     };
 
     if (updateUserDto.password) {
-      data.password = await bcrypt.hash(
-        updateUserDto.password,
-        UserService.BCRYPT_SALT_ROUNDS
-      );
+      data.password = await bcrypt.hash(updateUserDto.password, UserService.BCRYPT_SALT_ROUNDS);
     }
 
     try {
       return await this.prisma.user.update({
         where: { id },
-        data
+        data,
       });
     } catch (error: unknown) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === "P2025"
-      ) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
         throw new NotFoundException(`User with ID ${id} not found`);
       }
       throw error;
@@ -132,5 +118,47 @@ export class UserService {
       where: { email }
     });
     return user ?? undefined;
+  }
+
+  async attachGameSession(userId: number, gameSessionId: number, hosted: boolean): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new UserNotFoundError("User not found");
+    }
+
+    const gameSession = await this.prisma.gameSession.findUnique({ where: { id: gameSessionId } });
+    if (!gameSession) {
+      throw new UserGameSessionNotFoundError("Game session not found");
+    }
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        [hosted ? "hostedGameSessions" : "joinedGameSessions"]: {
+          connect: { id: gameSessionId }
+        }
+      }
+    });
+  }
+
+  async detachGameSession(userId: number, gameSessionId: number, hosted: boolean): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new UserNotFoundError("User not found");
+    }
+
+    const gameSession = await this.prisma.gameSession.findUnique({ where: { id: gameSessionId } });
+    if (!gameSession) {
+      throw new UserGameSessionNotFoundError("Game session not found");
+    }
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        [hosted ? "hostedGameSessions" : "joinedGameSessions"]: {
+          disconnect: { id: gameSessionId }
+        }
+      }
+    });
   }
 }

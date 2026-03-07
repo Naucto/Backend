@@ -7,9 +7,9 @@ export class CreateWorkSessionDto {
     example: 1
   })
   @IsInt()
-    projectId!: number;
+  projectId!: number;
 
   @IsOptional()
   @IsDate()
-    startTime?: Date;
+  startTime?: Date;
 }

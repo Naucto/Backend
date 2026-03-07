@@ -9,7 +9,8 @@ import {
   UploadedFile,
   UseInterceptors,
   HttpStatus,
-  Logger
+  Logger,
+  Inject
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { FileInterceptor } from "@nestjs/platform-express";
@@ -43,7 +44,7 @@ export class S3Controller {
     private readonly s3Service: S3Service,
     private readonly bucketService: BucketService,
     private readonly cloudfrontService: CloudfrontService,
-    private readonly configService: ConfigService
+    @Inject(ConfigService) private readonly configService: ConfigService
   ) {}
 
   @Get("list")
@@ -234,6 +235,7 @@ export class S3Controller {
     await this.bucketService.createBucket(bucketName);
     return { message: "Bucket created successfully" };
   }
+
 
   @Post("policy/public-read")
   @ApiOperation({

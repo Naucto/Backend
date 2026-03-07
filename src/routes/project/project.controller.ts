@@ -21,9 +21,9 @@ import {
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
-import { ProjectSave, ProjectService } from "@projects/project.service";
-import { CreateProjectDto } from "@projects/dto/create-project.dto";
-import { UpdateProjectDto } from "@projects/dto/update-project.dto";
+import { ProjectSave, ProjectService } from "@project/project.service";
+import { CreateProjectDto } from "@project/dto/create-project.dto";
+import { UpdateProjectDto } from "@project/dto/update-project.dto";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
 import {
   ProjectCollaboratorGuard,
@@ -41,13 +41,13 @@ import {
 import {
   AddCollaboratorDto,
   RemoveCollaboratorDto
-} from "@projects/dto/collaborator-project.dto";
+} from "@project/dto/collaborator-project.dto";
 import { Request } from "express";
 import { UserDto } from "@auth/dto/user.dto";
 import { Project } from "@prisma/client";
 import {
   ProjectResponseDto,
-  ProjectWithRelationsResponseDto,
+  ProjectExResponseDto,
   SignedUrlResponseDto
 } from "./dto/project-response.dto";
 import { S3DownloadException } from "@s3/s3.error";
@@ -103,7 +103,8 @@ export class ProjectController {
   @ApiParam({ name: "id", type: "string" })
   @ApiResponse({
     status: 200,
-    description: "Project release file"
+    description: "Project release file",
+    content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } },
   })
   async getReleaseContent(
     @Param("id") id: string,
@@ -165,7 +166,7 @@ export class ProjectController {
     status: 200,
     description:
       "A JSON array of projects with collaborators and creator information",
-    type: [ProjectWithRelationsResponseDto]
+    type: [ProjectExResponseDto]
   })
   @ApiResponse({ status: 500, description: "Internal server error" })
   async findAll(@Req() request: RequestWithUser): Promise<Project[]> {
@@ -274,7 +275,7 @@ export class ProjectController {
   @ApiResponse({
     status: 200,
     description: "Updated project object with collaborators",
-    type: ProjectWithRelationsResponseDto
+    type: ProjectExResponseDto
   })
   @ApiResponse({
     status: 400,
@@ -329,7 +330,7 @@ export class ProjectController {
   @ApiResponse({
     status: 200,
     description: "Updated project object with collaborators",
-    type: ProjectWithRelationsResponseDto
+    type: ProjectExResponseDto
   })
   @ApiResponse({
     status: 400,
@@ -522,12 +523,12 @@ export class ProjectController {
   @UseGuards(ProjectCollaboratorGuard)
   @ApiOperation({ summary: "Fetch project's content" })
   @ApiParam({ name: "id", type: "string" })
-  @ApiResponse({ status: 200, description: "File fetched successfully" })
+  @ApiResponse({ status: 200, description: "File fetched successfully", content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } } })
   @ApiResponse({ status: 403, description: "Forbidden" })
   @ApiResponse({ status: 404, description: "File not found" })
-  async fetchProjectContent(@Param("id") id: string, @Res() res: Response): Promise<void> {
+  async fetchProjectContent(@Param("id") id: number, @Res() res: Response): Promise<void> {
     try {
-      const file = await this.projectService.fetchLastVersion(Number(id));
+      const file = await this.projectService.fetchLastVersion(id);
 
       res.set({
         "Content-Type": file.contentType,
@@ -672,7 +673,8 @@ export class ProjectController {
   @ApiParam({ name: "version", type: "string" })
   @ApiResponse({
     status: 200,
-    description: "Project version retrieved successfully"
+    description: "Project version retrieved successfully",
+    content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } },
   })
   @ApiResponse({ status: 403, description: "Forbidden" })
   async getVersion(
@@ -720,7 +722,8 @@ export class ProjectController {
   @ApiParam({ name: "checkpoint", type: "string" })
   @ApiResponse({
     status: 200,
-    description: "Project checkpoint retrieved successfully"
+    description: "Project checkpoint retrieved successfully",
+    content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } },
   })
   @ApiResponse({ status: 403, description: "Forbidden" })
   async getCheckpoint(

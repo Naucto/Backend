@@ -189,6 +189,7 @@ describe("BucketService", () => {
     });
   });
 
+
   describe("applyPublicReadPrefixPolicy", () => {
     it("applies policy for release/* by default", async () => {
       mockS3.send.mockResolvedValueOnce({});

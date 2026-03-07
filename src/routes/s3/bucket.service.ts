@@ -32,7 +32,7 @@ export class BucketService {
     private readonly s3: S3Client,
     @Inject(ConfigService) private readonly configService: ConfigService
   ) {
-    this.defaultBucket = this.configService.get<string>("S3_BUCKET_NAME");
+    this.defaultBucket = this.configService.get<string>("AWS_DEFAULT_BUCKET");
   }
 
   private resolveBucket(bucketName?: string): string {

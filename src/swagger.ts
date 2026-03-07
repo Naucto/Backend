@@ -1,9 +1,9 @@
 import { INestApplication } from "@nestjs/common";
-import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
+import { DocumentBuilder, OpenAPIObject, SwaggerModule } from "@nestjs/swagger";
 import { join } from "path";
 import * as express from "express";
 
-export function setupSwagger(app: INestApplication): void {
+export function buildSwaggerDocument(app: INestApplication): OpenAPIObject {
   const config = new DocumentBuilder()
     .setTitle("Naucto API")
     .setDescription("The Naucto API documentation")
@@ -19,7 +19,11 @@ export function setupSwagger(app: INestApplication): void {
     )
     .build();
 
-  const document = SwaggerModule.createDocument(app, config);
+  return SwaggerModule.createDocument(app, config);
+}
+
+export function setupSwagger(app: INestApplication): void {
+  const document = buildSwaggerDocument(app);
 
   app.use(
     "/swagger-ui",
