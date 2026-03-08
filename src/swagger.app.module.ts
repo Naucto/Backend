@@ -12,7 +12,6 @@ import { ScheduleModule } from "@nestjs/schedule";
 import { AuthModule } from "@auth/auth.module";
 
 import { ProjectController } from "@project/project.controller";
-import { S3Controller } from "@s3/s3.controller";
 import { MultiplayerController } from "src/routes/multiplayer/multiplayer.controller";
 
 import { ProjectService } from "@project/project.service";
@@ -41,7 +40,7 @@ const nullProvider = (token: InjectionToken): Provider => ({
     WorkSessionModule,
     WebRTCModule
   ],
-  controllers: [ProjectController, S3Controller, MultiplayerController],
+  controllers: [ProjectController, MultiplayerController],
   providers: [
     nullProvider(PrismaService),
     nullProvider(ProjectService),

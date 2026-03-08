@@ -393,10 +393,12 @@ export class ProjectService {
     });
 
     const file = await this.fetchLastVersion(projectId);
+    const releaseKey = `release/${projectId}`;
     await this.s3Service.uploadFile({
       file: file,
-      keyName: `release/${projectId}`
+      keyName: releaseKey
     });
+    await this.s3Service.setObjectPublicRead(releaseKey);
   }
 
   async unpublish(projectId: number): Promise<void> {

@@ -2,14 +2,11 @@ import { Module } from "@nestjs/common";
 import { MulterModule } from "@nestjs/platform-express";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { S3Client } from "@aws-sdk/client-s3";
-import { S3Controller } from "./s3.controller";
 import { S3Service } from "./s3.service";
 import { BucketService } from "./bucket.service";
 import { CloudfrontService } from "./cloudfront.service";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { S3ConfigurationException } from "./s3.error";
-
-const controllers = [S3Controller]; // Always include S3Controller, or adjust as needed
 
 @Module({
   imports: [
@@ -18,7 +15,6 @@ const controllers = [S3Controller]; // Always include S3Controller, or adjust as
       limits: { fileSize: 10 * 1024 * 1024 } // 10MB
     })
   ],
-  controllers,
   providers: [
     {
       provide: S3Client,

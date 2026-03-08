@@ -71,7 +71,6 @@ export class ProjectController {
   ) {}
 
   private readonly logger = new Logger(ProjectController.name);
-  private readonly sessionCookieTimeout = 600;
 
   @Get("releases")
   @ApiOperation({ summary: "Get all released projects" })
@@ -476,46 +475,10 @@ export class ProjectController {
       res.status(HttpStatus.NOT_FOUND).json({ message: "Project image not found" });
       return;
     }
-
-    const resourceUrl = this.cloudfrontService.getCDNUrl(key);
-    const cookies = this.cloudfrontService.createSignedCookies(
-      resourceUrl,
-      this.sessionCookieTimeout
-    );
-
-    const cookieOptions = {
-      httpOnly: true,
-      secure: true,
-      path: "/",
-      domain: this.cloudfrontService.getCookieDomain(),
-      sameSite: "lax" as const,
-      maxAge: 60 * 60 * 1000
-    };
-
-    if (cookies["CloudFront-Expires"]) {
-      res.cookie("CloudFront-Expires", cookies["CloudFront-Expires"], cookieOptions);
-    }
-    if (cookies["CloudFront-Signature"]) {
-      res.cookie(
-        "CloudFront-Signature",
-        cookies["CloudFront-Signature"],
-        cookieOptions
-      );
-    }
-    if (cookies["CloudFront-Key-Pair-Id"]) {
-      res.cookie(
-        "CloudFront-Key-Pair-Id",
-        cookies["CloudFront-Key-Pair-Id"],
-        cookieOptions
-      );
-    }
-    if (cookies["CloudFront-Policy"]) {
-      res.cookie("CloudFront-Policy", cookies["CloudFront-Policy"], cookieOptions);
-    }
+    const resourceUrl = this.cloudfrontService.generateSignedUrl(key);
 
     res.status(HttpStatus.OK).json({
-      resourceUrl,
-      cookies
+      url: resourceUrl
     });
   }
 
