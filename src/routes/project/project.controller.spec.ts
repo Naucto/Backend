@@ -4,7 +4,6 @@ import { ProjectService } from "./project.service";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { ConfigService } from "@nestjs/config";
 import { S3Service } from "@s3/s3.service";
-import { BucketService } from "@s3/bucket.service";
 import { CloudfrontService } from "src/routes/s3/edge.service";
 
 describe("ProjectController", () => {
@@ -42,10 +41,6 @@ describe("ProjectController", () => {
         },
         {
           provide: S3Service,
-          useValue: {}
-        },
-        {
-          provide: BucketService,
           useValue: {}
         },
         {
