@@ -52,7 +52,7 @@ import {
 } from "./dto/project-response.dto";
 import { S3DownloadException } from "@s3/s3.error";
 import { S3Service } from "@s3/s3.service";
-import { CloudfrontService } from "@s3/cloudfront.service";
+import { CloudfrontService } from "src/routes/s3/edge.service";
 import { SignedCdnResourceDto } from "@common/dto/signed-cdn-resource.dto";
 
 interface RequestWithUser extends Request {

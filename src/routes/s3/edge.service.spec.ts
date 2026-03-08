@@ -1,7 +1,7 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { ConfigService } from "@nestjs/config";
 import { BadEnvVarError, MissingEnvVarError } from "@auth/auth.error";
-import { CloudfrontService } from "./cloudfront.service";
+import { CloudfrontService } from "./edge.service";
 
 describe("CloudfrontService", () => {
   let cloudfrontService: CloudfrontService;

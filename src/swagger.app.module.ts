@@ -16,8 +16,7 @@ import { MultiplayerController } from "src/routes/multiplayer/multiplayer.contro
 
 import { ProjectService } from "@project/project.service";
 import { S3Service } from "@s3/s3.service";
-import { BucketService } from "@s3/bucket.service";
-import { CloudfrontService } from "@s3/cloudfront.service";
+import { CloudfrontService } from "src/routes/s3/edge.service";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { S3Client } from "@aws-sdk/client-s3";
 import { MultiplayerService } from "src/routes/multiplayer/multiplayer.service";
@@ -46,7 +45,6 @@ const nullProvider = (token: InjectionToken): Provider => ({
     nullProvider(ProjectService),
     nullProvider(S3Client),
     nullProvider(S3Service),
-    nullProvider(BucketService),
     nullProvider(CloudfrontService),
     nullProvider(MultiplayerService)
   ]

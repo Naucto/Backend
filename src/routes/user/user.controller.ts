@@ -46,7 +46,7 @@ import { UserDto } from "@auth/dto/user.dto";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
 import { S3Service } from "@s3/s3.service";
-import { CloudfrontService } from "@s3/cloudfront.service";
+import { CloudfrontService } from "src/routes/s3/edge.service";
 import { ConfigService } from "@nestjs/config";
 import { SignedCdnResourceDto } from "@common/dto/signed-cdn-resource.dto";
 import { MissingEnvVarError } from "@auth/auth.error";

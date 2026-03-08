@@ -3,7 +3,7 @@ import { UserController } from "./user.controller";
 import { UserService } from "./user.service";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { S3Service } from "@s3/s3.service";
-import { CloudfrontService } from "@s3/cloudfront.service";
+import { CloudfrontService } from "src/routes/s3/edge.service";
 import { ConfigService } from "@nestjs/config";
 
 describe("UserController", () => {

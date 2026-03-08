@@ -3,8 +3,7 @@ import { MulterModule } from "@nestjs/platform-express";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { S3Client } from "@aws-sdk/client-s3";
 import { S3Service } from "./s3.service";
-import { BucketService } from "./bucket.service";
-import { CloudfrontService } from "./cloudfront.service";
+import { CloudfrontService } from "./edge.service";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { S3ConfigurationException } from "./s3.error";
 
@@ -49,10 +48,9 @@ import { S3ConfigurationException } from "./s3.error";
       inject: [ConfigService]
     },
     S3Service,
-    BucketService,
     CloudfrontService,
     PrismaService
   ],
-  exports: [S3Service, BucketService, CloudfrontService]
+  exports: [S3Service, CloudfrontService]
 })
 export class S3Module {}
