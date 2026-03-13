@@ -15,14 +15,14 @@ export class UpdateProjectDto {
     example: "MySuperVideoGame"
   })
   @IsString()
-    name!: string;
+  name!: string;
 
   @ApiProperty({
     description: "A short description of the project",
     example: "A 2D platformer game with pixel art graphics"
   })
   @IsString()
-    shortDesc!: string;
+  shortDesc!: string;
 
   @ApiProperty({
     description: "A detailed description of the project",
@@ -30,7 +30,7 @@ export class UpdateProjectDto {
     required: false
   })
   @IsString()
-    longDesc?: string | null;
+  longDesc?: string | null;
 
   @ApiProperty({
     description: "URL to the project icon",
@@ -39,7 +39,7 @@ export class UpdateProjectDto {
   })
   @IsUrl()
   @IsOptional()
-    iconUrl?: string;
+  iconUrl?: string;
 
   @ApiProperty({
     description: "Project status",
@@ -49,7 +49,7 @@ export class UpdateProjectDto {
   })
   @IsEnum(ProjectStatus)
   @IsOptional()
-    status?: ProjectStatus;
+  status?: ProjectStatus;
 
   @ApiProperty({
     description: "Monetization type",
@@ -59,7 +59,7 @@ export class UpdateProjectDto {
   })
   @IsEnum(MonetizationType)
   @IsOptional()
-    monetization?: MonetizationType;
+  monetization?: MonetizationType;
 
   @ApiProperty({
     description: "The price of the project",
@@ -69,5 +69,5 @@ export class UpdateProjectDto {
   @IsNumber()
   @Min(0)
   @IsOptional()
-    price?: number;
+  price?: number;
 }

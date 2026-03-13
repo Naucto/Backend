@@ -1,7 +1,8 @@
 import {
   Injectable,
   ConflictException,
-  UnauthorizedException
+  UnauthorizedException,
+  Inject
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { UserService } from "@user/user.service";
@@ -11,7 +12,7 @@ import { UserDto } from "./dto/user.dto";
 import { AuthResponseDto } from "./dto/auth-response.dto";
 import { JwtPayload } from "./auth.types";
 import { CreateUserDto } from "@user/dto/create-user.dto";
-import { PrismaService } from "@prisma/prisma.service";
+import { PrismaService } from "@ourPrisma/prisma.service";
 import { ConfigService } from "@nestjs/config";
 import { parseExpiresIn, timespanToMs } from "./auth.utils";
 
@@ -22,7 +23,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly googleAuthService: GoogleAuthService,
     private readonly prisma: PrismaService,
-    private readonly configService: ConfigService
+    @Inject(ConfigService) private readonly configService: ConfigService
   ) {}
 
   async generateTokens(

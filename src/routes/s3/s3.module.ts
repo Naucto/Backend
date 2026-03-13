@@ -2,15 +2,10 @@ import { Module } from "@nestjs/common";
 import { MulterModule } from "@nestjs/platform-express";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { S3Client } from "@aws-sdk/client-s3";
-import { S3Controller } from "./s3.controller";
 import { S3Service } from "./s3.service";
-import { BucketService } from "./bucket.service";
-import { CloudfrontService } from "./cloudfront.service";
-import { PrismaService } from "@prisma/prisma.service";
+import { CloudfrontService } from "./edge.service";
+import { PrismaService } from "@ourPrisma/prisma.service";
 import { S3ConfigurationException } from "./s3.error";
-
-const controllers =
-  process.env["NODE_ENV"] === "production" ? [] : [S3Controller];
 
 @Module({
   imports: [
@@ -19,7 +14,6 @@ const controllers =
       limits: { fileSize: 10 * 1024 * 1024 } // 10MB
     })
   ],
-  controllers,
   providers: [
     {
       provide: S3Client,
@@ -54,10 +48,9 @@ const controllers =
       inject: [ConfigService]
     },
     S3Service,
-    BucketService,
     CloudfrontService,
     PrismaService
   ],
-  exports: [S3Service, BucketService, CloudfrontService]
+  exports: [S3Service, CloudfrontService]
 })
 export class S3Module {}

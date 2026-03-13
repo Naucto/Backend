@@ -26,7 +26,6 @@ import {
   ApiOperation,
   ApiResponse,
   ApiTags,
-  ApiQuery,
   ApiBearerAuth,
   ApiParam,
   ApiBody,
@@ -47,7 +46,7 @@ import { UserDto } from "@auth/dto/user.dto";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
 import { S3Service } from "@s3/s3.service";
-import { CloudfrontService } from "@s3/cloudfront.service";
+import { CloudfrontService } from "src/routes/s3/edge.service";
 import { ConfigService } from "@nestjs/config";
 import { SignedCdnResourceDto } from "@common/dto/signed-cdn-resource.dto";
 import { MissingEnvVarError } from "@auth/auth.error";
@@ -63,7 +62,6 @@ import { MissingEnvVarError } from "@auth/auth.error";
 @Controller("users")
 export class UserController {
   private readonly logger = new Logger(UserController.name);
-  private readonly sessionCookieTimeout = 600;
 
   constructor(
     private readonly userService: UserService,
@@ -161,39 +159,10 @@ export class UserController {
       throw new MissingEnvVarError("CDN_URL");
     }
 
-    const resourceUrl = this.cloudfrontService.getCDNUrl(key);
-    const cookies = this.cloudfrontService.createSignedCookies(
-      resourceUrl,
-      this.sessionCookieTimeout
-    );
-
-    const cookieOptions = {
-      httpOnly: true,
-      secure: true,
-      path: "/",
-      domain: `.${cdnUrl}`,
-      sameSite: "lax" as const,
-      maxAge: 60 * 60 * 1000
-    };
-
-    res.cookie("CloudFront-Expires", cookies["CloudFront-Expires"], cookieOptions);
-    res.cookie(
-      "CloudFront-Signature",
-      cookies["CloudFront-Signature"],
-      cookieOptions
-    );
-    res.cookie(
-      "CloudFront-Key-Pair-Id",
-      cookies["CloudFront-Key-Pair-Id"],
-      cookieOptions
-    );
-    if (cookies["CloudFront-Policy"]) {
-      res.cookie("CloudFront-Policy", cookies["CloudFront-Policy"], cookieOptions);
-    }
+    const resourceUrl = this.cloudfrontService.generateSignedUrl(key);
 
     res.status(HttpStatus.OK).json({
       resourceUrl,
-      cookies
     });
   }
 
@@ -205,7 +174,6 @@ export class UserController {
     type: UserListResponseDto
   })
   @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
-  @ApiQuery({ type: UserFilterDto })
   @UseGuards(JwtAuthGuard)
   async findAll(
     @Query() filterDto: UserFilterDto
