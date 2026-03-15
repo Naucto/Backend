@@ -567,7 +567,7 @@
                   "file": {
                     "type": "string",
                     "format": "binary",
-                    "description": "Project image file"
+                    "description": "Project image file (JPEG, PNG, GIF, WebP)"
                   }
                 }
               }
@@ -580,6 +580,9 @@
           },
           "403": {
             "description": "Forbidden"
+          },
+          "422": {
+            "description": "Invalid file type or size"
           }
         },
         "security": [
@@ -606,14 +609,23 @@
         ],
         "responses": {
           "200": {
-            "description": "Signed cookies and CDN resource URL",
+            "description": "CDN URL for the project image",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SignedCdnResourceDto"
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "example": "https://cdn.example.com/projects/42/image"
+                    }
+                  }
                 }
               }
             }
+          },
+          "403": {
+            "description": "Forbidden"
           },
           "404": {
             "description": "Image not found"
@@ -624,7 +636,7 @@
             "JWT-auth": []
           }
         ],
-        "summary": "Get signed CDN access to project image",
+        "summary": "Get CDN URL for project image (authenticated, any project status)",
         "tags": [
           "projects"
         ]
@@ -1153,6 +1165,76 @@
         "summary": "Leave a game host/session as a player",
         "tags": [
           "multiplayer"
+        ]
+      }
+    },
+    "/public/projects/{id}/image": {
+      "get": {
+        "operationId": "PublicController_getPublishedProjectImage",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Project ID",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Returns the CDN URL for the project image",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageUrlResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found, not published, or has no image"
+          }
+        },
+        "summary": "Get public CDN URL for a published project's image",
+        "tags": [
+          "public"
+        ]
+      }
+    },
+    "/public/users/{id}/profile-picture": {
+      "get": {
+        "operationId": "PublicController_getProfilePicture",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "User ID",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Returns the CDN URL for the profile picture",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageUrlResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User not found or has no profile picture"
+          }
+        },
+        "summary": "Get public CDN URL for a user's profile picture",
+        "tags": [
+          "public"
         ]
       }
     },
@@ -2241,30 +2323,6 @@
           }
         }
       },
-      "SignedCdnResourceDto": {
-        "type": "object",
-        "properties": {
-          "resourceUrl": {
-            "type": "string",
-            "example": "https://cdn.example.com/projects/42/image",
-            "description": "The CDN URL for the resource (requires signed cookies)"
-          },
-          "cookies": {
-            "type": "object",
-            "description": "Signed Edge cookies (also set as HTTP-only cookies)",
-            "example": {
-              "CloudFront-Expires": "1735660800",
-              "CloudFront-Signature": "base64-signature",
-              "CloudFront-Key-Pair-Id": "K1234567890",
-              "CloudFront-Policy": "base64-policy"
-            }
-          }
-        },
-        "required": [
-          "resourceUrl",
-          "cookies"
-        ]
-      },
       "LookupHostsResponseDtoHost": {
         "type": "object",
         "properties": {
@@ -2442,6 +2500,19 @@
         },
         "required": [
           "sessionUuid"
+        ]
+      },
+      "ImageUrlResponseDto": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "example": "https://cdn.example.com/projects/42/image",
+            "description": "The public CDN URL for the image"
+          }
+        },
+        "required": [
+          "url"
         ]
       },
       "LoginDto": {
@@ -2730,6 +2801,30 @@
           "createdAt",
           "updatedAt",
           "message"
+        ]
+      },
+      "SignedCdnResourceDto": {
+        "type": "object",
+        "properties": {
+          "resourceUrl": {
+            "type": "string",
+            "example": "https://cdn.example.com/projects/42/image",
+            "description": "The CDN URL for the resource (requires signed cookies)"
+          },
+          "cookies": {
+            "type": "object",
+            "description": "Signed Edge cookies (also set as HTTP-only cookies)",
+            "example": {
+              "CloudFront-Expires": "1735660800",
+              "CloudFront-Signature": "base64-signature",
+              "CloudFront-Key-Pair-Id": "K1234567890",
+              "CloudFront-Policy": "base64-policy"
+            }
+          }
+        },
+        "required": [
+          "resourceUrl",
+          "cookies"
         ]
       },
       "UpdateUserDto": {

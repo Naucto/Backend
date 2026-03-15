@@ -109,6 +109,7 @@ export class UserController {
     @UploadedFile(
       new ParseFilePipeBuilder()
         .addMaxSizeValidator({ maxSize: 5 * 1024 * 1024 })
+        .addFileTypeValidator({ fileType: /^image\/(jpeg|png|gif|webp)$/ })
         .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY })
     )
       file: Express.Multer.File,
@@ -129,6 +130,7 @@ export class UserController {
         originalName: file.originalname
       }
     });
+    await this.s3Service.setObjectPublicRead(key);
 
     return { message: "Profile picture uploaded successfully", id };
   }

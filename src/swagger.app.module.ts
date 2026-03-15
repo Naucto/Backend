@@ -13,6 +13,7 @@ import { AuthModule } from "@auth/auth.module";
 
 import { ProjectController } from "@project/project.controller";
 import { MultiplayerController } from "src/routes/multiplayer/multiplayer.controller";
+import { PublicController } from "src/routes/public/public.controller";
 
 import { ProjectService } from "@project/project.service";
 import { S3Service } from "@s3/s3.service";
@@ -39,7 +40,7 @@ const nullProvider = (token: InjectionToken): Provider => ({
     WorkSessionModule,
     WebRTCModule
   ],
-  controllers: [ProjectController, MultiplayerController],
+  controllers: [ProjectController, MultiplayerController, PublicController],
   providers: [
     nullProvider(PrismaService),
     nullProvider(ProjectService),
