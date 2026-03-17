@@ -69,13 +69,13 @@ export class WebRTCServerOptions {
 // Bare-bones implementation of a generic WebRTC server.
 // You'll be interested in the derived classes more than this one for examples.
 export class WebRTCServer<OptsT extends WebRTCServerOptions = WebRTCServerOptions> {
-  private _logger: Logger;
+  private readonly _logger: Logger;
 
-  private _wss: WebSocketServer;
-  private _extraOpts: OptsT;
+  private readonly _wss: WebSocketServer;
+  private readonly _extraOpts: OptsT;
 
-  private _serverEventHandlers: WebRTCEventHandlerMap = new Map();
-  private _clientEventHandlers: WebRTCEventHandlerMap = new Map();
+  private readonly _serverEventHandlers: WebRTCEventHandlerMap = new Map();
+  private readonly _clientEventHandlers: WebRTCEventHandlerMap = new Map();
 
   constructor(
     whatFor: string,
@@ -156,8 +156,8 @@ export class WebRTCServer<OptsT extends WebRTCServerOptions = WebRTCServerOption
   }
 
   @WebRTCServerEvent("upgrade")
-  private onUpgrade(request: IncomingMessage, socket: WebSocket): void
+  protected onUpgrade(_request: IncomingMessage, socket: WebSocket): void
   {
-    
+    this.applyEventHandlers(socket);
   }
 };
