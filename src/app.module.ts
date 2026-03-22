@@ -10,7 +10,6 @@ import { ScheduleModule } from "@nestjs/schedule";
 import { TasksModule } from "src/tasks/tasks.module";
 import { WebRTCModule } from "@webrtc/webrtc.module";
 import { MultiplayerModule } from "@multiplayer/multiplayer.module";
-import { PublicModule } from "src/routes/public/public.module";
 import { AppConfig } from "src/app.config";
 
 @Module({
@@ -25,8 +24,7 @@ import { AppConfig } from "src/app.config";
     WorkSessionModule,
     TasksModule,
     WebRTCModule,
-    MultiplayerModule,
-    PublicModule
+    MultiplayerModule
   ],
   providers: [
     AppConfig

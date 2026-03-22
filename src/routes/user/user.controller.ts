@@ -50,6 +50,8 @@ import { CloudfrontService } from "src/routes/s3/edge.service";
 import { ConfigService } from "@nestjs/config";
 import { SignedCdnResourceDto } from "@common/dto/signed-cdn-resource.dto";
 import { MissingEnvVarError } from "@auth/auth.error";
+import { Public } from "@auth/decorators/public.decorator";
+import { ImageUrlResponseDto } from "src/routes/common/dto/image-url-response.dto";
 
 @ApiTags("users")
 @ApiExtraModels(
@@ -325,5 +327,37 @@ export class UserController {
       statusCode: HttpStatus.OK,
       message: "User deleted successfully"
     };
+  }
+
+  @Public()
+  @Get("public/:id/profile-picture")
+  @ApiOperation({
+    summary: "Get public CDN URL for a user's profile picture"
+  })
+  @ApiParam({
+    name: "id",
+    type: "number",
+    description: "User ID"
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Returns the CDN URL for the profile picture",
+    type: ImageUrlResponseDto
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "User not found or has no profile picture"
+  })
+  async getPublicProfilePicture(
+    @Param("id", ParseIntPipe) id: number
+  ): Promise<ImageUrlResponseDto> {
+    const key = `users/${id}/profile`;
+    const exists = await this.s3Service.fileExists(key);
+    if (!exists) {
+      throw new HttpException("Not found", HttpStatus.NOT_FOUND);
+    }
+
+    const url = this.cloudfrontService.getCDNUrl(key);
+    return { url };
   }
 }

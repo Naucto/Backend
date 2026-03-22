@@ -43,6 +43,7 @@ export class ProjectResponseDto {
   @ApiProperty({
     description: "A detailed description of the project",
     example: "This game features multiple levels, power-ups, and boss fights.",
+    type: String,
     nullable: true
   })
   longDesc?: string | null;
@@ -50,6 +51,7 @@ export class ProjectResponseDto {
   @ApiProperty({
     description: "URL to the project icon",
     example: "https://example.com/icons/MySuperVideoGame.png",
+    type: String,
     nullable: true
   })
   iconUrl?: string | null;
@@ -73,6 +75,7 @@ export class ProjectResponseDto {
   @ApiProperty({
     example: 99.99,
     description: "The price of the project, if applicable",
+    type: Number,
     nullable: true
   })
   price?: number | null;

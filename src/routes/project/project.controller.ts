@@ -53,6 +53,9 @@ import {
 import { S3DownloadException } from "@s3/s3.error";
 import { S3Service } from "@s3/s3.service";
 import { CloudfrontService } from "src/routes/s3/edge.service";
+import { PrismaService } from "@ourPrisma/prisma.service";
+import { Public } from "@auth/decorators/public.decorator";
+import { ImageUrlResponseDto } from "src/routes/common/dto/image-url-response.dto";
 
 interface RequestWithUser extends Request {
   user: UserDto;
@@ -66,7 +69,8 @@ export class ProjectController {
   constructor(
     private readonly projectService: ProjectService,
     private readonly s3Service: S3Service,
-    private readonly cloudfrontService: CloudfrontService
+    private readonly cloudfrontService: CloudfrontService,
+    private readonly prismaService: PrismaService
   ) {}
 
   private readonly logger = new Logger(ProjectController.name);
@@ -466,23 +470,59 @@ export class ProjectController {
   @ApiResponse({
     status: 200,
     description: "CDN URL for the project image",
-    schema: {
-      type: "object",
-      properties: {
-        url: { type: "string", example: "https://cdn.example.com/projects/42/image" }
-      }
-    }
+    type: ImageUrlResponseDto
   })
+  @ApiResponse({ status: 204, description: "Project has no image" })
   @ApiResponse({ status: 403, description: "Forbidden" })
-  @ApiResponse({ status: 404, description: "Image not found" })
   async getProjectImage(
     @Param("id", ParseIntPipe) id: number
-  ): Promise<{ url: string }> {
+  ): Promise<ImageUrlResponseDto> {
     const key = `projects/${id}/image`;
     const exists = await this.s3Service.fileExists(key);
     if (!exists) {
-      throw new HttpException("Project image not found", HttpStatus.NOT_FOUND);
+      throw new HttpException("No content", HttpStatus.NO_CONTENT);
     }
+    const url = this.cloudfrontService.getCDNUrl(key);
+    return { url };
+  }
+
+  @Public()
+  @Get("public/:id/image")
+  @ApiOperation({
+    summary: "Get public CDN URL for a published project's image"
+  })
+  @ApiParam({
+    name: "id",
+    type: "number",
+    description: "Project ID"
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Returns the CDN URL for the project image",
+    type: ImageUrlResponseDto
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Project not found, not published, or has no image"
+  })
+  async getPublishedProjectImage(
+    @Param("id", ParseIntPipe) id: number
+  ): Promise<ImageUrlResponseDto> {
+    const project = await this.prismaService.project.findFirst({
+      where: { id, status: "COMPLETED" },
+      select: { id: true }
+    });
+
+    if (!project) {
+      throw new HttpException("Not found", HttpStatus.NOT_FOUND);
+    }
+
+    const key = `projects/${id}/image`;
+    const exists = await this.s3Service.fileExists(key);
+    if (!exists) {
+      throw new HttpException("Not found", HttpStatus.NOT_FOUND);
+    }
+
     const url = this.cloudfrontService.getCDNUrl(key);
     return { url };
   }
