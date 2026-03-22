@@ -456,7 +456,8 @@ export class ProjectController {
         uploadedBy: req.user.id.toString(),
         projectId: id.toString(),
         originalName: file.originalname
-      }
+      },
+      cacheControl: "no-cache"
     });
     await this.s3Service.setObjectPublicRead(key);
 
@@ -478,11 +479,12 @@ export class ProjectController {
     @Param("id", ParseIntPipe) id: number
   ): Promise<ImageUrlResponseDto> {
     const key = `projects/${id}/image`;
-    const exists = await this.s3Service.fileExists(key);
-    if (!exists) {
+    const head = await this.s3Service.getFileMetadataOrNull(key);
+    if (!head) {
       throw new HttpException("No content", HttpStatus.NO_CONTENT);
     }
-    const url = this.cloudfrontService.getCDNUrl(key);
+    const version = head.ETag?.replace(/"/g, "") ?? Date.now().toString();
+    const url = `${this.cloudfrontService.getCDNUrl(key)}?v=${version}`;
     return { url };
   }
 
@@ -518,12 +520,13 @@ export class ProjectController {
     }
 
     const key = `projects/${id}/image`;
-    const exists = await this.s3Service.fileExists(key);
-    if (!exists) {
+    const head = await this.s3Service.getFileMetadataOrNull(key);
+    if (!head) {
       throw new HttpException("Not found", HttpStatus.NOT_FOUND);
     }
 
-    const url = this.cloudfrontService.getCDNUrl(key);
+    const version = head.ETag?.replace(/"/g, "") ?? Date.now().toString();
+    const url = `${this.cloudfrontService.getCDNUrl(key)}?v=${version}`;
     return { url };
   }
 

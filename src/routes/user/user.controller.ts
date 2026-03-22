@@ -47,9 +47,7 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
 import { S3Service } from "@s3/s3.service";
 import { CloudfrontService } from "src/routes/s3/edge.service";
-import { ConfigService } from "@nestjs/config";
 import { SignedCdnResourceDto } from "@common/dto/signed-cdn-resource.dto";
-import { MissingEnvVarError } from "@auth/auth.error";
 import { Public } from "@auth/decorators/public.decorator";
 import { ImageUrlResponseDto } from "src/routes/common/dto/image-url-response.dto";
 
@@ -68,8 +66,7 @@ export class UserController {
   constructor(
     private readonly userService: UserService,
     private readonly s3Service: S3Service,
-    private readonly cloudfrontService: CloudfrontService,
-    private readonly configService: ConfigService
+    private readonly cloudfrontService: CloudfrontService
   ) {}
 
   @Get("profile")
@@ -130,7 +127,8 @@ export class UserController {
         uploadedBy: req.user.id.toString(),
         userId: id.toString(),
         originalName: file.originalname
-      }
+      },
+      cacheControl: "no-cache"
     });
     await this.s3Service.setObjectPublicRead(key);
 
@@ -152,18 +150,14 @@ export class UserController {
     @Res() res: Response
   ): Promise<void> {
     const key = `users/${id}/profile`;
-    const exists = await this.s3Service.fileExists(key);
-    if (!exists) {
+    const head = await this.s3Service.getFileMetadataOrNull(key);
+    if (!head) {
       res.status(HttpStatus.NOT_FOUND).json({ message: "Profile picture not found" });
       return;
     }
 
-    const cdnUrl = this.configService.get<string>("CDN_URL");
-    if (!cdnUrl) {
-      throw new MissingEnvVarError("CDN_URL");
-    }
-
-    const resourceUrl = this.cloudfrontService.generateSignedUrl(key);
+    const version = head.ETag?.replace(/"/g, "") ?? Date.now().toString();
+    const resourceUrl = `${this.cloudfrontService.getCDNUrl(key)}?v=${version}`;
 
     res.status(HttpStatus.OK).json({
       resourceUrl,
@@ -352,12 +346,13 @@ export class UserController {
     @Param("id", ParseIntPipe) id: number
   ): Promise<ImageUrlResponseDto> {
     const key = `users/${id}/profile`;
-    const exists = await this.s3Service.fileExists(key);
-    if (!exists) {
+    const head = await this.s3Service.getFileMetadataOrNull(key);
+    if (!head) {
       throw new HttpException("Not found", HttpStatus.NOT_FOUND);
     }
 
-    const url = this.cloudfrontService.getCDNUrl(key);
+    const version = head.ETag?.replace(/"/g, "") ?? Date.now().toString();
+    const url = `${this.cloudfrontService.getCDNUrl(key)}?v=${version}`;
     return { url };
   }
 }
