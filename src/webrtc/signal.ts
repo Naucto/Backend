@@ -1,3 +1,5 @@
+/* FIXME: Migrate this to the new WebRTCServer class system */
+
 import { WebSocket, WebSocketServer } from "ws";
 import http from "http";
 import * as map from "lib0/map";
