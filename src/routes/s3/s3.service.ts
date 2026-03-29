@@ -229,16 +229,39 @@ export class S3Service {
     }
   }
 
+  async getFileMetadataOrNull(
+    key: string,
+    bucketName?: string
+  ): Promise<HeadObjectCommandOutput | null> {
+    try {
+      return await this.headFile(key, bucketName);
+    } catch (error: unknown) {
+      const s3Error = error as {
+        name?: string;
+        $metadata?: { httpStatusCode?: number };
+      };
+      if (
+        s3Error.name === "NotFound" ||
+        s3Error.$metadata?.httpStatusCode === 404
+      ) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
   async uploadFile({
     file,
     metadata,
     bucketName,
-    keyName
+    keyName,
+    cacheControl
   }: {
     file: Express.Multer.File | DownloadedFile;
     metadata?: Record<string, string>;
     bucketName?: string;
     keyName?: string;
+    cacheControl?: string;
   }): Promise<void> {
     const resolvedBucketName = this.resolveBucket(bucketName);
 
@@ -252,7 +275,8 @@ export class S3Service {
           Key: keyName ?? file.originalname,
           Body: file.buffer,
           ContentType: file.mimetype,
-          Metadata: metadata
+          Metadata: metadata,
+          CacheControl: cacheControl
         };
         const command = new PutObjectCommand(input);
 
@@ -275,7 +299,8 @@ export class S3Service {
             Key: keyName,
             Body: file.body,
             ContentType: file.contentType,
-            Metadata: metadata
+            Metadata: metadata,
+            CacheControl: cacheControl
           }
         });
 
