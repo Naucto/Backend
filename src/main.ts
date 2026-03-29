@@ -1,5 +1,3 @@
-import { NestFactory } from "@nestjs/core";
-import { ValidationPipe } from "@nestjs/common";
 import { AppModule } from "src/app.module";
 import { AppConfig } from "src/app.config";
 import {
@@ -7,16 +5,18 @@ import {
   ExpressAdapter
 } from "@nestjs/platform-express";
 import { setupSwagger } from "src/swagger";
-import { format } from "date-fns-tz";
-import { setupWebSocketServer } from "@webrtc/signal";
 import { Logger } from "@nestjs/common";
-import express, { Request, Response, NextFunction } from "express";
 import { ConfigService } from "@nestjs/config";
 
-//import * as path from "path";
+import express, { Request, Response, NextFunction } from "express";
+
+import { NestFactory } from "@nestjs/core";
+import { ValidationPipe } from "@nestjs/common";
+
 import * as dotenv from "dotenv";
 import * as http from "http";
 import cookieParser from "cookie-parser";
+import { format } from "date-fns-tz";
 
 if (process.env["NODE_ENV"] === "production") {
   dotenv.config({ path: ".env.production" });
@@ -50,10 +50,6 @@ if (process.env["NODE_ENV"] === "production") {
     })
   );
 
-  //app.useStaticAssets(path.join(__dirname, "..", "public"));
-  //app.setBaseViewsDir(path.join(__dirname, "..", "views"));
-  //app.setViewEngine("ejs");
-
   app.enableCors({
     origin: frontendUrl,
     credentials: true,
@@ -76,7 +72,6 @@ if (process.env["NODE_ENV"] === "production") {
   });
 
   setupSwagger(app);
-  setupWebSocketServer(server);
 
   await app.init();
 

@@ -7,9 +7,12 @@ import { WorkSession } from "@prisma/client";
 import { JoinRoomResult } from "./work-session.types";
 import { UserDto } from "@auth/dto/user.dto";
 import { FetchWorkSessionDto } from "@work-session/dto/fetch-work-session.dto";
+import { YjsWebRTCServer } from "@webrtc/server/webrtc.server.yjs";
 
 @Injectable()
 export class WorkSessionService {
+  private readonly _webrtcServer: YjsWebRTCServer = new YjsWebRTCServer("Collaboration");
+
   constructor(private prisma: PrismaService) {}
 
   async findAll(): Promise<WorkSession[]> {

@@ -4,6 +4,8 @@ import { IsArray, IsInt, IsOptional, IsString, IsUrl, validateSync } from "class
 import { plainToInstance } from "class-transformer";
 import { WebRTCServiceOfferError } from "./webrtc.error";
 import { AppConfig } from "src/app.config";
+import { WebRTCServer } from "@webrtc/server/webrtc.server";
+import { WebRTCServerRuntimeError } from "@webrtc/server/webrtc.server.error";
 
 import path from "path";
 import fs from "fs/promises";
@@ -91,7 +93,8 @@ export class WebRTCService implements OnModuleInit {
     }
   }
 
-  buildOffer(): WebRTCOfferDto {
+  // targetServer can be either a concrete WebRTCServer or a URL to that server
+  buildOffer(targetServer: WebRTCServer | string): WebRTCOfferDto {
     if (!this.config) {
       this.logger.error("Attempt at creating WebRTC offer without a valid initialization, bailing out.");
       throw new WebRTCServiceOfferError("WebRTC service is not properly initialized");
@@ -99,7 +102,22 @@ export class WebRTCService implements OnModuleInit {
 
     const offerDto = new WebRTCOfferDto();
 
-    offerDto.signaling = `ws://${this.publicAddress}:${this.appConfig.getPort()}`;
+    let signalingUrl: string;
+
+    if (targetServer instanceof WebRTCServer) {
+      signalingUrl = `wss://${this.publicAddress}:${targetServer.port}`;
+    } else {
+      if (!/ws(s)?:\/\//.test(targetServer)) {
+        throw new WebRTCServerRuntimeError(
+          `Malformed websocket target server URL: ${targetServer}`
+        );
+      }
+
+      signalingUrl = targetServer;
+    }
+
+    offerDto.signaling = signalingUrl;
+
     offerDto.maxConns = this.config.maxClients;
     offerDto.peerOpts = {
       config: {

@@ -81,7 +81,7 @@ export class YjsWebRTCServer extends WebRTCServer<YjsWebRTCServerOptions> {
 
   constructor(
     whatFor: string,
-    port: number,
+    port?: number,
     extraOpts: YjsWebRTCServerOptions = new YjsWebRTCServerOptions()
   ) {
     super(whatFor, port, extraOpts);

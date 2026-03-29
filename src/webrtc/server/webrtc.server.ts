@@ -126,8 +126,12 @@ export class WebRTCServerOptions {
 // Bare-bones implementation of a generic WebRTC server.
 // You'll be interested in the derived classes more than this one for examples.
 export class WebRTCServer<OptsT extends WebRTCServerOptions = WebRTCServerOptions> {
+  private static readonly SEQUENTIAL_PORT_BASE = 4096;
+  private static _nextAvailablePort = this.SEQUENTIAL_PORT_BASE;
+
   private readonly _logger: Logger;
 
+  private readonly _port: number;
   private readonly _httpServer: HTTPServer;
   private readonly _wsServer: WebSocketServer;
   private readonly _extraOpts: OptsT;
@@ -138,9 +142,15 @@ export class WebRTCServer<OptsT extends WebRTCServerOptions = WebRTCServerOption
 
   constructor(
     whatFor: string,
-    port: number,
+    port?: number,
     extraOpts: OptsT = new WebRTCServerOptions() as OptsT
   ) {
+    if (port !== undefined) {
+      this._port = port;
+    } else {
+      this._port = WebRTCServer._nextAvailablePort++;
+    }
+
     this._logger = new Logger(`${this.constructor.name} (${whatFor})`);
 
     this._httpServer = createHttpServer();
@@ -170,10 +180,14 @@ export class WebRTCServer<OptsT extends WebRTCServerOptions = WebRTCServerOption
 
     this.applyEventHandlers(this._wsServer);
 
-    this._httpServer.listen(port);
+    this._httpServer.listen(this._port);
   }
 
   // --------------------------------------------------------------------------
+
+  public get port(): number {
+    return this._port;
+  }
 
   public get logger(): Logger {
     return this._logger;
