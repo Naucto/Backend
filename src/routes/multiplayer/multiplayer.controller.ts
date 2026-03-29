@@ -1,7 +1,6 @@
 import { ApiBody, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { GameSessionEx, MultiplayerService } from "./multiplayer.service";
-import { WebRTCService } from "@webrtc/webrtc.service";
-import { WebRTCServer } from "@webrtc/server/webrtc.server";
+
 import {
   BadRequestException,
   Body,
@@ -17,7 +16,6 @@ import {
   Req,
   UseGuards
 } from "@nestjs/common";
-import { GameSession } from "@prisma/client";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
 import { RequestWithUser } from "@auth/auth.types";
 import { ProjectNotFoundError } from "@project/project.error";
@@ -42,12 +40,8 @@ import { LeaveHostRequestDto } from "./dto/leave-host.dto";
 export class MultiplayerController {
   private readonly _logger = new Logger(MultiplayerController.name);
 
-  // FIXME: use a more concrete, derived type
-  private readonly _multiplayerServer = new WebRTCServer("Multiplayer");
-
   constructor(
-    private readonly _multiplayerService: MultiplayerService,
-    private readonly _webrtcService: WebRTCService
+    private readonly _multiplayerService: MultiplayerService
   ) {}
 
   @Get("list-hosts")
@@ -85,8 +79,8 @@ export class MultiplayerController {
       throw new InternalServerErrorException(getExcerrMessage(error));
     }
 
-    const responseDto = new LookupHostsResponseDto();
-    responseDto.hosts = hosts.map((host) => {
+    const response = new LookupHostsResponseDto();
+    response.hosts = hosts.map((host) => {
       const hostDto = new LookupHostsResponseDtoHost();
       hostDto.sessionUuid = host.sessionId;
       hostDto.sessionVisibility = host.visibility;
@@ -95,7 +89,7 @@ export class MultiplayerController {
       return hostDto;
     });
 
-    return responseDto;
+    return response;
   }
 
   @Post("open-host")
@@ -120,10 +114,10 @@ export class MultiplayerController {
     @Body() request: OpenHostRequestDto
   ): Promise<OpenHostResponseDto>
   {
-    let gameSession: GameSession;
+    let response: OpenHostResponseDto;
 
     try {
-      gameSession = await this._multiplayerService.openHost(requestCtx.user.id, request.projectId, request.visibility);
+      response = await this._multiplayerService.openHost(requestCtx.user.id, request.projectId, request.visibility);
     } catch (error) {
       if (error instanceof MultiplayerUserDoesNotExistError ||
           error instanceof MultiplayerHostNotFoundError) {
@@ -139,11 +133,7 @@ export class MultiplayerController {
       throw new InternalServerErrorException(getExcerrMessage(error));
     }
 
-    const responseDto = new OpenHostResponseDto();
-    responseDto.sessionUuid = gameSession.sessionId;
-    responseDto.webrtcConfig = this._webrtcService.buildOffer(this._multiplayerServer);
-
-    return responseDto;
+    return response;
   }
 
   @Delete("close-host")
@@ -197,8 +187,12 @@ export class MultiplayerController {
     @Req() requestCtx: RequestWithUser,
     @Body() request: JoinHostRequestDto
   ): Promise<JoinHostResponseDto> {
+    let response: JoinHostResponseDto;
+
     try {
-      await this._multiplayerService.joinHost(requestCtx.user.id, request.sessionUuid);
+      response = await this._multiplayerService.joinHost(
+        requestCtx.user.id, request.sessionUuid
+      );
     } catch (error) {
       if (error instanceof MultiplayerUserDoesNotExistError ||
           error instanceof MultiplayerHostNotFoundError) {
@@ -213,10 +207,7 @@ export class MultiplayerController {
       throw new InternalServerErrorException(getExcerrMessage(error));
     }
 
-    const responseDto = new JoinHostResponseDto();
-    responseDto.webrtcConfig = this._webrtcService.buildOffer(this._multiplayerServer);
-
-    return responseDto;
+    return response;
   }
 
   @Patch("leave-host")

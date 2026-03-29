@@ -3,7 +3,6 @@ import { WebRTCOfferDto, WebRTCOfferPeerICEServerConfig } from "./webrtc.dto";
 import { IsArray, IsInt, IsOptional, IsString, IsUrl, validateSync } from "class-validator";
 import { plainToInstance } from "class-transformer";
 import { WebRTCServiceOfferError } from "./webrtc.error";
-import { AppConfig } from "src/app.config";
 import { WebRTCServer } from "@webrtc/server/webrtc.server";
 import { WebRTCServerRuntimeError } from "@webrtc/server/webrtc.server.error";
 
@@ -35,18 +34,27 @@ type IpifyResponse = {
 
 @Injectable()
 export class WebRTCService implements OnModuleInit {
-  private readonly logger = new Logger(WebRTCService.name);
+  private readonly _logger = new Logger(WebRTCService.name);
 
-  private config?: WebRTCServiceConfig;
-  private publicAddress?: string;
+  private readonly _hookedServers = new Set<WebRTCServer>();
 
-  constructor(private readonly appConfig: AppConfig) {}
+  private _config?: WebRTCServiceConfig;
+  private _publicAddress?: string;
 
   async onModuleInit(): Promise<void> {
     await Promise.all([
       this.fetchPublicAddress(),
       this.loadConfig(),
     ]);
+  }
+
+  public registerServer(server: WebRTCServer): void {
+    this._hookedServers.add(server);
+  }
+
+  public shutdownAllServers(): void {
+    this._logger.log(`Shutting down ${this._hookedServers.size} WebRTC servers`);
+    this._hookedServers.forEach(server => server.shutdown());
   }
 
   private async fetchPublicAddress(): Promise<void> {
@@ -56,12 +64,12 @@ export class WebRTCService implements OnModuleInit {
     try {
       const res = await fetch("https://api.ipify.org?format=json", { signal: controller.signal });
       const data = await res.json() as IpifyResponse;
-      this.publicAddress = data.ip;
+      this._publicAddress = data.ip;
     } catch (err) {
       if (err instanceof Error) {
-        this.logger.error(`Failed to fetch public IP address for WebRTC service: ${err.message}`);
+        this._logger.error(`Failed to fetch public IP address for WebRTC service: ${err.message}`);
       }
-      this.logger.error(err);
+      this._logger.error(err);
     } finally {
       clearTimeout(timeout);
     }
@@ -78,25 +86,25 @@ export class WebRTCService implements OnModuleInit {
       const configErrors = validateSync(configInstance, { whitelist: true, forbidNonWhitelisted: true });
 
       if (configErrors.length > 0) {
-        this.logger.error(`Invalid WebRTC service config in ${configPath}`);
-        this.logger.error(JSON.stringify(configErrors));
+        this._logger.error(`Invalid WebRTC service config in ${configPath}`);
+        this._logger.error(JSON.stringify(configErrors));
         return;
       }
 
-      this.config = configInstance;
-      this.logger.log(`WebRTC service config loaded successfully from ${configPath}`);
+      this._config = configInstance;
+      this._logger.log(`WebRTC service config loaded successfully from ${configPath}`);
     } catch (err) {
       if (err instanceof Error) {
-        this.logger.error(`Failed to read WebRTC service config from ${configPath}: ${err.message}`);
+        this._logger.error(`Failed to read WebRTC service config from ${configPath}: ${err.message}`);
       }
-      this.logger.error(err);
+      this._logger.error(err);
     }
   }
 
   // targetServer can be either a concrete WebRTCServer or a URL to that server
   buildOffer(targetServer: WebRTCServer | string): WebRTCOfferDto {
-    if (!this.config) {
-      this.logger.error("Attempt at creating WebRTC offer without a valid initialization, bailing out.");
+    if (!this._config) {
+      this._logger.error("Attempt at creating WebRTC offer without a valid initialization, bailing out.");
       throw new WebRTCServiceOfferError("WebRTC service is not properly initialized");
     }
 
@@ -105,7 +113,7 @@ export class WebRTCService implements OnModuleInit {
     let signalingUrl: string;
 
     if (targetServer instanceof WebRTCServer) {
-      signalingUrl = `wss://${this.publicAddress}:${targetServer.port}`;
+      signalingUrl = `wss://${this._publicAddress}:${targetServer.port}`;
     } else {
       if (!/ws(s)?:\/\//.test(targetServer)) {
         throw new WebRTCServerRuntimeError(
@@ -118,10 +126,10 @@ export class WebRTCService implements OnModuleInit {
 
     offerDto.signaling = signalingUrl;
 
-    offerDto.maxConns = this.config.maxClients;
+    offerDto.maxConns = this._config.maxClients;
     offerDto.peerOpts = {
       config: {
-        iceServers: this.config.relays.map(
+        iceServers: this._config.relays.map(
           relay => {
             const relayConfig: WebRTCOfferPeerICEServerConfig = {
               urls: relay.url,

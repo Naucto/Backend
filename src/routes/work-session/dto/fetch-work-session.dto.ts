@@ -36,11 +36,4 @@ export class FetchWorkSessionDto {
   })
   @IsString()
   roomId!: string;
-
-  @ApiProperty({
-    description: "The password for the room of this work session",
-    example: "password123"
-  })
-  @IsString()
-  roomPassword!: string;
 }

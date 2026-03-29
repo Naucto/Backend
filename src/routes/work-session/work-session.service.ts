@@ -1,22 +1,31 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "@ourPrisma/prisma.service";
-import { CreateWorkSessionDto } from "./dto/create-work-session.dto";
-import { UpdateWorkSessionDto } from "./dto/update-work-session.dto";
-import { uuidv4 } from "lib0/random";
 import { WorkSession } from "@prisma/client";
-import { JoinRoomResult } from "./work-session.types";
 import { UserDto } from "@auth/dto/user.dto";
-import { FetchWorkSessionDto } from "@work-session/dto/fetch-work-session.dto";
+
+import { WebRTCService } from "@webrtc/webrtc.service";
 import { YjsWebRTCServer } from "@webrtc/server/webrtc.server.yjs";
+
+import { CreateWorkSessionDto } from "@work-session/dto/create-work-session.dto";
+import { UpdateWorkSessionDto } from "@work-session/dto/update-work-session.dto";
+import { FetchWorkSessionDto } from "@work-session/dto/fetch-work-session.dto";
+import { JoinWorkSessionDto } from "@work-session/dto/join-work-session.dto";
+
+import { Injectable, NotFoundException } from "@nestjs/common";
+import { uuidv4 } from "lib0/random";
 
 @Injectable()
 export class WorkSessionService {
-  private readonly _webrtcServer: YjsWebRTCServer = new YjsWebRTCServer("Collaboration");
+  private readonly _collabServer: YjsWebRTCServer;
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prismaService: PrismaService,
+    private webrtcService: WebRTCService
+  ) {
+    this._collabServer = new YjsWebRTCServer(webrtcService, "Collaboration");
+  }
 
   async findAll(): Promise<WorkSession[]> {
-    return this.prisma.workSession.findMany({
+    return this.prismaService.workSession.findMany({
       include: {
         project: true
       }
@@ -24,7 +33,7 @@ export class WorkSessionService {
   }
 
   async findOne(id: number): Promise<WorkSession> {
-    const workSession = await this.prisma.workSession.findUnique({
+    const workSession = await this.prismaService.workSession.findUnique({
       where: { id },
       include: {
         project: true,
@@ -43,7 +52,7 @@ export class WorkSessionService {
     createWorkSessionDto: CreateWorkSessionDto,
     userId: number
   ): Promise<WorkSession> {
-    const project = await this.prisma.project.findFirst({
+    const project = await this.prismaService.project.findFirst({
       where: {
         id: createWorkSessionDto.projectId,
         collaborators: {
@@ -60,7 +69,7 @@ export class WorkSessionService {
       );
     }
 
-    return this.prisma.workSession.create({
+    return this.prismaService.workSession.create({
       data: {
         startedAt: createWorkSessionDto.startTime ?? new Date(),
         project: {
@@ -89,7 +98,7 @@ export class WorkSessionService {
   ): Promise<WorkSession> {
     await this.findOne(id);
 
-    return this.prisma.workSession.update({
+    return this.prismaService.workSession.update({
       where: { id },
       data: updateWorkSessionDto,
       include: {
@@ -98,19 +107,19 @@ export class WorkSessionService {
     });
   }
 
-  async join(projectId: number, user: UserDto): Promise<JoinRoomResult> {
-    const project = await this.prisma.project.findFirst({
+  async join(projectId: number, user: UserDto): Promise<JoinWorkSessionDto> {
+    const project = await this.prismaService.project.findFirst({
       where: { id: projectId }
     });
     if (project === null) {
       throw new NotFoundException(`Project with ID ${projectId} not found`);
     }
 
-    let workSession = await this.prisma.workSession.findFirst({
+    let workSession = await this.prismaService.workSession.findFirst({
       where: { projectId }
     });
     if (workSession === null) {
-      workSession = await this.prisma.workSession.create({
+      workSession = await this.prismaService.workSession.create({
         data: {
           project: { connect: { id: projectId } },
           startedAt: new Date(),
@@ -120,12 +129,11 @@ export class WorkSessionService {
           host: {
             connect: { id: user.id }
           },
-          roomId: uuidv4(),
-          roomPassword: uuidv4()
+          roomId: uuidv4()
         }
       });
     } else {
-      workSession = await this.prisma.workSession.update({
+      workSession = await this.prismaService.workSession.update({
         data: {
           users: {
             connect: { id: user.id }
@@ -135,14 +143,16 @@ export class WorkSessionService {
       });
     }
 
-    return {
-      roomId: workSession.roomId,
-      roomPassword: workSession.roomPassword
-    };
+    const response = new JoinWorkSessionDto();
+
+    response.roomId = workSession.roomId;
+    response.offer  = this.webrtcService.buildOffer(this._collabServer);
+
+    return response;
   }
 
   async leave(projectId: number, user: UserDto): Promise<void> {
-    const workSession = await this.prisma.workSession.findFirst({
+    const workSession = await this.prismaService.workSession.findFirst({
       where: { projectId: projectId },
       include: {
         users: true
@@ -155,7 +165,7 @@ export class WorkSessionService {
       );
     }
 
-    await this.prisma.workSession.update({
+    await this.prismaService.workSession.update({
       where: { id: workSession.id },
       data: {
         users: {
@@ -167,12 +177,12 @@ export class WorkSessionService {
     if (workSession.hostId == user.id) {
       const newHost = workSession.users.find((u) => u.id !== user.id);
       if (newHost) {
-        await this.prisma.workSession.update({
+        await this.prismaService.workSession.update({
           where: { id: workSession.id },
           data: { hostId: newHost.id }
         });
       } else {
-        await this.prisma.workSession.delete({
+        await this.prismaService.workSession.delete({
           where: { id: workSession.id }
         });
       }
@@ -180,7 +190,7 @@ export class WorkSessionService {
   }
 
   async kick(projectId: number, userId: number): Promise<void> {
-    const workSession = await this.prisma.workSession.findFirst({
+    const workSession = await this.prismaService.workSession.findFirst({
       where: { projectId: projectId },
       include: {
         users: true
@@ -193,7 +203,7 @@ export class WorkSessionService {
       );
     }
 
-    await this.prisma.workSession.update({
+    await this.prismaService.workSession.update({
       where: { id: workSession.id },
       data: {
         users: {
@@ -205,12 +215,12 @@ export class WorkSessionService {
     if (workSession.hostId == userId) {
       const newHost = workSession.users.find((u) => u.id !== userId);
       if (newHost) {
-        await this.prisma.workSession.update({
+        await this.prismaService.workSession.update({
           where: { id: workSession.id },
           data: { hostId: newHost.id }
         });
       } else {
-        await this.prisma.workSession.delete({
+        await this.prismaService.workSession.delete({
           where: { id: workSession.id }
         });
       }
@@ -218,7 +228,7 @@ export class WorkSessionService {
   }
 
   async getInfo(projectId: number): Promise<FetchWorkSessionDto> {
-    const workSession = await this.prisma.workSession.findFirst({
+    const workSession = await this.prismaService.workSession.findFirst({
       where: { projectId },
       include: {
         users: true
@@ -236,8 +246,7 @@ export class WorkSessionService {
       host: workSession.hostId,
       project: workSession.projectId,
       startedAt: workSession.startedAt,
-      roomId: workSession.roomId,
-      roomPassword: workSession.roomPassword
+      roomId: workSession.roomId
     };
   }
 }

@@ -7,6 +7,7 @@ import {
   WebRTCServerOptions,
   WebRTCServerSocket
 } from "@webrtc/server/webrtc.server";
+import { WebRTCService } from "@webrtc/webrtc.service";
 
 import { RawData } from "ws";
 
@@ -80,11 +81,11 @@ export class YjsWebRTCServer extends WebRTCServer<YjsWebRTCServerOptions> {
   } as const;
 
   constructor(
+    webrtcService: WebRTCService,
     whatFor: string,
-    port?: number,
     extraOpts: YjsWebRTCServerOptions = new YjsWebRTCServerOptions()
   ) {
-    super(whatFor, port, extraOpts);
+    super(webrtcService, whatFor, extraOpts);
 
     const serverSocket = this.wss<YjsWebRTCServerSocket>();
 

@@ -13,6 +13,8 @@ import express, { Request, Response, NextFunction } from "express";
 import { NestFactory } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
 
+import { setupGracefulShutdown } from "@tygra/nestjs-graceful-shutdown";
+
 import * as dotenv from "dotenv";
 import * as http from "http";
 import cookieParser from "cookie-parser";
@@ -27,10 +29,13 @@ if (process.env["NODE_ENV"] === "production") {
 (async () => {
   const expressApp = express();
   const server = http.createServer(expressApp);
+
   const app = await NestFactory.create<NestExpressApplication>(
     AppModule,
     new ExpressAdapter(expressApp)
   );
+
+  setupGracefulShutdown({ app });
 
   const logger = new Logger("HTTP");
   const configService = app.get(ConfigService);
@@ -85,7 +90,7 @@ if (process.env["NODE_ENV"] === "production") {
         : Number(PORT);
 
     const appConfig = app.get(AppConfig);
-    appConfig.setPort(actualPort);
+    appConfig.port = actualPort;
 
     logger.log(`Server listening on port ${actualPort}`);
   });
