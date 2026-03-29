@@ -53,7 +53,9 @@ import {
 import { S3DownloadException } from "@s3/s3.error";
 import { S3Service } from "@s3/s3.service";
 import { CloudfrontService } from "src/routes/s3/edge.service";
-import { SignedCdnResourceDto } from "@common/dto/signed-cdn-resource.dto";
+import { PrismaService } from "@ourPrisma/prisma.service";
+import { Public } from "@auth/decorators/public.decorator";
+import { ImageUrlResponseDto } from "src/routes/common/dto/image-url-response.dto";
 
 interface RequestWithUser extends Request {
   user: UserDto;
@@ -67,7 +69,8 @@ export class ProjectController {
   constructor(
     private readonly projectService: ProjectService,
     private readonly s3Service: S3Service,
-    private readonly cloudfrontService: CloudfrontService
+    private readonly cloudfrontService: CloudfrontService,
+    private readonly prismaService: PrismaService
   ) {}
 
   private readonly logger = new Logger(ProjectController.name);
@@ -411,6 +414,7 @@ export class ProjectController {
   }
 
   @Post(":id/image")
+  @UseGuards(ProjectCollaboratorGuard)
   @UseInterceptors(FileInterceptor("file"))
   @ApiOperation({ summary: "Upload project image" })
   @ApiConsumes("multipart/form-data")
@@ -421,7 +425,7 @@ export class ProjectController {
         file: {
           type: "string",
           format: "binary",
-          description: "Project image file"
+          description: "Project image file (JPEG, PNG, GIF, WebP)"
         }
       }
     }
@@ -429,12 +433,14 @@ export class ProjectController {
   @ApiParam({ name: "id", type: "number" })
   @ApiResponse({ status: 201, description: "Image uploaded successfully" })
   @ApiResponse({ status: 403, description: "Forbidden" })
+  @ApiResponse({ status: 422, description: "Invalid file type or size" })
   @HttpCode(HttpStatus.CREATED)
   async uploadProjectImage(
     @Param("id", ParseIntPipe) id: number,
     @UploadedFile(
       new ParseFilePipeBuilder()
         .addMaxSizeValidator({ maxSize: 5 * 1024 * 1024 })
+        .addFileTypeValidator({ fileType: /^image\/(jpeg|png|gif|webp)$/ })
         .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY })
     )
       file: Express.Multer.File,
@@ -450,36 +456,78 @@ export class ProjectController {
         uploadedBy: req.user.id.toString(),
         projectId: id.toString(),
         originalName: file.originalname
-      }
+      },
+      cacheControl: "no-cache"
     });
+    await this.s3Service.setObjectPublicRead(key);
 
     return { message: "Project image uploaded successfully", id };
   }
 
   @Get(":id/image")
-  @ApiOperation({ summary: "Get signed CDN access to project image" })
+  @UseGuards(ProjectCollaboratorGuard)
+  @ApiOperation({ summary: "Get CDN URL for project image (authenticated, any project status)" })
   @ApiParam({ name: "id", type: "number" })
   @ApiResponse({
     status: 200,
-    description: "Signed cookies and CDN resource URL",
-    type: SignedCdnResourceDto
+    description: "CDN URL for the project image",
+    type: ImageUrlResponseDto
   })
-  @ApiResponse({ status: 404, description: "Image not found" })
+  @ApiResponse({ status: 204, description: "Project has no image" })
+  @ApiResponse({ status: 403, description: "Forbidden" })
   async getProjectImage(
-    @Param("id", ParseIntPipe) id: number,
-    @Res() res: Response
-  ): Promise<void> {
+    @Param("id", ParseIntPipe) id: number
+  ): Promise<ImageUrlResponseDto> {
     const key = `projects/${id}/image`;
-    const exists = await this.s3Service.fileExists(key);
-    if (!exists) {
-      res.status(HttpStatus.NOT_FOUND).json({ message: "Project image not found" });
-      return;
+    const head = await this.s3Service.getFileMetadataOrNull(key);
+    if (!head) {
+      throw new HttpException("No content", HttpStatus.NO_CONTENT);
     }
-    const resourceUrl = this.cloudfrontService.generateSignedUrl(key);
+    const version = head.ETag?.replace(/"/g, "") ?? Date.now().toString();
+    const url = `${this.cloudfrontService.getCDNUrl(key)}?v=${version}`;
+    return { url };
+  }
 
-    res.status(HttpStatus.OK).json({
-      url: resourceUrl
+  @Public()
+  @Get("public/:id/image")
+  @ApiOperation({
+    summary: "Get public CDN URL for a published project's image"
+  })
+  @ApiParam({
+    name: "id",
+    type: "number",
+    description: "Project ID"
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Returns the CDN URL for the project image",
+    type: ImageUrlResponseDto
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Project not found, not published, or has no image"
+  })
+  async getPublishedProjectImage(
+    @Param("id", ParseIntPipe) id: number
+  ): Promise<ImageUrlResponseDto> {
+    const project = await this.prismaService.project.findFirst({
+      where: { id, status: "COMPLETED" },
+      select: { id: true }
     });
+
+    if (!project) {
+      throw new HttpException("Not found", HttpStatus.NOT_FOUND);
+    }
+
+    const key = `projects/${id}/image`;
+    const head = await this.s3Service.getFileMetadataOrNull(key);
+    if (!head) {
+      throw new HttpException("Not found", HttpStatus.NOT_FOUND);
+    }
+
+    const version = head.ETag?.replace(/"/g, "") ?? Date.now().toString();
+    const url = `${this.cloudfrontService.getCDNUrl(key)}?v=${version}`;
+    return { url };
   }
 
   @Get(":id/fetchContent")
