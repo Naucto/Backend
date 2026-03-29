@@ -32,8 +32,7 @@ model WorkSession {
   startedAt DateTime @default(now())
   lastSave  DateTime @default(now())
 
-  roomId       String @unique @default(uuid())
-  roomPassword String @default(uuid())
+  roomId String @unique @default(uuid())
 
   @@index([projectId])
   @@index([hostId])
