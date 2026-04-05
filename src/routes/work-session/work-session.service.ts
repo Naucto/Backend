@@ -111,43 +111,31 @@ export class WorkSessionService {
     const project = await this.prismaService.project.findFirst({
       where: { id: projectId }
     });
-    if (project === null) {
+    if (!project) {
       throw new NotFoundException(`Project with ID ${projectId} not found`);
     }
 
-    let workSession = await this.prismaService.workSession.findFirst({
-      where: { projectId }
+    const workSession = await this.prismaService.workSession.upsert({
+      where: { projectId },
+      create: {
+        project: { connect: { id: projectId } },
+        startedAt: new Date(),
+        users: { connect: { id: user.id } },
+        host: { connect: { id: user.id } },
+        roomId: uuidv4()
+      },
+      update: {
+        users: { connect: { id: user.id } }
+      }
     });
-    if (workSession === null) {
-      workSession = await this.prismaService.workSession.create({
-        data: {
-          project: { connect: { id: projectId } },
-          startedAt: new Date(),
-          users: {
-            connect: { id: user.id }
-          },
-          host: {
-            connect: { id: user.id }
-          },
-          roomId: uuidv4()
-        }
-      });
-    } else {
-      workSession = await this.prismaService.workSession.update({
-        data: {
-          users: {
-            connect: { id: user.id }
-          }
-        },
-        where: { projectId }
-      });
-    }
 
     const response = new JoinWorkSessionDto();
 
     response.roomId      = workSession.roomId;
     response.hostId      = workSession.hostId;
     response.webrtcOffer = this.webrtcService.buildOffer(this._collabServer);
+
+    // FIXME: also provide info regarding users?
 
     return response;
   }
