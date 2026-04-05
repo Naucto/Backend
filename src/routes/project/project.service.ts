@@ -772,4 +772,75 @@ export class ProjectService {
 
     return { likes: project.likes, liked: !!existingLike };
   }
+
+  async fork(sourceProjectId: number, userId: number): Promise<ProjectEx> {
+    const sourceProject = await this.prisma.project.findUnique({
+      where: { id: sourceProjectId }
+    });
+
+    if (!sourceProject) {
+      throw new NotFoundException(
+        `Project with ID ${sourceProjectId} not found`
+      );
+    }
+
+    if (sourceProject.status !== "COMPLETED") {
+      throw new BadRequestException(
+        "Only published projects can be forked"
+      );
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId }
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${userId} not found`);
+    }
+
+    const newProject = await this.prisma.project.create({
+      data: {
+        name: `Fork of ${sourceProject.name}`,
+        shortDesc: sourceProject.shortDesc,
+        longDesc: sourceProject.longDesc,
+        forkedFrom: { connect: { id: sourceProjectId } },
+        creator: { connect: { id: userId } },
+        collaborators: { connect: [{ id: userId }] }
+      },
+      include: {
+        collaborators: {
+          select: ProjectService.COLLABORATOR_SELECT
+        },
+        creator: {
+          select: ProjectService.CREATOR_SELECT
+        }
+      }
+    }) as ProjectEx;
+
+    const releaseContent = await this.s3Service.downloadFile({
+      key: `release/${sourceProjectId}`
+    });
+    await this.s3Service.uploadFile({
+      file: releaseContent,
+      keyName: `save/${newProject.id}/${Date.now()}`
+    });
+
+    try {
+      const imageKey = `projects/${sourceProjectId}/image`;
+      const imageExists = await this.s3Service.fileExists(imageKey);
+      if (imageExists) {
+        const imageFile = await this.s3Service.downloadFile({ key: imageKey });
+        const newImageKey = `projects/${newProject.id}/image`;
+        await this.s3Service.uploadFile({
+          file: imageFile,
+          keyName: newImageKey
+        });
+        await this.s3Service.setObjectPublicRead(newImageKey);
+      }
+    } catch {
+      // Image copy failure is non-critical
+    }
+
+    return newProject;
+  }
 }

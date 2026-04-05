@@ -144,6 +144,15 @@ export class ProjectResponseDto {
     required: false
   })
   commentCount?: number;
+
+  @ApiProperty({
+    example: 42,
+    description: "The ID of the project this was forked from, if any",
+    type: Number,
+    nullable: true,
+    required: false
+  })
+  forkedFromId?: number | null;
 }
 
 export class ProjectExResponseDto extends ProjectResponseDto {
@@ -159,6 +168,8 @@ export class ProjectExResponseDto extends ProjectResponseDto {
   })
   creator!: UserBasicInfoDto;
 }
+
+export class ForkProjectResponseDto extends ProjectExResponseDto {}
 
 export class CdnUrlResponseDto {
   @ApiProperty({

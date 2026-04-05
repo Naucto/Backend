@@ -50,6 +50,7 @@ const mockProjects: ProjectWithCreatorAndCollaborators[] = [
     contentKey: "keyA",
     contentExtension: ".zip",
     contentUploadedAt: new Date(),
+    forkedFromId: null,
     creator: {
       id: 42,
       email: "creator@example.com",
@@ -88,6 +89,7 @@ const mockProjects: ProjectWithCreatorAndCollaborators[] = [
     contentKey: "keyB",
     contentExtension: ".zip",
     contentUploadedAt: new Date(),
+    forkedFromId: null,
     creator: {
       id: 42,
       email: "creator@example.com",
