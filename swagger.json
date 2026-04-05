@@ -335,6 +335,49 @@
         ]
       }
     },
+    "/projects/{id}/fork": {
+      "post": {
+        "operationId": "ProjectController_fork",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Numeric ID of the published project to fork",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Forked project created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForkProjectResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Project is not published"
+          },
+          "404": {
+            "description": "Project not found"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Fork a published project",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
     "/projects/{id}/add-collaborator": {
       "patch": {
         "description": "Add a collaborator to a project by providing either userId, username, or email. At least one must be provided.",
@@ -2035,6 +2078,12 @@
             "type": "number",
             "example": 87,
             "description": "The number of likes received by the project"
+          },
+          "forkedFromId": {
+            "type": "number",
+            "example": 42,
+            "description": "The ID of the project this was forked from, if any",
+            "nullable": true
           }
         },
         "required": [
@@ -2175,6 +2224,12 @@
             "example": 87,
             "description": "The number of likes received by the project"
           },
+          "forkedFromId": {
+            "type": "number",
+            "example": 42,
+            "description": "The ID of the project this was forked from, if any",
+            "nullable": true
+          },
           "collaborators": {
             "description": "The users collaborating on this project",
             "type": "array",
@@ -2231,6 +2286,130 @@
         "required": [
           "name",
           "shortDesc"
+        ]
+      },
+      "ForkProjectResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 1,
+            "description": "The unique identifier of the project"
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the project",
+            "example": "MySuperVideoGame"
+          },
+          "shortDesc": {
+            "type": "string",
+            "description": "A short description of the project",
+            "example": "A 2D platformer game with pixel art graphics"
+          },
+          "longDesc": {
+            "type": "string",
+            "description": "A detailed description of the project",
+            "example": "This game features multiple levels, power-ups, and boss fights.",
+            "nullable": true
+          },
+          "iconUrl": {
+            "type": "string",
+            "description": "URL to the project icon",
+            "example": "https://example.com/icons/MySuperVideoGame.png",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "description": "The current status of the project",
+            "enum": [
+              "IN_PROGRESS",
+              "COMPLETED",
+              "ARCHIVED"
+            ],
+            "example": "IN_PROGRESS",
+            "nullable": true
+          },
+          "monetization": {
+            "type": "string",
+            "description": "The monetization strategy for this project",
+            "enum": [
+              "NONE",
+              "ADS",
+              "PAID"
+            ],
+            "example": "NONE",
+            "nullable": true
+          },
+          "price": {
+            "type": "number",
+            "example": 99.99,
+            "description": "The price of the project, if applicable",
+            "nullable": true
+          },
+          "userId": {
+            "type": "number",
+            "example": 1,
+            "description": "The ID of the user who owns this project"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2023-04-15T12:00:00Z",
+            "description": "The date and time when the project was created"
+          },
+          "uniquePlayers": {
+            "type": "number",
+            "example": 123,
+            "description": "The number of unique players who have interacted with this project"
+          },
+          "activePlayers": {
+            "type": "number",
+            "example": 42,
+            "description": "The number of currently active players in this project"
+          },
+          "likes": {
+            "type": "number",
+            "example": 87,
+            "description": "The number of likes received by the project"
+          },
+          "forkedFromId": {
+            "type": "number",
+            "example": 42,
+            "description": "The ID of the project this was forked from, if any",
+            "nullable": true
+          },
+          "collaborators": {
+            "description": "The users collaborating on this project",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserBasicInfoDto"
+            }
+          },
+          "creator": {
+            "description": "The creator of this project",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserBasicInfoDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "shortDesc",
+          "longDesc",
+          "iconUrl",
+          "status",
+          "monetization",
+          "price",
+          "userId",
+          "createdAt",
+          "uniquePlayers",
+          "activePlayers",
+          "likes",
+          "collaborators",
+          "creator"
         ]
       },
       "UpdateProjectDto": {

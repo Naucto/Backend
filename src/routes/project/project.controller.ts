@@ -48,6 +48,7 @@ import { Project } from "@prisma/client";
 import {
   ProjectResponseDto,
   ProjectExResponseDto,
+  ForkProjectResponseDto,
   SignedUrlResponseDto
 } from "./dto/project-response.dto";
 import { S3DownloadException } from "@s3/s3.error";
@@ -214,6 +215,28 @@ export class ProjectController {
   ): Promise<ProjectResponseDto> {
     const userId = req.user.id;
     return await this.projectService.create(createProjectDto, userId);
+  }
+
+  @Post(":id/fork")
+  @ApiOperation({ summary: "Fork a published project" })
+  @ApiParam({
+    name: "id",
+    type: "number",
+    description: "Numeric ID of the published project to fork"
+  })
+  @ApiResponse({
+    status: 201,
+    description: "Forked project created successfully",
+    type: ForkProjectResponseDto
+  })
+  @ApiResponse({ status: 400, description: "Project is not published" })
+  @ApiResponse({ status: 404, description: "Project not found" })
+  @HttpCode(HttpStatus.CREATED)
+  async fork(
+    @Param("id", ParseIntPipe) id: number,
+    @Req() req: RequestWithUser
+  ): Promise<ForkProjectResponseDto> {
+    return await this.projectService.fork(id, req.user.id);
   }
 
   @Put(":id")
