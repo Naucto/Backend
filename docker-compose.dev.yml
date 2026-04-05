@@ -13,6 +13,9 @@ services:
       target: dev
     networks:
       - naucto-dev
+    environment:
+      NODE_ENV: development
+      HOT_RELOAD: true
     develop:
       watch:
         - action: sync
