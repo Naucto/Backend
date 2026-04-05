@@ -49,6 +49,13 @@ export class ProjectResponseDto {
   longDesc?: string | null;
 
   @ApiProperty({
+    description: "Tags associated with the project",
+    example: ["Roguelike", "Action", "Custom Jam"],
+    type: [String]
+  })
+  tags!: string[];
+
+  @ApiProperty({
     description: "URL to the project icon",
     example: "https://example.com/icons/MySuperVideoGame.png",
     type: String,
@@ -105,6 +112,12 @@ export class ProjectResponseDto {
     nullable: true
   })
   publishedAt?: Date | null;
+
+  @ApiProperty({
+    example: 123,
+    description: "The number of times players opened this game's play page"
+  })
+  viewCount!: number;
 
   @ApiProperty({
     example: 123,

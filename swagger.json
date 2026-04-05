@@ -13,7 +13,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/ProjectResponseDto"
+                    "$ref": "#/components/schemas/ProjectExResponseDto"
                   }
                 }
               }
@@ -1147,6 +1147,42 @@
           }
         ],
         "summary": "Get like status for a project (authenticated users only)",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/releases/{id}/view": {
+      "post": {
+        "operationId": "ProjectController_registerReleaseView",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated view count",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Register a play view for a published project",
         "tags": [
           "projects"
         ]
@@ -2351,126 +2387,6 @@
       }
     },
     "schemas": {
-      "ProjectResponseDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "number",
-            "example": 1,
-            "description": "The unique identifier of the project"
-          },
-          "name": {
-            "type": "string",
-            "description": "The name of the project",
-            "example": "MySuperVideoGame"
-          },
-          "shortDesc": {
-            "type": "string",
-            "description": "A short description of the project",
-            "example": "A 2D platformer game with pixel art graphics"
-          },
-          "longDesc": {
-            "type": "string",
-            "description": "A detailed description of the project",
-            "example": "This game features multiple levels, power-ups, and boss fights.",
-            "nullable": true
-          },
-          "iconUrl": {
-            "type": "string",
-            "description": "URL to the project icon",
-            "example": "https://example.com/icons/MySuperVideoGame.png",
-            "nullable": true
-          },
-          "status": {
-            "type": "string",
-            "description": "The current status of the project",
-            "enum": [
-              "IN_PROGRESS",
-              "COMPLETED",
-              "ARCHIVED"
-            ],
-            "example": "IN_PROGRESS",
-            "nullable": true
-          },
-          "monetization": {
-            "type": "string",
-            "description": "The monetization strategy for this project",
-            "enum": [
-              "NONE",
-              "ADS",
-              "PAID"
-            ],
-            "example": "NONE",
-            "nullable": true
-          },
-          "price": {
-            "type": "number",
-            "example": 99.99,
-            "description": "The price of the project, if applicable",
-            "nullable": true
-          },
-          "userId": {
-            "type": "number",
-            "example": 1,
-            "description": "The ID of the user who owns this project"
-          },
-          "createdAt": {
-            "format": "date-time",
-            "type": "string",
-            "example": "2023-04-15T12:00:00Z",
-            "description": "The date and time when the project was created"
-          },
-          "updatedAt": {
-            "format": "date-time",
-            "type": "string",
-            "example": "2023-05-15T12:00:00Z",
-            "description": "The date and time when the project was last updated"
-          },
-          "publishedAt": {
-            "type": "string",
-            "example": "2023-05-20T12:00:00Z",
-            "description": "The date and time when the project was last published",
-            "nullable": true
-          },
-          "uniquePlayers": {
-            "type": "number",
-            "example": 123,
-            "description": "The number of unique players who have interacted with this project"
-          },
-          "activePlayers": {
-            "type": "number",
-            "example": 42,
-            "description": "The number of currently active players in this project"
-          },
-          "likes": {
-            "type": "number",
-            "example": 87,
-            "description": "The number of likes received by the project"
-          },
-          "commentCount": {
-            "type": "number",
-            "example": 12,
-            "description": "The number of comments on the project"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "shortDesc",
-          "longDesc",
-          "iconUrl",
-          "status",
-          "monetization",
-          "price",
-          "userId",
-          "createdAt",
-          "updatedAt",
-          "publishedAt",
-          "uniquePlayers",
-          "activePlayers",
-          "likes"
-        ]
-      },
       "UserBasicInfoDto": {
         "type": "object",
         "properties": {
@@ -2520,6 +2436,18 @@
             "example": "This game features multiple levels, power-ups, and boss fights.",
             "nullable": true
           },
+          "tags": {
+            "description": "Tags associated with the project",
+            "example": [
+              "Roguelike",
+              "Action",
+              "Custom Jam"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "iconUrl": {
             "type": "string",
             "description": "URL to the project icon",
@@ -2577,6 +2505,11 @@
             "description": "The date and time when the project was last published",
             "nullable": true
           },
+          "viewCount": {
+            "type": "number",
+            "example": 123,
+            "description": "The number of times players opened this game's play page"
+          },
           "uniquePlayers": {
             "type": "number",
             "example": 123,
@@ -2618,6 +2551,7 @@
           "name",
           "shortDesc",
           "longDesc",
+          "tags",
           "iconUrl",
           "status",
           "monetization",
@@ -2626,6 +2560,7 @@
           "createdAt",
           "updatedAt",
           "publishedAt",
+          "viewCount",
           "uniquePlayers",
           "activePlayers",
           "likes",
@@ -2646,6 +2581,145 @@
           "signedUrl"
         ]
       },
+      "ProjectResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 1,
+            "description": "The unique identifier of the project"
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the project",
+            "example": "MySuperVideoGame"
+          },
+          "shortDesc": {
+            "type": "string",
+            "description": "A short description of the project",
+            "example": "A 2D platformer game with pixel art graphics"
+          },
+          "longDesc": {
+            "type": "string",
+            "description": "A detailed description of the project",
+            "example": "This game features multiple levels, power-ups, and boss fights.",
+            "nullable": true
+          },
+          "tags": {
+            "description": "Tags associated with the project",
+            "example": [
+              "Roguelike",
+              "Action",
+              "Custom Jam"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "iconUrl": {
+            "type": "string",
+            "description": "URL to the project icon",
+            "example": "https://example.com/icons/MySuperVideoGame.png",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "description": "The current status of the project",
+            "enum": [
+              "IN_PROGRESS",
+              "COMPLETED",
+              "ARCHIVED"
+            ],
+            "example": "IN_PROGRESS",
+            "nullable": true
+          },
+          "monetization": {
+            "type": "string",
+            "description": "The monetization strategy for this project",
+            "enum": [
+              "NONE",
+              "ADS",
+              "PAID"
+            ],
+            "example": "NONE",
+            "nullable": true
+          },
+          "price": {
+            "type": "number",
+            "example": 99.99,
+            "description": "The price of the project, if applicable",
+            "nullable": true
+          },
+          "userId": {
+            "type": "number",
+            "example": 1,
+            "description": "The ID of the user who owns this project"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2023-04-15T12:00:00Z",
+            "description": "The date and time when the project was created"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2023-05-15T12:00:00Z",
+            "description": "The date and time when the project was last updated"
+          },
+          "publishedAt": {
+            "type": "string",
+            "example": "2023-05-20T12:00:00Z",
+            "description": "The date and time when the project was last published",
+            "nullable": true
+          },
+          "viewCount": {
+            "type": "number",
+            "example": 123,
+            "description": "The number of times players opened this game's play page"
+          },
+          "uniquePlayers": {
+            "type": "number",
+            "example": 123,
+            "description": "The number of unique players who have interacted with this project"
+          },
+          "activePlayers": {
+            "type": "number",
+            "example": 42,
+            "description": "The number of currently active players in this project"
+          },
+          "likes": {
+            "type": "number",
+            "example": 87,
+            "description": "The number of likes received by the project"
+          },
+          "commentCount": {
+            "type": "number",
+            "example": 12,
+            "description": "The number of comments on the project"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "shortDesc",
+          "longDesc",
+          "tags",
+          "iconUrl",
+          "status",
+          "monetization",
+          "price",
+          "userId",
+          "createdAt",
+          "updatedAt",
+          "publishedAt",
+          "viewCount",
+          "uniquePlayers",
+          "activePlayers",
+          "likes"
+        ]
+      },
       "CreateProjectDto": {
         "type": "object",
         "properties": {
@@ -2663,6 +2737,17 @@
             "type": "string",
             "description": "URL to the project icon",
             "example": "https://example.com/icons/MySuperVideoGame.png"
+          },
+          "tags": {
+            "description": "Tags attached to the project",
+            "example": [
+              "Shooter",
+              "Action"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -2687,6 +2772,17 @@
             "type": "object",
             "description": "A detailed description of the project",
             "example": "This game features multiple levels, power-ups, and boss fights."
+          },
+          "tags": {
+            "description": "Tags attached to the project",
+            "example": [
+              "RPG",
+              "Adventure"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "iconUrl": {
             "type": "string",
@@ -2794,6 +2890,19 @@
         "required": [
           "likes",
           "liked"
+        ]
+      },
+      "ViewResponseDto": {
+        "type": "object",
+        "properties": {
+          "viewCount": {
+            "type": "number",
+            "example": 128,
+            "description": "The number of play opens registered for the project"
+          }
+        },
+        "required": [
+          "viewCount"
         ]
       },
       "LookupHostsResponseDtoHost": {

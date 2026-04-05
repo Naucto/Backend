@@ -15,6 +15,11 @@ model Project {
   name         String
   shortDesc    String
   longDesc     String?
+  tags         String[]          @default([])
+  publishedName      String?
+  publishedShortDesc String?
+  publishedLongDesc  String?
+  publishedTags      String[]          @default([])
   status       ProjectStatus?    @default(IN_PROGRESS)
   iconUrl      String?
   monetization MonetizationType? @default(NONE)
@@ -37,6 +42,7 @@ model Project {
   userLikes     Like[]
 
   // Aggregate statistics
+  viewCount     Int @default(0)
   uniquePlayers Int @default(0)
   activePlayers Int @default(0)
   likes         Int @default(0)

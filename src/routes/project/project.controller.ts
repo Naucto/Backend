@@ -58,6 +58,7 @@ import { Public } from "@auth/decorators/public.decorator";
 import { ImageUrlResponseDto } from "src/routes/common/dto/image-url-response.dto";
 import { OptionalJwtAuthGuard } from "@auth/guards/optional-jwt-auth.guard";
 import { LikeResponseDto } from "./dto/like-response.dto";
+import { ViewResponseDto } from "./dto/view-response.dto";
 
 interface RequestWithUser extends Request {
   user: UserDto;
@@ -84,9 +85,9 @@ export class ProjectController {
     status: 200,
     description:
       "A JSON array of projects with collaborators and creator information",
-    type: [ProjectResponseDto]
+    type: [ProjectExResponseDto]
   })
-  async getAllReleases(): Promise<Project[]> {
+  async getAllReleases(): Promise<ProjectExResponseDto[]> {
     return this.projectService.fetchPublishedGames();
   }
 
@@ -99,7 +100,7 @@ export class ProjectController {
     description: "Project release metadata",
     type: ProjectExResponseDto
   })
-  async getRelease(@Param("id") id: string): Promise<Project> {
+  async getRelease(@Param("id") id: string): Promise<ProjectExResponseDto> {
     const projectRelease = await this.projectService.fetchRelease(Number(id));
 
     return projectRelease;
@@ -830,6 +831,18 @@ export class ProjectController {
     @Req() req: RequestWithUser
   ): Promise<LikeResponseDto> {
     return this.projectService.getLikeStatus(Number(id), req.user.id);
+  }
+
+  @Public()
+  @Post("releases/:id/view")
+  @ApiOperation({ summary: "Register a play view for a published project" })
+  @ApiParam({ name: "id", type: "string" })
+  @ApiResponse({ status: 200, description: "Updated view count", type: ViewResponseDto })
+  @HttpCode(HttpStatus.OK)
+  async registerReleaseView(
+    @Param("id") id: string
+  ): Promise<ViewResponseDto> {
+    return this.projectService.registerReleaseView(Number(id));
   }
 
   // ─── Update Release Endpoint ──────────────────────────────────────────

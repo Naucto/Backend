@@ -1,5 +1,6 @@
 import { ApiProperty } from "@nestjs/swagger";
 import {
+  IsArray,
   IsString,
   IsOptional,
   IsNumber,
@@ -31,6 +32,17 @@ export class UpdateProjectDto {
   })
   @IsString()
   longDesc?: string | null;
+
+  @ApiProperty({
+    description: "Tags attached to the project",
+    example: ["RPG", "Adventure"],
+    required: false,
+    type: [String]
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  tags?: string[];
 
   @ApiProperty({
     description: "URL to the project icon",

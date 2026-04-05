@@ -57,7 +57,7 @@ export class CommentService {
         take: limit
       }),
       this.prisma.comment.count({
-        where: { projectId, parentId: null, deleted: false }
+        where: { projectId, deleted: false }
       })
     ]);
 

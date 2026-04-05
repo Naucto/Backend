@@ -40,6 +40,16 @@ export type ProjectSave = {
   date: Date;
 };
 
+type ProjectWithCounts = ProjectEx & {
+  _count: {
+    comments: number;
+  };
+};
+
+type ReleaseProject = ProjectEx & {
+  commentCount: number;
+};
+
 @Injectable()
 export class ProjectService {
   static COLLABORATOR_SELECT = COLLABORATOR_SELECT;
@@ -60,6 +70,47 @@ export class ProjectService {
       configService.get<number>("S3_MAX_CHECKPOINTS") ?? 10;
     this.auto_save_delay =
       (configService.get<number>("S3_AUTO_HISTORY_DELAY") ?? 10) * 60000; // from minutes to milliseconds
+  }
+
+  private normalizeTags(tags?: string[]): string[] {
+    if (!tags) {
+      return [];
+    }
+
+    const normalized = tags
+      .map((tag) => tag.trim())
+      .filter((tag) => tag.length > 0)
+      .slice(0, 12);
+
+    return normalized.filter(
+      (tag, index, array) =>
+        array.findIndex(
+          (candidate) => candidate.toLocaleLowerCase() === tag.toLocaleLowerCase()
+        ) === index
+    );
+  }
+
+  private withCommentCount(project: ProjectWithCounts): ReleaseProject {
+    const { _count, ...rest } = project;
+    return {
+      ...rest,
+      commentCount: _count.comments
+    };
+  }
+
+  private applyPublishedSnapshot<T extends ReleaseProject & {
+    publishedName?: string | null;
+    publishedShortDesc?: string | null;
+    publishedLongDesc?: string | null;
+    publishedTags?: string[];
+  }>(project: T): ReleaseProject {
+    return {
+      ...project,
+      name: project.publishedName || project.name,
+      shortDesc: project.publishedShortDesc || project.shortDesc,
+      longDesc: project.publishedLongDesc ?? project.longDesc,
+      tags: project.publishedTags.length > 0 ? project.publishedTags : project.tags
+    };
   }
 
   async findAll(userId: number): Promise<Project[]> {
@@ -118,6 +169,7 @@ export class ProjectService {
       return await this.prisma.project.create({
         data: {
           ...createProjectDto,
+          tags: this.normalizeTags(createProjectDto.tags),
           collaborators: {
             connect: [{ id: userId }]
           },
@@ -147,7 +199,12 @@ export class ProjectService {
 
     return this.prisma.project.update({
       where: { id },
-      data: updateProjectDto
+      data: {
+        ...updateProjectDto,
+        ...(updateProjectDto.tags
+          ? { tags: this.normalizeTags(updateProjectDto.tags) }
+          : {})
+      }
     });
   }
 
@@ -385,11 +442,29 @@ export class ProjectService {
   }
 
   async publish(projectId: number): Promise<void> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: {
+        name: true,
+        shortDesc: true,
+        longDesc: true,
+        tags: true
+      }
+    });
+
+    if (!project) {
+      throw new NotFoundException(`Project with ID ${projectId} not found`);
+    }
+
     await this.prisma.project.update({
       where: { id: projectId },
       data: {
         status: "COMPLETED",
-        publishedAt: new Date()
+        publishedAt: new Date(),
+        publishedName: project.name,
+        publishedShortDesc: project.shortDesc,
+        publishedLongDesc: project.longDesc,
+        publishedTags: project.tags
       }
     });
 
@@ -416,7 +491,13 @@ export class ProjectService {
   async updateRelease(projectId: number): Promise<void> {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      select: { status: true }
+      select: {
+        status: true,
+        name: true,
+        shortDesc: true,
+        longDesc: true,
+        tags: true
+      }
     });
 
     if (!project || project.status !== "COMPLETED") {
@@ -435,7 +516,13 @@ export class ProjectService {
 
     await this.prisma.project.update({
       where: { id: projectId },
-      data: { publishedAt: new Date() }
+      data: {
+        publishedAt: new Date(),
+        publishedName: project.name,
+        publishedShortDesc: project.shortDesc,
+        publishedLongDesc: project.longDesc,
+        publishedTags: project.tags
+      }
     });
   }
 
@@ -473,7 +560,7 @@ export class ProjectService {
     return this.s3Service.downloadFile({ key: file });
   }
 
-  async fetchRelease(projectId: number): Promise<Project> {
+  async fetchRelease(projectId: number): Promise<ReleaseProject> {
     const project = await this.prisma.project.findFirst({
       where: {
         id: projectId
@@ -484,6 +571,13 @@ export class ProjectService {
         },
         creator: {
           select: ProjectService.CREATOR_SELECT
+        },
+        _count: {
+          select: {
+            comments: {
+              where: { deleted: false }
+            }
+          }
         }
       }
     });
@@ -492,14 +586,21 @@ export class ProjectService {
       throw new NotFoundException(`Project with ID ${projectId} not found`);
     }
 
-    return project;
+    return this.applyPublishedSnapshot(
+      this.withCommentCount(project as ProjectWithCounts & {
+        publishedName?: string | null;
+        publishedShortDesc?: string | null;
+        publishedLongDesc?: string | null;
+        publishedTags?: string[];
+      })
+    );
   }
 
   async fetchReleaseContent(projectId: number): Promise<DownloadedFile> {
     return this.s3Service.downloadFile({ key: `release/${projectId}` });
   }
 
-  async fetchPublishedGames(): Promise<Project[]> {
+  async fetchPublishedGames(): Promise<ReleaseProject[]> {
     const projects = await this.prisma.project.findMany({
       where: {
         status: "COMPLETED"
@@ -516,10 +617,38 @@ export class ProjectService {
         }
       }
     });
-    return projects.map(({ _count, ...p }) => ({
-      ...p,
-      commentCount: _count.comments
-    })) as unknown as Project[];
+    return projects.map((project) =>
+      this.applyPublishedSnapshot(
+        this.withCommentCount(project as ProjectWithCounts & {
+          publishedName?: string | null;
+          publishedShortDesc?: string | null;
+          publishedLongDesc?: string | null;
+          publishedTags?: string[];
+        })
+      )
+    );
+  }
+
+  async registerReleaseView(projectId: number): Promise<{ viewCount: number }> {
+    const project = await this.prisma.project.findFirst({
+      where: {
+        id: projectId,
+        status: "COMPLETED"
+      },
+      select: { id: true }
+    });
+
+    if (!project) {
+      throw new NotFoundException(`Published project with ID ${projectId} not found`);
+    }
+
+    const updated = await this.prisma.project.update({
+      where: { id: projectId },
+      data: { viewCount: { increment: 1 } },
+      select: { viewCount: true }
+    });
+
+    return { viewCount: updated.viewCount };
   }
 
   // ─── Like Methods ───────────────────────────────────────────────────
