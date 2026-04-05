@@ -5,4 +5,4 @@
 
 */
 -- AlterTable
-ALTER TABLE "WorkSession" DROP COLUMN "roomPassword";
+ALTER TABLE "WorkSession" DROP COLUMN IF EXISTS "roomPassword";
