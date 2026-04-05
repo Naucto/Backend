@@ -124,7 +124,7 @@ export class WebRTCService implements OnModuleInit {
       signalingUrl = targetServer;
     }
 
-    offerDto.signaling = signalingUrl;
+    offerDto.signaling = [ signalingUrl ];
 
     offerDto.maxConns = this._config.maxClients;
     offerDto.peerOpts = {

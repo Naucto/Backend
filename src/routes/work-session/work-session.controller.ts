@@ -34,7 +34,8 @@ export class WorkSessionController {
   @ApiOperation({ summary: "Join a work session" })
   @ApiResponse({
     status: HttpStatus.CREATED,
-    description: "The work session has been successfully created."
+    description: "The work session has been successfully created.",
+    type: JoinWorkSessionDto
   })
   @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: "Bad request." })
   @ApiParam({ name: "id", description: "Project ID" })

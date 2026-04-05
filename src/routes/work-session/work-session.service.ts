@@ -145,8 +145,9 @@ export class WorkSessionService {
 
     const response = new JoinWorkSessionDto();
 
-    response.roomId = workSession.roomId;
-    response.offer  = this.webrtcService.buildOffer(this._collabServer);
+    response.roomId      = workSession.roomId;
+    response.hostId      = workSession.hostId;
+    response.webrtcOffer = this.webrtcService.buildOffer(this._collabServer);
 
     return response;
   }
@@ -243,7 +244,7 @@ export class WorkSessionService {
 
     return {
       users: workSession.users.map((user) => user.id),
-      host: workSession.hostId,
+      hostId: workSession.hostId,
       project: workSession.projectId,
       startedAt: workSession.startedAt,
       roomId: workSession.roomId
