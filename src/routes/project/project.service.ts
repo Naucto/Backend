@@ -43,11 +43,13 @@ export type ProjectSave = {
 type ProjectWithCounts = ProjectEx & {
   _count: {
     comments: number;
+    forks: number;
   };
 };
 
 type ReleaseProject = ProjectEx & {
   commentCount: number;
+  forkCount: number;
 };
 
 @Injectable()
@@ -94,7 +96,8 @@ export class ProjectService {
     const { _count, ...rest } = project;
     return {
       ...rest,
-      commentCount: _count.comments
+      commentCount: _count.comments,
+      forkCount: _count.forks
     };
   }
 
@@ -574,6 +577,7 @@ export class ProjectService {
         },
         _count: {
           select: {
+            forks: true,
             comments: {
               where: { deleted: false }
             }
@@ -613,7 +617,10 @@ export class ProjectService {
           select: ProjectService.CREATOR_SELECT
         },
         _count: {
-          select: { comments: { where: { deleted: false } } }
+          select: {
+            forks: true,
+            comments: { where: { deleted: false } }
+          }
         }
       }
     });

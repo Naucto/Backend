@@ -146,6 +146,13 @@ export class ProjectResponseDto {
   commentCount?: number;
 
   @ApiProperty({
+    example: 7,
+    description: "The number of forks created from this project",
+    required: false
+  })
+  forkCount?: number;
+
+  @ApiProperty({
     example: 42,
     description: "The ID of the project this was forked from, if any",
     type: Number,
