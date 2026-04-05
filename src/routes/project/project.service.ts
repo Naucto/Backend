@@ -388,7 +388,8 @@ export class ProjectService {
     await this.prisma.project.update({
       where: { id: projectId },
       data: {
-        status: "COMPLETED"
+        status: "COMPLETED",
+        publishedAt: new Date()
       }
     });
 
@@ -410,6 +411,32 @@ export class ProjectService {
     });
 
     await this.s3Service.deleteFile({ key: `release/${projectId}` });
+  }
+
+  async updateRelease(projectId: number): Promise<void> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { status: true }
+    });
+
+    if (!project || project.status !== "COMPLETED") {
+      throw new BadRequestException(
+        `Project with ID ${projectId} is not published`
+      );
+    }
+
+    const file = await this.fetchLastVersion(projectId);
+    const releaseKey = `release/${projectId}`;
+    await this.s3Service.uploadFile({
+      file: file,
+      keyName: releaseKey
+    });
+    await this.s3Service.setObjectPublicRead(releaseKey);
+
+    await this.prisma.project.update({
+      where: { id: projectId },
+      data: { publishedAt: new Date() }
+    });
   }
 
   async listVersions(projectId: number): Promise<ProjectSave[]> {
@@ -473,7 +500,7 @@ export class ProjectService {
   }
 
   async fetchPublishedGames(): Promise<Project[]> {
-    return this.prisma.project.findMany({
+    const projects = await this.prisma.project.findMany({
       where: {
         status: "COMPLETED"
       },
@@ -483,8 +510,137 @@ export class ProjectService {
         },
         creator: {
           select: ProjectService.CREATOR_SELECT
+        },
+        _count: {
+          select: { comments: { where: { deleted: false } } }
         }
       }
     });
+    return projects.map(({ _count, ...p }) => ({
+      ...p,
+      commentCount: _count.comments
+    })) as unknown as Project[];
+  }
+
+  // ─── Like Methods ───────────────────────────────────────────────────
+
+  async likeProject(
+    projectId: number,
+    userId?: number
+  ): Promise<{ likes: number; liked: boolean }> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true, likes: true }
+    });
+
+    if (!project) {
+      throw new NotFoundException(`Project with ID ${projectId} not found`);
+    }
+
+    if (!userId) {
+      // Anonymous like — just increment counter
+      const updated = await this.prisma.project.update({
+        where: { id: projectId },
+        data: { likes: { increment: 1 } },
+        select: { likes: true }
+      });
+      return { likes: updated.likes, liked: true };
+    }
+
+    // Authenticated like — toggle
+    const existingLike = await this.prisma.like.findUnique({
+      where: {
+        userId_projectId: { userId, projectId }
+      }
+    });
+
+    if (existingLike) {
+      // Already liked — unlike
+      await this.prisma.$transaction([
+        this.prisma.like.delete({
+          where: { id: existingLike.id }
+        }),
+        this.prisma.project.update({
+          where: { id: projectId },
+          data: { likes: { decrement: 1 } }
+        })
+      ]);
+
+      const updated = await this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { likes: true }
+      });
+      return { likes: updated!.likes, liked: false };
+    } else {
+      // Not liked — like
+      await this.prisma.$transaction([
+        this.prisma.like.create({
+          data: { userId, projectId }
+        }),
+        this.prisma.project.update({
+          where: { id: projectId },
+          data: { likes: { increment: 1 } }
+        })
+      ]);
+
+      const updated = await this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { likes: true }
+      });
+      return { likes: updated!.likes, liked: true };
+    }
+  }
+
+  async unlikeProject(
+    projectId: number,
+    userId: number
+  ): Promise<{ likes: number; liked: boolean }> {
+    const existingLike = await this.prisma.like.findUnique({
+      where: {
+        userId_projectId: { userId, projectId }
+      }
+    });
+
+    if (!existingLike) {
+      throw new NotFoundException("Like not found");
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.like.delete({
+        where: { id: existingLike.id }
+      }),
+      this.prisma.project.update({
+        where: { id: projectId },
+        data: { likes: { decrement: 1 } }
+      })
+    ]);
+
+    const updated = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { likes: true }
+    });
+    return { likes: updated!.likes, liked: false };
+  }
+
+  async getLikeStatus(
+    projectId: number,
+    userId: number
+  ): Promise<{ likes: number; liked: boolean }> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { likes: true }
+    });
+
+    if (!project) {
+      throw new NotFoundException(`Project with ID ${projectId} not found`);
+    }
+
+    const existingLike = await this.prisma.like.findUnique({
+      where: {
+        userId_projectId: { userId, projectId }
+      }
+    });
+
+    return { likes: project.likes, liked: !!existingLike };
   }
 }

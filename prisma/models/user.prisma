@@ -14,6 +14,7 @@ model User {
   receivedRequests FriendRequest[] @relation("ReceivedFriendRequests")
   subscriptions    Subscription[]
   comments         Comment[]
+  likes            Like[]
   creator          Project[]       @relation("ProjectCreator")
   collaborators    Project[]       @relation("ProjectCollaborators")
 

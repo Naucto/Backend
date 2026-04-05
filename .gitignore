@@ -74,3 +74,4 @@ yarn.lock
 # Project specific
 config.json
 config/webrtc.json
+generated_client

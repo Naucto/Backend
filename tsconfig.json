@@ -36,6 +36,7 @@
         "@auth/*": ["auth/*"],
         "@project/*": ["routes/project/*"],
         "@multiplayer/*": ["routes/multiplayer/*"],
+        "@comment/*": ["routes/comment/*"],
         "@user/*": ["routes/user/*"],
         "@work-session/*": ["routes/work-session/*"],
         "@s3/*": ["routes/s3/*"],

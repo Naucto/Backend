@@ -46,7 +46,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Project release file"
+            "description": "Project release metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectExResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1039,6 +1046,147 @@
         ]
       }
     },
+    "/projects/releases/{id}/like": {
+      "post": {
+        "operationId": "ProjectController_likeProject",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Like status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LikeResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Like a published project (toggle for authenticated users, increment for anonymous)",
+        "tags": [
+          "projects"
+        ]
+      },
+      "delete": {
+        "operationId": "ProjectController_unlikeProject",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Like removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LikeResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Unlike a published project (authenticated users only)",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/releases/{id}/like-status": {
+      "get": {
+        "operationId": "ProjectController_getLikeStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Like status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LikeResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get like status for a project (authenticated users only)",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/{id}/update-release": {
+      "post": {
+        "operationId": "ProjectController_updateRelease",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Release updated successfully"
+          },
+          "400": {
+            "description": "Project is not published"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Update an already published project's release content",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
     "/multiplayer/list-hosts": {
       "get": {
         "operationId": "MultiplayerController_lookupHosts",
@@ -1199,6 +1347,257 @@
         "summary": "Leave a game host/session as a player",
         "tags": [
           "multiplayer"
+        ]
+      }
+    },
+    "/projects/{projectId}/comments": {
+      "get": {
+        "operationId": "CommentController_getComments",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "newest",
+                "oldest"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of comments",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedCommentsResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get comments for a project",
+        "tags": [
+          "comments"
+        ]
+      },
+      "post": {
+        "operationId": "CommentController_createComment",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCommentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Comment created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Create a comment on a project",
+        "tags": [
+          "comments"
+        ]
+      }
+    },
+    "/projects/{projectId}/comments/{commentId}/reply": {
+      "post": {
+        "operationId": "CommentController_createReply",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "commentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCommentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Reply created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Reply to a comment",
+        "tags": [
+          "comments"
+        ]
+      }
+    },
+    "/projects/{projectId}/comments/{commentId}": {
+      "put": {
+        "operationId": "CommentController_updateComment",
+        "parameters": [
+          {
+            "name": "commentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCommentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Comment updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Edit a comment",
+        "tags": [
+          "comments"
+        ]
+      },
+      "delete": {
+        "operationId": "CommentController_deleteComment",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "commentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Comment deleted"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Delete a comment",
+        "tags": [
+          "comments"
         ]
       }
     },
@@ -2021,6 +2420,18 @@
             "example": "2023-04-15T12:00:00Z",
             "description": "The date and time when the project was created"
           },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2023-05-15T12:00:00Z",
+            "description": "The date and time when the project was last updated"
+          },
+          "publishedAt": {
+            "type": "string",
+            "example": "2023-05-20T12:00:00Z",
+            "description": "The date and time when the project was last published",
+            "nullable": true
+          },
           "uniquePlayers": {
             "type": "number",
             "example": 123,
@@ -2035,6 +2446,11 @@
             "type": "number",
             "example": 87,
             "description": "The number of likes received by the project"
+          },
+          "commentCount": {
+            "type": "number",
+            "example": 12,
+            "description": "The number of comments on the project"
           }
         },
         "required": [
@@ -2048,22 +2464,11 @@
           "price",
           "userId",
           "createdAt",
+          "updatedAt",
+          "publishedAt",
           "uniquePlayers",
           "activePlayers",
           "likes"
-        ]
-      },
-      "SignedUrlResponseDto": {
-        "type": "object",
-        "properties": {
-          "signedUrl": {
-            "type": "string",
-            "example": "https://cdn.example.com/files/project-123?Expires=1640995200&Signature=abc123",
-            "description": "The signed CloudFront URL for accessing the protected file"
-          }
-        },
-        "required": [
-          "signedUrl"
         ]
       },
       "UserBasicInfoDto": {
@@ -2160,6 +2565,18 @@
             "example": "2023-04-15T12:00:00Z",
             "description": "The date and time when the project was created"
           },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2023-05-15T12:00:00Z",
+            "description": "The date and time when the project was last updated"
+          },
+          "publishedAt": {
+            "type": "string",
+            "example": "2023-05-20T12:00:00Z",
+            "description": "The date and time when the project was last published",
+            "nullable": true
+          },
           "uniquePlayers": {
             "type": "number",
             "example": 123,
@@ -2174,6 +2591,11 @@
             "type": "number",
             "example": 87,
             "description": "The number of likes received by the project"
+          },
+          "commentCount": {
+            "type": "number",
+            "example": 12,
+            "description": "The number of comments on the project"
           },
           "collaborators": {
             "description": "The users collaborating on this project",
@@ -2202,11 +2624,26 @@
           "price",
           "userId",
           "createdAt",
+          "updatedAt",
+          "publishedAt",
           "uniquePlayers",
           "activePlayers",
           "likes",
           "collaborators",
           "creator"
+        ]
+      },
+      "SignedUrlResponseDto": {
+        "type": "object",
+        "properties": {
+          "signedUrl": {
+            "type": "string",
+            "example": "https://cdn.example.com/files/project-123?Expires=1640995200&Signature=abc123",
+            "description": "The signed CloudFront URL for accessing the protected file"
+          }
+        },
+        "required": [
+          "signedUrl"
         ]
       },
       "CreateProjectDto": {
@@ -2338,6 +2775,25 @@
         },
         "required": [
           "url"
+        ]
+      },
+      "LikeResponseDto": {
+        "type": "object",
+        "properties": {
+          "likes": {
+            "type": "number",
+            "example": 42,
+            "description": "Total number of likes on the project"
+          },
+          "liked": {
+            "type": "boolean",
+            "example": true,
+            "description": "Whether the current user has liked this project"
+          }
+        },
+        "required": [
+          "likes",
+          "liked"
         ]
       },
       "LookupHostsResponseDtoHost": {
@@ -2517,6 +2973,115 @@
         },
         "required": [
           "sessionUuid"
+        ]
+      },
+      "CommentAuthorDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 1
+          },
+          "username": {
+            "type": "string",
+            "example": "john_doe"
+          },
+          "nickname": {
+            "type": "string",
+            "example": "John",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "username"
+        ]
+      },
+      "CommentResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 1
+          },
+          "content": {
+            "type": "string",
+            "example": "Great game!"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2023-04-15T12:00:00Z"
+          },
+          "projectId": {
+            "type": "number",
+            "example": 1
+          },
+          "author": {
+            "$ref": "#/components/schemas/CommentAuthorDto"
+          },
+          "deleted": {
+            "type": "boolean",
+            "example": false
+          },
+          "replies": {
+            "description": "Replies to this comment (only for top-level comments)",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommentResponseDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "content",
+          "createdAt",
+          "projectId",
+          "author"
+        ]
+      },
+      "PaginatedCommentsResponseDto": {
+        "type": "object",
+        "properties": {
+          "comments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommentResponseDto"
+            }
+          },
+          "total": {
+            "type": "number",
+            "example": 42
+          },
+          "page": {
+            "type": "number",
+            "example": 1
+          },
+          "limit": {
+            "type": "number",
+            "example": 20
+          }
+        },
+        "required": [
+          "comments",
+          "total",
+          "page",
+          "limit"
+        ]
+      },
+      "CreateCommentDto": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "The content of the comment",
+            "example": "Great game, love the pixel art!",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "content"
         ]
       },
       "LoginDto": {
