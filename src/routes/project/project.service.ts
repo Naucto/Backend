@@ -315,7 +315,7 @@ export class ProjectService {
     if (sessions.length === 0) return;
     await this.prisma.workSession.update({
       data: {
-        lastSave: new Date()
+        lastSaveAt: new Date()
       },
       where: { projectId }
     });

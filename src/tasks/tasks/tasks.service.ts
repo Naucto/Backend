@@ -10,7 +10,7 @@ export class TasksService {
   async cleanTimedOutWorkSessions(): Promise<void> {
     await this.prisma.workSession.deleteMany({
       where: {
-        lastSave: {
+        lastSaveAt: {
           lt: new Date(Date.now() - 10 * 60 * 1000)
         }
       }
