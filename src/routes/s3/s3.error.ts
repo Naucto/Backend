@@ -3,14 +3,14 @@ export class S3ConfigurationException extends Error {
     super(
       `AWS credentials are not properly configured.${missingKeys.length > 0 ? " Missing keys: " + missingKeys.join(", ") : ""}`
     );
-    this.name = "S3ConfigurationException";
+    this.name = this.constructor.name;
   }
 }
 
 export class BucketResolutionException extends Error {
   constructor(message?: string) {
     super(message || "Failed to resolve S3 bucket name.");
-    this.name = "BucketResolutionException";
+    this.name = this.constructor.name;
   }
 }
 
@@ -19,7 +19,7 @@ export class S3ListBucketsException extends Error {
 
   constructor(message?: string, options?: { cause?: unknown }) {
     super(message || "Error while listing buckets");
-    this.name = "S3ListBucketsException";
+    this.name = this.constructor.name;
     this.cause = options?.cause;
   }
 }
@@ -30,7 +30,7 @@ export class S3ListObjectsException extends Error {
     public readonly cause?: unknown
   ) {
     super(`Error while listing objects in bucket: ${bucketName}`);
-    this.name = "S3ListObjectsException";
+    this.name = this.constructor.name;
   }
 }
 
@@ -41,7 +41,7 @@ export class S3UploadException extends Error {
     public readonly cause?: unknown
   ) {
     super(`Error while uploading file "${fileName}" to bucket: ${bucketName}`);
-    this.name = "S3UploadException";
+    this.name = this.constructor.name;
   }
 }
 
@@ -52,7 +52,7 @@ export class S3DownloadException extends Error {
     public readonly cause?: unknown
   ) {
     super(`Error downloading file "${key}" from bucket: ${bucketName}`);
-    this.name = "S3DownloadException";
+    this.name = this.constructor.name;
   }
 }
 
@@ -65,7 +65,7 @@ export class S3SignedUrlException extends Error {
     super(
       `Error generating signed URL for file "${key}" in bucket: ${bucketName}`
     );
-    this.name = "S3SignedUrlException";
+    this.name = this.constructor.name;
   }
 }
 
@@ -76,7 +76,7 @@ export class S3DeleteFileException extends Error {
     public readonly cause?: unknown
   ) {
     super(`Error deleting file "${key}" in bucket: ${bucketName}`);
-    this.name = "S3DeleteFileException";
+    this.name = this.constructor.name;
   }
 }
 
@@ -87,7 +87,7 @@ export class S3DeleteFilesException extends Error {
     public readonly cause?: unknown
   ) {
     super(`Error deleting multiple files in bucket: ${bucketName}`);
-    this.name = "S3DeleteFilesException";
+    this.name = this.constructor.name;
   }
 }
 
@@ -97,7 +97,7 @@ export class S3DeleteBucketException extends Error {
     public readonly cause?: unknown
   ) {
     super(`Error deleting bucket: ${bucketName}`);
-    this.name = "S3DeleteBucketException";
+    this.name = this.constructor.name;
   }
 }
 
@@ -107,7 +107,7 @@ export class S3CreateBucketException extends Error {
     public readonly cause?: unknown
   ) {
     super(`Error creating bucket: ${bucketName}`);
-    this.name = "S3CreateBucketException";
+    this.name = this.constructor.name;
   }
 }
 
@@ -118,7 +118,7 @@ export class S3GetMetadataException extends Error {
     public readonly cause?: unknown
   ) {
     super(`Error fetching metadata for file "${key}" in bucket: ${bucketName}`);
-    this.name = "S3GetMetadataException";
+    this.name = this.constructor.name;
   }
 }
 
@@ -131,7 +131,7 @@ export class S3MissingMetadataException extends Error {
     super(
       `Missing required metadata fields [${missingFields.join(", ")}] for file "${key}" in bucket: ${bucketName}`
     );
-    this.name = "S3MissingMetadataException";
+    this.name = this.constructor.name;
   }
 }
 
@@ -141,7 +141,7 @@ export class S3ApplyPolicyException extends Error {
     public readonly cause?: unknown
   ) {
     super(`Error applying policy to bucket: ${bucketName}`);
-    this.name = "S3ApplyPolicyException";
+    this.name = this.constructor.name;
   }
 }
 
@@ -151,6 +151,6 @@ export class CloudFrontPrivateKeyException extends Error {
     public readonly cause?: unknown
   ) {
     super(`Failed to read CloudFront private key at path: "${path}"`);
-    this.name = "CloudFrontPrivateKeyException";
+    this.name = this.constructor.name;
   }
 }
