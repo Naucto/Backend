@@ -7,6 +7,7 @@ import * as bcrypt from "bcryptjs";
 
 import { Role } from "@prisma/client";
 import { UserNotFoundError, UserGameSessionNotFoundError } from "./user.error";
+import { generateUniqueRandomId } from "@util/id-generator";
 
 @Injectable()
 export class UserService {
@@ -39,8 +40,13 @@ export class UserService {
 
     const rolesToAssign: { id: number }[] = [];
 
+    const userId = await generateUniqueRandomId(async (id) =>
+      !!await this.prisma.user.findUnique({ where: { id } })
+    );
+
     return this.prisma.user.create({
       data: {
+        id: userId,
         email: createUserDto.email,
         username: createUserDto.username,
         nickname: createUserDto.nickname ?? null,

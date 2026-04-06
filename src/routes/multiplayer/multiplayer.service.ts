@@ -9,6 +9,7 @@ import { WebRTCServer } from "@webrtc/server/webrtc.server";
 import { WebRTCService } from "@webrtc/webrtc.service";
 import { OpenHostResponseDto } from "./dto/open-host.dto";
 import { JoinHostResponseDto } from "./dto/join-host.dto";
+import { generateUniqueRandomId } from "@util/id-generator";
 
 // I made this "extended" type (Ex) for complex fields that do relations with
 // other stuff.
@@ -86,8 +87,13 @@ export class MultiplayerService {
       throw new MultiplayerHostOpenedError("User already hosting a game session for this project");
     });
 
+    const gameSessionId = await generateUniqueRandomId(async (id) =>
+      !!await this._prismaService.gameSession.findUnique({ where: { id } })
+    );
+
     const createdGS = await this._prismaService.gameSession.create({
       data: {
+        id: gameSessionId,
         hostId: userId,
         projectId: projectId,
         visibility: visibility

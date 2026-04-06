@@ -15,6 +15,7 @@ import { CreateUserDto } from "@user/dto/create-user.dto";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { ConfigService } from "@nestjs/config";
 import { parseExpiresIn, timespanToMs } from "./auth.utils";
+import { generateUniqueRandomId } from "@util/id-generator";
 
 @Injectable()
 export class AuthService {
@@ -47,8 +48,13 @@ export class AuthService {
       expiresIn: refreshTokenExpiresIn
     });
 
+    const refreshTokenId = await generateUniqueRandomId(async (id) =>
+      !!await this.prisma.refreshToken.findUnique({ where: { id } })
+    );
+
     await this.prisma.refreshToken.create({
       data: {
+        id: refreshTokenId,
         token: refresh_token,
         userId,
         expiresAt: new Date(Date.now() + timespanToMs(refreshTokenExpiresIn))
