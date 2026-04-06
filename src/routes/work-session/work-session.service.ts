@@ -10,11 +10,18 @@ import { UpdateWorkSessionDto } from "@work-session/dto/update-work-session.dto"
 import { FetchWorkSessionDto } from "@work-session/dto/fetch-work-session.dto";
 import { JoinWorkSessionDto } from "@work-session/dto/join-work-session.dto";
 
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { uuidv4 } from "lib0/random";
 
 @Injectable()
 export class WorkSessionService {
+  // Time-To-Live for a work session before being considered as "scrubbable"
+  //
+  // This is useful for two reasons: keep the same roomId for a while + let
+  // the same user go to their own session if they want to
+  private readonly WORK_SESSION_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+  private readonly _logger: Logger = new Logger(WorkSessionService.name);
   private readonly _collabServer: YjsWebRTCServer;
 
   constructor(
@@ -115,19 +122,50 @@ export class WorkSessionService {
       throw new NotFoundException(`Project with ID ${projectId} not found`);
     }
 
-    const workSession = await this.prismaService.workSession.upsert({
-      where: { projectId },
-      create: {
-        project: { connect: { id: projectId } },
-        startedAt: new Date(),
-        users: { connect: { id: user.id } },
-        host: { connect: { id: user.id } },
-        roomId: uuidv4()
-      },
-      update: {
-        users: { connect: { id: user.id } }
+    let workSession: WorkSession | null =
+      await this.prismaService.workSession.findUnique({
+        where: { projectId }
+      });
+
+    if (workSession) {
+      const lastActiveTime = workSession.lastActiveAt!.getTime();
+      const now = Date.now();
+      
+      if (now - lastActiveTime > this.WORK_SESSION_TTL_MS) {
+        this._logger.log(
+          `Scrubbing stale worksession for project ${projectId} ` +
+          `(${Math.round((now - lastActiveTime) / 1000)}s old)`
+        );
+        await this.prismaService.workSession.delete({ where: { id: workSession.id } });
+        workSession = null;
       }
-    });
+    }
+
+    if (!workSession) {
+      this._logger.log(`Creating a new worksession for project ${projectId}`);
+
+      workSession = await this.prismaService.workSession.create({
+        data: {
+          project: { connect: { id: projectId } },
+          startedAt: new Date(),
+          users: { connect: { id: user.id } },
+          host: { connect: { id: user.id } },
+          roomId: uuidv4()
+        }
+      });
+    } else {
+      this._logger.log(`Joining existing worksession for project ${projectId}`);
+
+      workSession = await this.prismaService.workSession.update({
+        where: { projectId },
+        data: {
+          users: { connect: { id: user.id } },
+          lastActiveAt: new Date()
+        }
+      });
+    }
+
+    this._logger.log(`Yielding worksession with roomId=${workSession.roomId} to user #${user.id}`);
 
     const response = new JoinWorkSessionDto();
 
@@ -159,23 +197,10 @@ export class WorkSessionService {
       data: {
         users: {
           disconnect: { id: user.id }
-        }
+        },
+        lastActiveAt: new Date()
       }
     });
-
-    if (workSession.hostId == user.id) {
-      const newHost = workSession.users.find((u) => u.id !== user.id);
-      if (newHost) {
-        await this.prismaService.workSession.update({
-          where: { id: workSession.id },
-          data: { hostId: newHost.id }
-        });
-      } else {
-        await this.prismaService.workSession.delete({
-          where: { id: workSession.id }
-        });
-      }
-    }
   }
 
   async kick(projectId: number, userId: number): Promise<void> {
@@ -197,23 +222,10 @@ export class WorkSessionService {
       data: {
         users: {
           disconnect: { id: userId }
-        }
+        },
+        lastActiveAt: new Date()
       }
     });
-
-    if (workSession.hostId == userId) {
-      const newHost = workSession.users.find((u) => u.id !== userId);
-      if (newHost) {
-        await this.prismaService.workSession.update({
-          where: { id: workSession.id },
-          data: { hostId: newHost.id }
-        });
-      } else {
-        await this.prismaService.workSession.delete({
-          where: { id: workSession.id }
-        });
-      }
-    }
   }
 
   async getInfo(projectId: number): Promise<FetchWorkSessionDto> {

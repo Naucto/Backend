@@ -29,7 +29,7 @@ export class S3ListObjectsException extends Error {
     public readonly bucketName: string,
     public readonly cause?: unknown
   ) {
-    super(`Error while listing objects in bucket: ${bucketName}`);
+    super(`Error while listing objects in bucket ${bucketName}: ${cause}`);
     this.name = this.constructor.name;
   }
 }
@@ -40,7 +40,7 @@ export class S3UploadException extends Error {
     public readonly fileName: string,
     public readonly cause?: unknown
   ) {
-    super(`Error while uploading file "${fileName}" to bucket: ${bucketName}`);
+    super(`Error while uploading file "${fileName}" to bucket ${bucketName}: ${cause}`);
     this.name = this.constructor.name;
   }
 }
@@ -51,7 +51,7 @@ export class S3DownloadException extends Error {
     public readonly key: string,
     public readonly cause?: unknown
   ) {
-    super(`Error downloading file "${key}" from bucket: ${bucketName}`);
+    super(`Error downloading file "${key}" from bucket ${bucketName}: ${cause}`);
     this.name = this.constructor.name;
   }
 }
@@ -63,7 +63,7 @@ export class S3SignedUrlException extends Error {
     public readonly cause?: unknown
   ) {
     super(
-      `Error generating signed URL for file "${key}" in bucket: ${bucketName}`
+      `Error generating signed URL for file "${key}" in bucket ${bucketName}: ${cause}`
     );
     this.name = this.constructor.name;
   }
@@ -75,7 +75,7 @@ export class S3DeleteFileException extends Error {
     public readonly key: string,
     public readonly cause?: unknown
   ) {
-    super(`Error deleting file "${key}" in bucket: ${bucketName}`);
+    super(`Error deleting file "${key}" in bucket ${bucketName}: ${cause}`);
     this.name = this.constructor.name;
   }
 }
@@ -86,7 +86,7 @@ export class S3DeleteFilesException extends Error {
     public readonly keys: string[],
     public readonly cause?: unknown
   ) {
-    super(`Error deleting multiple files in bucket: ${bucketName}`);
+    super(`Error deleting multiple files in bucket ${bucketName}: ${cause}`);
     this.name = this.constructor.name;
   }
 }
@@ -96,7 +96,7 @@ export class S3DeleteBucketException extends Error {
     public readonly bucketName: string,
     public readonly cause?: unknown
   ) {
-    super(`Error deleting bucket: ${bucketName}`);
+    super(`Error deleting bucket ${bucketName}: ${cause}`);
     this.name = this.constructor.name;
   }
 }
@@ -106,7 +106,7 @@ export class S3CreateBucketException extends Error {
     public readonly bucketName: string,
     public readonly cause?: unknown
   ) {
-    super(`Error creating bucket: ${bucketName}`);
+    super(`Error creating bucket ${bucketName}: ${cause}`);
     this.name = this.constructor.name;
   }
 }
@@ -117,7 +117,7 @@ export class S3GetMetadataException extends Error {
     public readonly key: string,
     public readonly cause?: unknown
   ) {
-    super(`Error fetching metadata for file "${key}" in bucket: ${bucketName}`);
+    super(`Error fetching metadata for file "${key}" in bucket ${bucketName}: ${cause}`);
     this.name = this.constructor.name;
   }
 }
@@ -129,7 +129,7 @@ export class S3MissingMetadataException extends Error {
     public readonly missingFields: string[]
   ) {
     super(
-      `Missing required metadata fields [${missingFields.join(", ")}] for file "${key}" in bucket: ${bucketName}`
+      `Missing required metadata fields [${missingFields.join(", ")}] for file "${key}" in bucket ${bucketName}`
     );
     this.name = this.constructor.name;
   }
@@ -140,7 +140,7 @@ export class S3ApplyPolicyException extends Error {
     public readonly bucketName: string,
     public readonly cause?: unknown
   ) {
-    super(`Error applying policy to bucket: ${bucketName}`);
+    super(`Error applying policy to bucket ${bucketName}: ${cause}`);
     this.name = this.constructor.name;
   }
 }
@@ -150,7 +150,7 @@ export class CloudFrontPrivateKeyException extends Error {
     public readonly path: string,
     public readonly cause?: unknown
   ) {
-    super(`Failed to read CloudFront private key at path: "${path}"`);
+    super(`Failed to read CloudFront private key at path "${path}": ${cause}`);
     this.name = this.constructor.name;
   }
 }
