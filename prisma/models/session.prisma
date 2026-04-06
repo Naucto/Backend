@@ -5,7 +5,7 @@ enum GameSessionVisibility {
 }
 
 model GameSession {
-  id        Int       @id
+  id        Int       @id @default(autoincrement())
   host      User      @relation("UserHostedGameSessions", fields: [hostId], references: [id])
   hostId    Int
   project   Project   @relation(fields: [projectId], references: [id])
@@ -23,7 +23,7 @@ model GameSession {
 }
 
 model WorkSession {
-  id        Int      @id
+  id        Int      @id @default(autoincrement())
   users     User[]   @relation("WorkSessionUsers")
   host      User     @relation("WorkSessionHost", fields: [hostId], references: [id])
   hostId    Int

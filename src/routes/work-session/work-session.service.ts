@@ -12,7 +12,6 @@ import { JoinWorkSessionDto } from "@work-session/dto/join-work-session.dto";
 
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { uuidv4 } from "lib0/random";
-import { generateUniqueRandomId } from "@util/id-generator";
 
 @Injectable()
 export class WorkSessionService {
@@ -70,13 +69,8 @@ export class WorkSessionService {
       );
     }
 
-    const workSessionId = await generateUniqueRandomId(async (id) =>
-      !!await this.prismaService.workSession.findUnique({ where: { id } })
-    );
-
     return this.prismaService.workSession.create({
       data: {
-        id: workSessionId,
         startedAt: createWorkSessionDto.startTime ?? new Date(),
         project: {
           connect: { id: createWorkSessionDto.projectId }
@@ -124,9 +118,6 @@ export class WorkSessionService {
     const workSession = await this.prismaService.workSession.upsert({
       where: { projectId },
       create: {
-        id: await generateUniqueRandomId(async (id) =>
-          !!await this.prismaService.workSession.findUnique({ where: { id } })
-        ),
         project: { connect: { id: projectId } },
         startedAt: new Date(),
         users: { connect: { id: user.id } },

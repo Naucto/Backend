@@ -17,7 +17,6 @@ import { S3Service } from "@s3/s3.service";
 import { Project, User } from "@prisma/client";
 import { ConfigService } from "@nestjs/config";
 import { DownloadedFile } from "@s3/s3.interface";
-import { generateUniqueRandomId } from "@util/id-generator";
 
 export const CREATOR_SELECT = {
   id: true,
@@ -115,14 +114,9 @@ export class ProjectService {
       throw new NotFoundException(`User with ID ${userId} not found`);
     }
 
-    const projectId = await generateUniqueRandomId(async (id) =>
-      !!await this.prisma.project.findUnique({ where: { id } })
-    );
-
     try {
       return await this.prisma.project.create({
         data: {
-          id: projectId,
           ...createProjectDto,
           collaborators: {
             connect: [{ id: userId }]
@@ -519,13 +513,8 @@ export class ProjectService {
       throw new NotFoundException(`User with ID ${userId} not found`);
     }
 
-    const projectId = await generateUniqueRandomId(async (id) =>
-      !!await this.prisma.project.findUnique({ where: { id } })
-    );
-
     const newProject = await this.prisma.project.create({
       data: {
-        id: projectId,
         name: `Fork of ${sourceProject.name}`,
         shortDesc: sourceProject.shortDesc,
         longDesc: sourceProject.longDesc,
