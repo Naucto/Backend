@@ -40,7 +40,6 @@ interface RequestWithUser extends Request {
 @ApiTags("comments")
 @Controller("projects/:projectId/comments")
 @UseGuards(JwtAuthGuard)
-@ApiBearerAuth("JWT-auth")
 export class ProjectCommentController {
   constructor(private readonly projectCommentService: ProjectCommentService) {}
 
@@ -75,6 +74,7 @@ export class ProjectCommentController {
   }
 
   @Post()
+  @ApiBearerAuth("JWT-auth")
   @ApiOperation({ summary: "Create a comment on a project" })
   @ApiParam({ name: "projectId", type: "number" })
   @ApiBody({ type: CreateCommentDto })
@@ -97,6 +97,7 @@ export class ProjectCommentController {
   }
 
   @Post(":commentId/reply")
+  @ApiBearerAuth("JWT-auth")
   @ApiOperation({ summary: "Reply to a comment" })
   @ApiParam({ name: "projectId", type: "number" })
   @ApiParam({ name: "commentId", type: "number" })
@@ -122,6 +123,7 @@ export class ProjectCommentController {
   }
 
   @Put(":commentId")
+  @ApiBearerAuth("JWT-auth")
   @ApiOperation({ summary: "Edit a comment" })
   @ApiParam({ name: "projectId", type: "number" })
   @ApiParam({ name: "commentId", type: "number" })
@@ -144,6 +146,7 @@ export class ProjectCommentController {
   }
 
   @Delete(":commentId")
+  @ApiBearerAuth("JWT-auth")
   @ApiOperation({ summary: "Delete a comment" })
   @ApiParam({ name: "projectId", type: "number" })
   @ApiParam({ name: "commentId", type: "number" })
