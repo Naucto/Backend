@@ -32,7 +32,6 @@ import {
 } from "./dto/comment-response.dto";
 import { UserDto } from "@auth/dto/user.dto";
 import { Request } from "express";
-import { PrismaService } from "@ourPrisma/prisma.service";
 
 interface RequestWithUser extends Request {
   user: UserDto;
@@ -43,10 +42,7 @@ interface RequestWithUser extends Request {
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth("JWT-auth")
 export class CommentController {
-  constructor(
-    private readonly commentService: CommentService,
-    private readonly prisma: PrismaService
-  ) {}
+  constructor(private readonly commentService: CommentService) {}
 
   @Public()
   @Get()
@@ -158,17 +154,10 @@ export class CommentController {
     @Param("commentId", ParseIntPipe) commentId: number,
     @Req() req: RequestWithUser
   ): Promise<void> {
-    // Check if user is the project creator for extended delete permissions
-    const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
-      select: { userId: true }
-    });
-    const isProjectCreator = project?.userId === req.user.id;
-
     return this.commentService.deleteComment(
+      projectId,
       commentId,
-      req.user.id,
-      isProjectCreator
+      req.user.id
     );
   }
 }

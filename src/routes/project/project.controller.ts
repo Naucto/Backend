@@ -108,7 +108,6 @@ export class ProjectController {
   }
 
   @Public()
-  @Public()
   @Get("releases/:id/content")
   @ApiOperation({ summary: "Get project release version" })
   @ApiParam({ name: "id", type: "string" })

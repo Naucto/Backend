@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException
 } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import {
   CommentNotFoundException,
@@ -20,29 +21,74 @@ const AUTHOR_SELECT = {
   nickname: true
 };
 
+const DEFAULT_COMMENTS_PAGE = 1;
+const DEFAULT_COMMENTS_LIMIT = 20;
+const MAX_COMMENTS_LIMIT = 100;
+
+type CommentAuthor = {
+  id: number;
+  username: string;
+  nickname: string | null;
+};
+
+type CommentReplyRecord = {
+  id: number;
+  content: string;
+  deleted: boolean;
+  createdAt: Date;
+  projectId: number;
+  author: CommentAuthor;
+};
+
+type CommentRecord = CommentReplyRecord & {
+  replies?: CommentReplyRecord[];
+};
+
 @Injectable()
 export class CommentService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private buildVisibleTopLevelCommentWhere(
+    projectId: number
+  ): Prisma.CommentWhereInput {
+    return {
+      projectId,
+      parentId: null,
+      OR: [{ deleted: false }, { deleted: true, replies: { some: {} } }]
+    };
+  }
+
+  private normalizePagination(
+    page: number,
+    limit: number
+  ): { page: number; limit: number; skip: number } {
+    const safePage = Number.isFinite(page)
+      ? Math.max(DEFAULT_COMMENTS_PAGE, Math.trunc(page))
+      : DEFAULT_COMMENTS_PAGE;
+    const safeLimit = Number.isFinite(limit)
+      ? Math.min(MAX_COMMENTS_LIMIT, Math.max(1, Math.trunc(limit)))
+      : DEFAULT_COMMENTS_LIMIT;
+
+    return {
+      page: safePage,
+      limit: safeLimit,
+      skip: (safePage - 1) * safeLimit
+    };
+  }
+
   async getComments(
     projectId: number,
-    page: number = 1,
-    limit: number = 20,
+    page: number = DEFAULT_COMMENTS_PAGE,
+    limit: number = DEFAULT_COMMENTS_LIMIT,
     sort: "newest" | "oldest" = "newest"
   ): Promise<PaginatedCommentsResponseDto> {
-    const skip = (page - 1) * limit;
+    const pagination = this.normalizePagination(page, limit);
     const orderBy = sort === "newest" ? "desc" : "asc";
+    const visibleCommentWhere = this.buildVisibleTopLevelCommentWhere(projectId);
 
     const [comments, total] = await Promise.all([
       this.prisma.comment.findMany({
-        where: {
-          projectId,
-          parentId: null,
-          OR: [
-            { deleted: false },
-            { deleted: true, replies: { some: {} } }
-          ]
-        },
+        where: visibleCommentWhere,
         include: {
           author: { select: AUTHOR_SELECT },
           replies: {
@@ -53,19 +99,19 @@ export class CommentService {
           }
         },
         orderBy: { createdAt: orderBy },
-        skip,
-        take: limit
+        skip: pagination.skip,
+        take: pagination.limit
       }),
       this.prisma.comment.count({
-        where: { projectId, deleted: false }
+        where: visibleCommentWhere
       })
     ]);
 
     return {
-      comments: comments.map(this.mapComment),
+      comments: comments.map((comment) => this.mapComment(comment)),
       total,
-      page,
-      limit
+      page: pagination.page,
+      limit: pagination.limit
     };
   }
 
@@ -74,7 +120,6 @@ export class CommentService {
     userId: number,
     content: string
   ): Promise<CommentResponseDto> {
-    // Verify project exists and is published
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
       select: { status: true }
@@ -181,22 +226,35 @@ export class CommentService {
   }
 
   async deleteComment(
+    projectId: number,
     commentId: number,
-    userId: number,
-    isProjectCreator: boolean = false
+    userId: number
   ): Promise<void> {
-    const comment = await this.prisma.comment.findUnique({
-      where: { id: commentId },
-      select: {
-        id: true,
-        authorId: true,
-        _count: { select: { replies: true } }
-      }
-    });
+    const [comment, project] = await Promise.all([
+      this.prisma.comment.findUnique({
+        where: { id: commentId },
+        select: {
+          id: true,
+          authorId: true,
+          projectId: true,
+          _count: { select: { replies: true } }
+        }
+      }),
+      this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { userId: true }
+      })
+    ]);
 
     if (!comment) {
       throw new CommentNotFoundException(commentId);
     }
+
+    if (comment.projectId !== projectId) {
+      throw new NotFoundException("Comment does not belong to this project");
+    }
+
+    const isProjectCreator = project?.userId === userId;
 
     if (comment.authorId !== userId && !isProjectCreator) {
       throw new ForbiddenException(
@@ -217,22 +275,7 @@ export class CommentService {
     }
   }
 
-  private mapComment(comment: {
-    id: number;
-    content: string;
-    deleted: boolean;
-    createdAt: Date;
-    projectId: number;
-    author: { id: number; username: string; nickname: string | null };
-    replies?: Array<{
-      id: number;
-      content: string;
-      deleted: boolean;
-      createdAt: Date;
-      projectId: number;
-      author: { id: number; username: string; nickname: string | null };
-    }>;
-  }): CommentResponseDto {
+  private mapComment(comment: CommentRecord): CommentResponseDto {
     return {
       id: comment.id,
       content: comment.content,
