@@ -24,14 +24,14 @@ import {
 } from "@nestjs/swagger";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
 import { Public } from "@auth/decorators/public.decorator";
-import { CommentService } from "./comment.service";
+import { UserDto } from "@auth/dto/user.dto";
+import { Request } from "express";
+import { ProjectCommentService } from "./project-comment.service";
 import { CreateCommentDto } from "./dto/create-comment.dto";
 import {
   CommentResponseDto,
   PaginatedCommentsResponseDto
 } from "./dto/comment-response.dto";
-import { UserDto } from "@auth/dto/user.dto";
-import { Request } from "express";
 
 interface RequestWithUser extends Request {
   user: UserDto;
@@ -41,8 +41,8 @@ interface RequestWithUser extends Request {
 @Controller("projects/:projectId/comments")
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth("JWT-auth")
-export class CommentController {
-  constructor(private readonly commentService: CommentService) {}
+export class ProjectCommentController {
+  constructor(private readonly projectCommentService: ProjectCommentService) {}
 
   @Public()
   @Get()
@@ -66,7 +66,7 @@ export class CommentController {
     @Query("limit") limit?: string,
     @Query("sort") sort?: "newest" | "oldest"
   ): Promise<PaginatedCommentsResponseDto> {
-    return this.commentService.getComments(
+    return this.projectCommentService.getComments(
       projectId,
       page ? parseInt(page, 10) : 1,
       limit ? parseInt(limit, 10) : 20,
@@ -89,7 +89,7 @@ export class CommentController {
     @Body() createCommentDto: CreateCommentDto,
     @Req() req: RequestWithUser
   ): Promise<CommentResponseDto> {
-    return this.commentService.createComment(
+    return this.projectCommentService.createComment(
       projectId,
       req.user.id,
       createCommentDto.content
@@ -113,7 +113,7 @@ export class CommentController {
     @Body() createCommentDto: CreateCommentDto,
     @Req() req: RequestWithUser
   ): Promise<CommentResponseDto> {
-    return this.commentService.createReply(
+    return this.projectCommentService.createReply(
       projectId,
       commentId,
       req.user.id,
@@ -136,7 +136,7 @@ export class CommentController {
     @Body() createCommentDto: CreateCommentDto,
     @Req() req: RequestWithUser
   ): Promise<CommentResponseDto> {
-    return this.commentService.updateComment(
+    return this.projectCommentService.updateComment(
       commentId,
       req.user.id,
       createCommentDto.content
@@ -154,7 +154,7 @@ export class CommentController {
     @Param("commentId", ParseIntPipe) commentId: number,
     @Req() req: RequestWithUser
   ): Promise<void> {
-    return this.commentService.deleteComment(
+    return this.projectCommentService.deleteComment(
       projectId,
       commentId,
       req.user.id

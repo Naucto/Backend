@@ -9,7 +9,7 @@ import {
   CommentNotFoundException,
   CommentProjectNotPublishedException,
   CommentNestedReplyException
-} from "./comment.error";
+} from "./project-comment.error";
 import {
   CommentResponseDto,
   PaginatedCommentsResponseDto
@@ -45,7 +45,7 @@ type CommentRecord = CommentReplyRecord & {
 };
 
 @Injectable()
-export class CommentService {
+export class ProjectCommentService {
   constructor(private readonly prisma: PrismaService) {}
 
   private buildVisibleTopLevelCommentWhere(
@@ -153,7 +153,6 @@ export class CommentService {
     userId: number,
     content: string
   ): Promise<CommentResponseDto> {
-    // Verify parent comment exists
     const parentComment = await this.prisma.comment.findUnique({
       where: { id: commentId },
       select: { id: true, parentId: true, projectId: true }
@@ -167,12 +166,10 @@ export class CommentService {
       throw new NotFoundException("Comment does not belong to this project");
     }
 
-    // Prevent nested replies (only allow replies to top-level comments)
     if (parentComment.parentId !== null) {
       throw new CommentNestedReplyException();
     }
 
-    // Prevent replying to soft-deleted comments
     const fullParent = await this.prisma.comment.findUnique({
       where: { id: commentId },
       select: { deleted: true }
@@ -263,7 +260,6 @@ export class CommentService {
     }
 
     if (comment._count.replies > 0) {
-      // Soft-delete: keep comment shell to preserve replies visibility
       await this.prisma.comment.update({
         where: { id: commentId },
         data: { deleted: true, content: "" }

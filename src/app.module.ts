@@ -10,7 +10,7 @@ import { ScheduleModule } from "@nestjs/schedule";
 import { TasksModule } from "src/tasks/tasks.module";
 import { WebRTCModule } from "@webrtc/webrtc.module";
 import { MultiplayerModule } from "@multiplayer/multiplayer.module";
-import { CommentModule } from "@comment/comment.module";
+import { ProjectCommentModule } from "@project-comment/project-comment.module";
 import { AppConfig } from "src/app.config";
 
 @Module({
@@ -26,7 +26,7 @@ import { AppConfig } from "src/app.config";
     TasksModule,
     WebRTCModule,
     MultiplayerModule,
-    CommentModule
+    ProjectCommentModule
   ],
   providers: [
     AppConfig
