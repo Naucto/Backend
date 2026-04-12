@@ -40,6 +40,18 @@ export type ProjectSave = {
   date: Date;
 };
 
+type ProjectWithCounts = ProjectEx & {
+  _count: {
+    comments: number;
+    forks: number;
+  };
+};
+
+type ReleaseProject = ProjectEx & {
+  commentCount: number;
+  forkCount: number;
+};
+
 @Injectable()
 export class ProjectService {
   static COLLABORATOR_SELECT = COLLABORATOR_SELECT;
@@ -60,6 +72,48 @@ export class ProjectService {
       configService.get<number>("S3_MAX_CHECKPOINTS") ?? 10;
     this.auto_save_delay =
       (configService.get<number>("S3_AUTO_HISTORY_DELAY") ?? 10) * 60000; // from minutes to milliseconds
+  }
+
+  private normalizeTags(tags?: string[]): string[] {
+    if (!tags) {
+      return [];
+    }
+
+    const normalized = tags
+      .map((tag) => tag.trim())
+      .filter((tag) => tag.length > 0)
+      .slice(0, 12);
+
+    return normalized.filter(
+      (tag, index, array) =>
+        array.findIndex(
+          (candidate) => candidate.toLocaleLowerCase() === tag.toLocaleLowerCase()
+        ) === index
+    );
+  }
+
+  private withCommentCount(project: ProjectWithCounts): ReleaseProject {
+    const { _count, ...rest } = project;
+    return {
+      ...rest,
+      commentCount: _count.comments,
+      forkCount: _count.forks
+    };
+  }
+
+  private applyPublishedSnapshot<T extends ReleaseProject & {
+    publishedName?: string | null;
+    publishedShortDesc?: string | null;
+    publishedLongDesc?: string | null;
+    publishedTags?: string[];
+  }>(project: T): ReleaseProject {
+    return {
+      ...project,
+      name: project.publishedName || project.name,
+      shortDesc: project.publishedShortDesc || project.shortDesc,
+      longDesc: project.publishedLongDesc ?? project.longDesc,
+      tags: project.publishedTags.length > 0 ? project.publishedTags : project.tags
+    };
   }
 
   async findAll(userId: number): Promise<Project[]> {
@@ -118,6 +172,7 @@ export class ProjectService {
       return await this.prisma.project.create({
         data: {
           ...createProjectDto,
+          tags: this.normalizeTags(createProjectDto.tags),
           collaborators: {
             connect: [{ id: userId }]
           },
@@ -147,7 +202,12 @@ export class ProjectService {
 
     return this.prisma.project.update({
       where: { id },
-      data: updateProjectDto
+      data: {
+        ...updateProjectDto,
+        ...(updateProjectDto.tags
+          ? { tags: this.normalizeTags(updateProjectDto.tags) }
+          : {})
+      }
     });
   }
 
@@ -385,10 +445,29 @@ export class ProjectService {
   }
 
   async publish(projectId: number): Promise<void> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: {
+        name: true,
+        shortDesc: true,
+        longDesc: true,
+        tags: true
+      }
+    });
+
+    if (!project) {
+      throw new NotFoundException(`Project with ID ${projectId} not found`);
+    }
+
     await this.prisma.project.update({
       where: { id: projectId },
       data: {
-        status: "COMPLETED"
+        status: "COMPLETED",
+        publishedAt: new Date(),
+        publishedName: project.name,
+        publishedShortDesc: project.shortDesc,
+        publishedLongDesc: project.longDesc,
+        publishedTags: project.tags
       }
     });
 
@@ -410,6 +489,44 @@ export class ProjectService {
     });
 
     await this.s3Service.deleteFile({ key: `release/${projectId}` });
+  }
+
+  async updateRelease(projectId: number): Promise<void> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: {
+        status: true,
+        name: true,
+        shortDesc: true,
+        longDesc: true,
+        tags: true
+      }
+    });
+
+    if (!project || project.status !== "COMPLETED") {
+      throw new BadRequestException(
+        `Project with ID ${projectId} is not published`
+      );
+    }
+
+    const file = await this.fetchLastVersion(projectId);
+    const releaseKey = `release/${projectId}`;
+    await this.s3Service.uploadFile({
+      file: file,
+      keyName: releaseKey
+    });
+    await this.s3Service.setObjectPublicRead(releaseKey);
+
+    await this.prisma.project.update({
+      where: { id: projectId },
+      data: {
+        publishedAt: new Date(),
+        publishedName: project.name,
+        publishedShortDesc: project.shortDesc,
+        publishedLongDesc: project.longDesc,
+        publishedTags: project.tags
+      }
+    });
   }
 
   async listVersions(projectId: number): Promise<ProjectSave[]> {
@@ -446,7 +563,7 @@ export class ProjectService {
     return this.s3Service.downloadFile({ key: file });
   }
 
-  async fetchRelease(projectId: number): Promise<Project> {
+  async fetchRelease(projectId: number): Promise<ReleaseProject> {
     const project = await this.prisma.project.findFirst({
       where: {
         id: projectId
@@ -457,6 +574,14 @@ export class ProjectService {
         },
         creator: {
           select: ProjectService.CREATOR_SELECT
+        },
+        _count: {
+          select: {
+            forks: true,
+            comments: {
+              where: { deleted: false }
+            }
+          }
         }
       }
     });
@@ -465,15 +590,22 @@ export class ProjectService {
       throw new NotFoundException(`Project with ID ${projectId} not found`);
     }
 
-    return project;
+    return this.applyPublishedSnapshot(
+      this.withCommentCount(project as ProjectWithCounts & {
+        publishedName?: string | null;
+        publishedShortDesc?: string | null;
+        publishedLongDesc?: string | null;
+        publishedTags?: string[];
+      })
+    );
   }
 
   async fetchReleaseContent(projectId: number): Promise<DownloadedFile> {
     return this.s3Service.downloadFile({ key: `release/${projectId}` });
   }
 
-  async fetchPublishedGames(): Promise<Project[]> {
-    return this.prisma.project.findMany({
+  async fetchPublishedGames(): Promise<ReleaseProject[]> {
+    const projects = await this.prisma.project.findMany({
       where: {
         status: "COMPLETED"
       },
@@ -483,8 +615,239 @@ export class ProjectService {
         },
         creator: {
           select: ProjectService.CREATOR_SELECT
+        },
+        _count: {
+          select: {
+            forks: true,
+            comments: { where: { deleted: false } }
+          }
         }
       }
     });
+    return projects.map((project) =>
+      this.applyPublishedSnapshot(
+        this.withCommentCount(project as ProjectWithCounts & {
+          publishedName?: string | null;
+          publishedShortDesc?: string | null;
+          publishedLongDesc?: string | null;
+          publishedTags?: string[];
+        })
+      )
+    );
+  }
+
+  async registerReleaseView(projectId: number): Promise<{ viewCount: number }> {
+    const project = await this.prisma.project.findFirst({
+      where: {
+        id: projectId,
+        status: "COMPLETED"
+      },
+      select: { id: true }
+    });
+
+    if (!project) {
+      throw new NotFoundException(`Published project with ID ${projectId} not found`);
+    }
+
+    const updated = await this.prisma.project.update({
+      where: { id: projectId },
+      data: { viewCount: { increment: 1 } },
+      select: { viewCount: true }
+    });
+
+    return { viewCount: updated.viewCount };
+  }
+
+  // ─── Like Methods ───────────────────────────────────────────────────
+
+  async likeProject(
+    projectId: number,
+    userId?: number
+  ): Promise<{ likes: number; liked: boolean }> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true, likes: true }
+    });
+
+    if (!project) {
+      throw new NotFoundException(`Project with ID ${projectId} not found`);
+    }
+
+    if (!userId) {
+      // Anonymous like — just increment counter
+      const updated = await this.prisma.project.update({
+        where: { id: projectId },
+        data: { likes: { increment: 1 } },
+        select: { likes: true }
+      });
+      return { likes: updated.likes, liked: true };
+    }
+
+    // Authenticated like — toggle
+    const existingLike = await this.prisma.like.findUnique({
+      where: {
+        userId_projectId: { userId, projectId }
+      }
+    });
+
+    if (existingLike) {
+      // Already liked — unlike
+      await this.prisma.$transaction([
+        this.prisma.like.delete({
+          where: { id: existingLike.id }
+        }),
+        this.prisma.project.update({
+          where: { id: projectId },
+          data: { likes: { decrement: 1 } }
+        })
+      ]);
+
+      const updated = await this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { likes: true }
+      });
+      return { likes: updated!.likes, liked: false };
+    } else {
+      // Not liked — like
+      await this.prisma.$transaction([
+        this.prisma.like.create({
+          data: { userId, projectId }
+        }),
+        this.prisma.project.update({
+          where: { id: projectId },
+          data: { likes: { increment: 1 } }
+        })
+      ]);
+
+      const updated = await this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { likes: true }
+      });
+      return { likes: updated!.likes, liked: true };
+    }
+  }
+
+  async unlikeProject(
+    projectId: number,
+    userId: number
+  ): Promise<{ likes: number; liked: boolean }> {
+    const existingLike = await this.prisma.like.findUnique({
+      where: {
+        userId_projectId: { userId, projectId }
+      }
+    });
+
+    if (!existingLike) {
+      throw new NotFoundException("Like not found");
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.like.delete({
+        where: { id: existingLike.id }
+      }),
+      this.prisma.project.update({
+        where: { id: projectId },
+        data: { likes: { decrement: 1 } }
+      })
+    ]);
+
+    const updated = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { likes: true }
+    });
+    return { likes: updated!.likes, liked: false };
+  }
+
+  async getLikeStatus(
+    projectId: number,
+    userId: number
+  ): Promise<{ likes: number; liked: boolean }> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { likes: true }
+    });
+
+    if (!project) {
+      throw new NotFoundException(`Project with ID ${projectId} not found`);
+    }
+
+    const existingLike = await this.prisma.like.findUnique({
+      where: {
+        userId_projectId: { userId, projectId }
+      }
+    });
+
+    return { likes: project.likes, liked: !!existingLike };
+  }
+
+  async fork(sourceProjectId: number, userId: number): Promise<ProjectEx> {
+    const sourceProject = await this.prisma.project.findUnique({
+      where: { id: sourceProjectId }
+    });
+
+    if (!sourceProject) {
+      throw new NotFoundException(
+        `Project with ID ${sourceProjectId} not found`
+      );
+    }
+
+    if (sourceProject.status !== "COMPLETED") {
+      throw new BadRequestException(
+        "Only published projects can be forked"
+      );
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId }
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${userId} not found`);
+    }
+
+    const newProject = await this.prisma.project.create({
+      data: {
+        name: `Fork of ${sourceProject.name}`,
+        shortDesc: sourceProject.shortDesc,
+        longDesc: sourceProject.longDesc,
+        forkedFrom: { connect: { id: sourceProjectId } },
+        creator: { connect: { id: userId } },
+        collaborators: { connect: [{ id: userId }] }
+      },
+      include: {
+        collaborators: {
+          select: ProjectService.COLLABORATOR_SELECT
+        },
+        creator: {
+          select: ProjectService.CREATOR_SELECT
+        }
+      }
+    }) as ProjectEx;
+
+    const releaseContent = await this.s3Service.downloadFile({
+      key: `release/${sourceProjectId}`
+    });
+    await this.s3Service.uploadFile({
+      file: releaseContent,
+      keyName: `save/${newProject.id}/${Date.now()}`
+    });
+
+    try {
+      const imageKey = `projects/${sourceProjectId}/image`;
+      const imageExists = await this.s3Service.fileExists(imageKey);
+      if (imageExists) {
+        const imageFile = await this.s3Service.downloadFile({ key: imageKey });
+        const newImageKey = `projects/${newProject.id}/image`;
+        await this.s3Service.uploadFile({
+          file: imageFile,
+          keyName: newImageKey
+        });
+        await this.s3Service.setObjectPublicRead(newImageKey);
+      }
+    } catch {
+      // Image copy failure is non-critical
+    }
+
+    return newProject;
   }
 }

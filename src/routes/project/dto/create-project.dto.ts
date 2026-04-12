@@ -1,5 +1,5 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { IsString, IsOptional, IsUrl } from "class-validator";
+import { IsArray, IsOptional, IsString, IsUrl } from "class-validator";
 
 export class CreateProjectDto {
   @ApiProperty({
@@ -24,4 +24,15 @@ export class CreateProjectDto {
   @IsUrl()
   @IsOptional()
     iconUrl?: string;
+
+  @ApiProperty({
+    description: "Tags attached to the project",
+    example: ["Shooter", "Action"],
+    required: false,
+    type: [String]
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  tags?: string[];
 }

@@ -49,6 +49,13 @@ export class ProjectResponseDto {
   longDesc?: string | null;
 
   @ApiProperty({
+    description: "Tags associated with the project",
+    example: ["Roguelike", "Action", "Custom Jam"],
+    type: [String]
+  })
+  tags!: string[];
+
+  @ApiProperty({
     description: "URL to the project icon",
     example: "https://example.com/icons/MySuperVideoGame.png",
     type: String,
@@ -93,6 +100,26 @@ export class ProjectResponseDto {
   createdAt!: Date;
 
   @ApiProperty({
+    example: "2023-05-15T12:00:00Z",
+    description: "The date and time when the project was last updated"
+  })
+  updatedAt!: Date;
+
+  @ApiProperty({
+    example: "2023-05-20T12:00:00Z",
+    description: "The date and time when the project was last published",
+    type: String,
+    nullable: true
+  })
+  publishedAt?: Date | null;
+
+  @ApiProperty({
+    example: 123,
+    description: "The number of times players opened this game's play page"
+  })
+  viewCount!: number;
+
+  @ApiProperty({
     example: 123,
     description:
       "The number of unique players who have interacted with this project"
@@ -110,6 +137,29 @@ export class ProjectResponseDto {
     description: "The number of likes received by the project"
   })
   likes!: number;
+
+  @ApiProperty({
+    example: 12,
+    description: "The number of comments on the project",
+    required: false
+  })
+  commentCount?: number;
+
+  @ApiProperty({
+    example: 7,
+    description: "The number of forks created from this project",
+    required: false
+  })
+  forkCount?: number;
+
+  @ApiProperty({
+    example: 42,
+    description: "The ID of the project this was forked from, if any",
+    type: Number,
+    nullable: true,
+    required: false
+  })
+  forkedFromId?: number | null;
 }
 
 export class ProjectExResponseDto extends ProjectResponseDto {
@@ -125,6 +175,8 @@ export class ProjectExResponseDto extends ProjectResponseDto {
   })
   creator!: UserBasicInfoDto;
 }
+
+export class ForkProjectResponseDto extends ProjectExResponseDto {}
 
 export class CdnUrlResponseDto {
   @ApiProperty({

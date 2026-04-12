@@ -15,25 +15,38 @@ model Project {
   name         String
   shortDesc    String
   longDesc     String?
+  tags         String[]          @default([])
+  publishedName      String?
+  publishedShortDesc String?
+  publishedLongDesc  String?
+  publishedTags      String[]          @default([])
   status       ProjectStatus?    @default(IN_PROGRESS)
   iconUrl      String?
   monetization MonetizationType? @default(NONE)
   price        Float?
   createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  publishedAt  DateTime?
   userId       Int
 
   contentKey        String?   @map("content_key")
   contentExtension  String?   @map("content_extension")
   contentUploadedAt DateTime? @map("content_uploaded_at")
 
+  forkedFromId Int?      @map("forked_from_id")
+
   // Relations
+  forkedFrom    Project?      @relation("ProjectForks", fields: [forkedFromId], references: [id], onDelete: SetNull)
+  forks         Project[]     @relation("ProjectForks")
   creator       User          @relation("ProjectCreator", fields: [userId], references: [id])
   collaborators User[]        @relation("ProjectCollaborators")
   comments      Comment[]
   gameSessions  GameSession[]
   workSession   WorkSession?
+  userLikes     Like[]
 
   // Aggregate statistics
+  viewCount     Int @default(0)
   uniquePlayers Int @default(0)
   activePlayers Int @default(0)
   likes         Int @default(0)
@@ -43,15 +56,27 @@ model Comment {
   id        Int       @id @default(autoincrement())
   author    User      @relation(fields: [authorId], references: [id])
   authorId  Int
-  project   Project   @relation(fields: [projectId], references: [id])
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   projectId Int
   parentId  Int?
-  parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
   replies   Comment[] @relation("CommentReplies")
   content   String
-  rating    Int
+  deleted   Boolean   @default(false)
   createdAt DateTime  @default(now())
 
   @@index([projectId])
   @@index([authorId])
+}
+
+model Like {
+  id        Int      @id @default(autoincrement())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    Int
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId Int
+  createdAt DateTime @default(now())
+
+  @@unique([userId, projectId])
+  @@index([projectId])
 }
