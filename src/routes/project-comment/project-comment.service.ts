@@ -155,7 +155,12 @@ export class ProjectCommentService {
   ): Promise<CommentResponseDto> {
     const parentComment = await this.prisma.comment.findUnique({
       where: { id: commentId },
-      select: { id: true, parentId: true, projectId: true }
+      select: {
+        id: true,
+        parentId: true,
+        projectId: true,
+        deleted: true
+      }
     });
 
     if (!parentComment) {
@@ -170,11 +175,7 @@ export class ProjectCommentService {
       throw new CommentNestedReplyException();
     }
 
-    const fullParent = await this.prisma.comment.findUnique({
-      where: { id: commentId },
-      select: { deleted: true }
-    });
-    if (fullParent?.deleted) {
+    if (parentComment.deleted) {
       throw new ForbiddenException("Cannot reply to a deleted comment");
     }
 
