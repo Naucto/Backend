@@ -6,13 +6,17 @@
  */
 
 import { ProjectController } from "@project/project.controller";
+import { ProjectCommentController } from "@project-comment/project-comment.controller";
 import { MultiplayerController } from "src/routes/multiplayer/multiplayer.controller";
+
 import { ProjectService } from "@project/project.service";
 import { S3Service } from "@s3/s3.service";
 import { CloudfrontService } from "src/routes/s3/edge.service";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { S3Client } from "@aws-sdk/client-s3";
 import { MultiplayerService } from "src/routes/multiplayer/multiplayer.service";
+import { ProjectCommentService } from "@project-comment/project-comment.service";
+
 import { UserModule } from "@user/user.module";
 import { WorkSessionModule } from "@work-session/work-session.module";
 
@@ -51,14 +55,15 @@ const nullProvider = (token: InjectionToken): Provider => ({
     WorkSessionModule,
     WebRTCModule
   ],
-  controllers: [ProjectController, MultiplayerController],
+  controllers: [ProjectController, MultiplayerController, ProjectCommentController],
   providers: [
     nullProvider(PrismaService),
     nullProvider(ProjectService),
     nullProvider(S3Client),
     nullProvider(S3Service),
     nullProvider(CloudfrontService),
-    nullProvider(MultiplayerService)
+    nullProvider(MultiplayerService),
+    nullProvider(ProjectCommentService)
   ]
 })
 export class SwaggerAppModule {}

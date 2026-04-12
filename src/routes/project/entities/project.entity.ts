@@ -66,6 +66,20 @@ export class Project {
   createdAt!: Date;
 
   @ApiProperty({
+    example: "2023-05-15T12:00:00Z",
+    description: "The date and time when the project was last updated"
+  })
+  updatedAt!: Date;
+
+  @ApiProperty({
+    example: "2023-05-20T12:00:00Z",
+    description: "The date and time when the project was last published",
+    type: String,
+    nullable: true
+  })
+  publishedAt?: Date | null;
+
+  @ApiProperty({
     example: 123,
     description:
       "The number of unique players who have interacted with this project"

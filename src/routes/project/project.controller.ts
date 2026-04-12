@@ -57,6 +57,9 @@ import { CloudfrontService } from "src/routes/s3/edge.service";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { Public } from "@auth/decorators/public.decorator";
 import { ImageUrlResponseDto } from "src/routes/common/dto/image-url-response.dto";
+import { OptionalJwtAuthGuard } from "@auth/guards/optional-jwt-auth.guard";
+import { LikeResponseDto } from "./dto/like-response.dto";
+import { ViewResponseDto } from "./dto/view-response.dto";
 
 interface RequestWithUser extends Request {
   user: UserDto;
@@ -76,31 +79,35 @@ export class ProjectController {
 
   private readonly logger = new Logger(ProjectController.name);
 
+  @Public()
   @Get("releases")
   @ApiOperation({ summary: "Get all released projects" })
   @ApiResponse({
     status: 200,
     description:
       "A JSON array of projects with collaborators and creator information",
-    type: [ProjectResponseDto]
+    type: [ProjectExResponseDto]
   })
-  async getAllReleases(): Promise<Project[]> {
+  async getAllReleases(): Promise<ProjectExResponseDto[]> {
     return this.projectService.fetchPublishedGames();
   }
 
+  @Public()
   @Get("releases/:id")
   @ApiOperation({ summary: "Get project release version" })
   @ApiParam({ name: "id", type: "string" })
   @ApiResponse({
     status: 200,
-    description: "Project release file"
+    description: "Project release metadata",
+    type: ProjectExResponseDto
   })
-  async getRelease(@Param("id") id: string): Promise<Project> {
+  async getRelease(@Param("id") id: string): Promise<ProjectExResponseDto> {
     const projectRelease = await this.projectService.fetchRelease(Number(id));
 
     return projectRelease;
   }
 
+  @Public()
   @Get("releases/:id/content")
   @ApiOperation({ summary: "Get project release version" })
   @ApiParam({ name: "id", type: "string" })
@@ -142,6 +149,7 @@ export class ProjectController {
     }
   }
 
+  @Public()
   @Get("releases/:id/content-url")
   @ApiOperation({ summary: "Get signed CDN URL for a release" })
   @ApiParam({ name: "id", type: "string" })
@@ -805,5 +813,75 @@ export class ProjectController {
           .json({ message: "Internal server error during download" });
       }
     }
+  }
+
+  // ─── Like Endpoints ───────────────────────────────────────────────────
+
+  @Public()
+  @Post("releases/:id/like")
+  @UseGuards(OptionalJwtAuthGuard)
+  @ApiOperation({ summary: "Like a published project (toggle for authenticated users, increment for anonymous)" })
+  @ApiParam({ name: "id", type: "string" })
+  @ApiResponse({ status: 200, description: "Like status", type: LikeResponseDto })
+  @HttpCode(HttpStatus.OK)
+  async likeProject(
+    @Param("id") id: string,
+    @Req() req: RequestWithUser
+  ): Promise<LikeResponseDto> {
+    const userId = req.user?.id;
+    return this.projectService.likeProject(Number(id), userId);
+  }
+
+  @Delete("releases/:id/like")
+  @ApiOperation({ summary: "Unlike a published project (authenticated users only)" })
+  @ApiParam({ name: "id", type: "string" })
+  @ApiResponse({ status: 200, description: "Like removed", type: LikeResponseDto })
+  @HttpCode(HttpStatus.OK)
+  async unlikeProject(
+    @Param("id") id: string,
+    @Req() req: RequestWithUser
+  ): Promise<LikeResponseDto> {
+    return this.projectService.unlikeProject(Number(id), req.user.id);
+  }
+
+  @Get("releases/:id/like-status")
+  @ApiOperation({ summary: "Get like status for a project (authenticated users only)" })
+  @ApiParam({ name: "id", type: "string" })
+  @ApiResponse({ status: 200, description: "Like status", type: LikeResponseDto })
+  async getLikeStatus(
+    @Param("id") id: string,
+    @Req() req: RequestWithUser
+  ): Promise<LikeResponseDto> {
+    return this.projectService.getLikeStatus(Number(id), req.user.id);
+  }
+
+  @Public()
+  @Post("releases/:id/view")
+  @ApiOperation({ summary: "Register a play view for a published project" })
+  @ApiParam({ name: "id", type: "string" })
+  @ApiResponse({ status: 200, description: "Updated view count", type: ViewResponseDto })
+  @HttpCode(HttpStatus.OK)
+  async registerReleaseView(
+    @Param("id") id: string
+  ): Promise<ViewResponseDto> {
+    return this.projectService.registerReleaseView(Number(id));
+  }
+
+  // ─── Update Release Endpoint ──────────────────────────────────────────
+
+  @Post(":id/update-release")
+  @UseGuards(ProjectCreatorGuard)
+  @ApiOperation({ summary: "Update an already published project's release content" })
+  @ApiParam({ name: "id", type: "string" })
+  @ApiResponse({ status: 200, description: "Release updated successfully" })
+  @ApiResponse({ status: 400, description: "Project is not published" })
+  @ApiResponse({ status: 403, description: "Forbidden" })
+  @HttpCode(HttpStatus.OK)
+  async updateRelease(
+    @Param("id") id: string
+  ): Promise<{ message: string; id: string }> {
+    await this.projectService.updateRelease(Number(id));
+
+    return { message: "Release updated successfully", id };
   }
 }

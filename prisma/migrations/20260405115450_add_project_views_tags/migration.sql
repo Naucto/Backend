@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Project" ADD COLUMN     "tags" TEXT[] DEFAULT ARRAY[]::TEXT[],
+ADD COLUMN     "viewCount" INTEGER NOT NULL DEFAULT 0;
