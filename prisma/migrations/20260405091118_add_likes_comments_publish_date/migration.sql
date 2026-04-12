@@ -16,7 +16,13 @@ ALTER TABLE "Comment" DROP COLUMN "rating";
 
 -- AlterTable
 ALTER TABLE "Project" ADD COLUMN     "publishedAt" TIMESTAMP(3),
-ADD COLUMN     "updatedAt" TIMESTAMP(3) NOT NULL;
+ADD COLUMN     "updatedAt" TIMESTAMP(3);
+
+-- Set default value for updatedAt to handle existing rows
+UPDATE "Project" SET "updatedAt" = NOW() WHERE "updatedAt" IS NULL;
+
+-- Set NOT NULL constraint after populating existing rows
+ALTER TABLE "Project" ALTER COLUMN "updatedAt" SET NOT NULL;
 
 -- CreateTable
 CREATE TABLE "Like" (
