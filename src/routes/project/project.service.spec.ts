@@ -664,7 +664,7 @@ describe("ProjectService", () => {
         where: { projectId }
       });
       expect(prismaMock.workSession.update).toHaveBeenCalledWith({
-        data: { lastSave: expect.any(Date) },
+        data: { lastSaveAt: expect.any(Date) },
         where: { projectId }
       });
     });
