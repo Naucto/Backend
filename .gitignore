@@ -7,6 +7,7 @@
 *.d.ts
 *.d.ts.map
 swagger.js
+swagger.json
 main.js
 
 # Logs

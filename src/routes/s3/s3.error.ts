@@ -3,14 +3,14 @@ export class S3ConfigurationException extends Error {
     super(
       `AWS credentials are not properly configured.${missingKeys.length > 0 ? " Missing keys: " + missingKeys.join(", ") : ""}`
     );
-    this.name = "S3ConfigurationException";
+    this.name = this.constructor.name;
   }
 }
 
 export class BucketResolutionException extends Error {
   constructor(message?: string) {
     super(message || "Failed to resolve S3 bucket name.");
-    this.name = "BucketResolutionException";
+    this.name = this.constructor.name;
   }
 }
 
@@ -19,7 +19,7 @@ export class S3ListBucketsException extends Error {
 
   constructor(message?: string, options?: { cause?: unknown }) {
     super(message || "Error while listing buckets");
-    this.name = "S3ListBucketsException";
+    this.name = this.constructor.name;
     this.cause = options?.cause;
   }
 }
@@ -29,8 +29,8 @@ export class S3ListObjectsException extends Error {
     public readonly bucketName: string,
     public readonly cause?: unknown
   ) {
-    super(`Error while listing objects in bucket: ${bucketName}`);
-    this.name = "S3ListObjectsException";
+    super(`Error while listing objects in bucket ${bucketName}: ${cause}`);
+    this.name = this.constructor.name;
   }
 }
 
@@ -40,8 +40,8 @@ export class S3UploadException extends Error {
     public readonly fileName: string,
     public readonly cause?: unknown
   ) {
-    super(`Error while uploading file "${fileName}" to bucket: ${bucketName}`);
-    this.name = "S3UploadException";
+    super(`Error while uploading file "${fileName}" to bucket ${bucketName}: ${cause}`);
+    this.name = this.constructor.name;
   }
 }
 
@@ -51,8 +51,8 @@ export class S3DownloadException extends Error {
     public readonly key: string,
     public readonly cause?: unknown
   ) {
-    super(`Error downloading file "${key}" from bucket: ${bucketName}`);
-    this.name = "S3DownloadException";
+    super(`Error downloading file "${key}" from bucket ${bucketName}: ${cause}`);
+    this.name = this.constructor.name;
   }
 }
 
@@ -63,9 +63,9 @@ export class S3SignedUrlException extends Error {
     public readonly cause?: unknown
   ) {
     super(
-      `Error generating signed URL for file "${key}" in bucket: ${bucketName}`
+      `Error generating signed URL for file "${key}" in bucket ${bucketName}: ${cause}`
     );
-    this.name = "S3SignedUrlException";
+    this.name = this.constructor.name;
   }
 }
 
@@ -75,8 +75,8 @@ export class S3DeleteFileException extends Error {
     public readonly key: string,
     public readonly cause?: unknown
   ) {
-    super(`Error deleting file "${key}" in bucket: ${bucketName}`);
-    this.name = "S3DeleteFileException";
+    super(`Error deleting file "${key}" in bucket ${bucketName}: ${cause}`);
+    this.name = this.constructor.name;
   }
 }
 
@@ -86,8 +86,8 @@ export class S3DeleteFilesException extends Error {
     public readonly keys: string[],
     public readonly cause?: unknown
   ) {
-    super(`Error deleting multiple files in bucket: ${bucketName}`);
-    this.name = "S3DeleteFilesException";
+    super(`Error deleting multiple files in bucket ${bucketName}: ${cause}`);
+    this.name = this.constructor.name;
   }
 }
 
@@ -96,8 +96,8 @@ export class S3DeleteBucketException extends Error {
     public readonly bucketName: string,
     public readonly cause?: unknown
   ) {
-    super(`Error deleting bucket: ${bucketName}`);
-    this.name = "S3DeleteBucketException";
+    super(`Error deleting bucket ${bucketName}: ${cause}`);
+    this.name = this.constructor.name;
   }
 }
 
@@ -106,8 +106,8 @@ export class S3CreateBucketException extends Error {
     public readonly bucketName: string,
     public readonly cause?: unknown
   ) {
-    super(`Error creating bucket: ${bucketName}`);
-    this.name = "S3CreateBucketException";
+    super(`Error creating bucket ${bucketName}: ${cause}`);
+    this.name = this.constructor.name;
   }
 }
 
@@ -117,8 +117,8 @@ export class S3GetMetadataException extends Error {
     public readonly key: string,
     public readonly cause?: unknown
   ) {
-    super(`Error fetching metadata for file "${key}" in bucket: ${bucketName}`);
-    this.name = "S3GetMetadataException";
+    super(`Error fetching metadata for file "${key}" in bucket ${bucketName}: ${cause}`);
+    this.name = this.constructor.name;
   }
 }
 
@@ -129,9 +129,9 @@ export class S3MissingMetadataException extends Error {
     public readonly missingFields: string[]
   ) {
     super(
-      `Missing required metadata fields [${missingFields.join(", ")}] for file "${key}" in bucket: ${bucketName}`
+      `Missing required metadata fields [${missingFields.join(", ")}] for file "${key}" in bucket ${bucketName}`
     );
-    this.name = "S3MissingMetadataException";
+    this.name = this.constructor.name;
   }
 }
 
@@ -140,8 +140,8 @@ export class S3ApplyPolicyException extends Error {
     public readonly bucketName: string,
     public readonly cause?: unknown
   ) {
-    super(`Error applying policy to bucket: ${bucketName}`);
-    this.name = "S3ApplyPolicyException";
+    super(`Error applying policy to bucket ${bucketName}: ${cause}`);
+    this.name = this.constructor.name;
   }
 }
 
@@ -150,7 +150,7 @@ export class CloudFrontPrivateKeyException extends Error {
     public readonly path: string,
     public readonly cause?: unknown
   ) {
-    super(`Failed to read CloudFront private key at path: "${path}"`);
-    this.name = "CloudFrontPrivateKeyException";
+    super(`Failed to read CloudFront private key at path "${path}": ${cause}`);
+    this.name = this.constructor.name;
   }
 }

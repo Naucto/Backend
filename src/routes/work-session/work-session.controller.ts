@@ -19,9 +19,9 @@ import {
   ApiParam
 } from "@nestjs/swagger";
 import { ProjectCollaboratorGuard } from "@auth/guards/project.guard";
-import { JoinRoomResult } from "./work-session.types";
 import { FetchWorkSessionDto } from "@work-session/dto/fetch-work-session.dto";
-import { KickWorkSessionDto } from "./dto/kick-work-session.dto";
+import { KickWorkSessionDto } from "@work-session/dto/kick-work-session.dto";
+import { JoinWorkSessionDto } from "@work-session/dto/join-work-session.dto";
 
 @ApiTags("work-sessions")
 @Controller("work-sessions")
@@ -34,14 +34,15 @@ export class WorkSessionController {
   @ApiOperation({ summary: "Join a work session" })
   @ApiResponse({
     status: HttpStatus.CREATED,
-    description: "The work session has been successfully created."
+    description: "The work session has been successfully created.",
+    type: JoinWorkSessionDto
   })
   @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: "Bad request." })
   @ApiParam({ name: "id", description: "Project ID" })
   async join(
     @Param("id", ParseIntPipe) projectId: number,
     @Req() req: { user: import("@auth/dto/user.dto").UserDto }
-  ): Promise<JoinRoomResult> {
+  ): Promise<JoinWorkSessionDto> {
     return await this.workSessionService.join(projectId, req.user);
   }
 

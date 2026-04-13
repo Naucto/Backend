@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { IsInt, IsOptional, IsString, IsUrl, ValidateNested } from "class-validator";
+import { IsArray, IsInt, IsOptional, IsString, IsUrl, ValidateNested } from "class-validator";
 
 export class WebRTCOfferPeerICEServerConfig {
   @ApiProperty()
@@ -34,8 +34,8 @@ export class WebRTCOfferPeerOpts {
 
 export class WebRTCOfferDto {
   @ApiProperty()
-  @IsUrl()
-    signaling!: string;
+  @IsArray()
+    signaling!: Array<string>;
 
   @ApiProperty()
   @IsInt()

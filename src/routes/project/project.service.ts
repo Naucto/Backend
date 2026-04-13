@@ -17,6 +17,7 @@ import { S3Service } from "@s3/s3.service";
 import { Project, User } from "@prisma/client";
 import { ConfigService } from "@nestjs/config";
 import { DownloadedFile } from "@s3/s3.interface";
+import { Readable } from "stream";
 
 export const CREATOR_SELECT = {
   id: true,
@@ -374,7 +375,7 @@ export class ProjectService {
     if (sessions.length === 0) return;
     await this.prisma.workSession.update({
       data: {
-        lastSave: new Date()
+        lastSaveAt: new Date()
       },
       where: { projectId }
     });
@@ -551,7 +552,16 @@ export class ProjectService {
   async fetchLastVersion(projectId: number): Promise<DownloadedFile> {
     let files = await this.listVersions(projectId);
     files = files.sort((a, b) => b.date.getTime() - a.date.getTime());
-    const filename = `save/${projectId}/${files[0]?.name ?? ""}`;
+
+    if (files.length === 0 || !files[0]?.name) {
+      return {
+        body: Readable.from([]),
+        contentType: "application/octet-stream",
+        contentLength: 0
+      };
+    }
+
+    const filename = `save/${projectId}/${files[0].name}`;
     return this.s3Service.downloadFile({ key: filename });
   }
 

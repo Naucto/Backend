@@ -32,6 +32,7 @@
     "baseUrl": "./src",                                  /* Specify the base directory to resolve non-relative module names. */
     "paths": {
         "src/*": ["./*"],
+        "@util/*": ["util/*"],
         "@ourPrisma/*": ["prisma/*"],
         "@auth/*": ["auth/*"],
         "@project/*": ["routes/project/*"],

@@ -5,6 +5,10 @@ import { UserService } from "@user/user.service";
 import { ProjectService } from "@project/project.service";
 import { MultiplayerHostNotFoundError, MultiplayerHostOpenedError, MultiplayerInvalidStateError, MultiplayerUserAlreadyJoinedError, MultiplayerUserDoesNotExistError, MultiplayerUserNotInSessionError } from "./multiplayer.error";
 import { ProjectNotFoundError } from "@project/project.error";
+import { WebRTCServer } from "@webrtc/server/webrtc.server";
+import { WebRTCService } from "@webrtc/webrtc.service";
+import { OpenHostResponseDto } from "./dto/open-host.dto";
+import { JoinHostResponseDto } from "./dto/join-host.dto";
 
 // I made this "extended" type (Ex) for complex fields that do relations with
 // other stuff.
@@ -14,14 +18,20 @@ export type GameSessionEx = GameSession & {
 
 @Injectable()
 export class MultiplayerService {
+  // FIXME: use derived server
+  private readonly _multiplayerServer: WebRTCServer;
+
   constructor(
-    private userService: UserService,
-    private projectService: ProjectService,
-    private prismaService: PrismaService
-  ) {}
+    private _webrtcService: WebRTCService,
+    private _userService: UserService,
+    private _projectService: ProjectService,
+    private _prismaService: PrismaService
+  ) {
+    this._multiplayerServer = new WebRTCServer(_webrtcService, "Multiplayer");
+  }
 
   async lookupHosts(projectId: number, userId: number): Promise<GameSessionEx[]> {
-    const matchingGSes = await this.prismaService.gameSession.findMany({
+    const matchingGSes = await this._prismaService.gameSession.findMany({
       include: { otherUsers: true },
       where: { projectId: projectId }
     });
@@ -53,17 +63,17 @@ export class MultiplayerService {
     return userAvailableGSes;
   }
 
-  async openHost(userId: number, projectId: number, visibility: GameSessionVisibility): Promise<GameSession> {
+  async openHost(userId: number, projectId: number, visibility: GameSessionVisibility): Promise<OpenHostResponseDto> {
     // Check if the user & project exists by simply getting them. If the object does not exist,
     // the exception throw serves as a guard.
 
-    const requestedUser = await this.userService.findOne<{
+    const requestedUser = await this._userService.findOne<{
       hostingGameSessions: GameSession[]
     }>(userId, { hostingGameSessions: true });
     if (!requestedUser) {
       throw new MultiplayerUserDoesNotExistError(`User with ID ${userId} not found`);
     }
-    const project = await this.projectService.findOne(projectId);
+    const project = await this._projectService.findOne(projectId);
     if (!project) {
       throw new ProjectNotFoundError(`Project with ID ${projectId} not found`);
     }
@@ -76,7 +86,7 @@ export class MultiplayerService {
       throw new MultiplayerHostOpenedError("User already hosting a game session for this project");
     });
 
-    const createdGS = await this.prismaService.gameSession.create({
+    const createdGS = await this._prismaService.gameSession.create({
       data: {
         hostId: userId,
         projectId: projectId,
@@ -84,20 +94,24 @@ export class MultiplayerService {
       }
     });
 
-    await this.userService.attachGameSession(userId, createdGS.id, true);
+    await this._userService.attachGameSession(userId, createdGS.id, true);
+    
+    const response = new OpenHostResponseDto();
+    response.sessionUuid = createdGS.sessionId;
+    response.webrtcConfig = this._webrtcService.buildOffer(this._multiplayerServer);
 
-    return createdGS;
+    return response;
   }
 
   async closeHost(userId: number, projectId: number): Promise<void> {
     // Same as for openHost
-    const requestedUser = await this.userService.findOne<{
+    const requestedUser = await this._userService.findOne<{
       hostingGameSessions: GameSession[]
     }>(userId, { hostingGameSessions: true });
     if (!requestedUser) {
       throw new MultiplayerUserDoesNotExistError(`User with ID ${userId} not found`);
     }
-    const project = await this.projectService.findOne(projectId);
+    const project = await this._projectService.findOne(projectId);
     if (!project) {
       throw new ProjectNotFoundError(`Project with ID ${projectId} not found`);
     }
@@ -109,9 +123,9 @@ export class MultiplayerService {
       throw new MultiplayerHostNotFoundError("User is not hosting a game session for this project");
     }
 
-    await this.userService.detachGameSession(userId, basicHostedGS.id, true);
+    await this._userService.detachGameSession(userId, basicHostedGS.id, true);
 
-    const hostedGS = await this.prismaService.gameSession.findUnique({
+    const hostedGS = await this._prismaService.gameSession.findUnique({
       where: { id: basicHostedGS.id },
       include: { otherUsers: true }
     });
@@ -123,20 +137,20 @@ export class MultiplayerService {
 
     await Promise.all(
       hostedGS.otherUsers.map(async (user) => {
-        await this.userService.detachGameSession(user.id, hostedGS.id, false);
+        await this._userService.detachGameSession(user.id, hostedGS.id, false);
       })
     );
   }
 
-  async joinHost(joiningUserId: number, hostUuid: string): Promise<void> {
+  async joinHost(joiningUserId: number, hostUuid: string): Promise<JoinHostResponseDto> {
     // Same as for openHost
-    const joiningUser = await this.userService.findOne<{
+    const joiningUser = await this._userService.findOne<{
       joinedGameSessions: GameSession[]
     }>(joiningUserId, { joinedGameSessions: true });
     if (!joiningUser) {
       throw new MultiplayerUserNotInSessionError(`User with ID ${joiningUserId} not found`);
     }
-    const hostedGS = await this.prismaService.gameSession.findUnique({
+    const hostedGS = await this._prismaService.gameSession.findUnique({
       where: { sessionId: hostUuid },
     });
 
@@ -148,24 +162,29 @@ export class MultiplayerService {
       throw new MultiplayerUserAlreadyJoinedError("User has already joined this game session");
     }
 
-    await this.prismaService.gameSession.update({
+    await this._prismaService.gameSession.update({
       where: { id: hostedGS.id },
       data: {
         otherUsers: { connect: { id: joiningUserId } }
       }
     });
+
+    const response = new JoinHostResponseDto();
+    response.webrtcConfig = this._webrtcService.buildOffer(this._multiplayerServer);
+
+    return response;
   }
 
   async leaveHost(leavingUserId: number, hostUuid: string): Promise<void> {
     // Same as for openHost
-    const leavingUser = await this.userService.findOne<{
+    const leavingUser = await this._userService.findOne<{
       joinedGameSessions: GameSession[]
     }>(leavingUserId, { joinedGameSessions: true });
     if (!leavingUser) {
       throw new MultiplayerUserNotInSessionError(`User with ID ${leavingUserId} not found`);
     }
 
-    const hostedGS = await this.prismaService.gameSession.findUnique({
+    const hostedGS = await this._prismaService.gameSession.findUnique({
       where: { sessionId: hostUuid },
       include: { otherUsers: true }
     });
@@ -178,7 +197,7 @@ export class MultiplayerService {
       throw new MultiplayerUserNotInSessionError("User is not part of this game session");
     }
 
-    await this.prismaService.gameSession.update({
+    await this._prismaService.gameSession.update({
       where: { id: hostedGS.id },
       data: {
         otherUsers: { disconnect: { id: leavingUserId } }

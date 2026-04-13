@@ -1,6 +1,8 @@
 /* eslint-disable no-console */
 // Fine for this file, not part of the main project
 
+import { setupGracefulShutdown } from "@tygra/nestjs-graceful-shutdown";
+
 // This is only necessary for services that explicitly rely on ConfigService
 const stubEnv: NodeJS.ProcessEnv = {
   DATABASE_URL: "postgresql://stub:stub@localhost:5432/stub",
@@ -43,6 +45,10 @@ Object.assign(process.env, stubEnv);
     console.log("[swag-gen] Creating NestJS application...");
     const app = await NestFactory.create(AppModule, { logger: ["error", "warn", "log", "debug", "verbose"] });
     console.log("[swag-gen] NestJS application created.");
+    
+    console.log("[swag-gen] Setting up graceful shutdown from Tygra...");
+    setupGracefulShutdown({ app });
+    console.log("[swag-gen] Graceful shutdown hook set up");
 
     console.log("[swag-gen] Building swagger document...");
     const document = buildSwaggerDocument(app);

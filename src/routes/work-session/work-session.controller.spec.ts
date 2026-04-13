@@ -2,6 +2,9 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { WorkSessionController } from "./work-session.controller";
 import { WorkSessionService } from "./work-session.service";
 import { PrismaService } from "@ourPrisma/prisma.service";
+import { WebRTCService } from "@webrtc/webrtc.service";
+
+jest.mock("@webrtc/server/webrtc.server.yjs");
 
 describe("WorkSessionController", () => {
   let controller: WorkSessionController;
@@ -16,6 +19,13 @@ describe("WorkSessionController", () => {
           useValue: {
             $connect: jest.fn(),
             $disconnect: jest.fn()
+          }
+        },
+        {
+          provide: WebRTCService,
+          useValue: {
+            registerServer: jest.fn(),
+            shutdownAllServers: jest.fn()
           }
         }
       ]

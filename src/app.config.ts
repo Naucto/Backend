@@ -4,7 +4,7 @@ import { Injectable } from "@nestjs/common";
 export class AppConfig {
   private _port?: number;
 
-  setPort(port: number): void {
+  set port(port: number) {
     if (this._port) {
       return;
     }
@@ -12,7 +12,7 @@ export class AppConfig {
     this._port = port;
   }
 
-  getPort(): number | undefined {
+  get port(): number | undefined {
     return this._port;
   }
 }

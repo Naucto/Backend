@@ -5,15 +5,9 @@
  * the app can boot without real credentials or a database connection.
  */
 
-import { Module, InjectionToken, Provider } from "@nestjs/common";
-import { ConfigModule } from "@nestjs/config";
-import { ScheduleModule } from "@nestjs/schedule";
-
-import { AuthModule } from "@auth/auth.module";
-
 import { ProjectController } from "@project/project.controller";
-import { MultiplayerController } from "src/routes/multiplayer/multiplayer.controller";
 import { ProjectCommentController } from "@project-comment/project-comment.controller";
+import { MultiplayerController } from "src/routes/multiplayer/multiplayer.controller";
 
 import { ProjectService } from "@project/project.service";
 import { S3Service } from "@s3/s3.service";
@@ -25,7 +19,17 @@ import { ProjectCommentService } from "@project-comment/project-comment.service"
 
 import { UserModule } from "@user/user.module";
 import { WorkSessionModule } from "@work-session/work-session.module";
+
 import { WebRTCModule } from "@webrtc/webrtc.module";
+import { WebRTCService } from "@webrtc/webrtc.service";
+
+import { GracefulShutdownModule, IGracefulShutdownConfigOptions } from "@tygra/nestjs-graceful-shutdown";
+
+import { Module, InjectionToken, Provider } from "@nestjs/common";
+import { ConfigModule } from "@nestjs/config";
+import { ScheduleModule } from "@nestjs/schedule";
+
+import { AuthModule } from "@auth/auth.module";
 
 const nullProvider = (token: InjectionToken): Provider => ({
   provide: token,
@@ -34,6 +38,16 @@ const nullProvider = (token: InjectionToken): Provider => ({
 
 @Module({
   imports: [
+    GracefulShutdownModule.forRootAsync({
+      imports: [WebRTCModule],
+      inject: [WebRTCService],
+      useFactory: async (webrtcService: WebRTCService): Promise<IGracefulShutdownConfigOptions> => {
+        return {
+          cleanup: async (/* app, signal */): Promise<void> =>
+            webrtcService.shutdownAllServers()
+        };
+      }
+    }),
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
     AuthModule,

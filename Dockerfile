@@ -1,4 +1,4 @@
-FROM node:20-alpine AS base
+FROM node:22-alpine AS base
 
 ARG BACKEND_PORT=3000
 ARG POSTGRES_HOST
