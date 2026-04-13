@@ -15,7 +15,7 @@ export class WebRTCOfferPeerICEServerConfig {
   @ApiPropertyOptional()
   @IsString()
   @IsOptional()
-    credentials?: string | undefined;
+    credential?: string | undefined;
 };
 
 export class WebRTCOfferPeerOptsConfig {

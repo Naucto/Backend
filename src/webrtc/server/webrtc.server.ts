@@ -12,6 +12,7 @@ import { Socket as TCPSocket } from "net";
 import { Server as HTTPServer, createServer as createHttpServer, IncomingMessage } from "http";
 import { WebSocket, WebSocketServer } from "ws";
 import { Logger } from "@nestjs/common";
+import { Duplex } from "stream";
 
 interface WebRTCSocketLikeObject {
   on(event: string, listener: (...args: unknown[]) => void): void;
@@ -39,7 +40,7 @@ type WebRTCEventHandler        = (...args: unknown[]) => void;
 type WebRTCEventHandlerMap     = Map<string, Array<WebRTCEventHandler>>;
 
 type WebRTCAuthEventHandler    = (
-  httpRequest: IncomingMessage, httpClientSocket: TCPSocket, head: Buffer
+  httpRequest: IncomingMessage, httpClientSocket: Duplex, head: Buffer
 ) => boolean;
 type WebRTCAuthEventHandlerSet = Array<WebRTCAuthEventHandler>;
 
@@ -226,8 +227,9 @@ export class WebRTCServer<OptsT extends WebRTCServerOptions = WebRTCServerOption
     this.applyEventHandlers(this._wsServer);
 
     this._httpServer.on("upgrade", (request, socket, head) => {
-      this._wsServer.emit("upgrade", request, socket, head);
+      this._internal_base_onUpgrade(request, socket, head);
     });
+
     this._httpServer.listen(this._port);
 
     webrtcService.registerServer(this);
@@ -356,15 +358,43 @@ export class WebRTCServer<OptsT extends WebRTCServerOptions = WebRTCServerOption
     });
   }
 
-  @WebRTCServerEvent("upgrade")
-  protected _internal_base_onUpgrade(
+  @WebRTCServerEvent("connection")
+  protected _internal_base_onConnection(
     _serverSocket: WebSocketServer,
+    rawClientSocket: WebSocket,
+    httpRequest: IncomingMessage
+  ): void
+  {
+    this._logger.log(`Connection established with ${httpRequest.socket.remoteAddress}`);
+
+    const clientSocket = rawClientSocket as WebRTCClientSocket;
+
+    clientSocket.remoteAddress = httpRequest.socket.remoteAddress;
+
+    rawClientSocket.on("close", (code, reason) => {
+      this._logger.log(`Connection ${clientSocket.remoteAddress} closed — code: ${code}, reason: ${reason.toString()}`);
+    });
+
+    rawClientSocket.on("error", (err) => {
+      this._logger.error(`Connection ${clientSocket.remoteAddress} error: ${err.message}`);
+    });
+
+    rawClientSocket.on("message", (data) => {
+      this._logger.log(`Message from ${clientSocket.remoteAddress}: ${data.toString()}`);
+    });
+  }
+
+  protected _internal_base_onUpgrade(
     request: IncomingMessage,
-    httpClientSocket: TCPSocket,
-    head: Buffer 
+    httpClientSocket: Duplex,
+    head: Buffer
   ): void {
+    const tcpSocket = httpClientSocket as TCPSocket;
+
+    this._logger.log(`Connection ${tcpSocket.remoteAddress} wants to upgrade`);
+
     this._wsServer.handleUpgrade(request, httpClientSocket, head,
-      (clientSocket: WebSocket, ...args: unknown[]) => {
+      (clientSocket: WebSocket) => {
         let authHandlerI: number = -1;
 
         try {
@@ -375,38 +405,24 @@ export class WebRTCServer<OptsT extends WebRTCServerOptions = WebRTCServerOption
               this._logger.verbose(
                 `Handler ${authHandlerI} returned false, denying access`
               );
-
               httpClientSocket.destroy();
               return;
             }
           });
         } catch (err) {
           this._logger.verbose(
-            `Exception while executing auth handler #${authHandlerI}: ` +
-            `${err}`
+            `Exception while executing auth handler #${authHandlerI}: ${err}`
           );
-
           httpClientSocket.destroy();
           return;
         }
 
         this.applyEventHandlers(clientSocket);
 
-        this._wsServer.emit("connection", clientSocket, request, ...args);
+        this._logger.log(`Signaling to connection ${tcpSocket.remoteAddress} of the upgrade`);
+        this._wsServer.emit("connection", clientSocket, request);
       }
     );
-  }
-
-  @WebRTCServerEvent("connection")
-  protected _internal_base_onConnection(
-    _serverSocket: WebSocketServer,
-    rawClientSocket: WebSocket,
-    httpRequest: IncomingMessage
-  ): void
-  {
-    const clientSocket = rawClientSocket as WebRTCClientSocket;
-
-    clientSocket.remoteAddress = httpRequest.socket.remoteAddress;
   }
 
   // --------------------------------------------------------------------------

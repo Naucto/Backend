@@ -155,7 +155,7 @@ export class WebRTCService implements OnModuleInit {
             const relayConfig: WebRTCOfferPeerICEServerConfig = {
               urls: relay.url,
               username: relay.username,
-              credentials: relay.credential
+              credential: relay.credential
             };
 
             return relayConfig;
