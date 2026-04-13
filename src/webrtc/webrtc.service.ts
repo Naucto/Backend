@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
+import { Inject, Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { WebRTCOfferDto, WebRTCOfferPeerICEServerConfig } from "./webrtc.dto";
 import { IsArray, IsInt, IsOptional, IsString, IsUrl, validateSync } from "class-validator";
 import { plainToInstance } from "class-transformer";
@@ -8,7 +8,7 @@ import { WebRTCServerRuntimeError } from "@webrtc/server/webrtc.server.error";
 
 import path from "path";
 import fs from "fs/promises";
-import dns from "node:dns";
+import { ConfigService } from "@nestjs/config";
 
 class WebRTCServiceConfigRelay {
   @IsUrl()
@@ -40,9 +40,16 @@ export class WebRTCService implements OnModuleInit {
   private readonly _hookedServers = new Set<WebRTCServer>();
 
   private _config?: WebRTCServiceConfig;
-  private _publicAddress?: string;
+  public _publicAddress?: string | undefined;
+
+  constructor(
+    @Inject(ConfigService) private readonly _configService: ConfigService
+  )
+  {}
 
   async onModuleInit(): Promise<void> {
+    this._publicAddress = this._configService.get<string>("BACKEND_WEBRTC_HOSTNAME");
+
     await Promise.all([
       this.fetchPublicAddress(),
       this.loadConfig(),
@@ -59,6 +66,19 @@ export class WebRTCService implements OnModuleInit {
   }
 
   private async fetchPublicAddress(): Promise<void> {
+    if (this._publicAddress !== undefined) {
+      this._logger.log(
+        "Public address overriden by environment variable: " +
+        this._publicAddress
+      );
+      return;
+    } else {
+      this._logger.warn(
+        "No public address set, will use the hosts' IP -- this CANNOT work " +
+        "for production"
+      );
+    }
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
 
@@ -73,31 +93,6 @@ export class WebRTCService implements OnModuleInit {
       this._logger.error(err);
     } finally {
       clearTimeout(timeout);
-    }
-
-    try {
-      if (this._publicAddress === undefined) {
-        return;
-      }
-
-      const lookupResults = await dns.promises.reverse(this._publicAddress);
-
-      if (lookupResults.length === 0) {
-        return;
-      }
-
-      const ipAddress = this._publicAddress;
-      this._publicAddress = lookupResults[0]!;
-
-      this._logger.log(
-        `Resolved public IP ${ipAddress} to hostname: ` +
-        `${this._publicAddress} (yielded ${lookupResults.length} hostnames)`
-      );
-    } catch (err) {
-      if (err instanceof Error) {
-        this._logger.warn(`Failed to resolve DNS for IP ${this._publicAddress ?? "unknown"}: ${err.message}`);
-      }
-      this._logger.warn(err);
     }
   }
 
