@@ -225,6 +225,9 @@ export class WebRTCServer<OptsT extends WebRTCServerOptions = WebRTCServerOption
     this.registerDecoratedEventHandlers();
     this.applyEventHandlers(this._wsServer);
 
+    this._httpServer.on("upgrade", (request, socket, head) => {
+      this._wsServer.emit("upgrade", request, socket, head);
+    });
     this._httpServer.listen(this._port);
 
     webrtcService.registerServer(this);
