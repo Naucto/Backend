@@ -8,6 +8,7 @@ import { WebRTCServerRuntimeError } from "@webrtc/server/webrtc.server.error";
 
 import path from "path";
 import fs from "fs/promises";
+import dns from "node:dns";
 
 class WebRTCServiceConfigRelay {
   @IsUrl()
@@ -72,6 +73,31 @@ export class WebRTCService implements OnModuleInit {
       this._logger.error(err);
     } finally {
       clearTimeout(timeout);
+    }
+
+    try {
+      if (this._publicAddress === undefined) {
+        return;
+      }
+
+      const lookupResults = await dns.promises.reverse(this._publicAddress);
+
+      if (lookupResults.length === 0) {
+        return;
+      }
+
+      const ipAddress = this._publicAddress;
+      this._publicAddress = lookupResults[0]!;
+
+      this._logger.log(
+        `Resolved public IP ${ipAddress} to hostname: ` +
+        `${this._publicAddress} (yielded ${lookupResults.length} hostnames)`
+      );
+    } catch (err) {
+      if (err instanceof Error) {
+        this._logger.warn(`Failed to resolve DNS for IP ${this._publicAddress ?? "unknown"}: ${err.message}`);
+      }
+      this._logger.warn(err);
     }
   }
 
