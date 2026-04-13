@@ -1,5 +1,3 @@
-// FIXME: https://github.com/websockets/ws?tab=readme-ov-file#multiple-servers-sharing-a-single-https-server
-
 import {
   WebRTCServerDecoratorError,
   WebRTCServerRuntimeError
@@ -365,23 +363,33 @@ export class WebRTCServer<OptsT extends WebRTCServerOptions = WebRTCServerOption
     httpRequest: IncomingMessage
   ): void
   {
-    this._logger.log(`Connection established with ${httpRequest.socket.remoteAddress}`);
-
     const clientSocket = rawClientSocket as WebRTCClientSocket;
 
     clientSocket.remoteAddress = httpRequest.socket.remoteAddress;
 
-    rawClientSocket.on("close", (code, reason) => {
-      this._logger.log(`Connection ${clientSocket.remoteAddress} closed — code: ${code}, reason: ${reason.toString()}`);
-    });
+    this._logger.verbose(`Client ${clientSocket.remoteAddress} connected`);
+  }
 
-    rawClientSocket.on("error", (err) => {
-      this._logger.error(`Connection ${clientSocket.remoteAddress} error: ${err.message}`);
-    });
+  @WebRTCClientEvent("close")
+  protected _internal_base_onClose(
+    clientSocket: WebRTCClientSocket,
+    code: number,
+    reason: Buffer
+  ): void
+  {
+    this._logger.verbose(
+      `Client ${clientSocket.remoteAddress} disconnected — code: ${code}` +
+      (reason.length ? `, reason: ${reason.toString()}` : "")
+    );
+  }
 
-    rawClientSocket.on("message", (data) => {
-      this._logger.log(`Message from ${clientSocket.remoteAddress}: ${data.toString()}`);
-    });
+  @WebRTCClientEvent("error")
+  protected _internal_base_onError(
+    clientSocket: WebRTCClientSocket,
+    err: Error
+  ): void
+  {
+    this._logger.error(`Client ${clientSocket.remoteAddress} error: ${err.message}`);
   }
 
   protected _internal_base_onUpgrade(
@@ -390,8 +398,6 @@ export class WebRTCServer<OptsT extends WebRTCServerOptions = WebRTCServerOption
     head: Buffer
   ): void {
     const tcpSocket = httpClientSocket as TCPSocket;
-
-    this._logger.log(`Connection ${tcpSocket.remoteAddress} wants to upgrade`);
 
     this._wsServer.handleUpgrade(request, httpClientSocket, head,
       (clientSocket: WebSocket) => {
@@ -403,7 +409,7 @@ export class WebRTCServer<OptsT extends WebRTCServerOptions = WebRTCServerOption
 
             if (!handler(request, httpClientSocket, head)) {
               this._logger.verbose(
-                `Handler ${authHandlerI} returned false, denying access`
+                `Auth handler ${authHandlerI} denied access to ${tcpSocket.remoteAddress}`
               );
               httpClientSocket.destroy();
               return;
@@ -411,15 +417,13 @@ export class WebRTCServer<OptsT extends WebRTCServerOptions = WebRTCServerOption
           });
         } catch (err) {
           this._logger.verbose(
-            `Exception while executing auth handler #${authHandlerI}: ${err}`
+            `Auth handler #${authHandlerI} threw for ${tcpSocket.remoteAddress}: ${err}`
           );
           httpClientSocket.destroy();
           return;
         }
 
         this.applyEventHandlers(clientSocket);
-
-        this._logger.log(`Signaling to connection ${tcpSocket.remoteAddress} of the upgrade`);
         this._wsServer.emit("connection", clientSocket, request);
       }
     );
