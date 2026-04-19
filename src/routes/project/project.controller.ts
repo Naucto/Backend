@@ -11,6 +11,7 @@ import {
   ParseFilePipeBuilder,
   Patch,
   Post,
+  Query,
   Put,
   Res,
   Req,
@@ -35,6 +36,7 @@ import {
   ApiConsumes,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiResponse,
   ApiTags
 } from "@nestjs/swagger";
@@ -49,6 +51,8 @@ import {
   ProjectResponseDto,
   ProjectExResponseDto,
   ForkProjectResponseDto,
+  PaginatedProjectsResponseDto,
+  ProjectsCountResponseDto,
   SignedUrlResponseDto
 } from "./dto/project-response.dto";
 import { S3DownloadException } from "@s3/s3.error";
@@ -90,6 +94,65 @@ export class ProjectController {
   })
   async getAllReleases(): Promise<ProjectExResponseDto[]> {
     return this.projectService.fetchPublishedGames();
+  }
+
+  @Public()
+  @Get("releases/paginated")
+  @ApiOperation({ summary: "Get released projects with pagination" })
+  @ApiQuery({ name: "page", type: "number", required: false })
+  @ApiQuery({ name: "limit", type: "number", required: false })
+  @ApiResponse({
+    status: 200,
+    description: "A paginated list of released projects",
+    type: PaginatedProjectsResponseDto
+  })
+  async getPaginatedReleases(
+    @Query("page") page?: string,
+    @Query("limit") limit?: string
+  ): Promise<PaginatedProjectsResponseDto> {
+    return this.projectService.fetchPublishedGamesPaginated(
+      page ? parseInt(page, 10) : undefined,
+      limit ? parseInt(limit, 10) : undefined
+    );
+  }
+
+  @Public()
+  @Get("releases/count")
+  @ApiOperation({ summary: "Count released projects with filters" })
+  @ApiQuery({ name: "search", type: "string", required: false })
+  @ApiQuery({ name: "tags", type: "string", required: false, description: "Comma-separated tag list" })
+  @ApiQuery({ name: "releaseWindow", enum: ["all", "365d", "30d", "7d"], required: false })
+  @ApiResponse({
+    status: 200,
+    description: "The total number of released projects matching the request",
+    type: ProjectsCountResponseDto
+  })
+  async countReleasedProjects(
+    @Query("search") search?: string,
+    @Query("tags") tags?: string,
+    @Query("releaseWindow") releaseWindow?: "all" | "365d" | "30d" | "7d"
+  ): Promise<ProjectsCountResponseDto> {
+    const filters: {
+      search?: string;
+      tags?: string[];
+      releaseWindow?: "all" | "365d" | "30d" | "7d";
+    } = {};
+
+    if (search) {
+      filters.search = search;
+    }
+
+    if (tags) {
+      filters.tags = tags.split(",");
+    }
+
+    if (releaseWindow) {
+      filters.releaseWindow = releaseWindow;
+    }
+
+    const total = await this.projectService.countPublishedGames(filters);
+
+    return { total };
   }
 
   @Public()
@@ -183,6 +246,71 @@ export class ProjectController {
   async findAll(@Req() request: RequestWithUser): Promise<Project[]> {
     const user = request.user;
     return this.projectService.findAll(user.id);
+  }
+
+  @Get("count")
+  @ApiOperation({ summary: "Count the user's projects with filters" })
+  @ApiQuery({ name: "search", type: "string", required: false })
+  @ApiQuery({ name: "tags", type: "string", required: false, description: "Comma-separated tag list" })
+  @ApiQuery({ name: "status", enum: ["all", "drafts", "published"], required: false })
+  @ApiResponse({
+    status: 200,
+    description: "The total number of user projects matching the request",
+    type: ProjectsCountResponseDto
+  })
+  async countProjects(
+    @Req() request: RequestWithUser,
+    @Query("search") search?: string,
+    @Query("tags") tags?: string,
+    @Query("status") status?: "all" | "drafts" | "published"
+  ): Promise<ProjectsCountResponseDto> {
+    const filters: {
+      search?: string;
+      tags?: string[];
+      status?: "all" | "drafts" | "published";
+    } = {};
+
+    if (search) {
+      filters.search = search;
+    }
+
+    if (tags) {
+      filters.tags = tags.split(",");
+    }
+
+    if (status) {
+      filters.status = status;
+    }
+
+    const total = await this.projectService.countUserProjects(
+      request.user.id,
+      filters
+    );
+
+    return { total };
+  }
+
+  @Get("paginated")
+  @ApiOperation({ summary: "Retrieve the paginated list of projects" })
+  @ApiQuery({ name: "page", type: "number", required: false })
+  @ApiQuery({ name: "limit", type: "number", required: false })
+  @ApiResponse({
+    status: 200,
+    description: "A paginated list of projects with collaborators and creator information",
+    type: PaginatedProjectsResponseDto
+  })
+  @ApiResponse({ status: 500, description: "Internal server error" })
+  async findAllPaginated(
+    @Req() request: RequestWithUser,
+    @Query("page") page?: string,
+    @Query("limit") limit?: string
+  ): Promise<PaginatedProjectsResponseDto> {
+    const user = request.user;
+    return this.projectService.findAllPaginated(
+      user.id,
+      page ? parseInt(page, 10) : undefined,
+      limit ? parseInt(limit, 10) : undefined
+    );
   }
 
   @Get(":id")
