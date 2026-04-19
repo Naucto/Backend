@@ -176,6 +176,40 @@ export class ProjectExResponseDto extends ProjectResponseDto {
   creator!: UserBasicInfoDto;
 }
 
+export class PaginatedProjectsResponseDto {
+  @ApiProperty({
+    description: "The projects included in the current page",
+    type: [ProjectExResponseDto]
+  })
+  projects!: ProjectExResponseDto[];
+
+  @ApiProperty({
+    description: "The total number of projects matching the request",
+    example: 128
+  })
+  total!: number;
+
+  @ApiProperty({
+    description: "The current page number",
+    example: 1
+  })
+  page!: number;
+
+  @ApiProperty({
+    description: "The number of projects requested per page",
+    example: 25
+  })
+  limit!: number;
+}
+
+export class ProjectsCountResponseDto {
+  @ApiProperty({
+    description: "The total number of projects matching the request",
+    example: 27
+  })
+  total!: number;
+}
+
 export class ForkProjectResponseDto extends ProjectExResponseDto {}
 
 export class CdnUrlResponseDto {

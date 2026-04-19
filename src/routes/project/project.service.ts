@@ -14,7 +14,7 @@ import {
   RemoveCollaboratorDto
 } from "./dto/collaborator-project.dto";
 import { S3Service } from "@s3/s3.service";
-import { Project, User } from "@prisma/client";
+import { Prisma, Project, User } from "@prisma/client";
 import { ConfigService } from "@nestjs/config";
 import { DownloadedFile } from "@s3/s3.interface";
 import { Readable } from "stream";
@@ -51,6 +51,25 @@ type ProjectWithCounts = ProjectEx & {
 type ReleaseProject = ProjectEx & {
   commentCount: number;
   forkCount: number;
+};
+
+type PaginatedProjectsResult<T> = {
+  projects: T[];
+  total: number;
+  page: number;
+  limit: number;
+};
+
+type PublishedProjectFilters = {
+  search?: string;
+  tags?: string[];
+  releaseWindow?: "all" | "30d" | "7d";
+};
+
+type UserProjectFilters = {
+  search?: string;
+  tags?: string[];
+  status?: "all" | "drafts" | "published";
 };
 
 @Injectable()
@@ -117,6 +136,153 @@ export class ProjectService {
     };
   }
 
+  private normalizePage(page?: number): number {
+    if (!page || Number.isNaN(page) || page < 1) {
+      return 1;
+    }
+
+    return Math.floor(page);
+  }
+
+  private normalizeLimit(limit?: number): number {
+    if (!limit || Number.isNaN(limit) || limit < 1) {
+      return 24;
+    }
+
+    return Math.min(Math.floor(limit), 100);
+  }
+
+  private buildPublishedGamesWhere(filters: PublishedProjectFilters = {}): Prisma.ProjectWhereInput {
+    const where: Prisma.ProjectWhereInput = {
+      status: "COMPLETED"
+    };
+    const andClauses: Prisma.ProjectWhereInput[] = [];
+    const normalizedSearch = filters.search?.trim();
+    const normalizedTags = this.normalizeTags(filters.tags);
+
+    if (filters.releaseWindow && filters.releaseWindow !== "all") {
+      const now = Date.now();
+      const threshold = filters.releaseWindow === "7d"
+        ? new Date(now - 7 * 24 * 60 * 60 * 1000)
+        : new Date(now - 30 * 24 * 60 * 60 * 1000);
+
+      andClauses.push({
+        OR: [
+          { publishedAt: { gte: threshold } },
+          {
+            AND: [
+              { publishedAt: null },
+              { createdAt: { gte: threshold } }
+            ]
+          }
+        ]
+      });
+    }
+
+    if (normalizedSearch) {
+      andClauses.push({
+        OR: [
+          {
+            publishedName: {
+              contains: normalizedSearch,
+              mode: "insensitive"
+            }
+          },
+          {
+            name: {
+              contains: normalizedSearch,
+              mode: "insensitive"
+            }
+          }
+        ]
+      });
+    }
+
+    if (normalizedTags.length > 0) {
+      andClauses.push({
+        OR: [
+          {
+            publishedTags: {
+              hasEvery: normalizedTags
+            }
+          },
+          {
+            AND: [
+              {
+                publishedTags: {
+                  isEmpty: true
+                }
+              },
+              {
+                tags: {
+                  hasEvery: normalizedTags
+                }
+              }
+            ]
+          }
+        ]
+      });
+    }
+
+    if (andClauses.length > 0) {
+      where.AND = andClauses;
+    }
+
+    return where;
+  }
+
+  private buildUserProjectsWhere(
+    userId: number,
+    filters: UserProjectFilters = {}
+  ): Prisma.ProjectWhereInput {
+    const where: Prisma.ProjectWhereInput = {
+      collaborators: {
+        some: {
+          id: userId
+        }
+      }
+    };
+
+    const andClauses: Prisma.ProjectWhereInput[] = [];
+    const normalizedSearch = filters.search?.trim();
+    const normalizedTags = this.normalizeTags(filters.tags);
+
+    if (filters.status === "published") {
+      andClauses.push({
+        status: "COMPLETED"
+      });
+    } else if (filters.status === "drafts") {
+      andClauses.push({
+        NOT: {
+          status: "COMPLETED"
+        }
+      });
+    }
+
+    if (normalizedSearch) {
+      andClauses.push({
+        name: {
+          contains: normalizedSearch,
+          mode: "insensitive"
+        }
+      });
+    }
+
+    if (normalizedTags.length > 0) {
+      andClauses.push({
+        tags: {
+          hasEvery: normalizedTags
+        }
+      });
+    }
+
+    if (andClauses.length > 0) {
+      where.AND = andClauses;
+    }
+
+    return where;
+  }
+
   async findAll(userId: number): Promise<Project[]> {
     return this.prisma.project.findMany({
       where: {
@@ -135,6 +301,55 @@ export class ProjectService {
         }
       }
     });
+  }
+
+  async findAllPaginated(
+    userId: number,
+    page?: number,
+    limit?: number
+  ): Promise<PaginatedProjectsResult<ProjectEx>> {
+    const safePage = this.normalizePage(page);
+    const safeLimit = this.normalizeLimit(limit);
+    const skip = (safePage - 1) * safeLimit;
+
+    const [total, projects] = await this.prisma.$transaction([
+      this.prisma.project.count({
+        where: {
+          collaborators: {
+            some: {
+              id: userId
+            }
+          }
+        }
+      }),
+      this.prisma.project.findMany({
+        where: {
+          collaborators: {
+            some: {
+              id: userId
+            }
+          }
+        },
+        include: {
+          collaborators: {
+            select: ProjectService.COLLABORATOR_SELECT
+          },
+          creator: {
+            select: ProjectService.CREATOR_SELECT
+          }
+        },
+        orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+        skip,
+        take: safeLimit
+      })
+    ]);
+
+    return {
+      projects,
+      total,
+      page: safePage,
+      limit: safeLimit
+    };
   }
 
   async findOne(id: number): Promise<ProjectEx> {
@@ -644,6 +859,76 @@ export class ProjectService {
         })
       )
     );
+  }
+
+  async fetchPublishedGamesPaginated(
+    page?: number,
+    limit?: number
+  ): Promise<PaginatedProjectsResult<ReleaseProject>> {
+    const safePage = this.normalizePage(page);
+    const safeLimit = this.normalizeLimit(limit);
+    const skip = (safePage - 1) * safeLimit;
+
+    const [total, projects] = await this.prisma.$transaction([
+      this.prisma.project.count({
+        where: {
+          status: "COMPLETED"
+        }
+      }),
+      this.prisma.project.findMany({
+        where: {
+          status: "COMPLETED"
+        },
+        include: {
+          collaborators: {
+            select: ProjectService.COLLABORATOR_SELECT
+          },
+          creator: {
+            select: ProjectService.CREATOR_SELECT
+          },
+          _count: {
+            select: {
+              forks: true,
+              comments: { where: { deleted: false } }
+            }
+          }
+        },
+        orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
+        skip,
+        take: safeLimit
+      })
+    ]);
+
+    return {
+      projects: projects.map((project) =>
+        this.applyPublishedSnapshot(
+          this.withCommentCount(project as ProjectWithCounts & {
+            publishedName?: string | null;
+            publishedShortDesc?: string | null;
+            publishedLongDesc?: string | null;
+            publishedTags?: string[];
+          })
+        )
+      ),
+      total,
+      page: safePage,
+      limit: safeLimit
+    };
+  }
+
+  async countPublishedGames(filters: PublishedProjectFilters = {}): Promise<number> {
+    return this.prisma.project.count({
+      where: this.buildPublishedGamesWhere(filters)
+    });
+  }
+
+  async countUserProjects(
+    userId: number,
+    filters: UserProjectFilters = {}
+  ): Promise<number> {
+    return this.prisma.project.count({
+      where: this.buildUserProjectsWhere(userId, filters)
+    });
   }
 
   async registerReleaseView(projectId: number): Promise<{ viewCount: number }> {
