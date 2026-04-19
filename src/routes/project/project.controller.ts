@@ -121,7 +121,7 @@ export class ProjectController {
   @ApiOperation({ summary: "Count released projects with filters" })
   @ApiQuery({ name: "search", type: "string", required: false })
   @ApiQuery({ name: "tags", type: "string", required: false, description: "Comma-separated tag list" })
-  @ApiQuery({ name: "releaseWindow", enum: ["all", "30d", "7d"], required: false })
+  @ApiQuery({ name: "releaseWindow", enum: ["all", "365d", "30d", "7d"], required: false })
   @ApiResponse({
     status: 200,
     description: "The total number of released projects matching the request",
@@ -130,12 +130,12 @@ export class ProjectController {
   async countReleasedProjects(
     @Query("search") search?: string,
     @Query("tags") tags?: string,
-    @Query("releaseWindow") releaseWindow?: "all" | "30d" | "7d"
+    @Query("releaseWindow") releaseWindow?: "all" | "365d" | "30d" | "7d"
   ): Promise<ProjectsCountResponseDto> {
     const filters: {
       search?: string;
       tags?: string[];
-      releaseWindow?: "all" | "30d" | "7d";
+      releaseWindow?: "all" | "365d" | "30d" | "7d";
     } = {};
 
     if (search) {

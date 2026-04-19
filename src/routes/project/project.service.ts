@@ -63,7 +63,7 @@ type PaginatedProjectsResult<T> = {
 type PublishedProjectFilters = {
   search?: string;
   tags?: string[];
-  releaseWindow?: "all" | "30d" | "7d";
+  releaseWindow?: "all" | "365d" | "30d" | "7d";
 };
 
 type UserProjectFilters = {
@@ -152,6 +152,24 @@ export class ProjectService {
     return Math.min(Math.floor(limit), 100);
   }
 
+  private getReleaseWindowThreshold(releaseWindow: NonNullable<PublishedProjectFilters["releaseWindow"]>): Date | null {
+    if (releaseWindow === "all") {
+      return null;
+    }
+
+    const now = Date.now();
+
+    if (releaseWindow === "7d") {
+      return new Date(now - 7 * 24 * 60 * 60 * 1000);
+    }
+
+    if (releaseWindow === "30d") {
+      return new Date(now - 30 * 24 * 60 * 60 * 1000);
+    }
+
+    return new Date(now - 365 * 24 * 60 * 60 * 1000);
+  }
+
   private buildPublishedGamesWhere(filters: PublishedProjectFilters = {}): Prisma.ProjectWhereInput {
     const where: Prisma.ProjectWhereInput = {
       status: "COMPLETED"
@@ -161,10 +179,11 @@ export class ProjectService {
     const normalizedTags = this.normalizeTags(filters.tags);
 
     if (filters.releaseWindow && filters.releaseWindow !== "all") {
-      const now = Date.now();
-      const threshold = filters.releaseWindow === "7d"
-        ? new Date(now - 7 * 24 * 60 * 60 * 1000)
-        : new Date(now - 30 * 24 * 60 * 60 * 1000);
+      const threshold = this.getReleaseWindowThreshold(filters.releaseWindow);
+
+      if (!threshold) {
+        return where;
+      }
 
       andClauses.push({
         OR: [
