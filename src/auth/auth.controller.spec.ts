@@ -133,7 +133,7 @@ describe("AuthController", () => {
     const testController = module.get<AuthController>(AuthController);
     const mockRes: Partial<Response> = { cookie: jest.fn() };
     const result = await testController.loginWithGoogle(
-      googleToken,
+      { token: googleToken },
       mockRes as Response
     );
 
