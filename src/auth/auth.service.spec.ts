@@ -33,7 +33,12 @@ describe("AuthService", () => {
       // Create a mock transaction client
       const txClient = {
         refreshToken: {
-          create: jest.fn().mockResolvedValue({ id: 1, token: "refresh_token123", userId: 1, expiresAt: new Date() }),
+          create: jest.fn().mockResolvedValue({
+            id: 1,
+            token: "refresh_token123",
+            userId: 1,
+            expiresAt: new Date()
+          }),
           deleteMany: jest.fn().mockResolvedValue({ count: 0 })
         }
       };
@@ -56,11 +61,16 @@ describe("AuthService", () => {
         { provide: JwtService, useValue: jwtService },
         { provide: GoogleAuthService, useValue: {} },
         { provide: PrismaService, useValue: prismaService },
-        { provide: ConfigService, useValue: { get: jest.fn((key: string) => {
-          if (key === "JWT_EXPIRES_IN") return "1h";
-          if (key === "JWT_REFRESH_EXPIRES_IN") return "7d";
-          return undefined;
-        }) } }
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn((key: string) => {
+              if (key === "JWT_EXPIRES_IN") return "1h";
+              if (key === "JWT_REFRESH_EXPIRES_IN") return "7d";
+              return undefined;
+            })
+          }
+        }
       ]
     }).compile();
 
@@ -131,11 +141,17 @@ describe("AuthService", () => {
       jwtService.sign.mockReturnValue("token123");
 
       const result = await authService.login("test@example.com", "password");
-      expect(result).toEqual({ access_token: "token123", refresh_token: "token123" });
-      expect(jwtService.sign).toHaveBeenCalledWith({
-        sub: mockUser.id,
-        email: mockUser.email
-      }, expect.any(Object));
+      expect(result).toEqual({
+        access_token: "token123",
+        refresh_token: "token123"
+      });
+      expect(jwtService.sign).toHaveBeenCalledWith(
+        {
+          sub: mockUser.id,
+          email: mockUser.email
+        },
+        expect.any(Object)
+      );
     });
   });
 
@@ -249,7 +265,10 @@ describe("AuthService", () => {
       });
 
       expect(userService.create).toHaveBeenCalled();
-      expect(result).toEqual({ access_token: "token123", refresh_token: "token123" });
+      expect(result).toEqual({
+        access_token: "token123",
+        refresh_token: "token123"
+      });
     });
   });
 
@@ -284,19 +303,27 @@ describe("AuthService", () => {
           { provide: JwtService, useValue: jwtService },
           { provide: GoogleAuthService, useValue: googleAuthService },
           { provide: PrismaService, useValue: prismaService },
-          { provide: ConfigService, useValue: { get: jest.fn((key: string) => {
-            if (key === "JWT_EXPIRES_IN") return "1h";
-            if (key === "JWT_REFRESH_EXPIRES_IN") return "7d";
-            return undefined;
-          }) } }
+          {
+            provide: ConfigService,
+            useValue: {
+              get: jest.fn((key: string) => {
+                if (key === "JWT_EXPIRES_IN") return "1h";
+                if (key === "JWT_REFRESH_EXPIRES_IN") return "7d";
+                return undefined;
+              })
+            }
+          }
         ]
       }).compile();
 
       const testAuthService = module.get<AuthService>(AuthService);
 
-      const result = await testAuthService.loginWithGoogle("google-oauth-token");
+      const result =
+        await testAuthService.loginWithGoogle("google-oauth-token");
 
-      expect(googleAuthService.verifyGoogleToken).toHaveBeenCalledWith("google-oauth-token");
+      expect(googleAuthService.verifyGoogleToken).toHaveBeenCalledWith(
+        "google-oauth-token"
+      );
       expect(userService.create).toHaveBeenCalledWith({
         email: googleUser.email,
         username: "Google_User",
@@ -338,19 +365,27 @@ describe("AuthService", () => {
           { provide: JwtService, useValue: jwtService },
           { provide: GoogleAuthService, useValue: googleAuthService },
           { provide: PrismaService, useValue: prismaService },
-          { provide: ConfigService, useValue: { get: jest.fn((key: string) => {
-            if (key === "JWT_EXPIRES_IN") return "1h";
-            if (key === "JWT_REFRESH_EXPIRES_IN") return "7d";
-            return undefined;
-          }) } }
+          {
+            provide: ConfigService,
+            useValue: {
+              get: jest.fn((key: string) => {
+                if (key === "JWT_EXPIRES_IN") return "1h";
+                if (key === "JWT_REFRESH_EXPIRES_IN") return "7d";
+                return undefined;
+              })
+            }
+          }
         ]
       }).compile();
 
       const testAuthService = module.get<AuthService>(AuthService);
 
-      const result = await testAuthService.loginWithGoogle("google-oauth-token");
+      const result =
+        await testAuthService.loginWithGoogle("google-oauth-token");
 
-      expect(googleAuthService.verifyGoogleToken).toHaveBeenCalledWith("google-oauth-token");
+      expect(googleAuthService.verifyGoogleToken).toHaveBeenCalledWith(
+        "google-oauth-token"
+      );
       expect(userService.create).not.toHaveBeenCalled();
       expect(result).toEqual({
         access_token: "existing-token-xyz",
@@ -378,11 +413,16 @@ describe("AuthService", () => {
           { provide: JwtService, useValue: jwtService },
           { provide: GoogleAuthService, useValue: {} },
           { provide: PrismaService, useValue: mockPrisma },
-          { provide: ConfigService, useValue: { get: jest.fn((key: string) => {
-            if (key === "JWT_EXPIRES_IN") return "1h";
-            if (key === "JWT_REFRESH_EXPIRES_IN") return "7d";
-            return undefined;
-          }) } }
+          {
+            provide: ConfigService,
+            useValue: {
+              get: jest.fn((key: string) => {
+                if (key === "JWT_EXPIRES_IN") return "1h";
+                if (key === "JWT_REFRESH_EXPIRES_IN") return "7d";
+                return undefined;
+              })
+            }
+          }
         ]
       }).compile();
 
@@ -425,11 +465,16 @@ describe("AuthService", () => {
           { provide: JwtService, useValue: jwtService },
           { provide: GoogleAuthService, useValue: {} },
           { provide: PrismaService, useValue: mockPrisma },
-          { provide: ConfigService, useValue: { get: jest.fn((key: string) => {
-            if (key === "JWT_EXPIRES_IN") return "1h";
-            if (key === "JWT_REFRESH_EXPIRES_IN") return "7d";
-            return undefined;
-          }) } }
+          {
+            provide: ConfigService,
+            useValue: {
+              get: jest.fn((key: string) => {
+                if (key === "JWT_EXPIRES_IN") return "1h";
+                if (key === "JWT_REFRESH_EXPIRES_IN") return "7d";
+                return undefined;
+              })
+            }
+          }
         ]
       }).compile();
 
@@ -451,7 +496,12 @@ describe("AuthService", () => {
           const txClient = {
             refreshToken: {
               delete: jest.fn().mockResolvedValue({ id: 1 }),
-              create: jest.fn().mockResolvedValue({ id: 2, token: "new-refresh", userId: 1, expiresAt: futureDate })
+              create: jest.fn().mockResolvedValue({
+                id: 2,
+                token: "new-refresh",
+                userId: 1,
+                expiresAt: futureDate
+              })
             }
           };
           return callback(txClient);
@@ -485,11 +535,16 @@ describe("AuthService", () => {
           { provide: JwtService, useValue: jwtService },
           { provide: GoogleAuthService, useValue: {} },
           { provide: PrismaService, useValue: mockPrisma },
-          { provide: ConfigService, useValue: { get: jest.fn((key: string) => {
-            if (key === "JWT_EXPIRES_IN") return "1h";
-            if (key === "JWT_REFRESH_EXPIRES_IN") return "7d";
-            return undefined;
-          }) } }
+          {
+            provide: ConfigService,
+            useValue: {
+              get: jest.fn((key: string) => {
+                if (key === "JWT_EXPIRES_IN") return "1h";
+                if (key === "JWT_REFRESH_EXPIRES_IN") return "7d";
+                return undefined;
+              })
+            }
+          }
         ]
       }).compile();
 

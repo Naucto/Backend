@@ -29,7 +29,7 @@ describe("AuthController", () => {
             $disconnect: jest.fn()
           }
         },
-        ConfigService,
+        ConfigService
       ]
     }).compile();
 
@@ -83,7 +83,10 @@ describe("AuthController", () => {
     (authService.register as jest.Mock).mockResolvedValue(expectedResult);
 
     const mockRes: Partial<Response> = { cookie: jest.fn() };
-    const result = await controller.register(createUserDto, mockRes as Response);
+    const result = await controller.register(
+      createUserDto,
+      mockRes as Response
+    );
 
     expect(authService.register).toHaveBeenCalledWith(createUserDto);
     expect(mockRes.cookie).toHaveBeenCalledWith(
@@ -129,9 +132,14 @@ describe("AuthController", () => {
 
     const testController = module.get<AuthController>(AuthController);
     const mockRes: Partial<Response> = { cookie: jest.fn() };
-    const result = await testController.loginWithGoogle(googleToken, mockRes as Response);
+    const result = await testController.loginWithGoogle(
+      googleToken,
+      mockRes as Response
+    );
 
-    expect(authServiceWithGoogle.loginWithGoogle).toHaveBeenCalledWith(googleToken);
+    expect(authServiceWithGoogle.loginWithGoogle).toHaveBeenCalledWith(
+      googleToken
+    );
     expect(mockRes.cookie).toHaveBeenCalled();
     expect(result).toEqual({ access_token: "google-token789" });
   });
@@ -173,7 +181,9 @@ describe("AuthController", () => {
     const mockRes: Partial<Response> = { cookie: jest.fn() };
     const result = await testController.refresh(mockReq, mockRes as Response);
 
-    expect(authServiceWithRefresh.refreshToken).toHaveBeenCalledWith(refreshToken);
+    expect(authServiceWithRefresh.refreshToken).toHaveBeenCalledWith(
+      refreshToken
+    );
     expect(mockRes.cookie).toHaveBeenCalledWith(
       "refresh_token",
       "new-refresh-token",
@@ -227,7 +237,9 @@ describe("AuthController", () => {
     };
     const result = await testController.logout(mockReq, mockRes as Response);
 
-    expect(authServiceWithRevoke.revokeRefreshToken).toHaveBeenCalledWith(refreshToken);
+    expect(authServiceWithRevoke.revokeRefreshToken).toHaveBeenCalledWith(
+      refreshToken
+    );
     expect(mockRes.clearCookie).toHaveBeenCalledWith(
       "refresh_token",
       expect.objectContaining({
