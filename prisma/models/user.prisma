@@ -3,7 +3,7 @@ model User {
   email     String   @unique
   username  String   @unique
   nickname  String?
-  password  String
+  password  String?
   createdAt DateTime @default(now())
 
   roles Role[] @relation("UserRoles")

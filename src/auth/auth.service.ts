@@ -2,11 +2,14 @@ import {
   Injectable,
   ConflictException,
   UnauthorizedException,
+  BadRequestException,
   Inject
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { UserService } from "@user/user.service";
-import { GoogleAuthService } from "./google-auth.service";
+import { GoogleAuthService } from "./providers/google-auth.service";
+import { GithubAuthService } from "./providers/github-auth.service";
+import { MicrosoftAuthService } from "./providers/microsoft-auth.service";
 import * as bcrypt from "bcryptjs";
 import { UserDto } from "./dto/user.dto";
 import { AuthResponseDto } from "./dto/auth-response.dto";
@@ -22,6 +25,8 @@ export class AuthService {
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
     private readonly googleAuthService: GoogleAuthService,
+    private readonly githubAuthService: GithubAuthService,
+    private readonly microsoftAuthService: MicrosoftAuthService,
     private readonly prisma: PrismaService,
     @Inject(ConfigService) private readonly configService: ConfigService
   ) {}
@@ -128,19 +133,14 @@ export class AuthService {
     return response;
   }
 
-  async loginWithGoogle(googleToken: string): Promise<AuthResponseDto> {
-    const googleUser =
-      await this.googleAuthService.verifyGoogleToken(googleToken);
-
-    let user = await this.userService.findByEmail(googleUser.email);
+  private async loginWithOAuth(email: string, name: string): Promise<AuthResponseDto> {
+    let user = await this.userService.findByEmail(email);
 
     if (!user) {
-      user = await this.userService.create({
-        email: googleUser.email,
-        username: googleUser.name.replace(/\s+/g, "_"),
-        password: "",
-        roles: []
-      });
+      user = await this.userService.createOAuthUser(
+        email,
+        name.replace(/\s+/g, "_")
+      );
     }
 
     const payload: JwtPayload = { sub: user.id, email: user.email };
@@ -150,6 +150,21 @@ export class AuthService {
     );
 
     return { access_token, refresh_token };
+  }
+
+  async loginWithGoogle(token: string): Promise<AuthResponseDto> {
+    const { email, name } = await this.googleAuthService.verifyToken(token);
+    return this.loginWithOAuth(email, name);
+  }
+
+  async loginWithGithub(code: string): Promise<AuthResponseDto> {
+    const { email, name } = await this.githubAuthService.getUserFromCode(code);
+    return this.loginWithOAuth(email, name);
+  }
+
+  async loginWithMicrosoft(token: string): Promise<AuthResponseDto> {
+    const { email, name } = await this.microsoftAuthService.verifyToken(token);
+    return this.loginWithOAuth(email, name);
   }
 
   async refreshToken(oldToken: string): Promise<AuthResponseDto> {
@@ -186,5 +201,29 @@ export class AuthService {
 
   async revokeRefreshToken(token: string): Promise<void> {
     await this.prisma.refreshToken.deleteMany({ where: { token } });
+  }
+
+  async changePassword(
+    userId: number,
+    newPassword: string,
+    currentPassword?: string
+  ): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+
+    if (!user) {
+      throw new UnauthorizedException("User not found");
+    }
+
+    if (user.password) {
+      if (!currentPassword) {
+        throw new BadRequestException("Current password is required");
+      }
+      const valid = await bcrypt.compare(currentPassword, user.password);
+      if (!valid) {
+        throw new UnauthorizedException("Current password is incorrect");
+      }
+    }
+
+    await this.userService.updatePassword(userId, newPassword);
   }
 }
