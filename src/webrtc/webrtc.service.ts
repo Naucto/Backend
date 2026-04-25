@@ -28,11 +28,6 @@ class WebRTCServiceConfig {
     relays!: WebRTCServiceConfigRelay[];
 };
 
-// FIXME: If we need to use this elsewhere, move it to a separate file
-type IpifyResponse = {
-  ip: string;
-};
-
 @Injectable()
 export class WebRTCService implements OnModuleInit {
   private readonly _logger = new Logger(WebRTCService.name);
@@ -72,28 +67,14 @@ export class WebRTCService implements OnModuleInit {
         this._publicAddress
       );
       return;
-    } else {
-      this._logger.warn(
-        "No public address set, will use the hosts' IP -- this CANNOT work " +
-        "for production"
-      );
     }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
+    this._publicAddress = "localhost";
 
-    try {
-      const res = await fetch("https://api.ipify.org?format=json", { signal: controller.signal });
-      const data = await res.json() as IpifyResponse;
-      this._publicAddress = data.ip;
-    } catch (err) {
-      if (err instanceof Error) {
-        this._logger.error(`Failed to fetch public IP address for WebRTC service: ${err.message}`);
-      }
-      this._logger.error(err);
-    } finally {
-      clearTimeout(timeout);
-    }
+    this._logger.warn(
+      `No public address set, falling back to ${this._publicAddress} -- ` +
+      "this CANNOT work for production"
+    );
   }
 
   private async loadConfig(): Promise<void> {
