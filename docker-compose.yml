@@ -40,6 +40,9 @@ services:
       - .env
     ports:
       - "${BACKEND_PORT}:3000"
+      - 4096:4096
+      - 4097:4097
+      - 4098:4098
     restart: on-failure
     networks:
       - naucto
