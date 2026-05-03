@@ -12,7 +12,8 @@ import { PrismaService } from "@ourPrisma/prisma.service";
 import { ConfigService } from "@nestjs/config";
 
 jest.mock("bcryptjs", () => ({
-  compare: jest.fn()
+  compare: jest.fn(),
+  hash: jest.fn().mockResolvedValue("hashed_value")
 }));
 
 describe("AuthService", () => {
@@ -27,8 +28,12 @@ describe("AuthService", () => {
     createOAuthUser: jest.fn()
   };
 
-  const jwtService: jest.Mocked<Pick<JwtService, "sign">> = {
-    sign: jest.fn()
+  const jwtService: jest.Mocked<
+    Pick<JwtService, "sign" | "decode" | "verify">
+  > = {
+    sign: jest.fn(),
+    decode: jest.fn(),
+    verify: jest.fn()
   };
 
   const prismaService = {
@@ -70,6 +75,7 @@ describe("AuthService", () => {
           provide: ConfigService,
           useValue: {
             get: jest.fn((key: string) => {
+              if (key === "JWT_SECRET") return "test-secret-key";
               if (key === "JWT_EXPIRES_IN") return "1h";
               if (key === "JWT_REFRESH_EXPIRES_IN") return "7d";
               return undefined;
@@ -80,6 +86,7 @@ describe("AuthService", () => {
     }).compile();
 
     authService = module.get<AuthService>(AuthService);
+    jwtService.decode.mockReturnValue({ sub: 1, email: "test@test.com" });
   });
 
   it("should be defined", () => {
