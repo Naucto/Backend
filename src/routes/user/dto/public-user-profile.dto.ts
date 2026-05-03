@@ -16,6 +16,14 @@ export class PublicUserProfileDto {
     nickname?: string | null;
 
   @ApiPropertyOptional({
+    description: "User profile description",
+    example: "I love making games",
+    type: String,
+    nullable: true
+  })
+    description?: string | null;
+
+  @ApiPropertyOptional({
     description: "Public CDN URL of the profile image (if any)",
     example: "https://cdn.example.com/users/1/profile?v=abc123",
     type: String,

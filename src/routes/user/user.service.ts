@@ -17,13 +17,15 @@ export class UserService {
     id: number;
     username: string;
     nickname: string | null;
+    description: string | null;
   }> {
     const user = await this.prisma.user.findUnique({
       where: { id },
       select: {
         id: true,
         username: true,
-        nickname: true
+        nickname: true,
+        description: true
       }
     });
 
@@ -31,28 +33,46 @@ export class UserService {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
 
-    return user;
+    return {
+      ...user,
+      description: user.description ?? user.nickname
+    };
   }
 
   async updateMyProfile(
     id: number,
-    data: { nickname?: string | null }
+    data: { nickname?: string | null; description?: string | null }
   ): Promise<{
     id: number;
     username: string;
     nickname: string | null;
+    description: string | null;
   }> {
-    return await this.prisma.user.update({
+    const nextProfileText =
+      data.description !== undefined ? data.description : data.nickname;
+
+    const updatedUser = await this.prisma.user.update({
       where: { id },
       data: {
-        ...(data.nickname !== undefined ? { nickname: data.nickname } : {})
+        ...(nextProfileText !== undefined
+          ? {
+            nickname: nextProfileText,
+            description: nextProfileText
+          }
+          : {})
       },
       select: {
         id: true,
         username: true,
-        nickname: true
+        nickname: true,
+        description: true
       }
     });
+
+    return {
+      ...updatedUser,
+      description: updatedUser.description ?? updatedUser.nickname
+    };
   }
 
   async findRolesByNames(names: string[]): Promise<Role[]> {
