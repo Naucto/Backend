@@ -1,6 +1,13 @@
 import { Inject, Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { WebRTCOfferDto, WebRTCOfferPeerICEServerConfig } from "./webrtc.dto";
-import { IsArray, IsInt, IsOptional, IsString, IsUrl, validateSync } from "class-validator";
+import {
+  IsArray,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUrl,
+  validateSync
+} from "class-validator";
 import { plainToInstance } from "class-transformer";
 import { WebRTCServiceOfferError } from "./webrtc.error";
 import { WebRTCServer } from "@webrtc/server/webrtc.server";
@@ -12,21 +19,21 @@ import { ConfigService } from "@nestjs/config";
 
 class WebRTCServiceConfigRelay {
   @IsUrl()
-    url!: string;
+  url!: string;
   @IsString()
   @IsOptional()
-    username?: string;
+  username?: string;
   @IsString()
   @IsOptional()
-    credential?: string;
-};
+  credential?: string;
+}
 
 class WebRTCServiceConfig {
   @IsInt()
-    maxClients!: number;
+  maxClients!: number;
   @IsArray()
-    relays!: WebRTCServiceConfigRelay[];
-};
+  relays!: WebRTCServiceConfigRelay[];
+}
 
 // FIXME: If we need to use this elsewhere, move it to a separate file
 type IpifyResponse = {
@@ -44,16 +51,14 @@ export class WebRTCService implements OnModuleInit {
 
   constructor(
     @Inject(ConfigService) private readonly _configService: ConfigService
-  )
-  {}
+  ) {}
 
   async onModuleInit(): Promise<void> {
-    this._publicAddress = this._configService.get<string>("BACKEND_WEBRTC_HOSTNAME");
+    this._publicAddress = this._configService.get<string>(
+      "BACKEND_WEBRTC_HOSTNAME"
+    );
 
-    await Promise.all([
-      this.fetchPublicAddress(),
-      this.loadConfig(),
-    ]);
+    await Promise.all([this.fetchPublicAddress(), this.loadConfig()]);
   }
 
   public registerServer(server: WebRTCServer): void {
@@ -61,21 +66,23 @@ export class WebRTCService implements OnModuleInit {
   }
 
   public shutdownAllServers(): void {
-    this._logger.log(`Shutting down ${this._hookedServers.size} WebRTC servers`);
-    this._hookedServers.forEach(server => server.shutdown());
+    this._logger.log(
+      `Shutting down ${this._hookedServers.size} WebRTC servers`
+    );
+    this._hookedServers.forEach((server) => server.shutdown());
   }
 
   private async fetchPublicAddress(): Promise<void> {
     if (this._publicAddress !== undefined) {
       this._logger.log(
         "Public address overriden by environment variable: " +
-        this._publicAddress
+          this._publicAddress
       );
       return;
     } else {
       this._logger.warn(
         "No public address set, will use the hosts' IP -- this CANNOT work " +
-        "for production"
+          "for production"
       );
     }
 
@@ -83,12 +90,16 @@ export class WebRTCService implements OnModuleInit {
     const timeout = setTimeout(() => controller.abort(), 5000);
 
     try {
-      const res = await fetch("https://api.ipify.org?format=json", { signal: controller.signal });
-      const data = await res.json() as IpifyResponse;
+      const res = await fetch("https://api.ipify.org?format=json", {
+        signal: controller.signal
+      });
+      const data = (await res.json()) as IpifyResponse;
       this._publicAddress = data.ip;
     } catch (err) {
       if (err instanceof Error) {
-        this._logger.error(`Failed to fetch public IP address for WebRTC service: ${err.message}`);
+        this._logger.error(
+          `Failed to fetch public IP address for WebRTC service: ${err.message}`
+        );
       }
       this._logger.error(err);
     } finally {
@@ -103,8 +114,14 @@ export class WebRTCService implements OnModuleInit {
       const rawFile = await fs.readFile(configPath, "utf-8");
       const parsedRawObject = JSON.parse(rawFile);
 
-      const configInstance = plainToInstance(WebRTCServiceConfig, parsedRawObject);
-      const configErrors = validateSync(configInstance, { whitelist: true, forbidNonWhitelisted: true });
+      const configInstance = plainToInstance(
+        WebRTCServiceConfig,
+        parsedRawObject
+      );
+      const configErrors = validateSync(configInstance, {
+        whitelist: true,
+        forbidNonWhitelisted: true
+      });
 
       if (configErrors.length > 0) {
         this._logger.error(`Invalid WebRTC service config in ${configPath}`);
@@ -113,10 +130,14 @@ export class WebRTCService implements OnModuleInit {
       }
 
       this._config = configInstance;
-      this._logger.log(`WebRTC service config loaded successfully from ${configPath}`);
+      this._logger.log(
+        `WebRTC service config loaded successfully from ${configPath}`
+      );
     } catch (err) {
       if (err instanceof Error) {
-        this._logger.error(`Failed to read WebRTC service config from ${configPath}: ${err.message}`);
+        this._logger.error(
+          `Failed to read WebRTC service config from ${configPath}: ${err.message}`
+        );
       }
       this._logger.error(err);
     }
@@ -125,8 +146,12 @@ export class WebRTCService implements OnModuleInit {
   // targetServer can be either a concrete WebRTCServer or a URL to that server
   buildOffer(targetServer: WebRTCServer | string): WebRTCOfferDto {
     if (!this._config) {
-      this._logger.error("Attempt at creating WebRTC offer without a valid initialization, bailing out.");
-      throw new WebRTCServiceOfferError("WebRTC service is not properly initialized");
+      this._logger.error(
+        "Attempt at creating WebRTC offer without a valid initialization, bailing out."
+      );
+      throw new WebRTCServiceOfferError(
+        "WebRTC service is not properly initialized"
+      );
     }
 
     const offerDto = new WebRTCOfferDto();
@@ -145,25 +170,23 @@ export class WebRTCService implements OnModuleInit {
       signalingUrl = targetServer;
     }
 
-    offerDto.signaling = [ signalingUrl ];
+    offerDto.signaling = [signalingUrl];
 
     offerDto.maxConns = this._config.maxClients;
     offerDto.peerOpts = {
       config: {
-        iceServers: this._config.relays.map(
-          relay => {
-            const relayConfig: WebRTCOfferPeerICEServerConfig = {
-              urls: relay.url,
-              username: relay.username,
-              credential: relay.credential
-            };
+        iceServers: this._config.relays.map((relay) => {
+          const relayConfig: WebRTCOfferPeerICEServerConfig = {
+            urls: relay.url,
+            username: relay.username,
+            credential: relay.credential
+          };
 
-            return relayConfig;
-          }
-        )
+          return relayConfig;
+        })
       }
     };
 
     return offerDto;
   }
-};
+}

@@ -114,7 +114,11 @@ export class ProjectController {
   @ApiResponse({
     status: 200,
     description: "Project release file",
-    content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } },
+    content: {
+      "application/octet-stream": {
+        schema: { type: "string", format: "binary" }
+      }
+    }
   })
   async getReleaseContent(
     @Param("id") id: string,
@@ -437,7 +441,7 @@ export class ProjectController {
           errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY
         })
     )
-      file: Express.Multer.File
+    file: Express.Multer.File
   ): Promise<{ message: string; id: number }> {
     await this.projectService.save(id, file);
 
@@ -474,7 +478,7 @@ export class ProjectController {
         .addFileTypeValidator({ fileType: /^image\/(jpeg|png|gif|webp)$/ })
         .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY })
     )
-      file: Express.Multer.File,
+    file: Express.Multer.File,
     @Req() req: RequestWithUser
   ): Promise<{ message: string; id: number }> {
     await this.projectService.findOne(id);
@@ -497,7 +501,9 @@ export class ProjectController {
 
   @Get(":id/image")
   @UseGuards(ProjectCollaboratorGuard)
-  @ApiOperation({ summary: "Get CDN URL for project image (authenticated, any project status)" })
+  @ApiOperation({
+    summary: "Get CDN URL for project image (authenticated, any project status)"
+  })
   @ApiParam({ name: "id", type: "number" })
   @ApiResponse({
     status: 200,
@@ -565,25 +571,40 @@ export class ProjectController {
   @UseGuards(ProjectCollaboratorGuard)
   @ApiOperation({ summary: "Fetch project's content" })
   @ApiParam({ name: "id", type: "string" })
-  @ApiResponse({ status: 200, description: "File fetched successfully", content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } } })
+  @ApiResponse({
+    status: 200,
+    description: "File fetched successfully",
+    content: {
+      "application/octet-stream": {
+        schema: { type: "string", format: "binary" }
+      }
+    }
+  })
   @ApiResponse({ status: 403, description: "Forbidden" })
   @ApiResponse({ status: 404, description: "File not found" })
-  async fetchProjectContent(@Param("id") id: number, @Res() res: Response): Promise<void> {
+  async fetchProjectContent(
+    @Param("id") id: number,
+    @Res() res: Response
+  ): Promise<void> {
     try {
       const file = await this.projectService.fetchLastVersion(id);
 
       res.set({
         "Content-Type": file.contentType,
-        "Content-Length": file.contentLength,
+        "Content-Length": file.contentLength
       });
 
       file.body.pipe(res);
     } catch (error) {
-
       if (error instanceof Error) {
-        this.logger.error(`Failed to fetch content for project ${id}: ${error.message}`, error.stack);
+        this.logger.error(
+          `Failed to fetch content for project ${id}: ${error.message}`,
+          error.stack
+        );
       } else {
-        this.logger.error(`Failed to fetch content for project ${id}: ${JSON.stringify(error)}`);
+        this.logger.error(
+          `Failed to fetch content for project ${id}: ${JSON.stringify(error)}`
+        );
       }
 
       if (error instanceof S3DownloadException) {
@@ -716,7 +737,11 @@ export class ProjectController {
   @ApiResponse({
     status: 200,
     description: "Project version retrieved successfully",
-    content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } },
+    content: {
+      "application/octet-stream": {
+        schema: { type: "string", format: "binary" }
+      }
+    }
   })
   @ApiResponse({ status: 403, description: "Forbidden" })
   async getVersion(
@@ -765,7 +790,11 @@ export class ProjectController {
   @ApiResponse({
     status: 200,
     description: "Project checkpoint retrieved successfully",
-    content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } },
+    content: {
+      "application/octet-stream": {
+        schema: { type: "string", format: "binary" }
+      }
+    }
   })
   @ApiResponse({ status: 403, description: "Forbidden" })
   async getCheckpoint(
@@ -820,9 +849,16 @@ export class ProjectController {
   @Public()
   @Post("releases/:id/like")
   @UseGuards(OptionalJwtAuthGuard)
-  @ApiOperation({ summary: "Like a published project (toggle for authenticated users, increment for anonymous)" })
+  @ApiOperation({
+    summary:
+      "Like a published project (toggle for authenticated users, increment for anonymous)"
+  })
   @ApiParam({ name: "id", type: "string" })
-  @ApiResponse({ status: 200, description: "Like status", type: LikeResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: "Like status",
+    type: LikeResponseDto
+  })
   @HttpCode(HttpStatus.OK)
   async likeProject(
     @Param("id") id: string,
@@ -833,9 +869,15 @@ export class ProjectController {
   }
 
   @Delete("releases/:id/like")
-  @ApiOperation({ summary: "Unlike a published project (authenticated users only)" })
+  @ApiOperation({
+    summary: "Unlike a published project (authenticated users only)"
+  })
   @ApiParam({ name: "id", type: "string" })
-  @ApiResponse({ status: 200, description: "Like removed", type: LikeResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: "Like removed",
+    type: LikeResponseDto
+  })
   @HttpCode(HttpStatus.OK)
   async unlikeProject(
     @Param("id") id: string,
@@ -845,9 +887,15 @@ export class ProjectController {
   }
 
   @Get("releases/:id/like-status")
-  @ApiOperation({ summary: "Get like status for a project (authenticated users only)" })
+  @ApiOperation({
+    summary: "Get like status for a project (authenticated users only)"
+  })
   @ApiParam({ name: "id", type: "string" })
-  @ApiResponse({ status: 200, description: "Like status", type: LikeResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: "Like status",
+    type: LikeResponseDto
+  })
   async getLikeStatus(
     @Param("id") id: string,
     @Req() req: RequestWithUser
@@ -859,11 +907,13 @@ export class ProjectController {
   @Post("releases/:id/view")
   @ApiOperation({ summary: "Register a play view for a published project" })
   @ApiParam({ name: "id", type: "string" })
-  @ApiResponse({ status: 200, description: "Updated view count", type: ViewResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: "Updated view count",
+    type: ViewResponseDto
+  })
   @HttpCode(HttpStatus.OK)
-  async registerReleaseView(
-    @Param("id") id: string
-  ): Promise<ViewResponseDto> {
+  async registerReleaseView(@Param("id") id: string): Promise<ViewResponseDto> {
     return this.projectService.registerReleaseView(Number(id));
   }
 
@@ -871,7 +921,9 @@ export class ProjectController {
 
   @Post(":id/update-release")
   @UseGuards(ProjectCreatorGuard)
-  @ApiOperation({ summary: "Update an already published project's release content" })
+  @ApiOperation({
+    summary: "Update an already published project's release content"
+  })
   @ApiParam({ name: "id", type: "string" })
   @ApiResponse({ status: 200, description: "Release updated successfully" })
   @ApiResponse({ status: 400, description: "Project is not published" })

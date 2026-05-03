@@ -10,11 +10,22 @@ import {
   Inject
 } from "@nestjs/common";
 import { AuthService } from "./auth.service";
-import { LoginDto, GoogleLoginDto, GithubLoginDto, MicrosoftLoginDto } from "./dto/login.dto";
+import {
+  LoginDto,
+  GoogleLoginDto,
+  GithubLoginDto,
+  MicrosoftLoginDto
+} from "./dto/login.dto";
 import { ChangePasswordDto } from "./dto/change-password.dto";
 import { AuthResponseDto } from "./dto/auth-response.dto";
 import { CreateUserDto } from "@user/dto/create-user.dto";
-import { ApiOperation, ApiResponse, ApiTags, ApiBody, ApiBearerAuth } from "@nestjs/swagger";
+import {
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+  ApiBody,
+  ApiBearerAuth
+} from "@nestjs/swagger";
 import { Response, Request, CookieOptions } from "express";
 import { ConfigService } from "@nestjs/config";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
@@ -33,7 +44,8 @@ export class AuthController {
     return {
       httpOnly: true,
       secure: isProd,
-      sameSite: "lax" // maybe need to change that to none for prod
+      sameSite: isProd ? "none" : "lax",
+      path: "/auth/refresh"
     };
   }
 
@@ -113,7 +125,9 @@ export class AuthController {
   }
 
   @Post("github")
-  @ApiOperation({ summary: "Authenticate with GitHub OAuth authorization code" })
+  @ApiOperation({
+    summary: "Authenticate with GitHub OAuth authorization code"
+  })
   @ApiBody({ type: GithubLoginDto })
   @ApiResponse({
     status: 201,
@@ -183,10 +197,16 @@ export class AuthController {
   @Patch("password")
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth("JWT-auth")
-  @ApiOperation({ summary: "Change password, OAuth users can set one without providing a current password" })
+  @ApiOperation({
+    summary:
+      "Change password, OAuth users can set one without providing a current password"
+  })
   @ApiBody({ type: ChangePasswordDto })
   @ApiResponse({ status: 200, description: "Password updated successfully" })
-  @ApiResponse({ status: 400, description: "Current password required for non-OAuth accounts" })
+  @ApiResponse({
+    status: 400,
+    description: "Current password required for non-OAuth accounts"
+  })
   @ApiResponse({ status: 401, description: "Current password incorrect" })
   async changePassword(
     @Body() dto: ChangePasswordDto,

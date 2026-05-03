@@ -609,22 +609,23 @@ describe("ProjectService", () => {
     it("should throw NotFoundException if user not found", async () => {
       prismaMock.user.findUnique.mockResolvedValue(null);
 
-      await expect(
-        service.removeCollaborator(1, removeDto)
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.removeCollaborator(1, removeDto)).rejects.toThrow(
+        NotFoundException
+      );
     });
 
     it("should throw NotFoundException if project not found", async () => {
       prismaMock.user.findUnique.mockResolvedValue({ id: 2 });
       prismaMock.project.findUnique.mockResolvedValue(null);
 
-      await expect(
-        service.removeCollaborator(1, removeDto)
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.removeCollaborator(1, removeDto)).rejects.toThrow(
+        NotFoundException
+      );
     });
 
     it("should throw ForbiddenException if trying to remove creator", async () => {
-      const creatorId = (mockProjects && mockProjects[0]) ? mockProjects[0].userId : 1;
+      const creatorId =
+        mockProjects && mockProjects[0] ? mockProjects[0].userId : 1;
       prismaMock.user.findUnique.mockResolvedValue({ id: creatorId });
       prismaMock.project.findUnique.mockResolvedValue({
         ...mockProjects[0],
@@ -643,9 +644,9 @@ describe("ProjectService", () => {
         collaborators: [{ id: 3 }]
       });
 
-      await expect(
-        service.removeCollaborator(1, removeDto)
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.removeCollaborator(1, removeDto)).rejects.toThrow(
+        BadRequestException
+      );
     });
   });
 

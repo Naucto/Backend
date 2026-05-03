@@ -9,19 +9,19 @@ export class JoinWorkSessionDto {
     example: "550e8400-e29b-41d4-a716-446655440000"
   })
   @IsUUID()
-    roomId!: string;
+  roomId!: string;
 
   @ApiProperty({
     description: "The user ID of the session's host",
     example: 1
   })
   @IsNumber()
-    hostId!: number;
+  hostId!: number;
 
   @ApiProperty({
     type: () => WebRTCOfferDto,
     description: "The WebRTC offer given to the client"
   })
   @Type(() => WebRTCOfferDto)
-    webrtcOffer!: WebRTCOfferDto;
-};
+  webrtcOffer!: WebRTCOfferDto;
+}

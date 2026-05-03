@@ -111,7 +111,7 @@ export class UserController {
         .addFileTypeValidator({ fileType: /^image\/(jpeg|png|gif|webp)$/ })
         .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY })
     )
-      file: Express.Multer.File,
+    file: Express.Multer.File,
     @Request() req: RequestWithUser
   ): Promise<{ message: string; id: number }> {
     if (req.user.id !== id) {
@@ -136,7 +136,9 @@ export class UserController {
   }
 
   @Get(":id/profile-picture")
-  @ApiOperation({ summary: "Get signed CDN access to a user's profile picture" })
+  @ApiOperation({
+    summary: "Get signed CDN access to a user's profile picture"
+  })
   @ApiParam({ name: "id", description: "User ID" })
   @ApiResponse({
     status: HttpStatus.OK,
@@ -152,7 +154,9 @@ export class UserController {
     const key = `users/${id}/profile`;
     const head = await this.s3Service.getFileMetadataOrNull(key);
     if (!head) {
-      res.status(HttpStatus.NOT_FOUND).json({ message: "Profile picture not found" });
+      res
+        .status(HttpStatus.NOT_FOUND)
+        .json({ message: "Profile picture not found" });
       return;
     }
 
@@ -160,7 +164,7 @@ export class UserController {
     const resourceUrl = `${this.cloudfrontService.getCDNUrl(key)}?v=${version}`;
 
     res.status(HttpStatus.OK).json({
-      resourceUrl,
+      resourceUrl
     });
   }
 
@@ -173,9 +177,7 @@ export class UserController {
   })
   @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
   @UseGuards(JwtAuthGuard)
-  async findAll(
-    @Query() filterDto: UserFilterDto
-  ): Promise<{
+  async findAll(@Query() filterDto: UserFilterDto): Promise<{
     statusCode: number;
     message: string;
     data: UserDto[];

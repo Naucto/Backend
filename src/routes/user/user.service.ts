@@ -62,7 +62,10 @@ export class UserService {
   }
 
   async updatePassword(userId: number, plainPassword: string): Promise<void> {
-    const hashed = await bcrypt.hash(plainPassword, UserService.BCRYPT_SALT_ROUNDS);
+    const hashed = await bcrypt.hash(
+      plainPassword,
+      UserService.BCRYPT_SALT_ROUNDS
+    );
     await this.prisma.user.update({
       where: { id: userId },
       data: { password: hashed }

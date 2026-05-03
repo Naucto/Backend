@@ -88,7 +88,8 @@ export class ProjectService {
     return normalized.filter(
       (tag, index, array) =>
         array.findIndex(
-          (candidate) => candidate.toLocaleLowerCase() === tag.toLocaleLowerCase()
+          (candidate) =>
+            candidate.toLocaleLowerCase() === tag.toLocaleLowerCase()
         ) === index
     );
   }
@@ -102,18 +103,21 @@ export class ProjectService {
     };
   }
 
-  private applyPublishedSnapshot<T extends ReleaseProject & {
-    publishedName?: string | null;
-    publishedShortDesc?: string | null;
-    publishedLongDesc?: string | null;
-    publishedTags?: string[];
-  }>(project: T): ReleaseProject {
+  private applyPublishedSnapshot<
+    T extends ReleaseProject & {
+      publishedName?: string | null;
+      publishedShortDesc?: string | null;
+      publishedLongDesc?: string | null;
+      publishedTags?: string[];
+    }
+  >(project: T): ReleaseProject {
     return {
       ...project,
       name: project.publishedName || project.name,
       shortDesc: project.publishedShortDesc || project.shortDesc,
       longDesc: project.publishedLongDesc ?? project.longDesc,
-      tags: project.publishedTags.length > 0 ? project.publishedTags : project.tags
+      tags:
+        project.publishedTags.length > 0 ? project.publishedTags : project.tags
     };
   }
 
@@ -343,7 +347,9 @@ export class ProjectService {
     }
 
     if (
-      !projectWithRelations.collaborators.some((collab) => collab.id === user.id)
+      !projectWithRelations.collaborators.some(
+        (collab) => collab.id === user.id
+      )
     ) {
       throw new BadRequestException(
         "User is not a collaborator on this project"
@@ -601,12 +607,14 @@ export class ProjectService {
     }
 
     return this.applyPublishedSnapshot(
-      this.withCommentCount(project as ProjectWithCounts & {
-        publishedName?: string | null;
-        publishedShortDesc?: string | null;
-        publishedLongDesc?: string | null;
-        publishedTags?: string[];
-      })
+      this.withCommentCount(
+        project as ProjectWithCounts & {
+          publishedName?: string | null;
+          publishedShortDesc?: string | null;
+          publishedLongDesc?: string | null;
+          publishedTags?: string[];
+        }
+      )
     );
   }
 
@@ -636,12 +644,14 @@ export class ProjectService {
     });
     return projects.map((project) =>
       this.applyPublishedSnapshot(
-        this.withCommentCount(project as ProjectWithCounts & {
-          publishedName?: string | null;
-          publishedShortDesc?: string | null;
-          publishedLongDesc?: string | null;
-          publishedTags?: string[];
-        })
+        this.withCommentCount(
+          project as ProjectWithCounts & {
+            publishedName?: string | null;
+            publishedShortDesc?: string | null;
+            publishedLongDesc?: string | null;
+            publishedTags?: string[];
+          }
+        )
       )
     );
   }
@@ -656,7 +666,9 @@ export class ProjectService {
     });
 
     if (!project) {
-      throw new NotFoundException(`Published project with ID ${projectId} not found`);
+      throw new NotFoundException(
+        `Published project with ID ${projectId} not found`
+      );
     }
 
     const updated = await this.prisma.project.update({
@@ -802,9 +814,7 @@ export class ProjectService {
     }
 
     if (sourceProject.status !== "COMPLETED") {
-      throw new BadRequestException(
-        "Only published projects can be forked"
-      );
+      throw new BadRequestException("Only published projects can be forked");
     }
 
     const user = await this.prisma.user.findUnique({
@@ -815,7 +825,7 @@ export class ProjectService {
       throw new NotFoundException(`User with ID ${userId} not found`);
     }
 
-    const newProject = await this.prisma.project.create({
+    const newProject = (await this.prisma.project.create({
       data: {
         name: `Fork of ${sourceProject.name}`,
         shortDesc: sourceProject.shortDesc,
@@ -832,7 +842,7 @@ export class ProjectService {
           select: ProjectService.CREATOR_SELECT
         }
       }
-    }) as ProjectEx;
+    })) as ProjectEx;
 
     const releaseContent = await this.s3Service.downloadFile({
       key: `release/${sourceProjectId}`

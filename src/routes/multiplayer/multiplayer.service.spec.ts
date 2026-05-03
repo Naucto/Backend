@@ -85,8 +85,16 @@ describe("MultiplayerService", () => {
 
   describe("openHost", () => {
     it("should throw if user does not exist", async () => {
-      jest.spyOn(service["_userService"], "findOne").mockResolvedValueOnce(null as any);
-      await expect(service.openHost(1, 1, "PUBLIC" as import("@prisma/client").GameSessionVisibility)).rejects.toThrow("User with ID 1 not found");
+      jest
+        .spyOn(service["_userService"], "findOne")
+        .mockResolvedValueOnce(null as any);
+      await expect(
+        service.openHost(
+          1,
+          1,
+          "PUBLIC" as import("@prisma/client").GameSessionVisibility
+        )
+      ).rejects.toThrow("User with ID 1 not found");
     });
     it("should throw if project does not exist", async () => {
       jest.spyOn(service["_userService"], "findOne").mockResolvedValueOnce({
@@ -98,8 +106,12 @@ describe("MultiplayerService", () => {
         createdAt: new Date(),
         hostingGameSessions: []
       } as User & { hostingGameSessions: GameSession[] });
-      jest.spyOn(service["_projectService"], "findOne").mockResolvedValueOnce(null as any);
-      await expect(service.openHost(1, 1, "PUBLIC" as GameSessionVisibility)).rejects.toThrow("Project with ID 1 not found");
+      jest
+        .spyOn(service["_projectService"], "findOne")
+        .mockResolvedValueOnce(null as any);
+      await expect(
+        service.openHost(1, 1, "PUBLIC" as GameSessionVisibility)
+      ).rejects.toThrow("Project with ID 1 not found");
     });
     it("should throw if user already hosting", async () => {
       jest.spyOn(service["_userService"], "findOne").mockResolvedValueOnce({
@@ -109,15 +121,17 @@ describe("MultiplayerService", () => {
         nickname: null,
         password: "hashed",
         createdAt: new Date(),
-        hostingGameSessions: [{
-          id: 1,
-          hostId: 1,
-          projectId: 1,
-          startedAt: new Date(),
-          endedAt: null,
-          visibility: "PUBLIC" as GameSessionVisibility,
-          sessionId: "uuid"
-        }]
+        hostingGameSessions: [
+          {
+            id: 1,
+            hostId: 1,
+            projectId: 1,
+            startedAt: new Date(),
+            endedAt: null,
+            visibility: "PUBLIC" as GameSessionVisibility,
+            sessionId: "uuid"
+          }
+        ]
       } as User & { hostingGameSessions: GameSession[] });
       jest.spyOn(service["_projectService"], "findOne").mockResolvedValueOnce({
         id: 1,
@@ -127,7 +141,9 @@ describe("MultiplayerService", () => {
         collaborators: [],
         creator: { id: 1, username: "creator", email: "creator@example.com" }
       } as unknown as ProjectEx);
-      await expect(service.openHost(1, 1, "PUBLIC" as GameSessionVisibility)).rejects.toThrow("User already hosting a game session for this project");
+      await expect(
+        service.openHost(1, 1, "PUBLIC" as GameSessionVisibility)
+      ).rejects.toThrow("User already hosting a game session for this project");
     });
     it("should create a new game session", async () => {
       jest.spyOn(service["_userService"], "findOne").mockResolvedValueOnce({
@@ -147,24 +163,34 @@ describe("MultiplayerService", () => {
         collaborators: [],
         creator: { id: 1, username: "creator", email: "creator@example.com" }
       } as unknown as ProjectEx);
-      jest.spyOn(service["_prismaService"].gameSession, "create").mockResolvedValueOnce({
-        id: 1,
-        hostId: 1,
-        projectId: 1,
-        startedAt: new Date(),
-        endedAt: null,
-        visibility: "PUBLIC" as GameSessionVisibility,
-        sessionId: "uuid"
-      } as GameSession);
-      jest.spyOn(service["_userService"], "attachGameSession").mockResolvedValueOnce(Promise.resolve());
-      const result = await service.openHost(1, 1, "PUBLIC" as GameSessionVisibility);
+      jest
+        .spyOn(service["_prismaService"].gameSession, "create")
+        .mockResolvedValueOnce({
+          id: 1,
+          hostId: 1,
+          projectId: 1,
+          startedAt: new Date(),
+          endedAt: null,
+          visibility: "PUBLIC" as GameSessionVisibility,
+          sessionId: "uuid"
+        } as GameSession);
+      jest
+        .spyOn(service["_userService"], "attachGameSession")
+        .mockResolvedValueOnce(Promise.resolve());
+      const result = await service.openHost(
+        1,
+        1,
+        "PUBLIC" as GameSessionVisibility
+      );
       expect(result).toHaveProperty("sessionUuid", "uuid");
     });
   });
 
   describe("closeHost", () => {
     it("should throw if user does not exist", async () => {
-      jest.spyOn(service["_userService"], "findOne").mockResolvedValueOnce(null as never);
+      jest
+        .spyOn(service["_userService"], "findOne")
+        .mockResolvedValueOnce(null as never);
       await expect(service.closeHost(1, 1)).rejects.toThrow();
     });
     it("should throw if project does not exist", async () => {
@@ -177,7 +203,9 @@ describe("MultiplayerService", () => {
         createdAt: new Date(),
         hostingGameSessions: []
       } as User & { hostingGameSessions: GameSession[] });
-      jest.spyOn(service["_projectService"], "findOne").mockResolvedValueOnce(null as never);
+      jest
+        .spyOn(service["_projectService"], "findOne")
+        .mockResolvedValueOnce(null as never);
       await expect(service.closeHost(1, 1)).rejects.toThrow();
     });
     it("should throw if not hosting", async () => {
@@ -208,15 +236,17 @@ describe("MultiplayerService", () => {
         nickname: null,
         password: "hashed",
         createdAt: new Date(),
-        hostingGameSessions: [{
-          id: 1,
-          hostId: 1,
-          projectId: 1,
-          startedAt: new Date(),
-          endedAt: null,
-          visibility: "PUBLIC" as GameSessionVisibility,
-          sessionId: "uuid"
-        }]
+        hostingGameSessions: [
+          {
+            id: 1,
+            hostId: 1,
+            projectId: 1,
+            startedAt: new Date(),
+            endedAt: null,
+            visibility: "PUBLIC" as GameSessionVisibility,
+            sessionId: "uuid"
+          }
+        ]
       } as User & { hostingGameSessions: GameSession[] });
       jest.spyOn(service["_projectService"], "findOne").mockResolvedValueOnce({
         id: 1,
@@ -226,22 +256,28 @@ describe("MultiplayerService", () => {
         collaborators: [],
         creator: { id: 1, username: "creator", email: "creator@example.com" }
       } as unknown as ProjectEx);
-      jest.spyOn(service["_prismaService"].gameSession, "findUnique").mockResolvedValueOnce({
-        id: 1,
-        hostId: 1,
-        projectId: 1,
-        startedAt: new Date(),
-        endedAt: null,
-        visibility: "PUBLIC" as GameSessionVisibility,
-        sessionId: "uuid",
-        otherUsers: []
-      } as import("@prisma/client").GameSession);
-      jest.spyOn(service["_userService"], "attachGameSession").mockResolvedValueOnce(Promise.resolve());
+      jest
+        .spyOn(service["_prismaService"].gameSession, "findUnique")
+        .mockResolvedValueOnce({
+          id: 1,
+          hostId: 1,
+          projectId: 1,
+          startedAt: new Date(),
+          endedAt: null,
+          visibility: "PUBLIC" as GameSessionVisibility,
+          sessionId: "uuid",
+          otherUsers: []
+        } as import("@prisma/client").GameSession);
+      jest
+        .spyOn(service["_userService"], "attachGameSession")
+        .mockResolvedValueOnce(Promise.resolve());
       const result = await service.closeHost(1, 1);
       expect(result).toBeUndefined();
     });
     it("should throw if user does not exist", async () => {
-      jest.spyOn(service["_userService"], "findOne").mockResolvedValueOnce(null as never);
+      jest
+        .spyOn(service["_userService"], "findOne")
+        .mockResolvedValueOnce(null as never);
       await expect(service.joinHost(1, "uuid")).rejects.toThrow();
     });
     it("should throw if host session does not exist", async () => {
@@ -254,14 +290,18 @@ describe("MultiplayerService", () => {
         createdAt: new Date(),
         joinedGameSessions: []
       } as User & { joinedGameSessions: GameSession[] });
-      jest.spyOn(service["_prismaService"].gameSession, "findUnique").mockResolvedValueOnce(null);
+      jest
+        .spyOn(service["_prismaService"].gameSession, "findUnique")
+        .mockResolvedValueOnce(null);
       await expect(service.joinHost(1, "uuid")).rejects.toThrow();
     });
   });
 
   describe("joinHost", () => {
     it("should throw if user does not exist", async () => {
-      jest.spyOn(service["_userService"], "findOne").mockResolvedValueOnce(null as never);
+      jest
+        .spyOn(service["_userService"], "findOne")
+        .mockResolvedValueOnce(null as never);
       await expect(service.joinHost(1, "uuid")).rejects.toThrow();
     });
     it("should throw if host session does not exist", async () => {
@@ -274,9 +314,10 @@ describe("MultiplayerService", () => {
         createdAt: new Date(),
         joinedGameSessions: []
       } as User & { joinedGameSessions: GameSession[] });
-      jest.spyOn(service["_prismaService"].gameSession, "findUnique").mockResolvedValueOnce(null);
+      jest
+        .spyOn(service["_prismaService"].gameSession, "findUnique")
+        .mockResolvedValueOnce(null);
       await expect(service.leaveHost(1, "uuid")).rejects.toThrow();
     });
   });
 });
-

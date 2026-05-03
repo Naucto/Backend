@@ -38,15 +38,22 @@ export class GithubAuthService {
     const clientSecret = this.configService.get<string>("GITHUB_CLIENT_SECRET");
 
     if (!clientId || !clientSecret) {
-      this.logger.error("GITHUB_CLIENT_ID or GITHUB_CLIENT_SECRET is not configured");
+      this.logger.error(
+        "GITHUB_CLIENT_ID or GITHUB_CLIENT_SECRET is not configured"
+      );
       throw new UnauthorizedException(
         "GitHub authentication is not configured"
       );
     }
 
-    const accessToken = await this.exchangeCodeForToken(code, clientId, clientSecret);
+    const accessToken = await this.exchangeCodeForToken(
+      code,
+      clientId,
+      clientSecret
+    );
     const githubUser = await this.fetchUser(accessToken);
-    const email = githubUser.email ?? await this.fetchPrimaryEmail(accessToken);
+    const email =
+      githubUser.email ?? (await this.fetchPrimaryEmail(accessToken));
 
     return {
       email,
@@ -59,19 +66,28 @@ export class GithubAuthService {
     clientId: string,
     clientSecret: string
   ): Promise<string> {
-    const response = await fetch("https://github.com/login/oauth/access_token", {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, code })
-    });
+    const response = await fetch(
+      "https://github.com/login/oauth/access_token",
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          client_id: clientId,
+          client_secret: clientSecret,
+          code
+        })
+      }
+    );
 
     const data = (await response.json()) as GithubTokenResponse;
 
     if (data.error || !data.access_token) {
-      this.logger.warn(`GitHub code exchange failed: ${data.error_description ?? data.error}`);
+      this.logger.warn(
+        `GitHub code exchange failed: ${data.error_description ?? data.error}`
+      );
       throw new UnauthorizedException("Invalid or expired GitHub code");
     }
 
