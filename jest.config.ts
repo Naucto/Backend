@@ -22,7 +22,7 @@ const config: Config = {
       },
     ],
   },
-  transformIgnorePatterns: ["/node_modules/(?!(jose|jwks-rsa)/)"],
+  transformIgnorePatterns: ["/node_modules/(?!(jose|jwks-rsa|uuid)/)"],
   collectCoverage: true,
   collectCoverageFrom: ["**/*.(t|j)s"],
   coverageDirectory: "../coverage",
