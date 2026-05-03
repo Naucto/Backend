@@ -646,6 +646,76 @@ export class ProjectService {
     );
   }
 
+  async fetchPublishedGamesByUser(userId: number): Promise<ReleaseProject[]> {
+    const projects = await this.prisma.project.findMany({
+      where: {
+        status: "COMPLETED",
+        userId
+      },
+      include: {
+        collaborators: {
+          select: ProjectService.COLLABORATOR_SELECT
+        },
+        creator: {
+          select: ProjectService.CREATOR_SELECT
+        },
+        _count: {
+          select: {
+            forks: true,
+            comments: { where: { deleted: false } }
+          }
+        }
+      }
+    });
+
+    return projects.map((project) =>
+      this.applyPublishedSnapshot(
+        this.withCommentCount(project as ProjectWithCounts & {
+          publishedName?: string | null;
+          publishedShortDesc?: string | null;
+          publishedLongDesc?: string | null;
+          publishedTags?: string[];
+        })
+      )
+    );
+  }
+
+  async fetchLikedPublishedGamesByUser(userId: number): Promise<ReleaseProject[]> {
+    const projects = await this.prisma.project.findMany({
+      where: {
+        status: "COMPLETED",
+        userLikes: {
+          some: { userId }
+        }
+      },
+      include: {
+        collaborators: {
+          select: ProjectService.COLLABORATOR_SELECT
+        },
+        creator: {
+          select: ProjectService.CREATOR_SELECT
+        },
+        _count: {
+          select: {
+            forks: true,
+            comments: { where: { deleted: false } }
+          }
+        }
+      }
+    });
+
+    return projects.map((project) =>
+      this.applyPublishedSnapshot(
+        this.withCommentCount(project as ProjectWithCounts & {
+          publishedName?: string | null;
+          publishedShortDesc?: string | null;
+          publishedLongDesc?: string | null;
+          publishedTags?: string[];
+        })
+      )
+    );
+  }
+
   async registerReleaseView(projectId: number): Promise<{ viewCount: number }> {
     const project = await this.prisma.project.findFirst({
       where: {

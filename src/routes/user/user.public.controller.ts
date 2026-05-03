@@ -6,6 +6,8 @@ import { CloudfrontService } from "src/routes/s3/edge.service";
 import { ImageUrlResponseDto } from "src/routes/common/dto/image-url-response.dto";
 import { UserService } from "./user.service";
 import { PublicUserProfileResponseDto } from "./dto/public-user-profile-response.dto";
+import { ProjectService } from "../project/project.service";
+import { ProjectExResponseDto } from "../project/dto/project-response.dto";
 
 @ApiTags("users")
 @ApiExtraModels(PublicUserProfileResponseDto)
@@ -14,7 +16,8 @@ export class UserPublicController {
   constructor(
     private readonly userService: UserService,
     private readonly s3Service: S3Service,
-    private readonly cloudfrontService: CloudfrontService
+    private readonly cloudfrontService: CloudfrontService,
+    private readonly projectService: ProjectService
   ) {}
 
   @Public()
@@ -78,5 +81,34 @@ export class UserPublicController {
     const url = `${this.cloudfrontService.getCDNUrl(key)}?v=${version}`;
     return { url };
   }
-}
 
+  @Public()
+  @Get(":id/likes")
+  @ApiOperation({ summary: "Get a user's liked published games" })
+  @ApiParam({ name: "id", description: "User ID" })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Returns the list of published games liked by the user",
+    type: [ProjectExResponseDto]
+  })
+  async getLikedGames(
+    @Param("id", ParseIntPipe) id: number
+  ): Promise<ProjectExResponseDto[]> {
+    return this.projectService.fetchLikedPublishedGamesByUser(id);
+  }
+
+  @Public()
+  @Get(":id/published-games")
+  @ApiOperation({ summary: "Get a user's published games" })
+  @ApiParam({ name: "id", description: "User ID" })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Returns the list of games published by the user",
+    type: [ProjectExResponseDto]
+  })
+  async getPublishedGames(
+    @Param("id", ParseIntPipe) id: number
+  ): Promise<ProjectExResponseDto[]> {
+    return this.projectService.fetchPublishedGamesByUser(id);
+  }
+}
