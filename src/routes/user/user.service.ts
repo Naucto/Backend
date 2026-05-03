@@ -13,6 +13,48 @@ export class UserService {
   constructor(private readonly prisma: PrismaService) {}
   private static readonly BCRYPT_SALT_ROUNDS = 10;
 
+  async findPublicProfile(id: number): Promise<{
+    id: number;
+    username: string;
+    nickname: string | null;
+  }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        username: true,
+        nickname: true
+      }
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    return user;
+  }
+
+  async updateMyProfile(
+    id: number,
+    data: { nickname?: string | null }
+  ): Promise<{
+    id: number;
+    username: string;
+    nickname: string | null;
+  }> {
+    return await this.prisma.user.update({
+      where: { id },
+      data: {
+        ...(data.nickname !== undefined ? { nickname: data.nickname } : {})
+      },
+      select: {
+        id: true,
+        username: true,
+        nickname: true
+      }
+    });
+  }
+
   async findRolesByNames(names: string[]): Promise<Role[]> {
     return this.prisma.role.findMany({
       where: {

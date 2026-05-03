@@ -48,15 +48,16 @@ import { Response } from "express";
 import { S3Service } from "@s3/s3.service";
 import { CloudfrontService } from "src/routes/s3/edge.service";
 import { SignedCdnResourceDto } from "@common/dto/signed-cdn-resource.dto";
-import { Public } from "@auth/decorators/public.decorator";
-import { ImageUrlResponseDto } from "src/routes/common/dto/image-url-response.dto";
+import { UpdateUserProfileDto } from "./dto/update-user-profile.dto";
+import { PublicUserProfileResponseDto } from "./dto/public-user-profile-response.dto";
 
 @ApiTags("users")
 @ApiExtraModels(
   UserResponseDto,
   UserListResponseDto,
   UserSingleResponseDto,
-  UserProfileResponseDto
+  UserProfileResponseDto,
+  PublicUserProfileResponseDto
 )
 @ApiBearerAuth("JWT-auth")
 @Controller("users")
@@ -80,6 +81,47 @@ export class UserController {
   @UseGuards(JwtAuthGuard)
   getProfile(@Request() req: RequestWithUser): UserDto {
     return req.user;
+  }
+
+  @Patch("profile")
+  @ApiOperation({ summary: "Update current user profile" })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "User profile updated successfully",
+    type: PublicUserProfileResponseDto
+  })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
+  @UseGuards(JwtAuthGuard)
+  async updateMyProfile(
+    @Body(ValidationPipe) updateUserProfileDto: UpdateUserProfileDto,
+    @Request() req: RequestWithUser
+  ): Promise<PublicUserProfileResponseDto> {
+    const nickname =
+      updateUserProfileDto.nickname === undefined
+        ? undefined
+        : updateUserProfileDto.nickname.trim() || null;
+
+    const update: { nickname?: string | null } = {};
+    if (nickname !== undefined) {
+      update.nickname = nickname;
+    }
+
+    const updated = await this.userService.updateMyProfile(req.user.id, update);
+
+    const key = `users/${req.user.id}/profile`;
+    const head = await this.s3Service.getFileMetadataOrNull(key);
+    const profileImageUrl = head
+      ? `${this.cloudfrontService.getCDNUrl(key)}?v=${head.ETag?.replace(/"/g, "") ?? Date.now().toString()}`
+      : null;
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: "User profile updated successfully",
+      data: {
+        ...updated,
+        profileImageUrl
+      }
+    };
   }
 
   @Post(":id/profile-picture")
@@ -321,38 +363,5 @@ export class UserController {
       statusCode: HttpStatus.OK,
       message: "User deleted successfully"
     };
-  }
-
-  @Public()
-  @Get("public/:id/profile-picture")
-  @ApiOperation({
-    summary: "Get public CDN URL for a user's profile picture"
-  })
-  @ApiParam({
-    name: "id",
-    type: "number",
-    description: "User ID"
-  })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: "Returns the CDN URL for the profile picture",
-    type: ImageUrlResponseDto
-  })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: "User not found or has no profile picture"
-  })
-  async getPublicProfilePicture(
-    @Param("id", ParseIntPipe) id: number
-  ): Promise<ImageUrlResponseDto> {
-    const key = `users/${id}/profile`;
-    const head = await this.s3Service.getFileMetadataOrNull(key);
-    if (!head) {
-      throw new HttpException("Not found", HttpStatus.NOT_FOUND);
-    }
-
-    const version = head.ETag?.replace(/"/g, "") ?? Date.now().toString();
-    const url = `${this.cloudfrontService.getCDNUrl(key)}?v=${version}`;
-    return { url };
   }
 }
