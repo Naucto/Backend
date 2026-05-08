@@ -70,6 +70,16 @@ export class UserController {
     private readonly cloudfrontService: CloudfrontService
   ) {}
 
+  private async getPublicAssetUrl(key: string): Promise<string | null> {
+    const head = await this.s3Service.getFileMetadataOrNull(key);
+    if (!head) {
+      return null;
+    }
+
+    const version = head.ETag?.replace(/"/g, "") ?? Date.now().toString();
+    return `${this.cloudfrontService.getCDNUrl(key)}?v=${version}`;
+  }
+
   @Get("profile")
   @ApiOperation({ summary: "Get current user profile" })
   @ApiResponse({
@@ -96,30 +106,29 @@ export class UserController {
     @Body(ValidationPipe) updateUserProfileDto: UpdateUserProfileDto,
     @Request() req: RequestWithUser
   ): Promise<PublicUserProfileResponseDto> {
-    const nickname =
-      updateUserProfileDto.nickname === undefined
-        ? undefined
-        : updateUserProfileDto.nickname.trim() || null;
+    const descriptionSource =
+      updateUserProfileDto.description ?? updateUserProfileDto.nickname;
+    const description =
+      descriptionSource === undefined ? undefined : descriptionSource.trim() || null;
 
-    const update: { nickname?: string | null } = {};
-    if (nickname !== undefined) {
-      update.nickname = nickname;
+    const update: { nickname?: string | null; description?: string | null } = {};
+    if (description !== undefined) {
+      update.nickname = description;
+      update.description = description;
     }
 
     const updated = await this.userService.updateMyProfile(req.user.id, update);
 
-    const key = `users/${req.user.id}/profile`;
-    const head = await this.s3Service.getFileMetadataOrNull(key);
-    const profileImageUrl = head
-      ? `${this.cloudfrontService.getCDNUrl(key)}?v=${head.ETag?.replace(/"/g, "") ?? Date.now().toString()}`
-      : null;
+    const profileImageUrl = await this.getPublicAssetUrl(`users/${req.user.id}/profile`);
+    const backgroundImageUrl = await this.getPublicAssetUrl(`users/${req.user.id}/background`);
 
     return {
       statusCode: HttpStatus.OK,
       message: "User profile updated successfully",
       data: {
         ...updated,
-        profileImageUrl
+        profileImageUrl,
+        backgroundImageUrl
       }
     };
   }
@@ -175,6 +184,59 @@ export class UserController {
     await this.s3Service.setObjectPublicRead(key);
 
     return { message: "Profile picture uploaded successfully", id };
+  }
+
+  @Post(":id/profile-background")
+  @ApiOperation({ summary: "Upload a user's profile background" })
+  @ApiParam({ name: "id", description: "User ID" })
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({
+    schema: {
+      type: "object",
+      properties: {
+        file: {
+          type: "string",
+          format: "binary",
+          description: "Profile background file"
+        }
+      }
+    }
+  })
+  @ApiResponse({ status: HttpStatus.CREATED, description: "Profile background uploaded" })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(FileInterceptor("file"))
+  @HttpCode(HttpStatus.CREATED)
+  async uploadProfileBackground(
+    @Param("id", ParseIntPipe) id: number,
+    @UploadedFile(
+      new ParseFilePipeBuilder()
+        .addMaxSizeValidator({ maxSize: 5 * 1024 * 1024 })
+        .addFileTypeValidator({ fileType: /^image\/(jpeg|png|gif|webp)$/ })
+        .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY })
+    )
+      file: Express.Multer.File,
+    @Request() req: RequestWithUser
+  ): Promise<{ message: string; id: number }> {
+    if (req.user.id !== id) {
+      throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    }
+
+    const key = `users/${id}/background`;
+
+    await this.s3Service.uploadFile({
+      file,
+      keyName: key,
+      metadata: {
+        uploadedBy: req.user.id.toString(),
+        userId: id.toString(),
+        originalName: file.originalname
+      },
+      cacheControl: "no-cache"
+    });
+    await this.s3Service.setObjectPublicRead(key);
+
+    return { message: "Profile background uploaded successfully", id };
   }
 
   @Get(":id/profile-picture")

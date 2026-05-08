@@ -1,9 +1,8 @@
-import { Controller, Get, HttpException, HttpStatus, Param, ParseIntPipe } from "@nestjs/common";
+import { Controller, Get, HttpStatus, Param, ParseIntPipe } from "@nestjs/common";
 import { ApiExtraModels, ApiOperation, ApiParam, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { Public } from "@auth/decorators/public.decorator";
 import { S3Service } from "@s3/s3.service";
 import { CloudfrontService } from "src/routes/s3/edge.service";
-import { ImageUrlResponseDto } from "src/routes/common/dto/image-url-response.dto";
 import { UserService } from "./user.service";
 import { PublicUserProfileResponseDto } from "./dto/public-user-profile-response.dto";
 import { ProjectService } from "../project/project.service";
@@ -20,6 +19,16 @@ export class UserPublicController {
     private readonly projectService: ProjectService
   ) {}
 
+  private async getPublicAssetUrl(key: string): Promise<string | null> {
+    const head = await this.s3Service.getFileMetadataOrNull(key);
+    if (!head) {
+      return null;
+    }
+
+    const version = head.ETag?.replace(/"/g, "") ?? Date.now().toString();
+    return `${this.cloudfrontService.getCDNUrl(key)}?v=${version}`;
+  }
+
   @Public()
   @Get(":id/profile")
   @ApiOperation({ summary: "Get a public user profile by ID" })
@@ -34,52 +43,18 @@ export class UserPublicController {
     @Param("id", ParseIntPipe) id: number
   ): Promise<PublicUserProfileResponseDto> {
     const profile = await this.userService.findPublicProfile(id);
-
-    const key = `users/${id}/profile`;
-    const head = await this.s3Service.getFileMetadataOrNull(key);
-    const profileImageUrl = head
-      ? `${this.cloudfrontService.getCDNUrl(key)}?v=${head.ETag?.replace(/"/g, "") ?? Date.now().toString()}`
-      : null;
+    const profileImageUrl = await this.getPublicAssetUrl(`users/${id}/profile`);
+    const backgroundImageUrl = await this.getPublicAssetUrl(`users/${id}/background`);
 
     return {
       statusCode: HttpStatus.OK,
       message: "Public user profile retrieved successfully",
       data: {
         ...profile,
-        profileImageUrl
+        profileImageUrl,
+        backgroundImageUrl
       }
     };
-  }
-
-  @Public()
-  @Get(":id/profile-picture")
-  @ApiOperation({ summary: "Get public CDN URL for a user's profile picture" })
-  @ApiParam({
-    name: "id",
-    type: "number",
-    description: "User ID"
-  })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: "Returns the CDN URL for the profile picture",
-    type: ImageUrlResponseDto
-  })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: "User not found or has no profile picture"
-  })
-  async getPublicProfilePicture(
-    @Param("id", ParseIntPipe) id: number
-  ): Promise<ImageUrlResponseDto> {
-    const key = `users/${id}/profile`;
-    const head = await this.s3Service.getFileMetadataOrNull(key);
-    if (!head) {
-      throw new HttpException("Not found", HttpStatus.NOT_FOUND);
-    }
-
-    const version = head.ETag?.replace(/"/g, "") ?? Date.now().toString();
-    const url = `${this.cloudfrontService.getCDNUrl(key)}?v=${version}`;
-    return { url };
   }
 
   @Public()
