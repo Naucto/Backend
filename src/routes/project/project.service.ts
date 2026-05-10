@@ -14,7 +14,7 @@ import {
   RemoveCollaboratorDto
 } from "./dto/collaborator-project.dto";
 import { S3Service } from "@s3/s3.service";
-import { Project, User } from "@prisma/client";
+import { Prisma, Project, User } from "@prisma/client";
 import { ConfigService } from "@nestjs/config";
 import { DownloadedFile } from "@s3/s3.interface";
 import { Readable } from "stream";
@@ -53,6 +53,41 @@ type ReleaseProject = ProjectEx & {
   forkCount: number;
 };
 
+export type PaginatedProjectsResult<T> = {
+  projects: T[];
+  total: number;
+  page: number;
+  limit: number;
+};
+
+export const RELEASE_WINDOWS = ["all", "365d", "30d", "7d"] as const;
+export type ReleaseWindow = (typeof RELEASE_WINDOWS)[number];
+
+export const USER_PROJECT_STATUSES = ["all", "drafts", "published"] as const;
+export type UserProjectStatus = (typeof USER_PROJECT_STATUSES)[number];
+
+export type PublishedProjectFilters = {
+  search?: string;
+  tags?: string[];
+  releaseWindow?: ReleaseWindow;
+};
+
+export type UserProjectFilters = {
+  search?: string;
+  tags?: string[];
+  status?: UserProjectStatus;
+};
+
+const DEFAULT_PAGE = 1;
+const DEFAULT_LIMIT = 24;
+const MAX_LIMIT = 100;
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+const RELEASE_WINDOW_DAYS: Record<Exclude<ReleaseWindow, "all">, number> = {
+  "7d": 7,
+  "30d": 30,
+  "365d": 365
+};
+
 @Injectable()
 export class ProjectService {
   static COLLABORATOR_SELECT = COLLABORATOR_SELECT;
@@ -88,7 +123,8 @@ export class ProjectService {
     return normalized.filter(
       (tag, index, array) =>
         array.findIndex(
-          (candidate) => candidate.toLocaleLowerCase() === tag.toLocaleLowerCase()
+          (candidate) =>
+            candidate.toLocaleLowerCase() === tag.toLocaleLowerCase()
         ) === index
     );
   }
@@ -102,39 +138,209 @@ export class ProjectService {
     };
   }
 
-  private applyPublishedSnapshot<T extends ReleaseProject & {
-    publishedName?: string | null;
-    publishedShortDesc?: string | null;
-    publishedLongDesc?: string | null;
-    publishedTags?: string[];
-  }>(project: T): ReleaseProject {
+  private applyPublishedSnapshot(project: ReleaseProject): ReleaseProject {
+    const publishedTags = project.publishedTags ?? [];
+
     return {
       ...project,
       name: project.publishedName || project.name,
       shortDesc: project.publishedShortDesc || project.shortDesc,
       longDesc: project.publishedLongDesc ?? project.longDesc,
-      tags: project.publishedTags.length > 0 ? project.publishedTags : project.tags
+      tags: publishedTags.length > 0 ? publishedTags : project.tags
     };
   }
 
-  async findAll(userId: number): Promise<Project[]> {
-    return this.prisma.project.findMany({
-      where: {
-        collaborators: {
-          some: {
-            id: userId
+  private normalizePage(page?: number): number {
+    if (!page || Number.isNaN(page) || page < 1) {
+      return DEFAULT_PAGE;
+    }
+
+    return Math.floor(page);
+  }
+
+  private normalizeLimit(limit?: number): number {
+    if (!limit || Number.isNaN(limit) || limit < 1) {
+      return DEFAULT_LIMIT;
+    }
+
+    return Math.min(Math.floor(limit), MAX_LIMIT);
+  }
+
+  private getReleaseWindowThreshold(releaseWindow: ReleaseWindow): Date | undefined {
+    if (releaseWindow === "all") {
+      return undefined;
+    }
+
+    return new Date(
+      Date.now() - RELEASE_WINDOW_DAYS[releaseWindow] * DAY_IN_MS
+    );
+  }
+
+  private buildPublishedGamesWhere(
+    filters: PublishedProjectFilters = {}
+  ): Prisma.ProjectWhereInput {
+    const where: Prisma.ProjectWhereInput = {
+      status: "COMPLETED"
+    };
+    const andClauses: Prisma.ProjectWhereInput[] = [];
+    const normalizedSearch = filters.search?.trim();
+    const normalizedTags = this.normalizeTags(filters.tags);
+
+    if (filters.releaseWindow && filters.releaseWindow !== "all") {
+      const threshold = this.getReleaseWindowThreshold(filters.releaseWindow);
+
+      if (threshold) {
+        andClauses.push({
+          OR: [
+            { publishedAt: { gte: threshold } },
+            {
+              AND: [{ publishedAt: null }, { createdAt: { gte: threshold } }]
+            }
+          ]
+        });
+      }
+    }
+
+    if (normalizedSearch) {
+      andClauses.push({
+        OR: [
+          {
+            publishedName: {
+              contains: normalizedSearch,
+              mode: "insensitive"
+            }
+          },
+          {
+            name: {
+              contains: normalizedSearch,
+              mode: "insensitive"
+            }
           }
-        }
-      },
-      include: {
-        collaborators: {
-          select: ProjectService.COLLABORATOR_SELECT
-        },
-        creator: {
-          select: ProjectService.CREATOR_SELECT
+        ]
+      });
+    }
+
+    if (normalizedTags.length > 0) {
+      andClauses.push({
+        OR: [
+          {
+            publishedTags: {
+              hasEvery: normalizedTags
+            }
+          },
+          {
+            AND: [
+              {
+                publishedTags: {
+                  isEmpty: true
+                }
+              },
+              {
+                tags: {
+                  hasEvery: normalizedTags
+                }
+              }
+            ]
+          }
+        ]
+      });
+    }
+
+    if (andClauses.length > 0) {
+      where.AND = andClauses;
+    }
+
+    return where;
+  }
+
+  private buildUserProjectsWhere(
+    userId: number,
+    filters: UserProjectFilters = {}
+  ): Prisma.ProjectWhereInput {
+    const where: Prisma.ProjectWhereInput = {
+      collaborators: {
+        some: {
+          id: userId
         }
       }
-    });
+    };
+
+    const andClauses: Prisma.ProjectWhereInput[] = [];
+    const normalizedSearch = filters.search?.trim();
+    const normalizedTags = this.normalizeTags(filters.tags);
+
+    if (filters.status === "published") {
+      andClauses.push({
+        status: "COMPLETED"
+      });
+    } else if (filters.status === "drafts") {
+      andClauses.push({
+        NOT: {
+          status: "COMPLETED"
+        }
+      });
+    }
+
+    if (normalizedSearch) {
+      andClauses.push({
+        name: {
+          contains: normalizedSearch,
+          mode: "insensitive"
+        }
+      });
+    }
+
+    if (normalizedTags.length > 0) {
+      andClauses.push({
+        tags: {
+          hasEvery: normalizedTags
+        }
+      });
+    }
+
+    if (andClauses.length > 0) {
+      where.AND = andClauses;
+    }
+
+    return where;
+  }
+
+  async findAll(
+    userId: number,
+    page?: number,
+    limit?: number
+  ): Promise<PaginatedProjectsResult<ProjectEx>> {
+    const safePage = this.normalizePage(page);
+    const safeLimit = this.normalizeLimit(limit);
+    const skip = (safePage - 1) * safeLimit;
+    const where = this.buildUserProjectsWhere(userId);
+
+    const [total, projects] = await this.prisma.$transaction([
+      this.prisma.project.count({
+        where
+      }),
+      this.prisma.project.findMany({
+        where,
+        include: {
+          collaborators: {
+            select: ProjectService.COLLABORATOR_SELECT
+          },
+          creator: {
+            select: ProjectService.CREATOR_SELECT
+          }
+        },
+        orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+        skip,
+        take: safeLimit
+      })
+    ]);
+
+    return {
+      projects,
+      total,
+      page: safePage,
+      limit: safeLimit
+    };
   }
 
   async findOne(id: number): Promise<ProjectEx> {
@@ -343,7 +549,9 @@ export class ProjectService {
     }
 
     if (
-      !projectWithRelations.collaborators.some((collab) => collab.id === user.id)
+      !projectWithRelations.collaborators.some(
+        (collab) => collab.id === user.id
+      )
     ) {
       throw new BadRequestException(
         "User is not a collaborator on this project"
@@ -601,12 +809,7 @@ export class ProjectService {
     }
 
     return this.applyPublishedSnapshot(
-      this.withCommentCount(project as ProjectWithCounts & {
-        publishedName?: string | null;
-        publishedShortDesc?: string | null;
-        publishedLongDesc?: string | null;
-        publishedTags?: string[];
-      })
+      this.withCommentCount(project as ProjectWithCounts)
     );
   }
 
@@ -636,14 +839,73 @@ export class ProjectService {
     });
     return projects.map((project) =>
       this.applyPublishedSnapshot(
-        this.withCommentCount(project as ProjectWithCounts & {
-          publishedName?: string | null;
-          publishedShortDesc?: string | null;
-          publishedLongDesc?: string | null;
-          publishedTags?: string[];
-        })
+        this.withCommentCount(project as ProjectWithCounts)
       )
     );
+  }
+
+  async fetchPublishedGamesPaginated(
+    page?: number,
+    limit?: number
+  ): Promise<PaginatedProjectsResult<ReleaseProject>> {
+    const safePage = this.normalizePage(page);
+    const safeLimit = this.normalizeLimit(limit);
+    const skip = (safePage - 1) * safeLimit;
+    const where = this.buildPublishedGamesWhere();
+
+    const [total, projects] = await this.prisma.$transaction([
+      this.prisma.project.count({
+        where
+      }),
+      this.prisma.project.findMany({
+        where,
+        include: {
+          collaborators: {
+            select: ProjectService.COLLABORATOR_SELECT
+          },
+          creator: {
+            select: ProjectService.CREATOR_SELECT
+          },
+          _count: {
+            select: {
+              forks: true,
+              comments: { where: { deleted: false } }
+            }
+          }
+        },
+        orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
+        skip,
+        take: safeLimit
+      })
+    ]);
+
+    return {
+      projects: projects.map((project) =>
+        this.applyPublishedSnapshot(
+          this.withCommentCount(project as ProjectWithCounts)
+        )
+      ),
+      total,
+      page: safePage,
+      limit: safeLimit
+    };
+  }
+
+  async countPublishedGames(
+    filters: PublishedProjectFilters = {}
+  ): Promise<number> {
+    return this.prisma.project.count({
+      where: this.buildPublishedGamesWhere(filters)
+    });
+  }
+
+  async countUserProjects(
+    userId: number,
+    filters: UserProjectFilters = {}
+  ): Promise<number> {
+    return this.prisma.project.count({
+      where: this.buildUserProjectsWhere(userId, filters)
+    });
   }
 
   async registerReleaseView(projectId: number): Promise<{ viewCount: number }> {
@@ -656,7 +918,9 @@ export class ProjectService {
     });
 
     if (!project) {
-      throw new NotFoundException(`Published project with ID ${projectId} not found`);
+      throw new NotFoundException(
+        `Published project with ID ${projectId} not found`
+      );
     }
 
     const updated = await this.prisma.project.update({
@@ -802,9 +1066,7 @@ export class ProjectService {
     }
 
     if (sourceProject.status !== "COMPLETED") {
-      throw new BadRequestException(
-        "Only published projects can be forked"
-      );
+      throw new BadRequestException("Only published projects can be forked");
     }
 
     const user = await this.prisma.user.findUnique({
