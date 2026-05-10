@@ -60,26 +60,29 @@ export type PaginatedProjectsResult<T> = {
   limit: number;
 };
 
+export const RELEASE_WINDOWS = ["all", "365d", "30d", "7d"] as const;
+export type ReleaseWindow = (typeof RELEASE_WINDOWS)[number];
+
+export const USER_PROJECT_STATUSES = ["all", "drafts", "published"] as const;
+export type UserProjectStatus = (typeof USER_PROJECT_STATUSES)[number];
+
 export type PublishedProjectFilters = {
   search?: string;
   tags?: string[];
-  releaseWindow?: "all" | "365d" | "30d" | "7d";
+  releaseWindow?: ReleaseWindow;
 };
 
 export type UserProjectFilters = {
   search?: string;
   tags?: string[];
-  status?: "all" | "drafts" | "published";
+  status?: UserProjectStatus;
 };
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 24;
 const MAX_LIMIT = 100;
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
-const RELEASE_WINDOW_DAYS: Record<
-  Exclude<NonNullable<PublishedProjectFilters["releaseWindow"]>, "all">,
-  number
-> = {
+const RELEASE_WINDOW_DAYS: Record<Exclude<ReleaseWindow, "all">, number> = {
   "7d": 7,
   "30d": 30,
   "365d": 365
@@ -135,14 +138,7 @@ export class ProjectService {
     };
   }
 
-  private applyPublishedSnapshot<
-    T extends ReleaseProject & {
-      publishedName?: string | null;
-      publishedShortDesc?: string | null;
-      publishedLongDesc?: string | null;
-      publishedTags?: string[] | undefined;
-    }
-  >(project: T): ReleaseProject {
+  private applyPublishedSnapshot(project: ReleaseProject): ReleaseProject {
     const publishedTags = project.publishedTags ?? [];
 
     return {
@@ -170,9 +166,7 @@ export class ProjectService {
     return Math.min(Math.floor(limit), MAX_LIMIT);
   }
 
-  private getReleaseWindowThreshold(
-    releaseWindow: NonNullable<PublishedProjectFilters["releaseWindow"]>
-  ): Date | undefined {
+  private getReleaseWindowThreshold(releaseWindow: ReleaseWindow): Date | undefined {
     if (releaseWindow === "all") {
       return undefined;
     }
@@ -1083,7 +1077,7 @@ export class ProjectService {
       throw new NotFoundException(`User with ID ${userId} not found`);
     }
 
-    const newProject = (await this.prisma.project.create({
+    const newProject = await this.prisma.project.create({
       data: {
         name: `Fork of ${sourceProject.name}`,
         shortDesc: sourceProject.shortDesc,
@@ -1100,7 +1094,7 @@ export class ProjectService {
           select: ProjectService.CREATOR_SELECT
         }
       }
-    })) as ProjectEx;
+    }) as ProjectEx;
 
     const releaseContent = await this.s3Service.downloadFile({
       key: `release/${sourceProjectId}`

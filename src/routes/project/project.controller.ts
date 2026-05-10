@@ -22,10 +22,16 @@ import {
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
-import { ProjectService } from "@project/project.service";
+import {
+  ProjectService,
+  RELEASE_WINDOWS,
+  USER_PROJECT_STATUSES
+} from "@project/project.service";
 import type {
   ProjectSave,
   PublishedProjectFilters,
+  ReleaseWindow,
+  UserProjectStatus,
   UserProjectFilters
 } from "@project/project.service";
 import { CreateProjectDto } from "@project/dto/create-project.dto";
@@ -99,7 +105,7 @@ export class ProjectController {
   private buildPublishedProjectFilters(
     search?: string,
     tags?: string,
-    releaseWindow?: PublishedProjectFilters["releaseWindow"]
+    releaseWindow?: ReleaseWindow
   ): PublishedProjectFilters {
     const filters: PublishedProjectFilters = {};
     const parsedTags = this.parseTags(tags);
@@ -122,7 +128,7 @@ export class ProjectController {
   private buildUserProjectFilters(
     search?: string,
     tags?: string,
-    status?: UserProjectFilters["status"]
+    status?: UserProjectStatus
   ): UserProjectFilters {
     const filters: UserProjectFilters = {};
     const parsedTags = this.parseTags(tags);
@@ -187,7 +193,7 @@ export class ProjectController {
   })
   @ApiQuery({
     name: "releaseWindow",
-    enum: ["all", "365d", "30d", "7d"],
+    enum: RELEASE_WINDOWS,
     required: false
   })
   @ApiResponse({
@@ -199,7 +205,7 @@ export class ProjectController {
     @Query("search") search?: string,
     @Query("tags") tags?: string,
     @Query("releaseWindow")
-    releaseWindow?: PublishedProjectFilters["releaseWindow"]
+      releaseWindow?: ReleaseWindow
   ): Promise<ProjectsCountResponseDto> {
     const total = await this.projectService.countPublishedGames(
       this.buildPublishedProjectFilters(search, tags, releaseWindow)
@@ -326,7 +332,7 @@ export class ProjectController {
   })
   @ApiQuery({
     name: "status",
-    enum: ["all", "drafts", "published"],
+    enum: USER_PROJECT_STATUSES,
     required: false
   })
   @ApiResponse({
@@ -338,7 +344,7 @@ export class ProjectController {
     @Req() request: RequestWithUser,
     @Query("search") search?: string,
     @Query("tags") tags?: string,
-    @Query("status") status?: UserProjectFilters["status"]
+    @Query("status") status?: UserProjectStatus
   ): Promise<ProjectsCountResponseDto> {
     const total = await this.projectService.countUserProjects(
       request.user.id,
@@ -600,7 +606,7 @@ export class ProjectController {
           errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY
         })
     )
-    file: Express.Multer.File
+      file: Express.Multer.File
   ): Promise<{ message: string; id: number }> {
     await this.projectService.save(id, file);
 
@@ -637,7 +643,7 @@ export class ProjectController {
         .addFileTypeValidator({ fileType: /^image\/(jpeg|png|gif|webp)$/ })
         .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY })
     )
-    file: Express.Multer.File,
+      file: Express.Multer.File,
     @Req() req: RequestWithUser
   ): Promise<{ message: string; id: number }> {
     await this.projectService.findOne(id);
@@ -1075,8 +1081,6 @@ export class ProjectController {
   async registerReleaseView(@Param("id") id: string): Promise<ViewResponseDto> {
     return this.projectService.registerReleaseView(Number(id));
   }
-
-  // ─── Update Release Endpoint ──────────────────────────────────────────
 
   @Post(":id/update-release")
   @UseGuards(ProjectCreatorGuard)
