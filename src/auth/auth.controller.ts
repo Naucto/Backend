@@ -148,20 +148,20 @@ export class AuthController {
   }
 
   @Post("microsoft")
-  @ApiOperation({ summary: "Authenticate with Microsoft Graph access token" })
+  @ApiOperation({ summary: "Authenticate with Microsoft OAuth authorization code" })
   @ApiBody({ type: MicrosoftLoginDto })
   @ApiResponse({
     status: 201,
     description: "Login successful with Microsoft",
     type: AuthResponseDto
   })
-  @ApiResponse({ status: 401, description: "Invalid Microsoft token" })
+  @ApiResponse({ status: 401, description: "Invalid Microsoft code or code_verifier" })
   async loginWithMicrosoft(
     @Body() microsoftLoginDto: MicrosoftLoginDto,
     @Res({ passthrough: true }) res: Response
   ): Promise<{ access_token: string }> {
     const { access_token, refresh_token } =
-      await this.authService.loginWithMicrosoft(microsoftLoginDto.token);
+      await this.authService.loginWithMicrosoft(microsoftLoginDto.token, microsoftLoginDto.codeVerifier);
 
     this.setRefreshCookie(res, refresh_token);
 

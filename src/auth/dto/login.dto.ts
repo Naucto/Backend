@@ -43,10 +43,18 @@ export class GithubLoginDto {
 
 export class MicrosoftLoginDto {
   @ApiProperty({
-    description: "Microsoft Graph API access token",
-    example: "eyJhbGciOiJSUzI1NiIs..."
+    description: "Microsoft OAuth authorization code",
+    example: "1.AXQAyrQckGK4KUCTBuXND22fht61..."
   })
   @IsString()
   @IsNotEmpty()
   token!: string;
+
+  @ApiProperty({
+    description: "PKCE code verifier",
+    example: "abc123def456..."
+  })
+  @IsString()
+  @IsNotEmpty()
+  codeVerifier!: string;
 }
