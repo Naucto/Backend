@@ -646,12 +646,17 @@ export class ProjectService {
     );
   }
 
-  async fetchPublishedGamesByUser(userId: number): Promise<ReleaseProject[]> {
+  async fetchPublishedGamesByUser(
+    userId: number,
+    limit?: number
+  ): Promise<ReleaseProject[]> {
     const projects = await this.prisma.project.findMany({
       where: {
         status: "COMPLETED",
         userId
       },
+      orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }],
+      ...(limit ? { take: limit } : {}),
       include: {
         collaborators: {
           select: ProjectService.COLLABORATOR_SELECT
@@ -680,7 +685,10 @@ export class ProjectService {
     );
   }
 
-  async fetchLikedPublishedGamesByUser(userId: number): Promise<ReleaseProject[]> {
+  async fetchLikedPublishedGamesByUser(
+    userId: number,
+    limit?: number
+  ): Promise<ReleaseProject[]> {
     const projects = await this.prisma.project.findMany({
       where: {
         status: "COMPLETED",
@@ -688,6 +696,8 @@ export class ProjectService {
           some: { userId }
         }
       },
+      orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }],
+      ...(limit ? { take: limit } : {}),
       include: {
         collaborators: {
           select: ProjectService.COLLABORATOR_SELECT
