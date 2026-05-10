@@ -1009,8 +1009,6 @@ export class ProjectController {
     }
   }
 
-  // ─── Like Endpoints ───────────────────────────────────────────────────
-
   @Public()
   @Post("releases/:id/like")
   @UseGuards(OptionalJwtAuthGuard)
