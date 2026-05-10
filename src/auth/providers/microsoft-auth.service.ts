@@ -5,6 +5,15 @@ import * as jwt from "jsonwebtoken";
 import jwksRsa from "jwks-rsa";
 import axios from "axios";
 
+interface MicrosoftTokenResponse {
+  token_type: string;
+  scope: string;
+  expires_in: number;
+  ext_expires_in: number;
+  access_token: string;
+  id_token: string;
+}
+
 @Injectable()
 export class MicrosoftAuthService {
   private jwksClient = jwksRsa({
@@ -15,11 +24,18 @@ export class MicrosoftAuthService {
 
   constructor(private readonly configService: ConfigService) {}
 
-  async exchangeCodeForToken(code: string, codeVerifier: string): Promise<string> {
+  async exchangeCodeForToken(
+    code: string,
+    codeVerifier: string
+  ): Promise<string> {
     const clientId = this.configService.get<string>("MICROSOFT_CLIENT_ID");
-    const clientSecret = this.configService.get<string>("MICROSOFT_CLIENT_SECRET");
+    const clientSecret = this.configService.get<string>(
+      "MICROSOFT_CLIENT_SECRET"
+    );
     const tenantId = this.configService.get<string>("MICROSOFT_TENANT_ID");
-    const redirectUri = this.configService.get<string>("MICROSOFT_REDIRECT_URI");
+    const redirectUri = this.configService.get<string>(
+      "MICROSOFT_REDIRECT_URI"
+    );
 
     if (!clientId || !clientSecret || !tenantId || !redirectUri) {
       throw new UnauthorizedException("Microsoft OAuth configuration missing");
@@ -36,16 +52,23 @@ export class MicrosoftAuthService {
       params.append("grant_type", "authorization_code");
       params.append("scope", "openid profile email");
 
-      const response = await axios.post(tokenUrl, params, {
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded"
+      const response = await axios.post<MicrosoftTokenResponse>(
+        tokenUrl,
+        params,
+        {
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded"
+          }
         }
-      });
+      );
 
       return response.data.id_token;
     } catch (error: unknown) {
       const axiosError = error as any;
-      console.error("Microsoft token exchange failed:", axiosError.response?.data || axiosError.message);
+      console.error(
+        "Microsoft token exchange failed:",
+        axiosError.response?.data || axiosError.message
+      );
       throw new UnauthorizedException("Failed to exchange authorization code");
     }
   }
@@ -53,12 +76,14 @@ export class MicrosoftAuthService {
   async verifyToken(token: string): Promise<OAuthUserPayload> {
     try {
       const decoded = jwt.decode(token, { complete: true });
-      
+
       if (!decoded || typeof decoded.payload === "string") {
         throw new UnauthorizedException("Invalid Microsoft token");
       }
 
-      const key = await this.jwksClient.getSigningKey((decoded as any).header.kid);
+      const key = await this.jwksClient.getSigningKey(
+        (decoded as any).header.kid
+      );
       const publicKey = key.getPublicKey();
 
       const payload = jwt.verify(token, publicKey, {

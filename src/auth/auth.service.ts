@@ -174,9 +174,16 @@ export class AuthService {
     return this.loginWithOAuth(email, name);
   }
 
-  async loginWithMicrosoft(code: string, codeVerifier: string): Promise<AuthResponseDto> {
-    const idToken = await this.microsoftAuthService.exchangeCodeForToken(code, codeVerifier);
-    const { email, name } = await this.microsoftAuthService.verifyToken(idToken);
+  async loginWithMicrosoft(
+    code: string,
+    codeVerifier: string
+  ): Promise<AuthResponseDto> {
+    const idToken = await this.microsoftAuthService.exchangeCodeForToken(
+      code,
+      codeVerifier
+    );
+    const { email, name } =
+      await this.microsoftAuthService.verifyToken(idToken);
     return this.loginWithOAuth(email, name);
   }
 
