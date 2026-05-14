@@ -13,6 +13,7 @@ import { AuthService } from "./auth.service";
 import {
   LoginDto,
   GoogleLoginDto,
+  GoogleCodeDto,
   GithubLoginDto,
   MicrosoftLoginDto
 } from "./dto/login.dto";
@@ -124,6 +125,23 @@ export class AuthController {
     return { access_token };
   }
 
+  @Post("google/code")
+  @ApiOperation({ summary: "Authenticate with Google authorization code + PKCE" })
+  @ApiBody({ type: GoogleCodeDto })
+  @ApiResponse({ status: 201, description: "Login successful with Google", type: AuthResponseDto })
+  @ApiResponse({ status: 401, description: "Invalid Google code or code_verifier" })
+  async loginWithGoogleCode(
+    @Body() dto: GoogleCodeDto,
+    @Res({ passthrough: true }) res: Response
+  ): Promise<{ access_token: string }> {
+    const { access_token, refresh_token } =
+      await this.authService.loginWithGoogleCode(dto.code, dto.codeVerifier);
+
+    this.setRefreshCookie(res, refresh_token);
+
+    return { access_token };
+  }
+
   @Post("github")
   @ApiOperation({
     summary: "Authenticate with GitHub OAuth authorization code"
@@ -166,10 +184,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response
   ): Promise<{ access_token: string }> {
     const { access_token, refresh_token } =
-      await this.authService.loginWithMicrosoft(
-        microsoftLoginDto.token,
-        microsoftLoginDto.codeVerifier
-      );
+      await this.authService.loginWithMicrosoft(microsoftLoginDto.token);
 
     this.setRefreshCookie(res, refresh_token);
 

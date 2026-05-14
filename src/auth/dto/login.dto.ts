@@ -31,6 +31,18 @@ export class GoogleLoginDto {
   token!: string;
 }
 
+export class GoogleCodeDto {
+  @ApiProperty({ description: "Google authorization code" })
+  @IsString()
+  @IsNotEmpty()
+  code!: string;
+
+  @ApiProperty({ description: "PKCE code verifier" })
+  @IsString()
+  @IsNotEmpty()
+  codeVerifier!: string;
+}
+
 export class GithubLoginDto {
   @ApiProperty({
     description: "GitHub OAuth authorization code",
@@ -43,18 +55,10 @@ export class GithubLoginDto {
 
 export class MicrosoftLoginDto {
   @ApiProperty({
-    description: "Microsoft OAuth authorization code",
-    example: "1.AXQAyrQckGK4KUCTBuXND22fht61..."
+    description: "Microsoft ID token",
+    example: "eyJhbGciOiJSUzI1NiIs..."
   })
   @IsString()
   @IsNotEmpty()
   token!: string;
-
-  @ApiProperty({
-    description: "PKCE code verifier",
-    example: "abc123def456..."
-  })
-  @IsString()
-  @IsNotEmpty()
-  codeVerifier!: string;
 }

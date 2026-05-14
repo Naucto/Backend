@@ -169,21 +169,18 @@ export class AuthService {
     return this.loginWithOAuth(email, name);
   }
 
+  async loginWithGoogleCode(code: string, codeVerifier: string): Promise<AuthResponseDto> {
+    const { email, name } = await this.googleAuthService.getUserFromCode(code, codeVerifier);
+    return this.loginWithOAuth(email, name);
+  }
+
   async loginWithGithub(code: string): Promise<AuthResponseDto> {
     const { email, name } = await this.githubAuthService.getUserFromCode(code);
     return this.loginWithOAuth(email, name);
   }
 
-  async loginWithMicrosoft(
-    code: string,
-    codeVerifier: string
-  ): Promise<AuthResponseDto> {
-    const idToken = await this.microsoftAuthService.exchangeCodeForToken(
-      code,
-      codeVerifier
-    );
-    const { email, name } =
-      await this.microsoftAuthService.verifyToken(idToken);
+  async loginWithMicrosoft(idToken: string): Promise<AuthResponseDto> {
+    const { email, name } = await this.microsoftAuthService.verifyToken(idToken);
     return this.loginWithOAuth(email, name);
   }
 
