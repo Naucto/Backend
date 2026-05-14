@@ -2,11 +2,14 @@ import {
   Injectable,
   ConflictException,
   UnauthorizedException,
+  BadRequestException,
   Inject
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { UserService } from "@user/user.service";
-import { GoogleAuthService } from "./google-auth.service";
+import { GoogleAuthService } from "./providers/google-auth.service";
+import { GithubAuthService } from "./providers/github-auth.service";
+import { MicrosoftAuthService } from "./providers/microsoft-auth.service";
 import * as bcrypt from "bcryptjs";
 import { UserDto } from "./dto/user.dto";
 import { AuthResponseDto } from "./dto/auth-response.dto";
@@ -15,6 +18,7 @@ import { CreateUserDto } from "@user/dto/create-user.dto";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { ConfigService } from "@nestjs/config";
 import { parseExpiresIn, timespanToMs } from "./auth.utils";
+import { v4 as uuidv4 } from "uuid";
 
 @Injectable()
 export class AuthService {
@@ -22,6 +26,8 @@ export class AuthService {
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
     private readonly googleAuthService: GoogleAuthService,
+    private readonly githubAuthService: GithubAuthService,
+    private readonly microsoftAuthService: MicrosoftAuthService,
     private readonly prisma: PrismaService,
     @Inject(ConfigService) private readonly configService: ConfigService
   ) {}
@@ -47,9 +53,11 @@ export class AuthService {
       expiresIn: refreshTokenExpiresIn
     });
 
+    const hashedRefreshToken = await bcrypt.hash(refresh_token, 10);
+
     await this.prisma.refreshToken.create({
       data: {
-        token: refresh_token,
+        token: hashedRefreshToken,
         userId,
         expiresAt: new Date(Date.now() + timespanToMs(refreshTokenExpiresIn))
       }
@@ -128,19 +136,23 @@ export class AuthService {
     return response;
   }
 
-  async loginWithGoogle(googleToken: string): Promise<AuthResponseDto> {
-    const googleUser =
-      await this.googleAuthService.verifyGoogleToken(googleToken);
-
-    let user = await this.userService.findByEmail(googleUser.email);
+  private async loginWithOAuth(
+    email: string,
+    name: string
+  ): Promise<AuthResponseDto> {
+    let user = await this.userService.findByEmail(email);
 
     if (!user) {
-      user = await this.userService.create({
-        email: googleUser.email,
-        username: googleUser.name.replace(/\s+/g, "_"),
-        password: "",
-        roles: []
+      let safeUsername = name.replace(/\s+/g, "_");
+      const existingUser = await this.userService.findAll({
+        where: { username: safeUsername }
       });
+
+      if (existingUser.length > 0) {
+        safeUsername = `${safeUsername}_${uuidv4().substring(0, 5)}`;
+      }
+
+      user = await this.userService.createOAuthUser(email, safeUsername);
     }
 
     const payload: JwtPayload = { sub: user.id, email: user.email };
@@ -152,11 +164,54 @@ export class AuthService {
     return { access_token, refresh_token };
   }
 
+  async loginWithGoogle(token: string): Promise<AuthResponseDto> {
+    const { email, name } = await this.googleAuthService.verifyToken(token);
+    return this.loginWithOAuth(email, name);
+  }
+
+  async loginWithGoogleCode(code: string, codeVerifier: string): Promise<AuthResponseDto> {
+    const { email, name } = await this.googleAuthService.getUserFromCode(code, codeVerifier);
+    return this.loginWithOAuth(email, name);
+  }
+
+  async loginWithGithub(code: string): Promise<AuthResponseDto> {
+    const { email, name } = await this.githubAuthService.getUserFromCode(code);
+    return this.loginWithOAuth(email, name);
+  }
+
+  async loginWithMicrosoft(idToken: string): Promise<AuthResponseDto> {
+    const { email, name } = await this.microsoftAuthService.verifyToken(idToken);
+    return this.loginWithOAuth(email, name);
+  }
+
   async refreshToken(oldToken: string): Promise<AuthResponseDto> {
-    const storedToken = await this.prisma.refreshToken.findUnique({
-      where: { token: oldToken },
+    let payload: JwtPayload;
+    const jwtSecret = this.configService.get<string>("JWT_SECRET");
+
+    if (!jwtSecret) {
+      throw new Error("Critical Error: JWT_SECRET is not defined");
+    }
+
+    try {
+      payload = this.jwtService.verify(oldToken, {
+        secret: jwtSecret
+      });
+    } catch (e) {
+      throw new UnauthorizedException("Invalid or expired refresh token");
+    }
+
+    const userTokens = await this.prisma.refreshToken.findMany({
+      where: { userId: payload.sub },
       include: { user: true }
     });
+
+    let storedToken = null;
+    for (const tokenRecord of userTokens) {
+      if (await bcrypt.compare(oldToken, tokenRecord.token)) {
+        storedToken = tokenRecord;
+        break;
+      }
+    }
 
     if (!storedToken) {
       throw new UnauthorizedException("Refresh token not recognized");
@@ -168,13 +223,12 @@ export class AuthService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      const payload: JwtPayload = {
+      const newPayload: JwtPayload = {
         sub: storedToken.user.id,
         email: storedToken.user.email
       };
-
       const { access_token, refresh_token } = await this.generateTokens(
-        payload,
+        newPayload,
         storedToken.user.id
       );
 
@@ -185,6 +239,48 @@ export class AuthService {
   }
 
   async revokeRefreshToken(token: string): Promise<void> {
-    await this.prisma.refreshToken.deleteMany({ where: { token } });
+    try {
+      const decoded = this.jwtService.decode(token) as JwtPayload;
+      if (!decoded || !decoded.sub) return;
+
+      const userTokens = await this.prisma.refreshToken.findMany({
+        where: { userId: decoded.sub }
+      });
+
+      for (const tokenRecord of userTokens) {
+        if (await bcrypt.compare(token, tokenRecord.token)) {
+          await this.prisma.refreshToken.delete({
+            where: { id: tokenRecord.id }
+          });
+          break;
+        }
+      }
+    } catch (error) {
+      console.error("Erreur lors de la révocation du token:", error);
+    }
+  }
+
+  async changePassword(
+    userId: number,
+    newPassword: string,
+    currentPassword?: string
+  ): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+
+    if (!user) {
+      throw new UnauthorizedException("User not found");
+    }
+
+    if (user.password) {
+      if (!currentPassword) {
+        throw new BadRequestException("Current password is required");
+      }
+      const valid = await bcrypt.compare(currentPassword, user.password);
+      if (!valid) {
+        throw new UnauthorizedException("Current password is incorrect");
+      }
+    }
+
+    await this.userService.updatePassword(userId, newPassword);
   }
 }

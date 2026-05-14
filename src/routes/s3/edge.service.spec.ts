@@ -42,9 +42,13 @@ describe("CloudfrontService", () => {
         return undefined;
       });
 
-      const url = cloudfrontService.generateSignedUrl("path with spaces/file #1.txt");
+      const url = cloudfrontService.generateSignedUrl(
+        "path with spaces/file #1.txt"
+      );
 
-      expect(url).toBe("https://cdn.example.com/path%20with%20spaces/file%20%231.txt");
+      expect(url).toBe(
+        "https://cdn.example.com/path%20with%20spaces/file%20%231.txt"
+      );
     });
 
     it("preserves an explicit protocol", () => {
@@ -117,9 +121,7 @@ describe("CloudfrontService", () => {
     it("throws BadEnvVarError if EDGE_ENDPOINT is missing", () => {
       (configService.get as jest.Mock).mockReturnValue(undefined);
 
-      expect(() => cloudfrontService.getCookieDomain()).toThrow(
-        BadEnvVarError
-      );
+      expect(() => cloudfrontService.getCookieDomain()).toThrow(BadEnvVarError);
     });
   });
 });

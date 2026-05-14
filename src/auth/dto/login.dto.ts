@@ -20,3 +20,45 @@ export class LoginDto {
   @IsNotEmpty({ message: "Password is required" })
   password!: string;
 }
+
+export class GoogleLoginDto {
+  @ApiProperty({
+    description: "Google ID token",
+    example: "eyJhbGciOiJSUzI1NiIs..."
+  })
+  @IsString()
+  @IsNotEmpty()
+  token!: string;
+}
+
+export class GoogleCodeDto {
+  @ApiProperty({ description: "Google authorization code" })
+  @IsString()
+  @IsNotEmpty()
+  code!: string;
+
+  @ApiProperty({ description: "PKCE code verifier" })
+  @IsString()
+  @IsNotEmpty()
+  codeVerifier!: string;
+}
+
+export class GithubLoginDto {
+  @ApiProperty({
+    description: "GitHub OAuth authorization code",
+    example: "abc123def456"
+  })
+  @IsString()
+  @IsNotEmpty()
+  code!: string;
+}
+
+export class MicrosoftLoginDto {
+  @ApiProperty({
+    description: "Microsoft ID token",
+    example: "eyJhbGciOiJSUzI1NiIs..."
+  })
+  @IsString()
+  @IsNotEmpty()
+  token!: string;
+}

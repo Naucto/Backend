@@ -1,3 +1,5 @@
+import { Module } from "@nestjs/common";
+import { ConfigModule } from "@nestjs/config";
 import { S3Module } from "@s3/s3.module";
 import { UserModule } from "@user/user.module";
 import { ProjectModule } from "@project/project.module";
@@ -11,20 +13,21 @@ import { WebRTCService } from "@webrtc/webrtc.service";
 import { MultiplayerModule } from "@multiplayer/multiplayer.module";
 import { ProjectCommentModule } from "@project-comment/project-comment.module";
 import { AppConfig } from "src/app.config";
-
-import { Module } from "@nestjs/common";
-import { ConfigModule } from "@nestjs/config";
-import { GracefulShutdownModule, IGracefulShutdownConfigOptions } from "@tygra/nestjs-graceful-shutdown";
+import {
+  GracefulShutdownModule,
+  IGracefulShutdownConfigOptions
+} from "@tygra/nestjs-graceful-shutdown";
 
 @Module({
   imports: [
     GracefulShutdownModule.forRootAsync({
       imports: [WebRTCModule],
       inject: [WebRTCService],
-      useFactory: async (webrtcService: WebRTCService): Promise<IGracefulShutdownConfigOptions> => {
+      useFactory: async (
+        webrtcService: WebRTCService
+      ): Promise<IGracefulShutdownConfigOptions> => {
         return {
-          cleanup: async (/* app, signal */): Promise<void> =>
-            webrtcService.shutdownAllServers()
+          cleanup: async (): Promise<void> => webrtcService.shutdownAllServers()
         };
       }
     }),
@@ -41,9 +44,7 @@ import { GracefulShutdownModule, IGracefulShutdownConfigOptions } from "@tygra/n
     MultiplayerModule,
     ProjectCommentModule
   ],
-  providers: [
-    AppConfig
-  ],
+  providers: [AppConfig],
   exports: [AppConfig]
 })
 export class AppModule {}

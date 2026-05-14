@@ -3,7 +3,14 @@ import { GameSession, GameSessionVisibility, User } from "@prisma/client";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { UserService } from "@user/user.service";
 import { ProjectService } from "@project/project.service";
-import { MultiplayerHostNotFoundError, MultiplayerHostOpenedError, MultiplayerInvalidStateError, MultiplayerUserAlreadyJoinedError, MultiplayerUserDoesNotExistError, MultiplayerUserNotInSessionError } from "./multiplayer.error";
+import {
+  MultiplayerHostNotFoundError,
+  MultiplayerHostOpenedError,
+  MultiplayerInvalidStateError,
+  MultiplayerUserAlreadyJoinedError,
+  MultiplayerUserDoesNotExistError,
+  MultiplayerUserNotInSessionError
+} from "./multiplayer.error";
 import { ProjectNotFoundError } from "@project/project.error";
 import { WebRTCServer } from "@webrtc/server/webrtc.server";
 import { WebRTCService } from "@webrtc/webrtc.service";
@@ -13,7 +20,7 @@ import { JoinHostResponseDto } from "./dto/join-host.dto";
 // I made this "extended" type (Ex) for complex fields that do relations with
 // other stuff.
 export type GameSessionEx = GameSession & {
-  otherUsers: User[]
+  otherUsers: User[];
 };
 
 @Injectable()
@@ -30,7 +37,10 @@ export class MultiplayerService {
     this._multiplayerServer = new WebRTCServer(_webrtcService, "Multiplayer");
   }
 
-  async lookupHosts(projectId: number, userId: number): Promise<GameSessionEx[]> {
+  async lookupHosts(
+    projectId: number,
+    userId: number
+  ): Promise<GameSessionEx[]> {
     const matchingGSes = await this._prismaService.gameSession.findMany({
       include: { otherUsers: true },
       where: { projectId: projectId }
@@ -44,17 +54,17 @@ export class MultiplayerService {
 
     matchingGSes.forEach((gameSession) => {
       switch (gameSession.visibility) {
-      case GameSessionVisibility.PUBLIC:
-        break;
+        case GameSessionVisibility.PUBLIC:
+          break;
 
-      case GameSessionVisibility.FRIENDS_ONLY:
-        // FIXME: Check if otherUsers contains at least userId in their friend list
-        // gameSession.otherUsers.some(otherUser => userService.areFriends(userId, otherUserId));
-        void userId;
-        break;
+        case GameSessionVisibility.FRIENDS_ONLY:
+          // FIXME: Check if otherUsers contains at least userId in their friend list
+          // gameSession.otherUsers.some(otherUser => userService.areFriends(userId, otherUserId));
+          void userId;
+          break;
 
-      case GameSessionVisibility.PRIVATE:
-        return;
+        case GameSessionVisibility.PRIVATE:
+          return;
       }
 
       userAvailableGSes.push(gameSession);
@@ -63,15 +73,21 @@ export class MultiplayerService {
     return userAvailableGSes;
   }
 
-  async openHost(userId: number, projectId: number, visibility: GameSessionVisibility): Promise<OpenHostResponseDto> {
+  async openHost(
+    userId: number,
+    projectId: number,
+    visibility: GameSessionVisibility
+  ): Promise<OpenHostResponseDto> {
     // Check if the user & project exists by simply getting them. If the object does not exist,
     // the exception throw serves as a guard.
 
     const requestedUser = await this._userService.findOne<{
-      hostingGameSessions: GameSession[]
+      hostingGameSessions: GameSession[];
     }>(userId, { hostingGameSessions: true });
     if (!requestedUser) {
-      throw new MultiplayerUserDoesNotExistError(`User with ID ${userId} not found`);
+      throw new MultiplayerUserDoesNotExistError(
+        `User with ID ${userId} not found`
+      );
     }
     const project = await this._projectService.findOne(projectId);
     if (!project) {
@@ -83,7 +99,9 @@ export class MultiplayerService {
         return;
       }
 
-      throw new MultiplayerHostOpenedError("User already hosting a game session for this project");
+      throw new MultiplayerHostOpenedError(
+        "User already hosting a game session for this project"
+      );
     });
 
     const createdGS = await this._prismaService.gameSession.create({
@@ -95,10 +113,12 @@ export class MultiplayerService {
     });
 
     await this._userService.attachGameSession(userId, createdGS.id, true);
-    
+
     const response = new OpenHostResponseDto();
     response.sessionUuid = createdGS.sessionId;
-    response.webrtcConfig = this._webrtcService.buildOffer(this._multiplayerServer);
+    response.webrtcConfig = this._webrtcService.buildOffer(
+      this._multiplayerServer
+    );
 
     return response;
   }
@@ -106,21 +126,26 @@ export class MultiplayerService {
   async closeHost(userId: number, projectId: number): Promise<void> {
     // Same as for openHost
     const requestedUser = await this._userService.findOne<{
-      hostingGameSessions: GameSession[]
+      hostingGameSessions: GameSession[];
     }>(userId, { hostingGameSessions: true });
     if (!requestedUser) {
-      throw new MultiplayerUserDoesNotExistError(`User with ID ${userId} not found`);
+      throw new MultiplayerUserDoesNotExistError(
+        `User with ID ${userId} not found`
+      );
     }
     const project = await this._projectService.findOne(projectId);
     if (!project) {
       throw new ProjectNotFoundError(`Project with ID ${projectId} not found`);
     }
 
-    const basicHostedGS =
-      requestedUser.hostingGameSessions.find((hostedGS) => hostedGS.projectId === projectId);
+    const basicHostedGS = requestedUser.hostingGameSessions.find(
+      (hostedGS) => hostedGS.projectId === projectId
+    );
 
     if (!basicHostedGS) {
-      throw new MultiplayerHostNotFoundError("User is not hosting a game session for this project");
+      throw new MultiplayerHostNotFoundError(
+        "User is not hosting a game session for this project"
+      );
     }
 
     await this._userService.detachGameSession(userId, basicHostedGS.id, true);
@@ -132,7 +157,9 @@ export class MultiplayerService {
 
     if (!hostedGS) {
       // This can only be reached if the database is in an inconsitent state
-      throw new MultiplayerInvalidStateError("Game session attached to user no longer exists");
+      throw new MultiplayerInvalidStateError(
+        "Game session attached to user no longer exists"
+      );
     }
 
     await Promise.all(
@@ -142,24 +169,39 @@ export class MultiplayerService {
     );
   }
 
-  async joinHost(joiningUserId: number, hostUuid: string): Promise<JoinHostResponseDto> {
+  async joinHost(
+    joiningUserId: number,
+    hostUuid: string
+  ): Promise<JoinHostResponseDto> {
     // Same as for openHost
     const joiningUser = await this._userService.findOne<{
-      joinedGameSessions: GameSession[]
+      joinedGameSessions: GameSession[];
     }>(joiningUserId, { joinedGameSessions: true });
     if (!joiningUser) {
-      throw new MultiplayerUserNotInSessionError(`User with ID ${joiningUserId} not found`);
+      throw new MultiplayerUserNotInSessionError(
+        `User with ID ${joiningUserId} not found`
+      );
     }
     const hostedGS = await this._prismaService.gameSession.findUnique({
-      where: { sessionId: hostUuid },
+      where: { sessionId: hostUuid }
     });
 
     if (!hostedGS) {
-      throw new MultiplayerHostNotFoundError("No game session found for the provided host UUID");
+      throw new MultiplayerHostNotFoundError(
+        "No game session found for the provided host UUID"
+      );
     } else if (hostedGS.hostId === joiningUserId) {
-      throw new MultiplayerUserAlreadyJoinedError("User is already the host of this game session");
-    } else if (joiningUser.joinedGameSessions.some(joinedGS => joinedGS.id === hostedGS.id)) {
-      throw new MultiplayerUserAlreadyJoinedError("User has already joined this game session");
+      throw new MultiplayerUserAlreadyJoinedError(
+        "User is already the host of this game session"
+      );
+    } else if (
+      joiningUser.joinedGameSessions.some(
+        (joinedGS) => joinedGS.id === hostedGS.id
+      )
+    ) {
+      throw new MultiplayerUserAlreadyJoinedError(
+        "User has already joined this game session"
+      );
     }
 
     await this._prismaService.gameSession.update({
@@ -170,7 +212,9 @@ export class MultiplayerService {
     });
 
     const response = new JoinHostResponseDto();
-    response.webrtcConfig = this._webrtcService.buildOffer(this._multiplayerServer);
+    response.webrtcConfig = this._webrtcService.buildOffer(
+      this._multiplayerServer
+    );
 
     return response;
   }
@@ -178,10 +222,12 @@ export class MultiplayerService {
   async leaveHost(leavingUserId: number, hostUuid: string): Promise<void> {
     // Same as for openHost
     const leavingUser = await this._userService.findOne<{
-      joinedGameSessions: GameSession[]
+      joinedGameSessions: GameSession[];
     }>(leavingUserId, { joinedGameSessions: true });
     if (!leavingUser) {
-      throw new MultiplayerUserNotInSessionError(`User with ID ${leavingUserId} not found`);
+      throw new MultiplayerUserNotInSessionError(
+        `User with ID ${leavingUserId} not found`
+      );
     }
 
     const hostedGS = await this._prismaService.gameSession.findUnique({
@@ -190,11 +236,21 @@ export class MultiplayerService {
     });
 
     if (!hostedGS) {
-      throw new MultiplayerHostNotFoundError("No game session found for the provided host UUID");
+      throw new MultiplayerHostNotFoundError(
+        "No game session found for the provided host UUID"
+      );
     } else if (hostedGS.hostId === leavingUserId) {
-      throw new MultiplayerUserNotInSessionError("Host user cannot leave their own game session");
-    } else if (!leavingUser.joinedGameSessions.some(joinedGS => joinedGS.id === hostedGS.id)) {
-      throw new MultiplayerUserNotInSessionError("User is not part of this game session");
+      throw new MultiplayerUserNotInSessionError(
+        "Host user cannot leave their own game session"
+      );
+    } else if (
+      !leavingUser.joinedGameSessions.some(
+        (joinedGS) => joinedGS.id === hostedGS.id
+      )
+    ) {
+      throw new MultiplayerUserNotInSessionError(
+        "User is not part of this game session"
+      );
     }
 
     await this._prismaService.gameSession.update({

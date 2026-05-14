@@ -1,48 +1,55 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { IsArray, IsInt, IsOptional, IsString, IsUrl, ValidateNested } from "class-validator";
+import {
+  IsArray,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUrl,
+  ValidateNested
+} from "class-validator";
 
 export class WebRTCOfferPeerICEServerConfig {
   @ApiProperty()
   @IsUrl()
-    urls!: string;
+  urls!: string;
 
   @ApiPropertyOptional()
   @IsString()
   @IsOptional()
-    username?: string | undefined;
+  username?: string | undefined;
 
   @ApiPropertyOptional()
   @IsString()
   @IsOptional()
-    credential?: string | undefined;
-};
+  credential?: string | undefined;
+}
 
 export class WebRTCOfferPeerOptsConfig {
   @ApiProperty({ type: () => [WebRTCOfferPeerICEServerConfig] })
   @ValidateNested()
   @Type(() => WebRTCOfferPeerICEServerConfig)
-    iceServers!: WebRTCOfferPeerICEServerConfig[];
-};
+  iceServers!: WebRTCOfferPeerICEServerConfig[];
+}
 
 export class WebRTCOfferPeerOpts {
   @ApiProperty({ type: () => WebRTCOfferPeerOptsConfig })
   @ValidateNested()
   @Type(() => WebRTCOfferPeerOptsConfig)
-    config!: WebRTCOfferPeerOptsConfig;
-};
+  config!: WebRTCOfferPeerOptsConfig;
+}
 
 export class WebRTCOfferDto {
   @ApiProperty()
   @IsArray()
-    signaling!: Array<string>;
+  signaling!: Array<string>;
 
   @ApiProperty()
   @IsInt()
-    maxConns!: number;
+  maxConns!: number;
 
   @ApiProperty({ type: () => WebRTCOfferPeerOpts })
   @ValidateNested()
   @Type(() => WebRTCOfferPeerOpts)
-    peerOpts!: WebRTCOfferPeerOpts;
-};
+  peerOpts!: WebRTCOfferPeerOpts;
+}
