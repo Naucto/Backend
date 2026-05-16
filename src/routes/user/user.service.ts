@@ -39,6 +39,32 @@ export class UserService {
     };
   }
 
+  async findPublicProfileByUsername(username: string): Promise<{
+    id: number;
+    username: string;
+    nickname: string | null;
+    description: string | null;
+  }> {
+    const user = await this.prisma.user.findUnique({
+      where: { username },
+      select: {
+        id: true,
+        username: true,
+        nickname: true,
+        description: true
+      }
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with username ${username} not found`);
+    }
+
+    return {
+      ...user,
+      description: user.description ?? user.nickname
+    };
+  }
+
   async updateMyProfile(
     id: number,
     data: { nickname?: string | null; description?: string | null }

@@ -14,7 +14,7 @@ import {
   RemoveCollaboratorDto
 } from "./dto/collaborator-project.dto";
 import { S3Service } from "@s3/s3.service";
-import { Project, User } from "@prisma/client";
+import { Prisma, Project, User } from "@prisma/client";
 import { ConfigService } from "@nestjs/config";
 import { DownloadedFile } from "@s3/s3.interface";
 import { Readable } from "stream";
@@ -52,6 +52,10 @@ type ReleaseProject = ProjectEx & {
   commentCount: number;
   forkCount: number;
 };
+
+const DEFAULT_GAMES_PAGE = 1;
+const DEFAULT_GAMES_LIMIT = 20;
+const MAX_GAMES_LIMIT = 100;
 
 @Injectable()
 export class ProjectService {
@@ -91,6 +95,24 @@ export class ProjectService {
           (candidate) => candidate.toLocaleLowerCase() === tag.toLocaleLowerCase()
         ) === index
     );
+  }
+
+  private normalizePagination(
+    page: number,
+    limit: number
+  ): { page: number; limit: number; skip: number } {
+    const safePage = Number.isFinite(page)
+      ? Math.max(DEFAULT_GAMES_PAGE, Math.trunc(page))
+      : DEFAULT_GAMES_PAGE;
+    const safeLimit = Number.isFinite(limit)
+      ? Math.min(MAX_GAMES_LIMIT, Math.max(1, Math.trunc(limit)))
+      : DEFAULT_GAMES_LIMIT;
+
+    return {
+      page: safePage,
+      limit: safeLimit,
+      skip: (safePage - 1) * safeLimit
+    };
   }
 
   private withCommentCount(project: ProjectWithCounts): ReleaseProject {
@@ -648,56 +670,48 @@ export class ProjectService {
 
   async fetchPublishedGamesByUser(
     userId: number,
-    limit?: number
+    page: number = DEFAULT_GAMES_PAGE,
+    limit: number = DEFAULT_GAMES_LIMIT
   ): Promise<ReleaseProject[]> {
-    const projects = await this.prisma.project.findMany({
-      where: {
+    return this.fetchPublishedGamesByUserWhere(
+      {
         status: "COMPLETED",
         userId
       },
-      orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }],
-      ...(limit ? { take: limit } : {}),
-      include: {
-        collaborators: {
-          select: ProjectService.COLLABORATOR_SELECT
-        },
-        creator: {
-          select: ProjectService.CREATOR_SELECT
-        },
-        _count: {
-          select: {
-            forks: true,
-            comments: { where: { deleted: false } }
-          }
-        }
-      }
-    });
-
-    return projects.map((project) =>
-      this.applyPublishedSnapshot(
-        this.withCommentCount(project as ProjectWithCounts & {
-          publishedName?: string | null;
-          publishedShortDesc?: string | null;
-          publishedLongDesc?: string | null;
-          publishedTags?: string[];
-        })
-      )
+      page,
+      limit
     );
   }
 
   async fetchLikedPublishedGamesByUser(
     userId: number,
-    limit?: number
+    page: number = DEFAULT_GAMES_PAGE,
+    limit: number = DEFAULT_GAMES_LIMIT
   ): Promise<ReleaseProject[]> {
-    const projects = await this.prisma.project.findMany({
-      where: {
+    return this.fetchPublishedGamesByUserWhere(
+      {
         status: "COMPLETED",
         userLikes: {
           some: { userId }
         }
       },
+      page,
+      limit
+    );
+  }
+
+  private async fetchPublishedGamesByUserWhere(
+    where: Prisma.ProjectWhereInput,
+    page: number,
+    limit: number
+  ): Promise<ReleaseProject[]> {
+    const pagination = this.normalizePagination(page, limit);
+
+    const projects = await this.prisma.project.findMany({
+      where,
       orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }],
-      ...(limit ? { take: limit } : {}),
+      skip: pagination.skip,
+      take: pagination.limit,
       include: {
         collaborators: {
           select: ProjectService.COLLABORATOR_SELECT

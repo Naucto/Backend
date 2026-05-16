@@ -106,10 +106,8 @@ export class UserController {
     @Body(ValidationPipe) updateUserProfileDto: UpdateUserProfileDto,
     @Request() req: RequestWithUser
   ): Promise<PublicUserProfileResponseDto> {
-    const descriptionSource =
-      updateUserProfileDto.description ?? updateUserProfileDto.nickname;
-    const description =
-      descriptionSource === undefined ? undefined : descriptionSource.trim() || null;
+    const descriptionSource = updateUserProfileDto.description;
+    const description = descriptionSource === undefined ? undefined : descriptionSource.trim() || null;
 
     const update: { nickname?: string | null; description?: string | null } = {};
     if (description !== undefined) {

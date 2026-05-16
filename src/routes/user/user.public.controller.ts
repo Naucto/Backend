@@ -8,6 +8,7 @@ import { PublicUserProfileResponseDto } from "./dto/public-user-profile-response
 import { ProjectService } from "../project/project.service";
 import { ProjectExResponseDto } from "../project/dto/project-response.dto";
 
+const DEFAULT_GAMES_PAGE = 1;
 const DEFAULT_GAMES_LIMIT = 20;
 
 @ApiTags("users")
@@ -60,13 +61,50 @@ export class UserPublicController {
   }
 
   @Public()
+  @Get("username/:username/profile")
+  @ApiOperation({ summary: "Get a public user profile by username" })
+  @ApiParam({ name: "username", description: "Username" })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Returns the public user profile",
+    type: PublicUserProfileResponseDto
+  })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: "User not found" })
+  async getPublicProfileByUsername(
+    @Param("username") username: string
+  ): Promise<PublicUserProfileResponseDto> {
+    const profile = await this.userService.findPublicProfileByUsername(username);
+    const profileImageUrl = await this.getPublicAssetUrl(
+      `users/${profile.id}/profile`
+    );
+    const backgroundImageUrl = await this.getPublicAssetUrl(
+      `users/${profile.id}/background`
+    );
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: "Public user profile retrieved successfully",
+      data: {
+        ...profile,
+        profileImageUrl,
+        backgroundImageUrl
+      }
+    };
+  }
+
+  @Public()
   @Get(":id/likes")
   @ApiOperation({ summary: "Get a user's liked published games" })
   @ApiParam({ name: "id", description: "User ID" })
   @ApiQuery({
+    name: "page",
+    type: "number",
+    required: false
+  })
+  @ApiQuery({
     name: "limit",
-    required: false,
-    description: "Optional max number of games to return"
+    type: "number",
+    required: false
   })
   @ApiResponse({
     status: HttpStatus.OK,
@@ -75,14 +113,14 @@ export class UserPublicController {
   })
   async getLikedGames(
     @Param("id", ParseIntPipe) id: number,
+    @Query("page") page?: string,
     @Query("limit") limit?: string
   ): Promise<ProjectExResponseDto[]> {
-    const parsedLimit = limit ? Number(limit) : undefined;
-    const safeLimit =
-      parsedLimit !== undefined && Number.isFinite(parsedLimit) && parsedLimit > 0
-        ? Math.min(Math.trunc(parsedLimit), DEFAULT_GAMES_LIMIT)
-        : undefined;
-    return this.projectService.fetchLikedPublishedGamesByUser(id, safeLimit);
+    return this.projectService.fetchLikedPublishedGamesByUser(
+      id,
+      page ? parseInt(page, 10) : DEFAULT_GAMES_PAGE,
+      limit ? parseInt(limit, 10) : DEFAULT_GAMES_LIMIT
+    );
   }
 
   @Public()
@@ -90,9 +128,14 @@ export class UserPublicController {
   @ApiOperation({ summary: "Get a user's published games" })
   @ApiParam({ name: "id", description: "User ID" })
   @ApiQuery({
+    name: "page",
+    type: "number",
+    required: false
+  })
+  @ApiQuery({
     name: "limit",
-    required: false,
-    description: "Optional max number of games to return"
+    type: "number",
+    required: false
   })
   @ApiResponse({
     status: HttpStatus.OK,
@@ -101,13 +144,13 @@ export class UserPublicController {
   })
   async getPublishedGames(
     @Param("id", ParseIntPipe) id: number,
+    @Query("page") page?: string,
     @Query("limit") limit?: string
   ): Promise<ProjectExResponseDto[]> {
-    const parsedLimit = limit ? Number(limit) : undefined;
-    const safeLimit =
-      parsedLimit !== undefined && Number.isFinite(parsedLimit) && parsedLimit > 0
-        ? Math.min(Math.trunc(parsedLimit), DEFAULT_GAMES_LIMIT)
-        : undefined;
-    return this.projectService.fetchPublishedGamesByUser(id, safeLimit);
+    return this.projectService.fetchPublishedGamesByUser(
+      id,
+      page ? parseInt(page, 10) : DEFAULT_GAMES_PAGE,
+      limit ? parseInt(limit, 10) : DEFAULT_GAMES_LIMIT
+    );
   }
 }
