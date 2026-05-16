@@ -13,6 +13,90 @@ export class UserService {
   constructor(private readonly prisma: PrismaService) {}
   private static readonly BCRYPT_SALT_ROUNDS = 10;
 
+  async findPublicProfile(id: number): Promise<{
+    id: number;
+    username: string;
+    nickname: string | null;
+    description: string | null;
+  }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        username: true,
+        nickname: true,
+        description: true
+      }
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    return {
+      ...user,
+      description: user.description ?? user.nickname
+    };
+  }
+
+  async findPublicProfileByUsername(username: string): Promise<{
+    id: number;
+    username: string;
+    nickname: string | null;
+    description: string | null;
+  }> {
+    const user = await this.prisma.user.findUnique({
+      where: { username },
+      select: {
+        id: true,
+        username: true,
+        nickname: true,
+        description: true
+      }
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with username ${username} not found`);
+    }
+
+    return {
+      ...user,
+      description: user.description ?? user.nickname
+    };
+  }
+
+  async updateMyProfile(
+    id: number,
+    data: { description?: string | null }
+  ): Promise<{
+    id: number;
+    username: string;
+    description: string | null;
+  }> {
+    const nextProfileText = data.description;
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id },
+      data: {
+        ...(nextProfileText !== undefined
+          ? {
+            description: nextProfileText
+          }
+          : {})
+      },
+      select: {
+        id: true,
+        username: true,
+        description: true
+      }
+    });
+
+    return {
+      ...updatedUser,
+      description: updatedUser.description
+    };
+  }
+
   async findRolesByNames(names: string[]): Promise<Role[]> {
     return this.prisma.role.findMany({
       where: {
