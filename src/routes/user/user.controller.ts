@@ -51,6 +51,8 @@ import { SignedCdnResourceDto } from "@common/dto/signed-cdn-resource.dto";
 import { UpdateUserProfileDto } from "./dto/update-user-profile.dto";
 import { PublicUserProfileResponseDto } from "./dto/public-user-profile-response.dto";
 
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = /^image\/(jpeg|png|gif|webp)$/;
 @ApiTags("users")
 @ApiExtraModels(
   UserResponseDto,
@@ -156,8 +158,8 @@ export class UserController {
     @Param("id", ParseIntPipe) id: number,
     @UploadedFile(
       new ParseFilePipeBuilder()
-        .addMaxSizeValidator({ maxSize: 5 * 1024 * 1024 })
-        .addFileTypeValidator({ fileType: /^image\/(jpeg|png|gif|webp)$/ })
+        .addMaxSizeValidator({ maxSize: MAX_FILE_SIZE })
+        .addFileTypeValidator({ fileType: ALLOWED_IMAGE_TYPES })
         .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY })
     )
       file: Express.Multer.File,
@@ -209,8 +211,8 @@ export class UserController {
     @Param("id", ParseIntPipe) id: number,
     @UploadedFile(
       new ParseFilePipeBuilder()
-        .addMaxSizeValidator({ maxSize: 5 * 1024 * 1024 })
-        .addFileTypeValidator({ fileType: /^image\/(jpeg|png|gif|webp)$/ })
+        .addMaxSizeValidator({ maxSize: MAX_FILE_SIZE })
+        .addFileTypeValidator({ fileType: ALLOWED_IMAGE_TYPES })
         .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY })
     )
       file: Express.Multer.File,
