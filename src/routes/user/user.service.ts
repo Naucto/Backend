@@ -67,22 +67,19 @@ export class UserService {
 
   async updateMyProfile(
     id: number,
-    data: { nickname?: string | null; description?: string | null }
+    data: { description?: string | null }
   ): Promise<{
     id: number;
     username: string;
-    nickname: string | null;
     description: string | null;
   }> {
-    const nextProfileText =
-      data.description !== undefined ? data.description : data.nickname;
+    const nextProfileText = data.description;
 
     const updatedUser = await this.prisma.user.update({
       where: { id },
       data: {
         ...(nextProfileText !== undefined
           ? {
-            nickname: nextProfileText,
             description: nextProfileText
           }
           : {})
@@ -90,14 +87,13 @@ export class UserService {
       select: {
         id: true,
         username: true,
-        nickname: true,
         description: true
       }
     });
 
     return {
       ...updatedUser,
-      description: updatedUser.description ?? updatedUser.nickname
+      description: updatedUser.description
     };
   }
 

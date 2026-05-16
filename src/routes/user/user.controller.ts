@@ -111,9 +111,8 @@ export class UserController {
     const descriptionSource = updateUserProfileDto.description;
     const description = descriptionSource === undefined ? undefined : descriptionSource.trim() || null;
 
-    const update: { nickname?: string | null; description?: string | null } = {};
+    const update: { description?: string | null } = {};
     if (description !== undefined) {
-      update.nickname = description;
       update.description = description;
     }
 
