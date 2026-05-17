@@ -30,6 +30,8 @@ class WebRTCServiceConfig {
 
 @Injectable()
 export class WebRTCService implements OnModuleInit {
+  private static DEV_HOSTNAME = "localhost";
+
   private readonly _logger = new Logger(WebRTCService.name);
 
   private readonly _hookedServers = new Set<WebRTCServer>();
@@ -41,6 +43,10 @@ export class WebRTCService implements OnModuleInit {
     @Inject(ConfigService) private readonly _configService: ConfigService
   )
   {}
+
+  public get isLocalDevEnv(): boolean {
+    return this._publicAddress === WebRTCService.DEV_HOSTNAME;
+  }
 
   async onModuleInit(): Promise<void> {
     this._publicAddress = this._configService.get<string>("BACKEND_WEBRTC_HOSTNAME");
@@ -69,7 +75,7 @@ export class WebRTCService implements OnModuleInit {
       return;
     }
 
-    this._publicAddress = "localhost";
+    this._publicAddress = WebRTCService.DEV_HOSTNAME;
 
     this._logger.warn(
       `No public address set, falling back to ${this._publicAddress} -- ` +
@@ -103,8 +109,23 @@ export class WebRTCService implements OnModuleInit {
     }
   }
 
+  private buildSignalingUrl(targetServer: WebRTCServer | string): string {
+    if (targetServer instanceof WebRTCServer) {
+      const protocol = this.isLocalDevEnv ? "ws" : "wss";
+      return `${protocol}://${this._publicAddress}:${targetServer.port}`;
+    }
+
+    if (!/ws(s)?:\/\//.test(targetServer)) {
+      throw new WebRTCServerRuntimeError(
+        `Malformed websocket target server URL: ${targetServer}`
+      );
+    }
+
+    return targetServer;
+  }
+
   // targetServer can be either a concrete WebRTCServer or a URL to that server
-  buildOffer(targetServer: WebRTCServer | string): WebRTCOfferDto {
+  public buildOffer(targetServer: WebRTCServer | string): WebRTCOfferDto {
     if (!this._config) {
       this._logger.error("Attempt at creating WebRTC offer without a valid initialization, bailing out.");
       throw new WebRTCServiceOfferError("WebRTC service is not properly initialized");
@@ -112,19 +133,7 @@ export class WebRTCService implements OnModuleInit {
 
     const offerDto = new WebRTCOfferDto();
 
-    let signalingUrl: string;
-
-    if (targetServer instanceof WebRTCServer) {
-      signalingUrl = `wss://${this._publicAddress}:${targetServer.port}`;
-    } else {
-      if (!/ws(s)?:\/\//.test(targetServer)) {
-        throw new WebRTCServerRuntimeError(
-          `Malformed websocket target server URL: ${targetServer}`
-        );
-      }
-
-      signalingUrl = targetServer;
-    }
+    const signalingUrl = this.buildSignalingUrl(targetServer);
 
     offerDto.signaling = [ signalingUrl ];
 
