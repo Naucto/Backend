@@ -2,6 +2,7 @@ import {
   Injectable,
   ConflictException,
   UnauthorizedException,
+  InternalServerErrorException,
   BadRequestException,
   Inject
 } from "@nestjs/common";
@@ -189,7 +190,7 @@ export class AuthService {
     const jwtSecret = this.configService.get<string>("JWT_SECRET");
 
     if (!jwtSecret) {
-      throw new Error("Critical Error: JWT_SECRET is not defined");
+      throw new InternalServerErrorException("JWT_SECRET is not defined");
     }
 
     try {
