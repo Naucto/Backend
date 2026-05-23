@@ -69,7 +69,7 @@ export class GoogleAuthService {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (!response.ok) {
-        throw new Error(`Google userinfo returned ${response.status}`);
+        throw new UnauthorizedException("Invalid Google token");
       }
       userInfo = await response.json() as GoogleUserInfo;
     } catch (error) {
