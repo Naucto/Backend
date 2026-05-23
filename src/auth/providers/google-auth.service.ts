@@ -6,19 +6,10 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { OAuthUserPayload } from "../auth.types";
-
-interface GoogleTokenResponse {
-  access_token?: string;
-  error?: string;
-  error_description?: string;
-}
-
-interface GoogleUserInfo {
-  sub: string;
-  email: string;
-  email_verified: boolean;
-  name?: string;
-}
+import {
+  GoogleTokenResponse,
+  GoogleUserInfo
+} from "../dto/google-auth.dto";
 
 @Injectable()
 export class GoogleAuthService {

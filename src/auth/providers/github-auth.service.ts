@@ -6,24 +6,11 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { OAuthUserPayload } from "../auth.types";
-
-interface GithubTokenResponse {
-  access_token?: string;
-  error?: string;
-  error_description?: string;
-}
-
-interface GithubUser {
-  login: string;
-  name: string | null;
-  email: string | null;
-}
-
-interface GithubEmail {
-  email: string;
-  primary: boolean;
-  verified: boolean;
-}
+import {
+  GithubEmail,
+  GithubTokenResponse,
+  GithubUser
+} from "../dto/github-auth.dto";
 
 @Injectable()
 export class GithubAuthService {
