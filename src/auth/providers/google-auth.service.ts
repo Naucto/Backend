@@ -10,6 +10,7 @@ import {
   GoogleTokenResponse,
   GoogleUserInfo
 } from "../dto/google-auth.dto";
+import { getExcerrMessage } from "../../util/errors";
 
 @Injectable()
 export class GoogleAuthService {
@@ -43,8 +44,7 @@ export class GoogleAuthService {
         }),
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.error(`Google token endpoint unreachable: ${message}`);
+      this.logger.error(`Google token endpoint unreachable: ${getExcerrMessage(err)}`);
       throw new UnauthorizedException("Google authentication service unavailable");
     }
 
@@ -73,8 +73,7 @@ export class GoogleAuthService {
       }
       userInfo = await response.json() as GoogleUserInfo;
     } catch (error) {
-      const message = error instanceof Error ? error.message : "unknown error";
-      this.logger.warn(`Google token verification failed: ${message}`);
+      this.logger.warn(`Google token verification failed: ${getExcerrMessage(error)}`);
       throw new UnauthorizedException("Invalid Google token");
     }
 
