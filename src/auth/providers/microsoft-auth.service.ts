@@ -62,7 +62,7 @@ export class MicrosoftAuthService {
       throw new UnauthorizedException("No email found in Microsoft token");
     }
 
-    const name = payload["name"] ?? email.split("@")[0];
+    const name = payload["name"] ?? email.split("@")[0] ?? email;
 
     return { email, name };
   }

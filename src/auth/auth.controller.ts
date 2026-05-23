@@ -6,8 +6,7 @@ import {
   Req,
   Res,
   UnauthorizedException,
-  UseGuards,
-  Inject
+  UseGuards
 } from "@nestjs/common";
 import { AuthService } from "./auth.service";
 import {
@@ -28,24 +27,21 @@ import {
   ApiBearerAuth
 } from "@nestjs/swagger";
 import { Response, Request, CookieOptions } from "express";
-import { ConfigService } from "@nestjs/config";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import { RequestWithUser } from "./auth.types";
 
 @ApiTags("auth")
 @Controller("auth")
 export class AuthController {
-  constructor(
-    private readonly authService: AuthService,
-    @Inject(ConfigService) private readonly configService: ConfigService
-  ) {}
+  private readonly isProd = process.env["NODE_ENV"] === "production";
+
+  constructor(private readonly authService: AuthService) {}
 
   private getRefreshCookieOptions(): CookieOptions {
-    const isProd = this.configService.get<string>("NODE_ENV") === "production";
     return {
       httpOnly: true,
-      secure: isProd,
-      sameSite: isProd ? "none" : "lax",
+      secure: this.isProd,
+      sameSite: this.isProd ? "none" : "lax",
       path: "/auth/refresh"
     };
   }

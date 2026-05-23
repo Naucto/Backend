@@ -90,7 +90,7 @@ export class GoogleAuthService {
 
     return {
       email: userInfo.email,
-      name: userInfo.name ?? userInfo.email.split("@")[0]
+      name: userInfo.name ?? userInfo.email.split("@")[0] ?? userInfo.email
     };
   }
 }
