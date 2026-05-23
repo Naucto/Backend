@@ -256,7 +256,7 @@ export class AuthService {
         }
       }
     } catch (error) {
-      console.error("Erreur lors de la révocation du token:", error);
+      console.error("Error revoking token:", error);
     }
   }
 
