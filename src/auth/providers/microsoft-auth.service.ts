@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from "@nestjs/common";
+import { Injectable, InternalServerErrorException, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { OAuthUserPayload } from "../auth.types";
 import * as jwt from "jsonwebtoken";
@@ -6,6 +6,8 @@ import jwksRsa from "jwks-rsa";
 
 @Injectable()
 export class MicrosoftAuthService {
+  private readonly clientId: string;
+  private readonly tenantId: string;
   private readonly jwksClient = jwksRsa({
     jwksUri: "https://login.microsoftonline.com/common/discovery/v2.0/keys",
     cache: true,
@@ -13,7 +15,19 @@ export class MicrosoftAuthService {
     rateLimit: true,
   });
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(configService: ConfigService) {
+    const clientId = configService.get<string>("MICROSOFT_CLIENT_ID");
+    const tenantId = configService.get<string>("MICROSOFT_TENANT_ID");
+
+    if (!clientId || !tenantId) {
+      throw new InternalServerErrorException(
+        "Missing Microsoft OAuth configuration: MICROSOFT_CLIENT_ID and MICROSOFT_TENANT_ID are required"
+      );
+    }
+
+    this.clientId = clientId;
+    this.tenantId = tenantId;
+  }
 
   async verifyToken(idToken: string): Promise<OAuthUserPayload> {
     const decoded = jwt.decode(idToken, { complete: true });
@@ -30,15 +44,12 @@ export class MicrosoftAuthService {
       throw new UnauthorizedException("Failed to fetch Microsoft signing key");
     }
 
-    const clientId = this.configService.get<string>("MICROSOFT_CLIENT_ID");
-    const tenantId = this.configService.get<string>("MICROSOFT_TENANT_ID");
-
     let payload: jwt.JwtPayload;
     try {
       payload = jwt.verify(idToken, publicKey, {
         algorithms: ["RS256"],
-        audience: clientId,
-        issuer: `https://login.microsoftonline.com/${tenantId}/v2.0`,
+        audience: this.clientId,
+        issuer: `https://login.microsoftonline.com/${this.tenantId}/v2.0`,
       }) as jwt.JwtPayload;
     } catch {
       throw new UnauthorizedException("Microsoft token signature invalid");
@@ -46,11 +57,12 @@ export class MicrosoftAuthService {
 
     const email =
       payload["preferred_username"] ?? payload["email"] ?? payload["upn"];
-    const name = payload["name"] ?? "";
 
     if (!email) {
       throw new UnauthorizedException("No email found in Microsoft token");
     }
+
+    const name = payload["name"] ?? email.split("@")[0];
 
     return { email, name };
   }

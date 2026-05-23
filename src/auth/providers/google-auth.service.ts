@@ -1,6 +1,6 @@
 import {
-  Inject,
   Injectable,
+  InternalServerErrorException,
   Logger,
   UnauthorizedException
 } from "@nestjs/common";
@@ -15,31 +15,38 @@ import { getExcerrMessage } from "../../util/errors";
 @Injectable()
 export class GoogleAuthService {
   private readonly logger = new Logger(GoogleAuthService.name);
+  private readonly clientId: string;
+  private readonly clientSecret: string;
+  private readonly redirectUri: string;
 
-  constructor(
-    @Inject(ConfigService) private readonly configService: ConfigService
-  ) {}
-
-  async getUserFromCode(code: string, codeVerifier: string): Promise<OAuthUserPayload> {
-    const clientId = this.configService.get<string>("GOOGLE_CLIENT_ID");
-    const clientSecret = this.configService.get<string>("GOOGLE_CLIENT_SECRET");
-    const redirectUri = this.configService.get<string>("GOOGLE_REDIRECT_URI");
+  constructor(configService: ConfigService) {
+    const clientId = configService.get<string>("GOOGLE_CLIENT_ID");
+    const clientSecret = configService.get<string>("GOOGLE_CLIENT_SECRET");
+    const redirectUri = configService.get<string>("GOOGLE_REDIRECT_URI");
 
     if (!clientId || !clientSecret || !redirectUri) {
-      throw new UnauthorizedException("Google OAuth configuration missing");
+      throw new InternalServerErrorException(
+        "Missing Google OAuth configuration: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URI are required"
+      );
     }
 
+    this.clientId = clientId;
+    this.clientSecret = clientSecret;
+    this.redirectUri = redirectUri;
+  }
+
+  async getUserFromCode(code: string, codeVerifier: string): Promise<OAuthUserPayload> {
     let tokenRes: Response;
     try {
       tokenRes = await fetch("https://oauth2.googleapis.com/token", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
-          client_id: clientId,
-          client_secret: clientSecret,
+          client_id: this.clientId,
+          client_secret: this.clientSecret,
           code,
           code_verifier: codeVerifier,
-          redirect_uri: redirectUri,
+          redirect_uri: this.redirectUri,
           grant_type: "authorization_code",
         }),
       });
@@ -58,24 +65,21 @@ export class GoogleAuthService {
   }
 
   async verifyToken(token: string): Promise<OAuthUserPayload> {
-    if (!this.configService.get<string>("GOOGLE_CLIENT_ID")) {
-      this.logger.error("GOOGLE_CLIENT_ID is not configured");
-      throw new UnauthorizedException("Google authentication is not configured");
-    }
-
-    let userInfo: GoogleUserInfo;
+    let response: Response;
     try {
-      const response = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+      response = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (!response.ok) {
-        throw new UnauthorizedException("Invalid Google token");
-      }
-      userInfo = await response.json() as GoogleUserInfo;
     } catch (error) {
-      this.logger.warn(`Google token verification failed: ${getExcerrMessage(error)}`);
+      this.logger.warn(`Google userinfo endpoint unreachable: ${getExcerrMessage(error)}`);
       throw new UnauthorizedException("Invalid Google token");
     }
+
+    if (!response.ok) {
+      throw new UnauthorizedException("Invalid Google token");
+    }
+
+    const userInfo = await response.json() as GoogleUserInfo;
 
     if (!userInfo.email_verified) {
       throw new UnauthorizedException("Google email not verified");
@@ -86,7 +90,7 @@ export class GoogleAuthService {
 
     return {
       email: userInfo.email,
-      name: userInfo.name ?? ""
+      name: userInfo.name ?? userInfo.email.split("@")[0]
     };
   }
 }
