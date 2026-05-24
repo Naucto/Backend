@@ -16,7 +16,6 @@ import {
   MicrosoftLoginDto
 } from "./dto/login.dto";
 import { ChangePasswordDto } from "./dto/change-password.dto";
-import { AuthResponseDto } from "./dto/auth-response.dto";
 import { CreateUserDto } from "@user/dto/create-user.dto";
 import {
   ApiOperation,
@@ -58,7 +57,11 @@ export class AuthController {
   @ApiResponse({
     status: 201,
     description: "User logged in successfully",
-    type: AuthResponseDto
+    schema: {
+      type: "object",
+      properties: { access_token: { type: "string", example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." } },
+      required: ["access_token"]
+    }
   })
   @ApiResponse({ status: 400, description: "Bad request" })
   @ApiResponse({ status: 401, description: "Invalid credentials" })
@@ -82,7 +85,11 @@ export class AuthController {
   @ApiResponse({
     status: 201,
     description: "User registered successfully",
-    type: AuthResponseDto
+    schema: {
+      type: "object",
+      properties: { access_token: { type: "string", example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." } },
+      required: ["access_token"]
+    }
   })
   @ApiResponse({ status: 400, description: "Bad request" })
   @ApiResponse({ status: 409, description: "Email already in use" })
@@ -102,7 +109,15 @@ export class AuthController {
   @Post("google/code")
   @ApiOperation({ summary: "Authenticate with Google authorization code + PKCE" })
   @ApiBody({ type: GoogleCodeDto })
-  @ApiResponse({ status: 201, description: "Login successful with Google", type: AuthResponseDto })
+  @ApiResponse({
+    status: 201,
+    description: "Login successful with Google",
+    schema: {
+      type: "object",
+      properties: { access_token: { type: "string", example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." } },
+      required: ["access_token"]
+    }
+  })
   @ApiResponse({ status: 401, description: "Invalid Google code or code_verifier" })
   async loginWithGoogleCode(
     @Body() dto: GoogleCodeDto,
@@ -124,7 +139,11 @@ export class AuthController {
   @ApiResponse({
     status: 201,
     description: "Login successful with GitHub",
-    type: AuthResponseDto
+    schema: {
+      type: "object",
+      properties: { access_token: { type: "string", example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." } },
+      required: ["access_token"]
+    }
   })
   @ApiResponse({ status: 401, description: "Invalid or expired GitHub code" })
   async loginWithGithub(
@@ -147,7 +166,11 @@ export class AuthController {
   @ApiResponse({
     status: 201,
     description: "Login successful with Microsoft",
-    type: AuthResponseDto
+    schema: {
+      type: "object",
+      properties: { access_token: { type: "string", example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." } },
+      required: ["access_token"]
+    }
   })
   @ApiResponse({
     status: 401,
@@ -172,7 +195,11 @@ export class AuthController {
   @ApiResponse({
     status: 201,
     description: "Access token refreshed successfully",
-    type: AuthResponseDto
+    schema: {
+      type: "object",
+      properties: { access_token: { type: "string", example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." } },
+      required: ["access_token"]
+    }
   })
   @ApiResponse({ status: 401, description: "Refresh token missing or invalid" })
   async refresh(
