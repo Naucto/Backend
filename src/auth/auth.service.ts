@@ -4,7 +4,8 @@ import {
   UnauthorizedException,
   InternalServerErrorException,
   BadRequestException,
-  Inject
+  Inject,
+  Logger
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { UserService } from "@user/user.service";
@@ -23,6 +24,8 @@ import { v4 as uuidv4 } from "uuid";
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
@@ -236,6 +239,7 @@ export class AuthService {
 
   async revokeRefreshToken(token: string): Promise<void> {
     try {
+      // decode (not verify) so that expired tokens can still be revoked at logout
       const decoded = this.jwtService.decode(token) as JwtPayload;
       if (!decoded || !decoded.sub) return;
 
@@ -252,7 +256,7 @@ export class AuthService {
         }
       }
     } catch (error) {
-      console.error("Error revoking token:", error);
+      this.logger.warn(`Failed to revoke refresh token: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
