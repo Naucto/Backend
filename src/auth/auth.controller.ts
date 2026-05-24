@@ -141,7 +141,7 @@ export class AuthController {
 
   @Post("microsoft")
   @ApiOperation({
-    summary: "Authenticate with Microsoft OAuth authorization code"
+    summary: "Authenticate with Microsoft ID token"
   })
   @ApiBody({ type: MicrosoftLoginDto })
   @ApiResponse({
@@ -151,7 +151,7 @@ export class AuthController {
   })
   @ApiResponse({
     status: 401,
-    description: "Invalid Microsoft code or code_verifier"
+    description: "Invalid Microsoft ID token"
   })
   async loginWithMicrosoft(
     @Body() microsoftLoginDto: MicrosoftLoginDto,
