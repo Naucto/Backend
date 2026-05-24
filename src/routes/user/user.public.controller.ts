@@ -5,8 +5,8 @@ import { S3Service } from "@s3/s3.service";
 import { CloudfrontService } from "src/routes/s3/edge.service";
 import { UserService } from "./user.service";
 import { PublicUserProfileResponseDto } from "./dto/public-user-profile-response.dto";
-import { ProjectService } from "../project/project.service";
-import { ProjectExResponseDto } from "../project/dto/project-response.dto";
+import { ProjectService } from "@project/project.service";
+import { ProjectExResponseDto } from "@project/dto/project-response.dto";
 
 const DEFAULT_GAMES_PAGE = 1;
 const DEFAULT_GAMES_LIMIT = 20;
