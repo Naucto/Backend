@@ -36,6 +36,12 @@ export class AuthService {
     @Inject(ConfigService) private readonly configService: ConfigService
   ) {}
 
+  getRefreshTokenMaxAgeMs(): number {
+    return timespanToMs(
+      parseExpiresIn(this.configService.get<string>("JWT_REFRESH_EXPIRES_IN"), "7d")
+    );
+  }
+
   async generateTokens(
     payload: JwtPayload,
     userId: number
