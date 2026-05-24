@@ -77,6 +77,14 @@ This project is open source. You are welcome to contribute on GitHub at the foll
 
 ---
 
+### 🛠️ Testing 
+
+To run the tests, use the following command:
+
+```bash
+npm run test
+```
+
 ### 📄 License
 
 This project is licensed under the **GNU General Public License v3.0 (GPLv3)**.
