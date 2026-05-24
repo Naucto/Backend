@@ -2,10 +2,10 @@ import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 
 export class PublicUserProfileDto {
   @ApiProperty({ description: "User ID", example: 1 })
-  id!: number;
+    id!: number;
 
   @ApiProperty({ description: "Username", example: "xX_DarkGamer_Xx" })
-  username!: string;
+    username!: string;
 
   @ApiPropertyOptional({
     description: "User nickname / bio",
@@ -13,7 +13,7 @@ export class PublicUserProfileDto {
     type: String,
     nullable: true
   })
-  nickname?: string | null;
+    nickname?: string | null;
 
   @ApiPropertyOptional({
     description: "User profile description",
@@ -21,7 +21,7 @@ export class PublicUserProfileDto {
     type: String,
     nullable: true
   })
-  description?: string | null;
+    description?: string | null;
 
   @ApiPropertyOptional({
     description: "Public CDN URL of the profile image (if any)",
@@ -29,7 +29,7 @@ export class PublicUserProfileDto {
     type: String,
     nullable: true
   })
-  profileImageUrl?: string | null;
+    profileImageUrl?: string | null;
 
   @ApiPropertyOptional({
     description: "Public CDN URL of the profile background image (if any)",
@@ -37,5 +37,5 @@ export class PublicUserProfileDto {
     type: String,
     nullable: true
   })
-  backgroundImageUrl?: string | null;
+    backgroundImageUrl?: string | null;
 }
