@@ -21,16 +21,6 @@ export class LoginDto {
   password!: string;
 }
 
-export class GoogleLoginDto {
-  @ApiProperty({
-    description: "Google OAuth access token",
-    example: "ya29.a0AfH6SMB..."
-  })
-  @IsString()
-  @IsNotEmpty()
-  token!: string;
-}
-
 export class GoogleCodeDto {
   @ApiProperty({ description: "Google authorization code" })
   @IsString()

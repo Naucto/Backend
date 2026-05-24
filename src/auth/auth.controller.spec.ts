@@ -100,50 +100,6 @@ describe("AuthController", () => {
     expect(result).toEqual({ access_token: "token456" });
   });
 
-  it("should call authService.loginWithGoogle and return access_token", async () => {
-    const googleToken = "google-oauth-token";
-    const expectedResult = {
-      access_token: "google-token789",
-      refresh_token: "refresh789"
-    };
-
-    const authServiceWithGoogle = {
-      ...authService,
-      loginWithGoogle: jest.fn().mockResolvedValue(expectedResult)
-    };
-
-    const module: TestingModule = await Test.createTestingModule({
-      controllers: [AuthController],
-      providers: [
-        {
-          provide: AuthService,
-          useValue: authServiceWithGoogle
-        },
-        {
-          provide: PrismaService,
-          useValue: {
-            $connect: jest.fn(),
-            $disconnect: jest.fn()
-          }
-        },
-        ConfigService
-      ]
-    }).compile();
-
-    const testController = module.get<AuthController>(AuthController);
-    const mockRes: Partial<Response> = { cookie: jest.fn() };
-    const result = await testController.loginWithGoogle(
-      { token: googleToken },
-      mockRes as Response
-    );
-
-    expect(authServiceWithGoogle.loginWithGoogle).toHaveBeenCalledWith(
-      googleToken
-    );
-    expect(mockRes.cookie).toHaveBeenCalled();
-    expect(result).toEqual({ access_token: "google-token789" });
-  });
-
   it("should refresh access token using refresh_token cookie", async () => {
     const refreshToken = "valid-refresh-token";
     const expectedResult = {

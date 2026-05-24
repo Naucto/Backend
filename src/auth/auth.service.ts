@@ -165,11 +165,6 @@ export class AuthService {
     return { access_token, refresh_token };
   }
 
-  async loginWithGoogle(token: string): Promise<AuthResponseDto> {
-    const { email, name } = await this.googleAuthService.verifyToken(token);
-    return this.loginWithOAuth(email, name);
-  }
-
   async loginWithGoogleCode(code: string, codeVerifier: string): Promise<AuthResponseDto> {
     const { email, name } = await this.googleAuthService.getUserFromCode(code, codeVerifier);
     return this.loginWithOAuth(email, name);

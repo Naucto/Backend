@@ -11,7 +11,6 @@ import {
 import { AuthService } from "./auth.service";
 import {
   LoginDto,
-  GoogleLoginDto,
   GoogleCodeDto,
   GithubLoginDto,
   MicrosoftLoginDto
@@ -94,27 +93,6 @@ export class AuthController {
   ): Promise<{ access_token: string }> {
     const { access_token, refresh_token } =
       await this.authService.register(createUserDto);
-
-    this.setRefreshCookie(res, refresh_token);
-
-    return { access_token };
-  }
-
-  @Post("google")
-  @ApiOperation({ summary: "Authenticate with Google OAuth token" })
-  @ApiBody({ type: GoogleLoginDto })
-  @ApiResponse({
-    status: 201,
-    description: "Login successful with Google",
-    type: AuthResponseDto
-  })
-  @ApiResponse({ status: 401, description: "Invalid Google token" })
-  async loginWithGoogle(
-    @Body() googleLoginDto: GoogleLoginDto,
-    @Res({ passthrough: true }) res: Response
-  ): Promise<{ access_token: string }> {
-    const { access_token, refresh_token } =
-      await this.authService.loginWithGoogle(googleLoginDto.token);
 
     this.setRefreshCookie(res, refresh_token);
 
