@@ -33,7 +33,7 @@ export class UserPublicController {
   }
 
   @Public()
-  @Get("public/:id/profile")
+  @Get(":id/profile")
   @ApiOperation({ summary: "Get a public user profile by ID" })
   @ApiParam({ name: "id", description: "User ID" })
   @ApiResponse({
@@ -61,7 +61,7 @@ export class UserPublicController {
   }
 
   @Public()
-  @Get("public/username/:username/profile")
+  @Get("username/:username/profile")
   @ApiOperation({ summary: "Get a public user profile by username" })
   @ApiParam({ name: "username", description: "Username" })
   @ApiResponse({
@@ -93,7 +93,7 @@ export class UserPublicController {
   }
 
   @Public()
-  @Get("public/:id/likes")
+  @Get(":id/likes")
   @ApiOperation({ summary: "Get a user's liked published games" })
   @ApiParam({ name: "id", description: "User ID" })
   @ApiQuery({
@@ -124,7 +124,7 @@ export class UserPublicController {
   }
 
   @Public()
-  @Get("public/:id/published-games")
+  @Get(":id/published-games")
   @ApiOperation({ summary: "Get a user's published games" })
   @ApiParam({ name: "id", description: "User ID" })
   @ApiQuery({
