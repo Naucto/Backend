@@ -33,10 +33,7 @@ export class UserService {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
 
-    return {
-      ...user,
-      description: user.description
-    };
+    return user;
   }
 
   async findPublicProfileByUsername(username: string): Promise<{
@@ -59,10 +56,7 @@ export class UserService {
       throw new NotFoundException(`User with username ${username} not found`);
     }
 
-    return {
-      ...user,
-      description: user.description
-    };
+    return user;
   }
 
   async updateMyProfile(
@@ -91,10 +85,7 @@ export class UserService {
       }
     });
 
-    return {
-      ...updatedUser,
-      description: updatedUser.description
-    };
+    return updatedUser;
   }
 
   async findRolesByNames(names: string[]): Promise<Role[]> {

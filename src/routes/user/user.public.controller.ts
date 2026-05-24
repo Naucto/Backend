@@ -1,5 +1,5 @@
 import { Controller, Get, HttpStatus, Param, ParseIntPipe, Query } from "@nestjs/common";
-import { ApiExtraModels, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from "@nestjs/swagger";
+import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { Public } from "@auth/decorators/public.decorator";
 import { S3Service } from "@s3/s3.service";
 import { CloudfrontService } from "src/routes/s3/edge.service";
@@ -12,7 +12,6 @@ const DEFAULT_GAMES_PAGE = 1;
 const DEFAULT_GAMES_LIMIT = 20;
 
 @ApiTags("users")
-@ApiExtraModels(PublicUserProfileResponseDto)
 @Controller("users/public")
 export class UserPublicController {
   constructor(
