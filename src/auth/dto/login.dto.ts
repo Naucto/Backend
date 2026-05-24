@@ -23,8 +23,8 @@ export class LoginDto {
 
 export class GoogleLoginDto {
   @ApiProperty({
-    description: "Google ID token",
-    example: "eyJhbGciOiJSUzI1NiIs..."
+    description: "Google OAuth access token",
+    example: "ya29.a0AfH6SMB..."
   })
   @IsString()
   @IsNotEmpty()
