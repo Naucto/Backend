@@ -35,7 +35,7 @@ export class UserService {
 
     return {
       ...user,
-      description: user.description ?? user.nickname
+      description: user.description
     };
   }
 
@@ -61,7 +61,7 @@ export class UserService {
 
     return {
       ...user,
-      description: user.description ?? user.nickname
+      description: user.description
     };
   }
 
