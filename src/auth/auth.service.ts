@@ -2,7 +2,9 @@ import {
   Injectable,
   ConflictException,
   UnauthorizedException,
-  Inject
+  Inject,
+  ForbiddenException,
+  Optional
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { UserService } from "@user/user.service";
@@ -15,6 +17,8 @@ import { CreateUserDto } from "@user/dto/create-user.dto";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { ConfigService } from "@nestjs/config";
 import { parseExpiresIn, timespanToMs } from "./auth.utils";
+import { AccountStatus, AnalyticsEventType } from "@prisma/client";
+import { AnalyticsService } from "src/analytics/analytics.service";
 
 @Injectable()
 export class AuthService {
@@ -23,7 +27,8 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly googleAuthService: GoogleAuthService,
     private readonly prisma: PrismaService,
-    @Inject(ConfigService) private readonly configService: ConfigService
+    @Inject(ConfigService) private readonly configService: ConfigService,
+    @Optional() private readonly analyticsService?: AnalyticsService
   ) {}
 
   async generateTokens(
@@ -68,6 +73,9 @@ export class AuthService {
         "This account cannot authenticate with a password."
       );
     }
+    if (user.accountStatus === AccountStatus.BANNED) {
+      throw new ForbiddenException("This account has been banned.");
+    }
 
     const passwordValid = await bcrypt.compare(password, user.password);
     if (!passwordValid) {
@@ -88,6 +96,10 @@ export class AuthService {
         payload,
         user.id
       );
+
+      await this.analyticsService?.record(AnalyticsEventType.LOGIN, {
+        userId: user.id
+      });
 
       return {
         access_token,
@@ -113,6 +125,10 @@ export class AuthService {
     createUserDto.roles = [];
 
     const newUser = await this.userService.create(createUserDto);
+
+    await this.analyticsService?.record(AnalyticsEventType.ACCOUNT_CREATED, {
+      userId: newUser.id
+    });
 
     const payload = { sub: newUser.id, email: newUser.email };
     const { access_token, refresh_token } = await this.generateTokens(
@@ -141,6 +157,12 @@ export class AuthService {
         password: "",
         roles: []
       });
+      await this.analyticsService?.record(AnalyticsEventType.ACCOUNT_CREATED, {
+        userId: user.id,
+        metadata: { provider: "google" }
+      });
+    } else if (user.accountStatus === AccountStatus.BANNED) {
+      throw new ForbiddenException("This account has been banned.");
     }
 
     const payload: JwtPayload = { sub: user.id, email: user.email };
@@ -148,6 +170,11 @@ export class AuthService {
       payload,
       user.id
     );
+
+    await this.analyticsService?.record(AnalyticsEventType.LOGIN, {
+      userId: user.id,
+      metadata: { provider: "google" }
+    });
 
     return { access_token, refresh_token };
   }

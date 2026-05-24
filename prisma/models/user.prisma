@@ -1,10 +1,20 @@
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
 model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  username  String   @unique
-  nickname  String?
-  password  String
-  createdAt DateTime @default(now())
+  id               Int           @id @default(autoincrement())
+  email            String        @unique
+  username         String        @unique
+  nickname         String?
+  password         String
+  createdAt        DateTime      @default(now())
+  accountStatus    AccountStatus @default(ACTIVE)
+  moderationReason String?
+  moderatedAt      DateTime?
+  moderatedById    Int?          @map("moderated_by_id")
 
   roles Role[] @relation("UserRoles")
 
@@ -26,6 +36,9 @@ model User {
   hostingGameSessions GameSession[] @relation("UserHostedGameSessions")
 
   refreshTokens RefreshToken[]
+  reports       Report[]           @relation("ReportReporter")
+  auditActions  ModerationAction[] @relation("ModerationActor")
+  analyticsEvents AnalyticsEvent[] @relation("AnalyticsActor")
 }
 
 model Role {

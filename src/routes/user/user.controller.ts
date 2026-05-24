@@ -34,6 +34,7 @@ import {
 } from "@nestjs/swagger";
 import { Request } from "@nestjs/common";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
+import { AccountWriteGuard } from "@auth/guards/account-write.guard";
 import { RolesGuard } from "@auth/guards/roles.guard";
 import { Roles } from "@auth/decorators/roles.decorator";
 import { Prisma } from "@prisma/client";
@@ -77,7 +78,7 @@ export class UserController {
     type: UserProfileResponseDto
   })
   @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, AccountWriteGuard)
   getProfile(@Request() req: RequestWithUser): UserDto {
     return req.user;
   }
@@ -272,7 +273,7 @@ export class UserController {
     status: HttpStatus.FORBIDDEN,
     description: "Insufficient permissions"
   })
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, AccountWriteGuard, RolesGuard)
   @Roles("Admin")
   async update(
     @Param("id", ParseIntPipe) id: number,
@@ -309,7 +310,7 @@ export class UserController {
     status: HttpStatus.FORBIDDEN,
     description: "Insufficient permissions"
   })
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, AccountWriteGuard, RolesGuard)
   @Roles("Admin")
   async remove(
     @Param("id", ParseIntPipe) id: number

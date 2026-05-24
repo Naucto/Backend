@@ -10,6 +10,62 @@ enum ProjectStatus {
   ARCHIVED
 }
 
+enum ReportTargetType {
+  USER
+  PROJECT
+  COMMENT
+}
+
+enum ReportStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED
+  DISMISSED
+}
+
+enum ModerationTargetType {
+  USER
+  PROJECT
+  COMMENT
+  REPORT
+}
+
+enum ModerationActionType {
+  SUSPEND_USER
+  BAN_USER
+  RESTORE_USER
+  HIDE_PROJECT
+  RESTORE_PROJECT
+  UNPUBLISH_PROJECT
+  HIDE_COMMENT
+  RESTORE_COMMENT
+  REVIEW_REPORT
+  RESOLVE_REPORT
+  DISMISS_REPORT
+  ANONYMIZE_USER
+  HARD_DELETE_USER
+  CREATE_STAFF_USER
+  UPDATE_ROLES
+}
+
+enum AnalyticsEventType {
+  ACCOUNT_CREATED
+  LOGIN
+  PROJECT_CREATED
+  PROJECT_PUBLISHED
+  PROJECT_UNPUBLISHED
+  COMMENT_CREATED
+  COMMENT_REPLIED
+  LIKE_CREATED
+  LIKE_REMOVED
+  GAME_VIEWED
+  GAME_SESSION_STARTED
+  GAME_SESSION_ENDED
+  WORK_SESSION_STARTED
+  WORK_SESSION_JOINED
+  WORK_SESSION_LEFT
+}
+
 model Project {
   id           Int               @id @default(autoincrement())
   name         String
@@ -34,6 +90,10 @@ model Project {
   contentUploadedAt DateTime? @map("content_uploaded_at")
 
   forkedFromId Int?      @map("forked_from_id")
+  hidden       Boolean   @default(false)
+  hiddenReason String?
+  hiddenAt     DateTime?
+  hiddenById   Int?      @map("hidden_by_id")
 
   // Relations
   forkedFrom    Project?      @relation("ProjectForks", fields: [forkedFromId], references: [id], onDelete: SetNull)
@@ -63,6 +123,10 @@ model Comment {
   replies   Comment[] @relation("CommentReplies")
   content   String
   deleted   Boolean   @default(false)
+  hidden    Boolean   @default(false)
+  hiddenReason String?
+  hiddenAt DateTime?
+  hiddenById Int?     @map("hidden_by_id")
   createdAt DateTime  @default(now())
 
   @@index([projectId])
@@ -79,4 +143,87 @@ model Like {
 
   @@unique([userId, projectId])
   @@index([projectId])
+}
+
+model Report {
+  id             Int              @id @default(autoincrement())
+  targetType     ReportTargetType
+  targetId       Int
+  reporter       User             @relation("ReportReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  reporterId     Int
+  reason         String
+  details        String?
+  status         ReportStatus     @default(OPEN)
+  resolutionNote String?
+  resolvedAt     DateTime?
+  resolvedById   Int?             @map("resolved_by_id")
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  moderationActions ModerationAction[]
+
+  @@index([targetType, targetId])
+  @@index([reporterId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model ModerationAction {
+  id         Int                  @id @default(autoincrement())
+  actor      User?                @relation("ModerationActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actorId    Int?
+  targetType ModerationTargetType
+  targetId   Int
+  action     ModerationActionType
+  reason     String?
+  before     Json?
+  after      Json?
+  report     Report?              @relation(fields: [reportId], references: [id], onDelete: SetNull)
+  reportId   Int?
+  createdAt  DateTime             @default(now())
+
+  @@index([actorId])
+  @@index([targetType, targetId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model AnalyticsEvent {
+  id        Int                @id @default(autoincrement())
+  type      AnalyticsEventType
+  user      User?              @relation("AnalyticsActor", fields: [userId], references: [id], onDelete: SetNull)
+  userId    Int?
+  projectId Int?
+  commentId Int?
+  metadata  Json?
+  createdAt DateTime           @default(now())
+
+  @@index([type])
+  @@index([userId])
+  @@index([projectId])
+  @@index([commentId])
+  @@index([createdAt])
+}
+
+model DailyAnalyticsRollup {
+  id                  Int      @id @default(autoincrement())
+  date                DateTime @db.Date
+  accountsCreated     Int      @default(0)
+  logins              Int      @default(0)
+  projectsCreated     Int      @default(0)
+  projectsPublished   Int      @default(0)
+  projectsUnpublished Int      @default(0)
+  commentsCreated     Int      @default(0)
+  likesCreated        Int      @default(0)
+  likesRemoved        Int      @default(0)
+  gameViews           Int      @default(0)
+  gameSessionsStarted Int      @default(0)
+  gameSessionsEnded   Int      @default(0)
+  workSessionsStarted Int      @default(0)
+  workSessionsJoined  Int      @default(0)
+  workSessionsLeft    Int      @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@unique([date])
 }

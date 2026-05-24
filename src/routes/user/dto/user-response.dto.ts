@@ -1,5 +1,6 @@
 import { ApiProperty } from "@nestjs/swagger";
 import { Expose, Type } from "class-transformer";
+import { AccountStatus } from "@prisma/client";
 
 export class UserRoleDto {
   @ApiProperty({ description: "Role ID", example: 1 })
@@ -43,6 +44,14 @@ export class UserResponseDto {
   @Expose()
   @Type(() => UserRoleDto)
   roles?: UserRoleDto[];
+
+  @ApiProperty({
+    description: "Current account moderation status",
+    enum: AccountStatus,
+    example: AccountStatus.ACTIVE
+  })
+  @Expose()
+  accountStatus!: AccountStatus;
 
   @ApiProperty({
     description: "User creation date",

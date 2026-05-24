@@ -1,5 +1,5 @@
-import { Injectable } from "@nestjs/common";
-import { GameSession, GameSessionVisibility, User } from "@prisma/client";
+import { Injectable, Optional } from "@nestjs/common";
+import { AnalyticsEventType, GameSession, GameSessionVisibility, User } from "@prisma/client";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { UserService } from "@user/user.service";
 import { ProjectService } from "@project/project.service";
@@ -9,6 +9,7 @@ import { WebRTCServer } from "@webrtc/server/webrtc.server";
 import { WebRTCService } from "@webrtc/webrtc.service";
 import { OpenHostResponseDto } from "./dto/open-host.dto";
 import { JoinHostResponseDto } from "./dto/join-host.dto";
+import { AnalyticsService } from "src/analytics/analytics.service";
 
 // I made this "extended" type (Ex) for complex fields that do relations with
 // other stuff.
@@ -25,7 +26,8 @@ export class MultiplayerService {
     private _webrtcService: WebRTCService,
     private _userService: UserService,
     private _projectService: ProjectService,
-    private _prismaService: PrismaService
+    private _prismaService: PrismaService,
+    @Optional() private readonly _analyticsService?: AnalyticsService
   ) {
     this._multiplayerServer = new WebRTCServer(_webrtcService, "Multiplayer");
   }
@@ -33,7 +35,7 @@ export class MultiplayerService {
   async lookupHosts(projectId: number, userId: number): Promise<GameSessionEx[]> {
     const matchingGSes = await this._prismaService.gameSession.findMany({
       include: { otherUsers: true },
-      where: { projectId: projectId }
+      where: { projectId: projectId, endedAt: null }
     });
 
     if (!matchingGSes) {
@@ -95,6 +97,11 @@ export class MultiplayerService {
     });
 
     await this._userService.attachGameSession(userId, createdGS.id, true);
+    await this._analyticsService?.record(AnalyticsEventType.GAME_SESSION_STARTED, {
+      userId,
+      projectId,
+      metadata: { sessionId: createdGS.sessionId, visibility }
+    });
     
     const response = new OpenHostResponseDto();
     response.sessionUuid = createdGS.sessionId;
@@ -140,6 +147,16 @@ export class MultiplayerService {
         await this._userService.detachGameSession(user.id, hostedGS.id, false);
       })
     );
+
+    await this._prismaService.gameSession.update({
+      where: { id: hostedGS.id },
+      data: { endedAt: new Date() }
+    });
+    await this._analyticsService?.record(AnalyticsEventType.GAME_SESSION_ENDED, {
+      userId,
+      projectId,
+      metadata: { sessionId: hostedGS.sessionId }
+    });
   }
 
   async joinHost(joiningUserId: number, hostUuid: string): Promise<JoinHostResponseDto> {
@@ -167,6 +184,11 @@ export class MultiplayerService {
       data: {
         otherUsers: { connect: { id: joiningUserId } }
       }
+    });
+    await this._analyticsService?.record(AnalyticsEventType.GAME_SESSION_STARTED, {
+      userId: joiningUserId,
+      projectId: hostedGS.projectId,
+      metadata: { sessionId: hostedGS.sessionId, joined: true }
     });
 
     const response = new JoinHostResponseDto();
@@ -202,6 +224,11 @@ export class MultiplayerService {
       data: {
         otherUsers: { disconnect: { id: leavingUserId } }
       }
+    });
+    await this._analyticsService?.record(AnalyticsEventType.GAME_SESSION_ENDED, {
+      userId: leavingUserId,
+      projectId: hostedGS.projectId,
+      metadata: { sessionId: hostedGS.sessionId, left: true }
     });
   }
 }

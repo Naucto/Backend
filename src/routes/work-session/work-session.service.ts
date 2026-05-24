@@ -1,5 +1,5 @@
 import { PrismaService } from "@ourPrisma/prisma.service";
-import { WorkSession } from "@prisma/client";
+import { AnalyticsEventType, WorkSession } from "@prisma/client";
 import { UserDto } from "@auth/dto/user.dto";
 
 import { WebRTCService } from "@webrtc/webrtc.service";
@@ -10,8 +10,9 @@ import { UpdateWorkSessionDto } from "@work-session/dto/update-work-session.dto"
 import { FetchWorkSessionDto } from "@work-session/dto/fetch-work-session.dto";
 import { JoinWorkSessionDto } from "@work-session/dto/join-work-session.dto";
 
-import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException, Optional } from "@nestjs/common";
 import { uuidv4 } from "lib0/random";
+import { AnalyticsService } from "src/analytics/analytics.service";
 
 @Injectable()
 export class WorkSessionService {
@@ -26,7 +27,8 @@ export class WorkSessionService {
 
   constructor(
     private prismaService: PrismaService,
-    private webrtcService: WebRTCService
+    private webrtcService: WebRTCService,
+    @Optional() private readonly analyticsService?: AnalyticsService
   ) {
     this._collabServer = new YjsWebRTCServer(webrtcService, "Collaboration");
   }
@@ -96,6 +98,13 @@ export class WorkSessionService {
           }
         }
       }
+    }).then(async (workSession) => {
+      await this.analyticsService?.record(AnalyticsEventType.WORK_SESSION_STARTED, {
+        userId,
+        projectId: createWorkSessionDto.projectId,
+        metadata: { roomId: workSession.roomId }
+      });
+      return workSession;
     });
   }
 
@@ -153,6 +162,11 @@ export class WorkSessionService {
           roomId: uuidv4()
         }
       });
+      await this.analyticsService?.record(AnalyticsEventType.WORK_SESSION_STARTED, {
+        userId: user.id,
+        projectId,
+        metadata: { roomId: workSession.roomId }
+      });
     } else {
       this._logger.log(`Joining existing worksession for project ${projectId}`);
 
@@ -162,6 +176,11 @@ export class WorkSessionService {
           users: { connect: { id: user.id } },
           lastActiveAt: new Date()
         }
+      });
+      await this.analyticsService?.record(AnalyticsEventType.WORK_SESSION_JOINED, {
+        userId: user.id,
+        projectId,
+        metadata: { roomId: workSession.roomId }
       });
     }
 
@@ -200,6 +219,11 @@ export class WorkSessionService {
         },
         lastActiveAt: new Date()
       }
+    });
+    await this.analyticsService?.record(AnalyticsEventType.WORK_SESSION_LEFT, {
+      userId: user.id,
+      projectId,
+      metadata: { roomId: workSession.roomId }
     });
   }
 

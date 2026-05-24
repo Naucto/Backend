@@ -37,7 +37,9 @@ export class UserService {
   async create(createUserDto: CreateUserDto): Promise<User> {
     const hashedPassword = await bcrypt.hash(createUserDto.password, UserService.BCRYPT_SALT_ROUNDS);
 
-    const rolesToAssign: { id: number }[] = [];
+    const rolesToAssign = createUserDto.roles?.length
+      ? await this.findRolesByNames(createUserDto.roles)
+      : [];
 
     return this.prisma.user.create({
       data: {
@@ -46,7 +48,7 @@ export class UserService {
         nickname: createUserDto.nickname ?? null,
         password: hashedPassword,
         roles: {
-          connect: rolesToAssign
+          connect: rolesToAssign.map((role) => ({ id: role.id }))
         }
       }
     });
@@ -87,7 +89,7 @@ export class UserService {
     
     const data: Prisma.UserUpdateInput = {
       ...rest,
-      ...(roles ? { roles: { connect: roles.map(roleName => ({ name: roleName })) } } : {}),
+      ...(roles ? { roles: { set: roles.map(roleName => ({ name: roleName })) } } : {}),
     };
 
     if (updateUserDto.password) {

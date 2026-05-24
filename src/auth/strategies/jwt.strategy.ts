@@ -1,9 +1,9 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, UnauthorizedException } from "@nestjs/common";
 import { PassportStrategy } from "@nestjs/passport";
 import { ExtractJwt, Strategy, StrategyOptions } from "passport-jwt";
 import { ConfigService } from "@nestjs/config";
 import { UserService } from "@user/user.service";
-import { User } from "@prisma/client";
+import { AccountStatus, User } from "@prisma/client";
 import { JwtPayload } from "@auth/auth.types";
 
 @Injectable()
@@ -21,6 +21,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: JwtPayload): Promise<User | undefined> {
-    return this.userService.findOne(payload.sub);
+    const user = await this.userService.findOne(payload.sub);
+
+    if (user.accountStatus === AccountStatus.BANNED) {
+      throw new UnauthorizedException("This account has been banned.");
+    }
+
+    return user;
   }
 }

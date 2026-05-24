@@ -37,6 +37,7 @@ import type {
 import { CreateProjectDto } from "@project/dto/create-project.dto";
 import { UpdateProjectDto } from "@project/dto/update-project.dto";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
+import { AccountWriteGuard } from "@auth/guards/account-write.guard";
 import {
   ProjectCollaboratorGuard,
   ProjectCreatorGuard
@@ -82,7 +83,7 @@ interface RequestWithUser extends Request {
 
 @ApiTags("projects")
 @Controller("projects")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, AccountWriteGuard)
 @ApiBearerAuth("JWT-auth")
 export class ProjectController {
   constructor(
@@ -713,7 +714,7 @@ export class ProjectController {
     @Param("id", ParseIntPipe) id: number
   ): Promise<ImageUrlResponseDto> {
     const project = await this.prismaService.project.findFirst({
-      where: { id, status: "COMPLETED" },
+      where: { id, status: "COMPLETED", hidden: false },
       select: { id: true }
     });
 
@@ -1011,7 +1012,7 @@ export class ProjectController {
 
   @Public()
   @Post("releases/:id/like")
-  @UseGuards(OptionalJwtAuthGuard)
+  @UseGuards(OptionalJwtAuthGuard, AccountWriteGuard)
   @ApiOperation({
     summary:
       "Like a published project (toggle for authenticated users, increment for anonymous)"

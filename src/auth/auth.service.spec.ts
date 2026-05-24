@@ -16,6 +16,17 @@ jest.mock("bcryptjs", () => ({
 describe("AuthService", () => {
   let authService: AuthService;
 
+  const userRecord = <T extends object>(user: T): T & Pick<
+    User,
+    "accountStatus" | "moderationReason" | "moderatedAt" | "moderatedById"
+  > => ({
+    accountStatus: "ACTIVE",
+    moderationReason: null,
+    moderatedAt: null,
+    moderatedById: null,
+    ...user
+  });
+
   const userService: jest.Mocked<
     Pick<UserService, "findByEmail" | "findAll" | "create">
   > = {
@@ -81,14 +92,14 @@ describe("AuthService", () => {
     });
 
     it("should throw UnauthorizedException if password is invalid", async () => {
-      userService.findByEmail.mockResolvedValue({
+      userService.findByEmail.mockResolvedValue(userRecord({
         id: 1,
         email: "test@example.com",
         username: "testuser",
         nickname: null,
         password: "hashedPass",
         createdAt: new Date()
-      });
+      }));
 
       (bcrypt.compare as jest.Mock).mockResolvedValueOnce(false);
 
@@ -98,14 +109,14 @@ describe("AuthService", () => {
     });
 
     it("should return user if email and password are valid", async () => {
-      const mockUser = {
+      const mockUser = userRecord({
         id: 1,
         email: "test@example.com",
         password: "hashedPass",
         username: "testuser",
         nickname: null,
         createdAt: new Date()
-      };
+      });
       userService.findByEmail.mockResolvedValue(mockUser);
 
       const result = await authService.validateUser(
@@ -118,14 +129,14 @@ describe("AuthService", () => {
 
   describe("login", () => {
     it("should return access token if credentials are valid", async () => {
-      const mockUser = {
+      const mockUser = userRecord({
         id: 1,
         email: "test@example.com",
         password: "hashedPass",
         username: "testuser",
         nickname: null,
         createdAt: new Date()
-      };
+      });
 
       jest.spyOn(authService, "validateUser").mockResolvedValue(mockUser);
       jwtService.sign.mockReturnValue("token123");
@@ -159,14 +170,14 @@ describe("AuthService", () => {
 
           if (emailFilter === "exists@example.com") {
             return [
-              {
+              userRecord({
                 id: 1,
                 email: emailFilter,
                 username: "user",
                 nickname: null,
                 password: "hashedPass",
                 createdAt: new Date()
-              }
+              })
             ];
           }
           return [];
@@ -202,14 +213,14 @@ describe("AuthService", () => {
 
           if (usernameFilter === "existsUser") {
             return [
-              {
+              userRecord({
                 id: 2,
                 email: "user@example.com",
                 username: usernameFilter,
                 nickname: null,
                 password: "hashedPass",
                 createdAt: new Date()
-              }
+              })
             ];
           }
           return [];
@@ -229,14 +240,14 @@ describe("AuthService", () => {
     it("should create user and return access token", async () => {
       userService.findAll.mockResolvedValue([]);
 
-      const newUser = {
+      const newUser = userRecord({
         id: 1,
         email: "new@example.com",
         username: "newUser",
         nickname: null,
         password: "hashedPassword",
         createdAt: new Date()
-      };
+      });
 
       userService.create.mockResolvedValue(newUser);
       jwtService.sign.mockReturnValue("token123");
@@ -266,14 +277,14 @@ describe("AuthService", () => {
 
       userService.findByEmail.mockResolvedValue(undefined);
 
-      const newUser = {
+      const newUser = userRecord({
         id: 5,
         email: googleUser.email,
         username: "Google_User",
         nickname: null,
         password: "",
         createdAt: new Date()
-      };
+      });
       userService.create.mockResolvedValue(newUser);
       jwtService.sign.mockReturnValue("google-token-abc");
 
@@ -315,14 +326,14 @@ describe("AuthService", () => {
         name: "Existing User"
       };
 
-      const existingUser = {
+      const existingUser = userRecord({
         id: 6,
         email: googleUser.email,
         username: "existing_user",
         nickname: null,
         password: "somepass",
         createdAt: new Date()
-      };
+      });
 
       const googleAuthService = {
         verifyGoogleToken: jest.fn().mockResolvedValue(googleUser)
@@ -403,14 +414,14 @@ describe("AuthService", () => {
             token: "expired-token",
             userId: 1,
             expiresAt: expiredDate,
-            user: {
+            user: userRecord({
               id: 1,
               email: "user@example.com",
               username: "user",
               nickname: null,
               password: "pass",
               createdAt: new Date()
-            }
+            })
           }),
           delete: jest.fn(),
           create: jest.fn(),
@@ -462,14 +473,14 @@ describe("AuthService", () => {
             token: "valid-token",
             userId: 1,
             expiresAt: futureDate,
-            user: {
+            user: userRecord({
               id: 1,
               email: "user@example.com",
               username: "user",
               nickname: null,
               password: "pass",
               createdAt: new Date()
-            }
+            })
           }),
           create: jest.fn(),
           deleteMany: jest.fn()
@@ -537,14 +548,14 @@ describe("AuthService", () => {
 
   describe("validateUser edge cases", () => {
     it("should throw UnauthorizedException if user has no password", async () => {
-      const mockUser = {
+      const mockUser = userRecord({
         id: 1,
         email: "google@example.com",
         username: "googleuser",
         nickname: null,
         password: null,
         createdAt: new Date()
-      };
+      });
       userService.findByEmail.mockResolvedValue(mockUser as any);
 
       await expect(

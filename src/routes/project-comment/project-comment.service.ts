@@ -1,9 +1,10 @@
 import {
   ForbiddenException,
   Injectable,
-  NotFoundException
+  NotFoundException,
+  Optional
 } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { AnalyticsEventType, Prisma } from "@prisma/client";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import {
   CommentNotFoundException,
@@ -14,6 +15,7 @@ import {
   CommentResponseDto,
   PaginatedCommentsResponseDto
 } from "./dto/comment-response.dto";
+import { AnalyticsService } from "src/analytics/analytics.service";
 
 const AUTHOR_SELECT = {
   id: true,
@@ -46,7 +48,10 @@ type CommentRecord = CommentReplyRecord & {
 
 @Injectable()
 export class ProjectCommentService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly analyticsService?: AnalyticsService
+  ) {}
 
   private buildVisibleTopLevelCommentWhere(
     projectId: number
@@ -54,7 +59,11 @@ export class ProjectCommentService {
     return {
       projectId,
       parentId: null,
-      OR: [{ deleted: false }, { deleted: true, replies: { some: {} } }]
+      hidden: false,
+      OR: [
+        { deleted: false },
+        { deleted: true, replies: { some: { hidden: false } } }
+      ]
     };
   }
 
@@ -95,6 +104,7 @@ export class ProjectCommentService {
             include: {
               author: { select: AUTHOR_SELECT }
             },
+            where: { hidden: false },
             orderBy: { createdAt: "asc" }
           }
         },
@@ -122,14 +132,14 @@ export class ProjectCommentService {
   ): Promise<CommentResponseDto> {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      select: { status: true }
+      select: { status: true, hidden: true }
     });
 
     if (!project) {
       throw new NotFoundException(`Project with ID ${projectId} not found`);
     }
 
-    if (project.status !== "COMPLETED") {
+    if (project.status !== "COMPLETED" || project.hidden) {
       throw new CommentProjectNotPublishedException(projectId);
     }
 
@@ -142,6 +152,12 @@ export class ProjectCommentService {
       include: {
         author: { select: AUTHOR_SELECT }
       }
+    });
+
+    await this.analyticsService?.record(AnalyticsEventType.COMMENT_CREATED, {
+      userId,
+      projectId,
+      commentId: comment.id
     });
 
     return this.mapComment(comment);
@@ -159,7 +175,8 @@ export class ProjectCommentService {
         id: true,
         parentId: true,
         projectId: true,
-        deleted: true
+        deleted: true,
+        hidden: true
       }
     });
 
@@ -175,7 +192,7 @@ export class ProjectCommentService {
       throw new CommentNestedReplyException();
     }
 
-    if (parentComment.deleted) {
+    if (parentComment.deleted || parentComment.hidden) {
       throw new ForbiddenException("Cannot reply to a deleted comment");
     }
 
@@ -191,6 +208,13 @@ export class ProjectCommentService {
       }
     });
 
+    await this.analyticsService?.record(AnalyticsEventType.COMMENT_REPLIED, {
+      userId,
+      projectId,
+      commentId: reply.id,
+      metadata: { parentId: commentId }
+    });
+
     return this.mapComment(reply);
   }
 
@@ -201,7 +225,7 @@ export class ProjectCommentService {
   ): Promise<CommentResponseDto> {
     const comment = await this.prisma.comment.findUnique({
       where: { id: commentId },
-      select: { id: true, authorId: true }
+      select: { id: true, authorId: true, hidden: true }
     });
 
     if (!comment) {
@@ -210,6 +234,9 @@ export class ProjectCommentService {
 
     if (comment.authorId !== userId) {
       throw new ForbiddenException("You can only edit your own comments");
+    }
+    if (comment.hidden) {
+      throw new ForbiddenException("Cannot edit a hidden comment");
     }
 
     const updated = await this.prisma.comment.update({
@@ -260,22 +287,16 @@ export class ProjectCommentService {
       );
     }
 
-    if (comment._count.replies > 0) {
-      await this.prisma.comment.update({
-        where: { id: commentId },
-        data: { deleted: true, content: "" }
-      });
-    } else {
-      await this.prisma.comment.delete({
-        where: { id: commentId }
-      });
-    }
+    await this.prisma.comment.update({
+      where: { id: commentId },
+      data: { deleted: true }
+    });
   }
 
   private mapComment(comment: CommentRecord): CommentResponseDto {
     return {
       id: comment.id,
-      content: comment.content,
+      content: comment.deleted ? "" : comment.content,
       deleted: comment.deleted,
       createdAt: comment.createdAt,
       projectId: comment.projectId,

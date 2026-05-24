@@ -11,6 +11,7 @@ import {
 } from "@nestjs/common";
 import { WorkSessionService } from "./work-session.service";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
+import { AccountWriteGuard } from "@auth/guards/account-write.guard";
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -26,7 +27,7 @@ import { JoinWorkSessionDto } from "@work-session/dto/join-work-session.dto";
 @ApiTags("work-sessions")
 @Controller("work-sessions")
 @ApiBearerAuth("JWT-auth")
-@UseGuards(JwtAuthGuard, ProjectCollaboratorGuard)
+@UseGuards(JwtAuthGuard, AccountWriteGuard, ProjectCollaboratorGuard)
 export class WorkSessionController {
   constructor(private readonly workSessionService: WorkSessionService) {}
 

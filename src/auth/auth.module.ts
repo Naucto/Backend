@@ -5,11 +5,13 @@ import { JwtStrategy } from "./strategies/jwt.strategy";
 import { UserModule } from "@user/user.module";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import { RolesGuard } from "./guards/roles.guard";
+import { AccountWriteGuard } from "./guards/account-write.guard";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { MissingEnvVarError, BadEnvVarError } from "./auth.error";
 import { GoogleAuthService } from "./google-auth.service";
 import { Module, Logger } from "@nestjs/common";
+import { AnalyticsModule } from "src/analytics/analytics.module";
 
 type DurationString = `${number}${"s" | "m" | "h" | "d"}`;
 
@@ -23,6 +25,7 @@ function parseExpiresIn(v?: string): number | DurationString {
 @Module({
   imports: [
     ConfigModule,
+    AnalyticsModule,
     UserModule,
     PassportModule.register({}),
     JwtModule.registerAsync({
@@ -63,11 +66,12 @@ function parseExpiresIn(v?: string): number | DurationString {
   providers: [
     JwtAuthGuard,
     RolesGuard,
+    AccountWriteGuard,
     AuthService,
     GoogleAuthService,
     JwtStrategy
   ],
-  exports: [JwtAuthGuard, RolesGuard, JwtModule],
+  exports: [JwtAuthGuard, RolesGuard, AccountWriteGuard, JwtModule],
   controllers: [AuthController]
 })
 export class AuthModule {}

@@ -51,6 +51,10 @@ const mockProjects: ProjectWithCreatorAndCollaborators[] = [
     contentExtension: ".zip",
     contentUploadedAt: new Date(),
     forkedFromId: null,
+    hidden: false,
+    hiddenReason: null,
+    hiddenAt: null,
+    hiddenById: null,
     creator: {
       id: 42,
       email: "creator@example.com",
@@ -90,6 +94,10 @@ const mockProjects: ProjectWithCreatorAndCollaborators[] = [
     contentExtension: ".zip",
     contentUploadedAt: new Date(),
     forkedFromId: null,
+    hidden: false,
+    hiddenReason: null,
+    hiddenAt: null,
+    hiddenById: null,
     creator: {
       id: 42,
       email: "creator@example.com",
@@ -736,17 +744,17 @@ describe("ProjectService", () => {
       const result = await service.fetchPublishedGamesPaginated(2, 1);
 
       expect(prismaMock.project.count).toHaveBeenCalledWith({
-        where: { status: "COMPLETED" }
+        where: { status: "COMPLETED", hidden: false }
       });
       expect(prismaMock.project.findMany).toHaveBeenCalledWith({
-        where: { status: "COMPLETED" },
+        where: { status: "COMPLETED", hidden: false },
         include: {
           collaborators: { select: ProjectService.COLLABORATOR_SELECT },
           creator: { select: ProjectService.CREATOR_SELECT },
           _count: {
             select: {
               forks: true,
-              comments: { where: { deleted: false } }
+              comments: { where: { deleted: false, hidden: false } }
             }
           }
         },

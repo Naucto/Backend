@@ -23,6 +23,7 @@ import {
   ApiTags
 } from "@nestjs/swagger";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
+import { AccountWriteGuard } from "@auth/guards/account-write.guard";
 import { Public } from "@auth/decorators/public.decorator";
 import { UserDto } from "@auth/dto/user.dto";
 import { Request } from "express";
@@ -39,7 +40,7 @@ interface RequestWithUser extends Request {
 
 @ApiTags("comments")
 @Controller("projects/:projectId/comments")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, AccountWriteGuard)
 export class ProjectCommentController {
   constructor(private readonly projectCommentService: ProjectCommentService) {}
 

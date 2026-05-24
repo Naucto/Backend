@@ -97,7 +97,7 @@ describe("MultiplayerService", () => {
         password: "hashed",
         createdAt: new Date(),
         hostingGameSessions: []
-      } as User & { hostingGameSessions: GameSession[] });
+      } as unknown as User & { hostingGameSessions: GameSession[] });
       jest.spyOn(service["_projectService"], "findOne").mockResolvedValueOnce(null as any);
       await expect(service.openHost(1, 1, "PUBLIC" as GameSessionVisibility)).rejects.toThrow("Project with ID 1 not found");
     });
@@ -118,7 +118,7 @@ describe("MultiplayerService", () => {
           visibility: "PUBLIC" as GameSessionVisibility,
           sessionId: "uuid"
         }]
-      } as User & { hostingGameSessions: GameSession[] });
+      } as unknown as User & { hostingGameSessions: GameSession[] });
       jest.spyOn(service["_projectService"], "findOne").mockResolvedValueOnce({
         id: 1,
         name: "Project",
@@ -138,7 +138,7 @@ describe("MultiplayerService", () => {
         password: "hashed",
         createdAt: new Date(),
         hostingGameSessions: []
-      } as User & { hostingGameSessions: GameSession[] });
+      } as unknown as User & { hostingGameSessions: GameSession[] });
       jest.spyOn(service["_projectService"], "findOne").mockResolvedValueOnce({
         id: 1,
         name: "Project",
@@ -176,7 +176,7 @@ describe("MultiplayerService", () => {
         password: "hashed",
         createdAt: new Date(),
         hostingGameSessions: []
-      } as User & { hostingGameSessions: GameSession[] });
+      } as unknown as User & { hostingGameSessions: GameSession[] });
       jest.spyOn(service["_projectService"], "findOne").mockResolvedValueOnce(null as never);
       await expect(service.closeHost(1, 1)).rejects.toThrow();
     });
@@ -189,7 +189,7 @@ describe("MultiplayerService", () => {
         password: "hashed",
         createdAt: new Date(),
         hostingGameSessions: []
-      } as User & { hostingGameSessions: GameSession[] });
+      } as unknown as User & { hostingGameSessions: GameSession[] });
       jest.spyOn(service["_projectService"], "findOne").mockResolvedValueOnce({
         id: 1,
         name: "Project",
@@ -217,7 +217,7 @@ describe("MultiplayerService", () => {
           visibility: "PUBLIC" as GameSessionVisibility,
           sessionId: "uuid"
         }]
-      } as User & { hostingGameSessions: GameSession[] });
+      } as unknown as User & { hostingGameSessions: GameSession[] });
       jest.spyOn(service["_projectService"], "findOne").mockResolvedValueOnce({
         id: 1,
         name: "Project",
@@ -253,7 +253,7 @@ describe("MultiplayerService", () => {
         password: "hashed",
         createdAt: new Date(),
         joinedGameSessions: []
-      } as User & { joinedGameSessions: GameSession[] });
+      } as unknown as User & { joinedGameSessions: GameSession[] });
       jest.spyOn(service["_prismaService"].gameSession, "findUnique").mockResolvedValueOnce(null);
       await expect(service.joinHost(1, "uuid")).rejects.toThrow();
     });
@@ -273,7 +273,7 @@ describe("MultiplayerService", () => {
         password: "hashed",
         createdAt: new Date(),
         joinedGameSessions: []
-      } as User & { joinedGameSessions: GameSession[] });
+      } as unknown as User & { joinedGameSessions: GameSession[] });
       jest.spyOn(service["_prismaService"].gameSession, "findUnique").mockResolvedValueOnce(null);
       await expect(service.leaveHost(1, "uuid")).rejects.toThrow();
     });

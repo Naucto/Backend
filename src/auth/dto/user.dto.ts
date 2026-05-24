@@ -1,5 +1,6 @@
 import { ApiProperty } from "@nestjs/swagger";
 import { RoleDto } from "./role.dto";
+import { AccountStatus } from "@prisma/client";
 
 export class UserDto {
   @ApiProperty({ example: 1, description: "User ID" })
@@ -23,6 +24,13 @@ export class UserDto {
     description: "Date of creation"
   })
   createdAt!: Date;
+
+  @ApiProperty({
+    enum: AccountStatus,
+    example: AccountStatus.ACTIVE,
+    description: "Current account moderation status"
+  })
+  accountStatus!: AccountStatus;
 
   @ApiProperty({
     type: [RoleDto],

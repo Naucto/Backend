@@ -4,7 +4,8 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
-  NotFoundException
+  NotFoundException,
+  Optional
 } from "@nestjs/common";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { CreateProjectDto } from "./dto/create-project.dto";
@@ -14,10 +15,11 @@ import {
   RemoveCollaboratorDto
 } from "./dto/collaborator-project.dto";
 import { S3Service } from "@s3/s3.service";
-import { Prisma, Project, User } from "@prisma/client";
+import { AnalyticsEventType, Prisma, Project, User } from "@prisma/client";
 import { ConfigService } from "@nestjs/config";
 import { DownloadedFile } from "@s3/s3.interface";
 import { Readable } from "stream";
+import { AnalyticsService } from "src/analytics/analytics.service";
 
 export const CREATOR_SELECT = {
   id: true,
@@ -100,7 +102,8 @@ export class ProjectService {
   constructor(
     @Inject(ConfigService) configService: ConfigService,
     private prisma: PrismaService,
-    private readonly s3Service: S3Service
+    private readonly s3Service: S3Service,
+    @Optional() private readonly analyticsService?: AnalyticsService
   ) {
     this.max_history_version =
       configService.get<number>("S3_MAX_AUTO_HISTORY_VERSION") ?? 10;
@@ -180,7 +183,8 @@ export class ProjectService {
     filters: PublishedProjectFilters = {}
   ): Prisma.ProjectWhereInput {
     const where: Prisma.ProjectWhereInput = {
-      status: "COMPLETED"
+      status: "COMPLETED",
+      hidden: false
     };
     const andClauses: Prisma.ProjectWhereInput[] = [];
     const normalizedSearch = filters.search?.trim();
@@ -376,7 +380,7 @@ export class ProjectService {
     }
 
     try {
-      return await this.prisma.project.create({
+      const project = await this.prisma.project.create({
         data: {
           ...createProjectDto,
           tags: this.normalizeTags(createProjectDto.tags),
@@ -394,6 +398,13 @@ export class ProjectService {
           }
         }
       });
+
+      await this.analyticsService?.record(AnalyticsEventType.PROJECT_CREATED, {
+        userId,
+        projectId: project.id
+      });
+
+      return project;
     } catch (error) {
       throw new InternalServerErrorException("Failed to create project", {
         cause: error
@@ -687,6 +698,9 @@ export class ProjectService {
       keyName: releaseKey
     });
     await this.s3Service.setObjectPublicRead(releaseKey);
+    await this.analyticsService?.record(AnalyticsEventType.PROJECT_PUBLISHED, {
+      projectId
+    });
   }
 
   async unpublish(projectId: number): Promise<void> {
@@ -698,6 +712,9 @@ export class ProjectService {
     });
 
     await this.s3Service.deleteFile({ key: `release/${projectId}` });
+    await this.analyticsService?.record(AnalyticsEventType.PROJECT_UNPUBLISHED, {
+      projectId
+    });
   }
 
   async updateRelease(projectId: number): Promise<void> {
@@ -784,7 +801,9 @@ export class ProjectService {
   async fetchRelease(projectId: number): Promise<ReleaseProject> {
     const project = await this.prisma.project.findFirst({
       where: {
-        id: projectId
+        id: projectId,
+        status: "COMPLETED",
+        hidden: false
       },
       include: {
         collaborators: {
@@ -797,7 +816,7 @@ export class ProjectService {
           select: {
             forks: true,
             comments: {
-              where: { deleted: false }
+              where: { deleted: false, hidden: false }
             }
           }
         }
@@ -814,13 +833,25 @@ export class ProjectService {
   }
 
   async fetchReleaseContent(projectId: number): Promise<DownloadedFile> {
+    const project = await this.prisma.project.findFirst({
+      where: { id: projectId, status: "COMPLETED", hidden: false },
+      select: { id: true }
+    });
+
+    if (!project) {
+      throw new NotFoundException(
+        `Published project with ID ${projectId} not found`
+      );
+    }
+
     return this.s3Service.downloadFile({ key: `release/${projectId}` });
   }
 
   async fetchPublishedGames(): Promise<ReleaseProject[]> {
     const projects = await this.prisma.project.findMany({
       where: {
-        status: "COMPLETED"
+        status: "COMPLETED",
+        hidden: false
       },
       include: {
         collaborators: {
@@ -832,7 +863,7 @@ export class ProjectService {
         _count: {
           select: {
             forks: true,
-            comments: { where: { deleted: false } }
+            comments: { where: { deleted: false, hidden: false } }
           }
         }
       }
@@ -869,7 +900,7 @@ export class ProjectService {
           _count: {
             select: {
               forks: true,
-              comments: { where: { deleted: false } }
+              comments: { where: { deleted: false, hidden: false } }
             }
           }
         },
@@ -912,7 +943,8 @@ export class ProjectService {
     const project = await this.prisma.project.findFirst({
       where: {
         id: projectId,
-        status: "COMPLETED"
+        status: "COMPLETED",
+        hidden: false
       },
       select: { id: true }
     });
@@ -929,6 +961,10 @@ export class ProjectService {
       select: { viewCount: true }
     });
 
+    await this.analyticsService?.record(AnalyticsEventType.GAME_VIEWED, {
+      projectId
+    });
+
     return { viewCount: updated.viewCount };
   }
 
@@ -938,8 +974,8 @@ export class ProjectService {
     projectId: number,
     userId?: number
   ): Promise<{ likes: number; liked: boolean }> {
-    const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
+    const project = await this.prisma.project.findFirst({
+      where: { id: projectId, status: "COMPLETED", hidden: false },
       select: { id: true, likes: true }
     });
 
@@ -953,6 +989,10 @@ export class ProjectService {
         where: { id: projectId },
         data: { likes: { increment: 1 } },
         select: { likes: true }
+      });
+      await this.analyticsService?.record(AnalyticsEventType.LIKE_CREATED, {
+        projectId,
+        metadata: { anonymous: true }
       });
       return { likes: updated.likes, liked: true };
     }
@@ -980,6 +1020,10 @@ export class ProjectService {
         where: { id: projectId },
         select: { likes: true }
       });
+      await this.analyticsService?.record(AnalyticsEventType.LIKE_REMOVED, {
+        userId,
+        projectId
+      });
       return { likes: updated!.likes, liked: false };
     } else {
       // Not liked — like
@@ -996,6 +1040,10 @@ export class ProjectService {
       const updated = await this.prisma.project.findUnique({
         where: { id: projectId },
         select: { likes: true }
+      });
+      await this.analyticsService?.record(AnalyticsEventType.LIKE_CREATED, {
+        userId,
+        projectId
       });
       return { likes: updated!.likes, liked: true };
     }
@@ -1029,6 +1077,10 @@ export class ProjectService {
       where: { id: projectId },
       select: { likes: true }
     });
+    await this.analyticsService?.record(AnalyticsEventType.LIKE_REMOVED, {
+      userId,
+      projectId
+    });
     return { likes: updated!.likes, liked: false };
   }
 
@@ -1036,8 +1088,8 @@ export class ProjectService {
     projectId: number,
     userId: number
   ): Promise<{ likes: number; liked: boolean }> {
-    const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
+    const project = await this.prisma.project.findFirst({
+      where: { id: projectId, status: "COMPLETED", hidden: false },
       select: { likes: true }
     });
 
@@ -1055,8 +1107,8 @@ export class ProjectService {
   }
 
   async fork(sourceProjectId: number, userId: number): Promise<ProjectEx> {
-    const sourceProject = await this.prisma.project.findUnique({
-      where: { id: sourceProjectId }
+    const sourceProject = await this.prisma.project.findFirst({
+      where: { id: sourceProjectId, hidden: false }
     });
 
     if (!sourceProject) {
@@ -1095,6 +1147,12 @@ export class ProjectService {
         }
       }
     }) as ProjectEx;
+
+    await this.analyticsService?.record(AnalyticsEventType.PROJECT_CREATED, {
+      userId,
+      projectId: newProject.id,
+      metadata: { forkedFromId: sourceProjectId }
+    });
 
     const releaseContent = await this.s3Service.downloadFile({
       key: `release/${sourceProjectId}`
