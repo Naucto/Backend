@@ -19,7 +19,8 @@ describe("AuthController", () => {
           provide: AuthService,
           useValue: {
             login: jest.fn(),
-            register: jest.fn()
+            register: jest.fn(),
+            getRefreshTokenMaxAgeMs: jest.fn().mockReturnValue(7 * 24 * 60 * 60 * 1000)
           }
         },
         {
