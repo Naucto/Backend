@@ -8,12 +8,7 @@ import jwksRsa from "jwks-rsa";
 export class MicrosoftAuthService {
   private readonly clientId: string;
   private readonly tenantId: string;
-  private readonly jwksClient = jwksRsa({
-    jwksUri: "https://login.microsoftonline.com/common/discovery/v2.0/keys",
-    cache: true,
-    cacheMaxAge: 10 * 60 * 1000,
-    rateLimit: true,
-  });
+  private readonly jwksClient: jwksRsa.JwksClient;
 
   constructor(configService: ConfigService) {
     const clientId = configService.get<string>("MICROSOFT_CLIENT_ID");
@@ -27,6 +22,12 @@ export class MicrosoftAuthService {
 
     this.clientId = clientId;
     this.tenantId = tenantId;
+    this.jwksClient = jwksRsa({
+      jwksUri: `https://login.microsoftonline.com/${tenantId}/discovery/v2.0/keys`,
+      cache: true,
+      cacheMaxAge: 10 * 60 * 1000,
+      rateLimit: true,
+    });
   }
 
   async verifyToken(idToken: string): Promise<OAuthUserPayload> {
