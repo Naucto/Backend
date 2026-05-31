@@ -63,6 +63,47 @@ export class AuthService {
     return { access_token, refresh_token };
   }
 
+  async generateAdminTokens(
+    payload: JwtPayload,
+    userId: number
+  ): Promise<{
+    access_token: string;
+    refresh_token: string;
+    access_token_max_age_ms: number;
+    refresh_token_max_age_ms: number;
+  }> {
+    const accessTokenExpiresIn = parseExpiresIn(
+      this.configService.get<string>("JWT_ADMIN_ACCESS_EXPIRES_IN"),
+      "30m"
+    );
+    const refreshTokenExpiresIn = parseExpiresIn(
+      this.configService.get<string>("JWT_ADMIN_REFRESH_EXPIRES_IN"),
+      "8h"
+    );
+
+    const access_token = this.jwtService.sign(payload, {
+      expiresIn: accessTokenExpiresIn
+    });
+    const refresh_token = this.jwtService.sign(payload, {
+      expiresIn: refreshTokenExpiresIn
+    });
+
+    await this.prisma.refreshToken.create({
+      data: {
+        token: refresh_token,
+        userId,
+        expiresAt: new Date(Date.now() + timespanToMs(refreshTokenExpiresIn))
+      }
+    });
+
+    return {
+      access_token,
+      refresh_token,
+      access_token_max_age_ms: timespanToMs(accessTokenExpiresIn),
+      refresh_token_max_age_ms: timespanToMs(refreshTokenExpiresIn)
+    };
+  }
+
   async validateUser(email: string, password: string): Promise<UserDto> {
     const user = await this.userService.findByEmail(email);
     if (!user) {

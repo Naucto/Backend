@@ -47,6 +47,7 @@
         "dotenv": "^17.2.3",
         "express": "^5.2.1",
         "google-auth-library": "^10.5.0",
+        "helmet": "^8.2.0",
         "lib0": "^0.2.117",
         "multer": "^2.0.2",
         "passport": "^0.7.0",

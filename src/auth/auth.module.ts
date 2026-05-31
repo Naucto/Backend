@@ -2,6 +2,7 @@ import { PassportModule } from "@nestjs/passport";
 import { JwtModule } from "@nestjs/jwt";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { JwtStrategy } from "./strategies/jwt.strategy";
+import { AdminJwtStrategy } from "./strategies/admin-jwt.strategy";
 import { UserModule } from "@user/user.module";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import { RolesGuard } from "./guards/roles.guard";
@@ -69,9 +70,10 @@ function parseExpiresIn(v?: string): number | DurationString {
     AccountWriteGuard,
     AuthService,
     GoogleAuthService,
-    JwtStrategy
+    JwtStrategy,
+    AdminJwtStrategy
   ],
-  exports: [JwtAuthGuard, RolesGuard, AccountWriteGuard, JwtModule],
+  exports: [JwtAuthGuard, RolesGuard, AccountWriteGuard, JwtModule, AuthService],
   controllers: [AuthController]
 })
 export class AuthModule {}

@@ -17,6 +17,7 @@ import { setupGracefulShutdown } from "@tygra/nestjs-graceful-shutdown";
 
 import * as dotenv from "dotenv";
 import cookieParser from "cookie-parser";
+import helmet from "helmet";
 import { format } from "date-fns-tz";
 
 if (process.env["NODE_ENV"] === "production") {
@@ -41,8 +42,18 @@ if (process.env["NODE_ENV"] === "production") {
     "FRONTEND_URL",
     "http://localhost:3001"
   );
+  const adminPanelUrl = configService.get<string>(
+    "ADMIN_PANEL_URL",
+    "http://localhost:3002"
+  );
 
   app.use(cookieParser());
+  app.use(
+    helmet({
+      contentSecurityPolicy: false,
+      crossOriginResourcePolicy: { policy: "cross-origin" }
+    })
+  );
   app.useLogger(["log", "error", "warn", "debug"]);
 
   app.useGlobalPipes(
@@ -53,11 +64,25 @@ if (process.env["NODE_ENV"] === "production") {
     })
   );
 
+  const allowedOrigins = new Set(
+    [frontendUrl, adminPanelUrl].filter((url): url is string => Boolean(url))
+  );
+
   app.enableCors({
-    origin: frontendUrl,
+    origin: (
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void
+    ) => {
+      if (!origin || allowedOrigins.has(origin)) {
+        callback(null, true);
+      } else {
+        logger.warn(`CORS rejected request from origin: ${origin}`);
+        callback(new Error("CORS denied"));
+      }
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"]
+    allowedHeaders: ["Content-Type", "Authorization", "X-CSRF-Token"]
   });
 
   app.use((req: Request, res: Response, next: NextFunction) => {
@@ -93,4 +118,3 @@ if (process.env["NODE_ENV"] === "production") {
 
   logger.log(`Server listening on port ${actualPort}`);
 })();
-
