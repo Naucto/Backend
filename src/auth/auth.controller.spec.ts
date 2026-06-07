@@ -6,6 +6,13 @@ import { ConfigService } from "@nestjs/config";
 import { UnauthorizedException } from "@nestjs/common";
 
 import { Response, Request } from "express";
+import {
+  encryptRefreshToken,
+  decryptRefreshToken
+} from "./refresh-cookie.crypto";
+
+process.env["REFRESH_TOKEN_ENCRYPTION_KEY"] =
+  process.env["REFRESH_TOKEN_ENCRYPTION_KEY"] ?? "test-refresh-cookie-key";
 
 describe("AuthController", () => {
   let controller: AuthController;
@@ -58,9 +65,13 @@ describe("AuthController", () => {
       loginDto.email,
       loginDto.password
     );
-    expect(mockRes.cookie).toHaveBeenCalledWith(
-      "refresh_token",
-      "refresh123",
+    const [cookieName, cookieValue, cookieOptions] = (
+      mockRes.cookie as jest.Mock
+    ).mock.calls[0];
+    expect(cookieName).toBe("refresh_token");
+    expect(cookieValue).not.toBe("refresh123");
+    expect(decryptRefreshToken(cookieValue)).toBe("refresh123");
+    expect(cookieOptions).toEqual(
       expect.objectContaining({
         httpOnly: true,
         sameSite: "lax",
@@ -90,9 +101,13 @@ describe("AuthController", () => {
     );
 
     expect(authService.register).toHaveBeenCalledWith(createUserDto);
-    expect(mockRes.cookie).toHaveBeenCalledWith(
-      "refresh_token",
-      "refresh456",
+    const [cookieName, cookieValue, cookieOptions] = (
+      mockRes.cookie as jest.Mock
+    ).mock.calls[0];
+    expect(cookieName).toBe("refresh_token");
+    expect(cookieValue).not.toBe("refresh456");
+    expect(decryptRefreshToken(cookieValue)).toBe("refresh456");
+    expect(cookieOptions).toEqual(
       expect.objectContaining({
         httpOnly: true,
         sameSite: "lax"
@@ -133,7 +148,7 @@ describe("AuthController", () => {
 
     const testController = module.get<AuthController>(AuthController);
     const mockReq = {
-      cookies: { refresh_token: refreshToken }
+      cookies: { refresh_token: encryptRefreshToken(refreshToken) }
     } as unknown as Request;
     const mockRes: Partial<Response> = { cookie: jest.fn() };
     const result = await testController.refresh(mockReq, mockRes as Response);
@@ -141,11 +156,10 @@ describe("AuthController", () => {
     expect(authServiceWithRefresh.refreshToken).toHaveBeenCalledWith(
       refreshToken
     );
-    expect(mockRes.cookie).toHaveBeenCalledWith(
-      "refresh_token",
-      "new-refresh-token",
-      expect.any(Object)
-    );
+    const [cookieName, cookieValue] = (mockRes.cookie as jest.Mock).mock
+      .calls[0];
+    expect(cookieName).toBe("refresh_token");
+    expect(decryptRefreshToken(cookieValue)).toBe("new-refresh-token");
     expect(result).toEqual({ access_token: "new-access-token" });
   });
 
@@ -187,7 +201,7 @@ describe("AuthController", () => {
 
     const testController = module.get<AuthController>(AuthController);
     const mockReq = {
-      cookies: { refresh_token: refreshToken }
+      cookies: { refresh_token: encryptRefreshToken(refreshToken) }
     } as unknown as Request;
     const mockRes: Partial<Response> = {
       clearCookie: jest.fn()

@@ -27,6 +27,10 @@ import {
 import { Response, Request, CookieOptions } from "express";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import { RequestWithUser } from "./auth.types";
+import {
+  encryptRefreshToken,
+  decryptRefreshToken
+} from "./refresh-cookie.crypto";
 
 @ApiTags("auth")
 @Controller("auth")
@@ -45,7 +49,7 @@ export class AuthController {
   }
 
   private setRefreshCookie(res: Response, token: string): void {
-    res.cookie("refresh_token", token, {
+    res.cookie("refresh_token", encryptRefreshToken(token), {
       ...this.getRefreshCookieOptions(),
       maxAge: this.authService.getRefreshTokenMaxAgeMs()
     });
@@ -206,9 +210,17 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response
   ): Promise<{ access_token: string }> {
-    const refresh_token = req.cookies["refresh_token"];
-    if (!refresh_token)
+    const refresh_cookie = req.cookies["refresh_token"];
+    if (!refresh_cookie)
       throw new UnauthorizedException("Refresh token missing");
+
+    let refresh_token: string;
+    try {
+      refresh_token = decryptRefreshToken(refresh_cookie);
+    } catch {
+      res.clearCookie("refresh_token", this.getRefreshCookieOptions());
+      throw new UnauthorizedException("Invalid refresh token");
+    }
 
     const { access_token, refresh_token: new_refresh_token } =
       await this.authService.refreshToken(refresh_token);
@@ -255,9 +267,15 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response
   ): Promise<{ success: boolean }> {
-    const refresh_token = req.cookies["refresh_token"];
-    if (refresh_token) {
-      await this.authService.revokeRefreshToken(refresh_token);
+    const refresh_cookie = req.cookies["refresh_token"];
+    if (refresh_cookie) {
+      try {
+        await this.authService.revokeRefreshToken(
+          decryptRefreshToken(refresh_cookie)
+        );
+      } catch {
+        // Ignore malformed/legacy cookies; the cookie is cleared below anyway.
+      }
       res.clearCookie("refresh_token", this.getRefreshCookieOptions());
     }
     return { success: true };
