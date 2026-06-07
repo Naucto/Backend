@@ -12,6 +12,7 @@ import { WebRTCModule } from "@webrtc/webrtc.module";
 import { WebRTCService } from "@webrtc/webrtc.service";
 import { MultiplayerModule } from "@multiplayer/multiplayer.module";
 import { ProjectCommentModule } from "@project-comment/project-comment.module";
+import { NotificationsModule } from "src/notifications/notifications.module";
 import { AppConfig } from "src/app.config";
 import {
   GracefulShutdownModule,
@@ -42,7 +43,8 @@ import {
     TasksModule,
     WebRTCModule,
     MultiplayerModule,
-    ProjectCommentModule
+    ProjectCommentModule,
+    NotificationsModule
   ],
   providers: [AppConfig],
   exports: [AppConfig]

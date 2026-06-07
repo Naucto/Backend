@@ -1,13 +1,33 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { PrismaService } from "@prisma/prisma.service";
-import { CreateNotificationInput, NotificationPayload } from "./notifications.types";
-import { emitNotificationToUser } from "./notifications.socket";
+import { JwtService } from "@nestjs/jwt";
+import { PrismaService } from "@ourPrisma/prisma.service";
+import { WebRTCOfferDto } from "@webrtc/webrtc.dto";
+import { WebRTCService } from "@webrtc/webrtc.service";
+import { CreateNotificationInput, NotificationPayload, NotificationType } from "./notifications.types";
+import { NotificationWebRTCServer } from "./notifications.webrtc-server";
 
 const MAX_NOTIFICATIONS_PER_USER = 50;
 
 @Injectable()
 export class NotificationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly notificationServer: NotificationWebRTCServer;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly webrtcService: WebRTCService,
+    jwtService: JwtService
+  ) {
+    this.notificationServer = new NotificationWebRTCServer(
+      this.webrtcService,
+      "Notifications",
+      jwtService,
+      this
+    );
+  }
+
+  getWebRTCOffer(): WebRTCOfferDto {
+    return this.webrtcService.buildOffer(this.notificationServer);
+  }
 
   async getUserNotifications(userId: number): Promise<NotificationPayload[]> {
     const notifications = await this.prisma.notification.findMany({
@@ -52,7 +72,7 @@ export class NotificationsService {
     });
 
     const payload = this.toPayload(created);
-    emitNotificationToUser(input.userId, payload);
+    this.notificationServer.sendToUser(input.userId, payload);
     return payload;
   }
 
@@ -109,7 +129,7 @@ export class NotificationsService {
     userId: number;
     title: string;
     message: string;
-    type: string;
+    type: NotificationType;
     read: boolean;
     createdAt: Date;
   }): NotificationPayload {

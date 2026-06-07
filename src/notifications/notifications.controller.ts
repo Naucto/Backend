@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
@@ -16,6 +17,7 @@ import { RequestWithUser } from "@auth/auth.types";
 import { NotificationTestDto } from "./dto/notification-test.dto";
 import { NotificationsService } from "./notifications.service";
 import { NotificationPayload } from "./notifications.types";
+import { WebRTCOfferDto } from "@webrtc/webrtc.dto";
 
 @ApiTags("notifications")
 @ApiBearerAuth("JWT-auth")
@@ -23,6 +25,17 @@ import { NotificationPayload } from "./notifications.types";
 @Controller("notifications")
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
+
+  @ApiOperation({ summary: "Get notification websocket configuration" })
+  @ApiResponse({ status: HttpStatus.OK, description: "Notification websocket configuration" })
+  @Get("webrtc-offer")
+  getWebRTCOffer(): { statusCode: number; message: string; data: WebRTCOfferDto } {
+    return {
+      statusCode: HttpStatus.OK,
+      message: "Notification websocket configuration retrieved",
+      data: this.notificationsService.getWebRTCOffer()
+    };
+  }
 
   // TODO: Remove this endpoint after testing, or restrict it to admin users
   @ApiOperation({ summary: "Send a test notification to the current user" })
