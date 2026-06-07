@@ -274,7 +274,6 @@ export class AuthController {
           decryptRefreshToken(refresh_cookie)
         );
       } catch {
-        // Ignore malformed/legacy cookies; the cookie is cleared below anyway.
       }
       res.clearCookie("refresh_token", this.getRefreshCookieOptions());
     }

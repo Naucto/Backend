@@ -245,7 +245,6 @@ export class AuthService {
 
   async revokeRefreshToken(token: string): Promise<void> {
     try {
-      // decode (not verify) so that expired tokens can still be revoked at logout
       const decoded = this.jwtService.decode(token) as JwtPayload;
       if (!decoded || !decoded.sub) return;
 
