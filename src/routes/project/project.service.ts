@@ -934,7 +934,14 @@ export class ProjectService {
     return this.fetchPublishedGamesByUserWhere(
       {
         status: "COMPLETED",
-        userId
+        OR: [
+          { userId },
+          {
+            collaborators: {
+              some: { id: userId }
+            }
+          }
+        ]
       },
       page,
       limit
