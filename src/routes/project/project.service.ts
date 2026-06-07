@@ -129,6 +129,24 @@ export class ProjectService {
     );
   }
 
+  private normalizePagination(
+    page: number,
+    limit: number
+  ): { page: number; limit: number; skip: number } {
+    const safePage = Number.isFinite(page)
+      ? Math.max(DEFAULT_PAGE, Math.trunc(page))
+      : DEFAULT_PAGE;
+    const safeLimit = Number.isFinite(limit)
+      ? Math.min(MAX_LIMIT, Math.max(1, Math.trunc(limit)))
+      : DEFAULT_LIMIT;
+
+    return {
+      page: safePage,
+      limit: safeLimit,
+      skip: (safePage - 1) * safeLimit
+    };
+  }
+
   private withCommentCount(project: ProjectWithCounts): ReleaseProject {
     const { _count, ...rest } = project;
     return {
@@ -906,6 +924,78 @@ export class ProjectService {
     return this.prisma.project.count({
       where: this.buildUserProjectsWhere(userId, filters)
     });
+  }
+
+  async fetchPublishedGamesByUser(
+    userId: number,
+    page: number = DEFAULT_PAGE,
+    limit: number = DEFAULT_LIMIT
+  ): Promise<ReleaseProject[]> {
+    return this.fetchPublishedGamesByUserWhere(
+      {
+        status: "COMPLETED",
+        userId
+      },
+      page,
+      limit
+    );
+  }
+
+  async fetchLikedPublishedGamesByUser(
+    userId: number,
+    page: number = DEFAULT_PAGE,
+    limit: number = DEFAULT_LIMIT
+  ): Promise<ReleaseProject[]> {
+    return this.fetchPublishedGamesByUserWhere(
+      {
+        status: "COMPLETED",
+        userLikes: {
+          some: { userId }
+        }
+      },
+      page,
+      limit
+    );
+  }
+
+  private async fetchPublishedGamesByUserWhere(
+    where: Prisma.ProjectWhereInput,
+    page: number,
+    limit: number
+  ): Promise<ReleaseProject[]> {
+    const pagination = this.normalizePagination(page, limit);
+
+    const projects = await this.prisma.project.findMany({
+      where,
+      orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }],
+      skip: pagination.skip,
+      take: pagination.limit,
+      include: {
+        collaborators: {
+          select: ProjectService.COLLABORATOR_SELECT
+        },
+        creator: {
+          select: ProjectService.CREATOR_SELECT
+        },
+        _count: {
+          select: {
+            forks: true,
+            comments: { where: { deleted: false } }
+          }
+        }
+      }
+    });
+
+    return projects.map((project) =>
+      this.applyPublishedSnapshot(
+        this.withCommentCount(project as ProjectWithCounts & {
+          publishedName?: string | null;
+          publishedShortDesc?: string | null;
+          publishedLongDesc?: string | null;
+          publishedTags?: string[];
+        })
+      )
+    );
   }
 
   async registerReleaseView(projectId: number): Promise<{ viewCount: number }> {
