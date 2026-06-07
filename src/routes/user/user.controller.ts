@@ -48,15 +48,18 @@ import { Response } from "express";
 import { S3Service } from "@s3/s3.service";
 import { CloudfrontService } from "src/routes/s3/edge.service";
 import { SignedCdnResourceDto } from "@common/dto/signed-cdn-resource.dto";
-import { Public } from "@auth/decorators/public.decorator";
-import { ImageUrlResponseDto } from "src/routes/common/dto/image-url-response.dto";
+import { UpdateUserProfileDto } from "./dto/update-user-profile.dto";
+import { PublicUserProfileResponseDto } from "./dto/public-user-profile-response.dto";
 
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = /^image\/(jpeg|png|gif|webp)$/;
 @ApiTags("users")
 @ApiExtraModels(
   UserResponseDto,
   UserListResponseDto,
   UserSingleResponseDto,
-  UserProfileResponseDto
+  UserProfileResponseDto,
+  PublicUserProfileResponseDto
 )
 @ApiBearerAuth("JWT-auth")
 @Controller("users")
@@ -69,6 +72,16 @@ export class UserController {
     private readonly cloudfrontService: CloudfrontService
   ) {}
 
+  private async getPublicAssetUrl(key: string): Promise<string | null> {
+    const head = await this.s3Service.getFileMetadataOrNull(key);
+    if (!head) {
+      return null;
+    }
+
+    const version = head.ETag?.replace(/"/g, "") ?? Date.now().toString();
+    return `${this.cloudfrontService.getCDNUrl(key)}?v=${version}`;
+  }
+
   @Get("profile")
   @ApiOperation({ summary: "Get current user profile" })
   @ApiResponse({
@@ -80,6 +93,43 @@ export class UserController {
   @UseGuards(JwtAuthGuard)
   getProfile(@Request() req: RequestWithUser): UserDto {
     return req.user;
+  }
+
+  @Patch("profile")
+  @ApiOperation({ summary: "Update current user profile" })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "User profile updated successfully",
+    type: PublicUserProfileResponseDto
+  })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
+  @UseGuards(JwtAuthGuard)
+  async updateMyProfile(
+    @Body(ValidationPipe) updateUserProfileDto: UpdateUserProfileDto,
+    @Request() req: RequestWithUser
+  ): Promise<PublicUserProfileResponseDto> {
+    const descriptionSource = updateUserProfileDto.description;
+    const description = descriptionSource === undefined ? undefined : descriptionSource.trim() || null;
+
+    const update: { description?: string | null } = {};
+    if (description !== undefined) {
+      update.description = description;
+    }
+
+    const updated = await this.userService.updateMyProfile(req.user.id, update);
+
+    const profileImageUrl = await this.getPublicAssetUrl(`users/${req.user.id}/profile`);
+    const backgroundImageUrl = await this.getPublicAssetUrl(`users/${req.user.id}/background`);
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: "User profile updated successfully",
+      data: {
+        ...updated,
+        profileImageUrl,
+        backgroundImageUrl
+      }
+    };
   }
 
   @Post(":id/profile-picture")
@@ -107,8 +157,8 @@ export class UserController {
     @Param("id", ParseIntPipe) id: number,
     @UploadedFile(
       new ParseFilePipeBuilder()
-        .addMaxSizeValidator({ maxSize: 5 * 1024 * 1024 })
-        .addFileTypeValidator({ fileType: /^image\/(jpeg|png|gif|webp)$/ })
+        .addMaxSizeValidator({ maxSize: MAX_FILE_SIZE })
+        .addFileTypeValidator({ fileType: ALLOWED_IMAGE_TYPES })
         .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY })
     )
     file: Express.Multer.File,
@@ -133,6 +183,59 @@ export class UserController {
     await this.s3Service.setObjectPublicRead(key);
 
     return { message: "Profile picture uploaded successfully", id };
+  }
+
+  @Post(":id/profile-background")
+  @ApiOperation({ summary: "Upload a user's profile background" })
+  @ApiParam({ name: "id", description: "User ID" })
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({
+    schema: {
+      type: "object",
+      properties: {
+        file: {
+          type: "string",
+          format: "binary",
+          description: "Profile background file"
+        }
+      }
+    }
+  })
+  @ApiResponse({ status: HttpStatus.CREATED, description: "Profile background uploaded" })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(FileInterceptor("file"))
+  @HttpCode(HttpStatus.CREATED)
+  async uploadProfileBackground(
+    @Param("id", ParseIntPipe) id: number,
+    @UploadedFile(
+      new ParseFilePipeBuilder()
+        .addMaxSizeValidator({ maxSize: MAX_FILE_SIZE })
+        .addFileTypeValidator({ fileType: ALLOWED_IMAGE_TYPES })
+        .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY })
+    )
+      file: Express.Multer.File,
+    @Request() req: RequestWithUser
+  ): Promise<{ message: string; id: number }> {
+    if (req.user.id !== id) {
+      throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    }
+
+    const key = `users/${id}/background`;
+
+    await this.s3Service.uploadFile({
+      file,
+      keyName: key,
+      metadata: {
+        uploadedBy: req.user.id.toString(),
+        userId: id.toString(),
+        originalName: file.originalname
+      },
+      cacheControl: "no-cache"
+    });
+    await this.s3Service.setObjectPublicRead(key);
+
+    return { message: "Profile background uploaded successfully", id };
   }
 
   @Get(":id/profile-picture")
@@ -323,38 +426,5 @@ export class UserController {
       statusCode: HttpStatus.OK,
       message: "User deleted successfully"
     };
-  }
-
-  @Public()
-  @Get("public/:id/profile-picture")
-  @ApiOperation({
-    summary: "Get public CDN URL for a user's profile picture"
-  })
-  @ApiParam({
-    name: "id",
-    type: "number",
-    description: "User ID"
-  })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: "Returns the CDN URL for the profile picture",
-    type: ImageUrlResponseDto
-  })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: "User not found or has no profile picture"
-  })
-  async getPublicProfilePicture(
-    @Param("id", ParseIntPipe) id: number
-  ): Promise<ImageUrlResponseDto> {
-    const key = `users/${id}/profile`;
-    const head = await this.s3Service.getFileMetadataOrNull(key);
-    if (!head) {
-      throw new HttpException("Not found", HttpStatus.NOT_FOUND);
-    }
-
-    const version = head.ETag?.replace(/"/g, "") ?? Date.now().toString();
-    const url = `${this.cloudfrontService.getCDNUrl(key)}?v=${version}`;
-    return { url };
   }
 }

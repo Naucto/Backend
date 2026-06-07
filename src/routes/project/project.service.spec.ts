@@ -110,6 +110,7 @@ describe("ProjectService", () => {
 
   const prismaMock = {
     project: {
+      count: jest.fn(),
       create: jest.fn(),
       findMany: jest.fn(),
       findUnique: jest.fn(),
@@ -122,7 +123,10 @@ describe("ProjectService", () => {
     workSession: {
       findMany: jest.fn(),
       update: jest.fn()
-    }
+    },
+    $transaction: jest.fn((operations: Array<Promise<unknown>>) =>
+      Promise.all(operations)
+    )
   };
 
   const s3ServiceMock = {
@@ -169,26 +173,59 @@ describe("ProjectService", () => {
   });
 
   describe("findAll", () => {
-    it("should return a list of projects for a given user", async () => {
+    it("should return paginated projects for a given user", async () => {
       const userId = 1;
+      const where = {
+        collaborators: {
+          some: { id: userId }
+        }
+      };
 
+      prismaMock.project.count.mockResolvedValue(mockProjects.length);
       prismaMock.project.findMany.mockResolvedValue(mockProjects);
 
       const result = await service.findAll(userId);
 
+      expect(prismaMock.project.count).toHaveBeenCalledWith({ where });
       expect(prismaMock.project.findMany).toHaveBeenCalledWith({
-        where: {
-          collaborators: {
-            some: { id: userId }
-          }
-        },
+        where,
         include: {
           collaborators: { select: ProjectService.COLLABORATOR_SELECT },
           creator: { select: ProjectService.CREATOR_SELECT }
-        }
+        },
+        orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+        skip: 0,
+        take: 24
       });
 
-      expect(result).toEqual(mockProjects);
+      expect(result).toEqual({
+        projects: mockProjects,
+        total: mockProjects.length,
+        page: 1,
+        limit: 24
+      });
+    });
+
+    it("should normalize page and cap limit", async () => {
+      const userId = 1;
+
+      prismaMock.project.count.mockResolvedValue(250);
+      prismaMock.project.findMany.mockResolvedValue(mockProjects);
+
+      const result = await service.findAll(userId, 2.9, 150.8);
+
+      expect(prismaMock.project.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          skip: 100,
+          take: 100
+        })
+      );
+      expect(result).toEqual({
+        projects: mockProjects,
+        total: 250,
+        page: 2,
+        limit: 100
+      });
     });
   });
 
@@ -680,6 +717,72 @@ describe("ProjectService", () => {
         where: { projectId }
       });
       expect(prismaMock.workSession.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("fetchPublishedGamesPaginated", () => {
+    const publishedProject = {
+      ...mockProjects[1]!,
+      _count: {
+        comments: 3,
+        forks: 5
+      }
+    };
+
+    it("should return paginated published projects with counts", async () => {
+      prismaMock.project.count.mockResolvedValue(1);
+      prismaMock.project.findMany.mockResolvedValue([publishedProject]);
+
+      const result = await service.fetchPublishedGamesPaginated(2, 1);
+
+      expect(prismaMock.project.count).toHaveBeenCalledWith({
+        where: { status: "COMPLETED" }
+      });
+      expect(prismaMock.project.findMany).toHaveBeenCalledWith({
+        where: { status: "COMPLETED" },
+        include: {
+          collaborators: { select: ProjectService.COLLABORATOR_SELECT },
+          creator: { select: ProjectService.CREATOR_SELECT },
+          _count: {
+            select: {
+              forks: true,
+              comments: { where: { deleted: false } }
+            }
+          }
+        },
+        orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
+        skip: 1,
+        take: 1
+      });
+      expect(result).toEqual({
+        projects: [
+          expect.objectContaining({
+            id: publishedProject.id,
+            name: publishedProject.publishedName,
+            commentCount: 3,
+            forkCount: 5
+          })
+        ],
+        total: 1,
+        page: 2,
+        limit: 1
+      });
+    });
+
+    it("should normalize invalid page and cap large limits", async () => {
+      prismaMock.project.count.mockResolvedValue(1);
+      prismaMock.project.findMany.mockResolvedValue([publishedProject]);
+
+      const result = await service.fetchPublishedGamesPaginated(0, 500);
+
+      expect(prismaMock.project.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          skip: 0,
+          take: 100
+        })
+      );
+      expect(result.page).toBe(1);
+      expect(result.limit).toBe(100);
     });
   });
 });

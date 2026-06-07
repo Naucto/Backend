@@ -6,5 +6,5 @@ export class UserProfileResponseDto extends UserResponseDto {
     description: "User profile message",
     example: "Profile retrieved successfully"
   })
-  message?: string;
+    message?: string;
 }

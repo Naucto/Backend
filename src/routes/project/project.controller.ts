@@ -11,6 +11,7 @@ import {
   ParseFilePipeBuilder,
   Patch,
   Post,
+  Query,
   Put,
   Res,
   Req,
@@ -21,7 +22,18 @@ import {
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
-import { ProjectSave, ProjectService } from "@project/project.service";
+import {
+  ProjectService,
+  RELEASE_WINDOWS,
+  USER_PROJECT_STATUSES
+} from "@project/project.service";
+import type {
+  ProjectSave,
+  PublishedProjectFilters,
+  ReleaseWindow,
+  UserProjectStatus,
+  UserProjectFilters
+} from "@project/project.service";
 import { CreateProjectDto } from "@project/dto/create-project.dto";
 import { UpdateProjectDto } from "@project/dto/update-project.dto";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
@@ -35,6 +47,7 @@ import {
   ApiConsumes,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiResponse,
   ApiTags
 } from "@nestjs/swagger";
@@ -44,11 +57,13 @@ import {
 } from "@project/dto/collaborator-project.dto";
 import { Request } from "express";
 import { UserDto } from "@auth/dto/user.dto";
-import { Project } from "@prisma/client";
+import type { Project } from "@prisma/client";
 import {
   ProjectResponseDto,
   ProjectExResponseDto,
   ForkProjectResponseDto,
+  PaginatedProjectsResponseDto,
+  ProjectsCountResponseDto,
   SignedUrlResponseDto
 } from "./dto/project-response.dto";
 import { S3DownloadException } from "@s3/s3.error";
@@ -79,6 +94,60 @@ export class ProjectController {
 
   private readonly logger = new Logger(ProjectController.name);
 
+  private parseOptionalInt(value?: string): number | undefined {
+    return value ? parseInt(value, 10) : undefined;
+  }
+
+  private parseTags(tags?: string): string[] | undefined {
+    return tags ? tags.split(",") : undefined;
+  }
+
+  private buildPublishedProjectFilters(
+    search?: string,
+    tags?: string,
+    releaseWindow?: ReleaseWindow
+  ): PublishedProjectFilters {
+    const filters: PublishedProjectFilters = {};
+    const parsedTags = this.parseTags(tags);
+
+    if (search) {
+      filters.search = search;
+    }
+
+    if (parsedTags) {
+      filters.tags = parsedTags;
+    }
+
+    if (releaseWindow) {
+      filters.releaseWindow = releaseWindow;
+    }
+
+    return filters;
+  }
+
+  private buildUserProjectFilters(
+    search?: string,
+    tags?: string,
+    status?: UserProjectStatus
+  ): UserProjectFilters {
+    const filters: UserProjectFilters = {};
+    const parsedTags = this.parseTags(tags);
+
+    if (search) {
+      filters.search = search;
+    }
+
+    if (parsedTags) {
+      filters.tags = parsedTags;
+    }
+
+    if (status) {
+      filters.status = status;
+    }
+
+    return filters;
+  }
+
   @Public()
   @Get("releases")
   @ApiOperation({ summary: "Get all released projects" })
@@ -90,6 +159,59 @@ export class ProjectController {
   })
   async getAllReleases(): Promise<ProjectExResponseDto[]> {
     return this.projectService.fetchPublishedGames();
+  }
+
+  @Public()
+  @Get("releases/paginated")
+  @ApiOperation({ summary: "Get released projects with pagination" })
+  @ApiQuery({ name: "page", type: "number", required: false })
+  @ApiQuery({ name: "limit", type: "number", required: false })
+  @ApiResponse({
+    status: 200,
+    description: "A paginated list of released projects",
+    type: PaginatedProjectsResponseDto
+  })
+  async getPaginatedReleases(
+    @Query("page") page?: string,
+    @Query("limit") limit?: string
+  ): Promise<PaginatedProjectsResponseDto> {
+    return this.projectService.fetchPublishedGamesPaginated(
+      this.parseOptionalInt(page),
+      this.parseOptionalInt(limit)
+    );
+  }
+
+  @Public()
+  @Get("releases/count")
+  @ApiOperation({ summary: "Count released projects with filters" })
+  @ApiQuery({ name: "search", type: "string", required: false })
+  @ApiQuery({
+    name: "tags",
+    type: "string",
+    required: false,
+    description: "Comma-separated tag list"
+  })
+  @ApiQuery({
+    name: "releaseWindow",
+    enum: RELEASE_WINDOWS,
+    required: false
+  })
+  @ApiResponse({
+    status: 200,
+    description: "The total number of released projects matching the request",
+    type: ProjectsCountResponseDto
+  })
+  async countReleasedProjects(
+    @Query("search") search?: string,
+    @Query("tags") tags?: string,
+    @Query("releaseWindow")
+      releaseWindow?: ReleaseWindow
+  ): Promise<ProjectsCountResponseDto> {
+    const total = await this.projectService.countPublishedGames(
+      this.buildPublishedProjectFilters(search, tags, releaseWindow)
+    );
+
+    return { total };
   }
 
   @Public()
@@ -176,17 +298,60 @@ export class ProjectController {
   }
 
   @Get()
-  @ApiOperation({ summary: "Retrieve the list of projects" })
+  @ApiOperation({ summary: "Retrieve the paginated list of projects" })
+  @ApiQuery({ name: "page", type: "number", required: false })
+  @ApiQuery({ name: "limit", type: "number", required: false })
   @ApiResponse({
     status: 200,
     description:
-      "A JSON array of projects with collaborators and creator information",
-    type: [ProjectExResponseDto]
+      "A paginated list of projects with collaborators and creator information",
+    type: PaginatedProjectsResponseDto
   })
   @ApiResponse({ status: 500, description: "Internal server error" })
-  async findAll(@Req() request: RequestWithUser): Promise<Project[]> {
+  async findAll(
+    @Req() request: RequestWithUser,
+    @Query("page") page?: string,
+    @Query("limit") limit?: string
+  ): Promise<PaginatedProjectsResponseDto> {
     const user = request.user;
-    return this.projectService.findAll(user.id);
+    return this.projectService.findAll(
+      user.id,
+      this.parseOptionalInt(page),
+      this.parseOptionalInt(limit)
+    );
+  }
+
+  @Get("count")
+  @ApiOperation({ summary: "Count the user's projects with filters" })
+  @ApiQuery({ name: "search", type: "string", required: false })
+  @ApiQuery({
+    name: "tags",
+    type: "string",
+    required: false,
+    description: "Comma-separated tag list"
+  })
+  @ApiQuery({
+    name: "status",
+    enum: USER_PROJECT_STATUSES,
+    required: false
+  })
+  @ApiResponse({
+    status: 200,
+    description: "The total number of user projects matching the request",
+    type: ProjectsCountResponseDto
+  })
+  async countProjects(
+    @Req() request: RequestWithUser,
+    @Query("search") search?: string,
+    @Query("tags") tags?: string,
+    @Query("status") status?: UserProjectStatus
+  ): Promise<ProjectsCountResponseDto> {
+    const total = await this.projectService.countUserProjects(
+      request.user.id,
+      this.buildUserProjectFilters(search, tags, status)
+    );
+
+    return { total };
   }
 
   @Get(":id")
@@ -844,8 +1009,6 @@ export class ProjectController {
     }
   }
 
-  // ─── Like Endpoints ───────────────────────────────────────────────────
-
   @Public()
   @Post("releases/:id/like")
   @UseGuards(OptionalJwtAuthGuard)
@@ -916,8 +1079,6 @@ export class ProjectController {
   async registerReleaseView(@Param("id") id: string): Promise<ViewResponseDto> {
     return this.projectService.registerReleaseView(Number(id));
   }
-
-  // ─── Update Release Endpoint ──────────────────────────────────────────
 
   @Post(":id/update-release")
   @UseGuards(ProjectCreatorGuard)

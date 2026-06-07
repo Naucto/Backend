@@ -134,6 +134,7 @@ describe("AuthService", () => {
         email: "test@example.com",
         username: "testuser",
         nickname: null,
+        description: null,
         password: "hashedPass",
         createdAt: new Date()
       });
@@ -150,6 +151,7 @@ describe("AuthService", () => {
         password: "hashedPass",
         username: "testuser",
         nickname: null,
+        description: null,
         createdAt: new Date()
       };
       userService.findByEmail.mockResolvedValue(mockUser);
@@ -169,6 +171,7 @@ describe("AuthService", () => {
         password: "hashedPass",
         username: "testuser",
         nickname: null,
+        description: null,
         createdAt: new Date()
       };
       jest.spyOn(authService, "validateUser").mockResolvedValue(mockUser);
@@ -206,6 +209,7 @@ describe("AuthService", () => {
                 email: emailFilter,
                 username: "user",
                 nickname: null,
+                description: null,
                 password: "hashedPass",
                 createdAt: new Date()
               }
@@ -246,6 +250,7 @@ describe("AuthService", () => {
                 email: "user@example.com",
                 username: usernameFilter,
                 nickname: null,
+                description: null,
                 password: "hashedPass",
                 createdAt: new Date()
               }
@@ -272,6 +277,7 @@ describe("AuthService", () => {
         email: "new@example.com",
         username: "newUser",
         nickname: null,
+        description: null,
         password: "hashedPassword",
         createdAt: new Date()
       });

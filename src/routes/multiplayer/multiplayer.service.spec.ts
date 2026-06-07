@@ -102,6 +102,7 @@ describe("MultiplayerService", () => {
         email: "user@example.com",
         username: "user",
         nickname: null,
+        description: null,
         password: "hashed",
         createdAt: new Date(),
         hostingGameSessions: []
@@ -119,6 +120,7 @@ describe("MultiplayerService", () => {
         email: "user@example.com",
         username: "user",
         nickname: null,
+        description: null,
         password: "hashed",
         createdAt: new Date(),
         hostingGameSessions: [
@@ -151,6 +153,7 @@ describe("MultiplayerService", () => {
         email: "user@example.com",
         username: "user",
         nickname: null,
+        description: null,
         password: "hashed",
         createdAt: new Date(),
         hostingGameSessions: []
@@ -199,6 +202,7 @@ describe("MultiplayerService", () => {
         email: "user@example.com",
         username: "user",
         nickname: null,
+        description: null,
         password: "hashed",
         createdAt: new Date(),
         hostingGameSessions: []
@@ -214,6 +218,7 @@ describe("MultiplayerService", () => {
         email: "user@example.com",
         username: "user",
         nickname: null,
+        description: null,
         password: "hashed",
         createdAt: new Date(),
         hostingGameSessions: []
@@ -234,6 +239,7 @@ describe("MultiplayerService", () => {
         email: "user@example.com",
         username: "user",
         nickname: null,
+        description: null,
         password: "hashed",
         createdAt: new Date(),
         hostingGameSessions: [
@@ -286,6 +292,7 @@ describe("MultiplayerService", () => {
         email: "user2@example.com",
         username: "user2",
         nickname: null,
+        description: null,
         password: "hashed",
         createdAt: new Date(),
         joinedGameSessions: []
@@ -310,6 +317,7 @@ describe("MultiplayerService", () => {
         email: "user2@example.com",
         username: "user2",
         nickname: null,
+        description: null,
         password: "hashed",
         createdAt: new Date(),
         joinedGameSessions: []
