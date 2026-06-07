@@ -17,17 +17,9 @@ function getEncryptionKey(): Buffer {
       "Missing REFRESH_TOKEN_ENCRYPTION_KEY or JWT_SECRET for refresh cookie encryption"
     );
   }
-  // Derive a fixed 32-byte key from the configured secret.
   return createHash("sha256").update(secret).digest();
 }
 
-/**
- * Encrypt a refresh token before it is stored in the client cookie.
- *
- * Uses AES-256-GCM so the value persisted on the end-user's machine is never
- * stored in clear text. Returns a base64url payload of `iv || authTag ||
- * ciphertext`.
- */
 export function encryptRefreshToken(token: string): string {
   const iv = randomBytes(IV_LENGTH);
   const cipher = createCipheriv(ALGORITHM, getEncryptionKey(), iv);
@@ -39,12 +31,6 @@ export function encryptRefreshToken(token: string): string {
   return Buffer.concat([iv, authTag, encrypted]).toString("base64url");
 }
 
-/**
- * Decrypt a refresh token previously produced by {@link encryptRefreshToken}.
- *
- * Throws if the payload is malformed or fails authentication (e.g. tampered
- * with, or issued before cookie encryption was enabled).
- */
 export function decryptRefreshToken(payload: string): string {
   const data = Buffer.from(payload, "base64url");
   if (data.length <= IV_LENGTH + AUTH_TAG_LENGTH) {
