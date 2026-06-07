@@ -1,10 +1,13 @@
+-- CreateEnum
+CREATE TYPE "NotificationType" AS ENUM ('INFO', 'WARNING');
+
 -- CreateTable
 CREATE TABLE "Notification" (
     "id" SERIAL NOT NULL,
     "userId" INTEGER NOT NULL,
     "title" TEXT NOT NULL,
     "message" TEXT NOT NULL,
-    "type" TEXT NOT NULL,
+    "type" "NotificationType" NOT NULL,
     "read" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
