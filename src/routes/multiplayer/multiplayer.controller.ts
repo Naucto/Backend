@@ -21,7 +21,10 @@ import { RequestWithUser } from "@auth/auth.types";
 import { ProjectNotFoundError } from "@project/project.error";
 
 import { OpenHostRequestDto, OpenHostResponseDto } from "./dto/open-host.dto";
-import { LookupHostsResponseDto, LookupHostsResponseDtoHost } from "./dto/lookup-hosts.dto";
+import {
+  LookupHostsResponseDto,
+  LookupHostsResponseDtoHost
+} from "./dto/lookup-hosts.dto";
 import {
   MultiplayerHostNotFoundError,
   MultiplayerHostOpenedError,
@@ -40,12 +43,12 @@ import { LeaveHostRequestDto } from "./dto/leave-host.dto";
 export class MultiplayerController {
   private readonly _logger = new Logger(MultiplayerController.name);
 
-  constructor(
-    private readonly _multiplayerService: MultiplayerService
-  ) {}
+  constructor(private readonly _multiplayerService: MultiplayerService) {}
 
   @Get("list-hosts")
-  @ApiOperation({ summary: "List available game hosts/sessions from the user's perspective" })
+  @ApiOperation({
+    summary: "List available game hosts/sessions from the user's perspective"
+  })
   @ApiResponse({
     status: HttpStatus.OK,
     description: "A list of available game hosts is returned.",
@@ -62,18 +65,22 @@ export class MultiplayerController {
   async lookupHosts(
     @Req() requestCtx: RequestWithUser,
     @Body() request: { projectId: number }
-  ): Promise<LookupHostsResponseDto>
-  {
+  ): Promise<LookupHostsResponseDto> {
     let hosts: GameSessionEx[];
 
     try {
-      hosts = await this._multiplayerService.lookupHosts(request.projectId, requestCtx.user.id);
+      hosts = await this._multiplayerService.lookupHosts(
+        request.projectId,
+        requestCtx.user.id
+      );
     } catch (error) {
       if (error instanceof ProjectNotFoundError) {
         throw new BadRequestException(error.message);
       }
 
-      this._logger.error(`Error while looking up hosts for project ID ${request.projectId}`);
+      this._logger.error(
+        `Error while looking up hosts for project ID ${request.projectId}`
+      );
       this._logger.error(error);
 
       throw new InternalServerErrorException(getExcerrMessage(error));
@@ -85,7 +92,7 @@ export class MultiplayerController {
       hostDto.sessionUuid = host.sessionId;
       hostDto.sessionVisibility = host.visibility;
       hostDto.playerCount = host.otherUsers.length + 1;
-    
+
       return hostDto;
     });
 
@@ -93,7 +100,9 @@ export class MultiplayerController {
   }
 
   @Post("open-host")
-  @ApiOperation({ summary: "Open a new game host/session, with the caller being the game host" })
+  @ApiOperation({
+    summary: "Open a new game host/session, with the caller being the game host"
+  })
   @ApiBody({ type: OpenHostRequestDto })
   @ApiResponse({
     status: HttpStatus.OK,
@@ -112,22 +121,29 @@ export class MultiplayerController {
   async openHost(
     @Req() requestCtx: RequestWithUser,
     @Body() request: OpenHostRequestDto
-  ): Promise<OpenHostResponseDto>
-  {
+  ): Promise<OpenHostResponseDto> {
     let response: OpenHostResponseDto;
 
     try {
-      response = await this._multiplayerService.openHost(requestCtx.user.id, request.projectId, request.visibility);
+      response = await this._multiplayerService.openHost(
+        requestCtx.user.id,
+        request.projectId,
+        request.visibility
+      );
     } catch (error) {
-      if (error instanceof MultiplayerUserDoesNotExistError ||
-          error instanceof MultiplayerHostNotFoundError) {
+      if (
+        error instanceof MultiplayerUserDoesNotExistError ||
+        error instanceof MultiplayerHostNotFoundError
+      ) {
         throw new NotFoundException(error.message);
       } else if (error instanceof MultiplayerHostOpenedError) {
         // FIXME: Should the user be able to open multiple hosts for the same project?
         throw new BadRequestException(error.message);
       }
 
-      this._logger.error(`Error while opening host for user ID ${requestCtx.user.id} and project ID ${request.projectId}`);
+      this._logger.error(
+        `Error while opening host for user ID ${requestCtx.user.id} and project ID ${request.projectId}`
+      );
       this._logger.error(error);
 
       throw new InternalServerErrorException(getExcerrMessage(error));
@@ -137,7 +153,10 @@ export class MultiplayerController {
   }
 
   @Delete("close-host")
-  @ApiOperation({ summary: "Close an existing game host/session, with the caller being the game host" })
+  @ApiOperation({
+    summary:
+      "Close an existing game host/session, with the caller being the game host"
+  })
   @ApiResponse({
     status: HttpStatus.OK,
     description: "The game host/session has been successfully closed."
@@ -151,16 +170,23 @@ export class MultiplayerController {
     @Body() request: CloseHostRequestDto
   ): Promise<void> {
     try {
-      await this._multiplayerService.closeHost(requestCtx.user.id, request.projectId);
+      await this._multiplayerService.closeHost(
+        requestCtx.user.id,
+        request.projectId
+      );
     } catch (error) {
-      if (error instanceof MultiplayerUserDoesNotExistError ||
-          error instanceof ProjectNotFoundError) {
+      if (
+        error instanceof MultiplayerUserDoesNotExistError ||
+        error instanceof ProjectNotFoundError
+      ) {
         throw new NotFoundException(error.message);
       } else if (error instanceof MultiplayerHostNotFoundError) {
         throw new BadRequestException(error.message);
       }
 
-      this._logger.error(`Error while closing host for user ID ${requestCtx.user.id} and project ID ${request.projectId}`);
+      this._logger.error(
+        `Error while closing host for user ID ${requestCtx.user.id} and project ID ${request.projectId}`
+      );
       this._logger.error(error);
 
       throw new InternalServerErrorException(getExcerrMessage(error));
@@ -191,17 +217,22 @@ export class MultiplayerController {
 
     try {
       response = await this._multiplayerService.joinHost(
-        requestCtx.user.id, request.sessionUuid
+        requestCtx.user.id,
+        request.sessionUuid
       );
     } catch (error) {
-      if (error instanceof MultiplayerUserDoesNotExistError ||
-          error instanceof MultiplayerHostNotFoundError) {
+      if (
+        error instanceof MultiplayerUserDoesNotExistError ||
+        error instanceof MultiplayerHostNotFoundError
+      ) {
         throw new NotFoundException(error.message);
       } else if (error instanceof MultiplayerUserAlreadyJoinedError) {
         throw new BadRequestException(error.message);
       }
 
-      this._logger.error(`Error while joining host for user ID ${requestCtx.user.id} and session UUID ${request.sessionUuid}`);
+      this._logger.error(
+        `Error while joining host for user ID ${requestCtx.user.id} and session UUID ${request.sessionUuid}`
+      );
       this._logger.error(error);
 
       throw new InternalServerErrorException(getExcerrMessage(error));
@@ -230,14 +261,21 @@ export class MultiplayerController {
     @Body() request: LeaveHostRequestDto
   ): Promise<void> {
     try {
-      await this._multiplayerService.leaveHost(requestCtx.user.id, request.sessionUuid);
+      await this._multiplayerService.leaveHost(
+        requestCtx.user.id,
+        request.sessionUuid
+      );
     } catch (error) {
-      if (error instanceof MultiplayerUserNotInSessionError ||
-          error instanceof MultiplayerHostNotFoundError) {
+      if (
+        error instanceof MultiplayerUserNotInSessionError ||
+        error instanceof MultiplayerHostNotFoundError
+      ) {
         throw new NotFoundException(error.message);
       }
 
-      this._logger.error(`Error while leaving host for user ID ${requestCtx.user.id} and session UUID ${request.sessionUuid}`);
+      this._logger.error(
+        `Error while leaving host for user ID ${requestCtx.user.id} and session UUID ${request.sessionUuid}`
+      );
       this._logger.error(error);
 
       throw new InternalServerErrorException(getExcerrMessage(error));

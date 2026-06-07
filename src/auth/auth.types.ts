@@ -10,9 +10,7 @@ export interface RequestWithUser extends Request {
   user: UserDto;
 }
 
-export interface GoogleUserPayload {
+export interface OAuthUserPayload {
   email: string;
   name: string;
-  picture: string | undefined;
-  googleId: string;
 }

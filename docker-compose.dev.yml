@@ -13,6 +13,9 @@ services:
       target: dev
     networks:
       - naucto-dev
+    volumes:
+      - .:/app
+      - /app/node_modules
     environment:
       NODE_ENV: development
       HOT_RELOAD: true

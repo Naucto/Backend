@@ -3,4 +3,4 @@ export class ProjectNotFoundError extends Error {
     super(message);
     this.name = this.constructor.name;
   }
-};
+}

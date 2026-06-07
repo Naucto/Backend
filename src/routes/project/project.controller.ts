@@ -606,7 +606,7 @@ export class ProjectController {
           errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY
         })
     )
-      file: Express.Multer.File
+    file: Express.Multer.File
   ): Promise<{ message: string; id: number }> {
     await this.projectService.save(id, file);
 
@@ -643,7 +643,7 @@ export class ProjectController {
         .addFileTypeValidator({ fileType: /^image\/(jpeg|png|gif|webp)$/ })
         .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY })
     )
-      file: Express.Multer.File,
+    file: Express.Multer.File,
     @Req() req: RequestWithUser
   ): Promise<{ message: string; id: number }> {
     await this.projectService.findOne(id);

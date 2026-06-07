@@ -130,13 +130,15 @@ export class WorkSessionService {
     if (workSession) {
       const lastActiveTime = workSession.lastActiveAt!.getTime();
       const now = Date.now();
-      
+
       if (now - lastActiveTime > this.WORK_SESSION_TTL_MS) {
         this._logger.log(
           `Scrubbing stale worksession for project ${projectId} ` +
-          `(${Math.round((now - lastActiveTime) / 1000)}s old)`
+            `(${Math.round((now - lastActiveTime) / 1000)}s old)`
         );
-        await this.prismaService.workSession.delete({ where: { id: workSession.id } });
+        await this.prismaService.workSession.delete({
+          where: { id: workSession.id }
+        });
         workSession = null;
       }
     }
@@ -165,12 +167,14 @@ export class WorkSessionService {
       });
     }
 
-    this._logger.log(`Yielding worksession with roomId=${workSession.roomId} to user #${user.id}`);
+    this._logger.log(
+      `Yielding worksession with roomId=${workSession.roomId} to user #${user.id}`
+    );
 
     const response = new JoinWorkSessionDto();
 
-    response.roomId      = workSession.roomId;
-    response.hostId      = workSession.hostId;
+    response.roomId = workSession.roomId;
+    response.hostId = workSession.hostId;
     response.webrtcOffer = this.webrtcService.buildOffer(this._collabServer);
 
     // FIXME: also provide info regarding users?

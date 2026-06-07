@@ -40,7 +40,9 @@ import { Upload } from "@aws-sdk/lib-storage";
 export class S3Service {
   private readonly s3: S3Client;
 
-  constructor(@Inject(ConfigService) private readonly configService: ConfigService) {
+  constructor(
+    @Inject(ConfigService) private readonly configService: ConfigService
+  ) {
     const errors = [];
     const endpoint = this.configService.get<string>("S3_ENDPOINT");
     if (!endpoint) {

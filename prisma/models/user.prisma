@@ -4,7 +4,7 @@ model User {
   username  String   @unique
   nickname  String?
   description String?
-  password  String
+  password  String?
   createdAt DateTime @default(now())
 
   roles Role[] @relation("UserRoles")
