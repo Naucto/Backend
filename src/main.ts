@@ -56,8 +56,7 @@ if (isProduction) {
   );
 
   app.enableCors({
-    // In dev the frontend may be reached via localhost or a LAN IP, so reflect any origin.
-    // `origin: true` echoes the request origin, which (unlike "*") works with credentials.
+    // `origin: true` reflects the request origin, which (unlike "*") works with credentials.
     origin: isProduction ? frontendUrl : true,
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
