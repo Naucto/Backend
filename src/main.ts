@@ -56,7 +56,6 @@ if (isProduction) {
   );
 
   app.enableCors({
-    // `origin: true` reflects the request origin, which (unlike "*") works with credentials.
     origin: isProduction ? frontendUrl : true,
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
