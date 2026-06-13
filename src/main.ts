@@ -19,7 +19,9 @@ import * as dotenv from "dotenv";
 import cookieParser from "cookie-parser";
 import { format } from "date-fns-tz";
 
-if (process.env["NODE_ENV"] === "production") {
+const isProduction = process.env["NODE_ENV"] === "production";
+
+if (isProduction) {
   dotenv.config({ path: ".env.production" });
 } else {
   dotenv.config();
@@ -54,7 +56,7 @@ if (process.env["NODE_ENV"] === "production") {
   );
 
   app.enableCors({
-    origin: frontendUrl,
+    origin: isProduction ? frontendUrl : true,
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"]
