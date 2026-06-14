@@ -37,7 +37,6 @@ export class NotificationsController {
     };
   }
 
-  // TODO: Remove this endpoint after testing, or restrict it to admin users
   @ApiOperation({ summary: "Send a test notification to the current user" })
   @ApiResponse({ status: HttpStatus.OK, description: "Notification created and sent" })
   @Post("test")
