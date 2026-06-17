@@ -73,7 +73,6 @@ if (process.env["NODE_ENV"] === "production") {
 
     next();
   });
-
   setupSwagger(app);
 
   await app.init();
