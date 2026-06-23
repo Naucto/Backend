@@ -178,9 +178,6 @@ export class WebRTCServerOptions {
 export class WebRTCServer<
   OptsT extends WebRTCServerOptions = WebRTCServerOptions
 > {
-  private static readonly SEQUENTIAL_PORT_BASE = 4096;
-  private static _nextAvailablePort = this.SEQUENTIAL_PORT_BASE;
-
   private readonly _logger: Logger;
 
   private readonly _port: number;
@@ -200,7 +197,7 @@ export class WebRTCServer<
     if (extraOpts.port !== undefined) {
       this._port = extraOpts.port;
     } else {
-      this._port = WebRTCServer._nextAvailablePort++;
+      this._port = webrtcService.allocatePort();
     }
 
     extraOpts.port = this._port;
