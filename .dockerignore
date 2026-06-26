@@ -7,3 +7,9 @@ README.md
 license.txt
 dist
 node_modules
+coverage
+generated_client
+test
+memories
+Session.vim
+.env

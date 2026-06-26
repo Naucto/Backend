@@ -76,7 +76,11 @@ if (isProduction) {
     next();
   });
 
-  setupSwagger(app);
+  if (process.env["ENABLE_SWAGGER"] !== "false") {
+    setupSwagger(app);
+  } else {
+    logger.log("Swagger disabled (ENABLE_SWAGGER=false)");
+  }
 
   await app.init();
 
