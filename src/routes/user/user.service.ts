@@ -209,7 +209,7 @@ export class UserService {
     await this.prisma.user.update({
       where: { id: userId },
       data: {
-        [hosted ? "hostedGameSessions" : "joinedGameSessions"]: {
+        [hosted ? "hostingGameSessions" : "joinedGameSessions"]: {
           connect: { id: gameSessionId }
         }
       }
@@ -230,7 +230,7 @@ export class UserService {
     await this.prisma.user.update({
       where: { id: userId },
       data: {
-        [hosted ? "hostedGameSessions" : "joinedGameSessions"]: {
+        [hosted ? "hostingGameSessions" : "joinedGameSessions"]: {
           disconnect: { id: gameSessionId }
         }
       }

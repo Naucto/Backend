@@ -1,41 +1,50 @@
-import { ApiBody, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { GameSessionEx, MultiplayerService } from "./multiplayer.service";
 
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   HttpStatus,
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  Param,
+  ParseIntPipe,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards
 } from "@nestjs/common";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
 import { RequestWithUser } from "@auth/auth.types";
 import { ProjectNotFoundError } from "@project/project.error";
+import { getExcerrMessage } from "src/util/errors";
 
-import { OpenHostRequestDto, OpenHostResponseDto } from "./dto/open-host.dto";
-import { LookupHostsResponseDto, LookupHostsResponseDtoHost } from "./dto/lookup-hosts.dto";
 import {
-  MultiplayerHostNotFoundError,
+  MultiplayerForbiddenError,
+  MultiplayerGameSessionNotFoundError,
   MultiplayerHostOpenedError,
+  MultiplayerInvalidJoinCodeError,
+  MultiplayerSessionFullError,
   MultiplayerUserAlreadyJoinedError,
-  MultiplayerUserDoesNotExistError,
   MultiplayerUserNotInSessionError
 } from "./multiplayer.error";
-import { CloseHostRequestDto } from "./dto/close-host.dto";
-import { getExcerrMessage as getExcerrMessage } from "src/util/errors";
-import { JoinHostRequestDto, JoinHostResponseDto } from "./dto/join-host.dto";
-import { LeaveHostRequestDto } from "./dto/leave-host.dto";
 
-@ApiTags("multiplayer")
-@Controller("multiplayer")
+import { CreateGameSessionDto } from "./dto/create-game-session.dto";
+import { UpdateGameSessionDto } from "./dto/update-game-session.dto";
+import { JoinGameSessionDto } from "./dto/join-game-session.dto";
+import { GameSessionConnectionResponseDto } from "./dto/game-session-connection.dto";
+import { GameSessionListResponseDto, GameSessionResponseDto } from "./dto/game-session.dto";
+
+@ApiTags("game-sessions")
+@ApiBearerAuth("JWT-auth")
+@Controller("game-sessions")
 @UseGuards(JwtAuthGuard)
 export class MultiplayerController {
   private readonly _logger = new Logger(MultiplayerController.name);
@@ -44,203 +53,157 @@ export class MultiplayerController {
     private readonly _multiplayerService: MultiplayerService
   ) {}
 
-  @Get("list-hosts")
-  @ApiOperation({ summary: "List available game hosts/sessions from the user's perspective" })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: "A list of available game hosts is returned.",
-    type: LookupHostsResponseDto
-  })
-  @ApiResponse({
-    status: HttpStatus.BAD_REQUEST,
-    description: "Bad request (wrong project ID)."
-  })
-  @ApiResponse({
-    status: HttpStatus.INTERNAL_SERVER_ERROR,
-    description: "Unhandled server error."
-  })
-  async lookupHosts(
-    @Req() requestCtx: RequestWithUser,
-    @Body() request: { projectId: number }
-  ): Promise<LookupHostsResponseDto>
-  {
-    let hosts: GameSessionEx[];
+  @Post()
+  @ApiOperation({ summary: "Create a new game session, with the caller as host" })
+  @ApiBody({ type: CreateGameSessionDto })
+  @ApiResponse({ status: HttpStatus.CREATED, type: GameSessionConnectionResponseDto })
+  async create(
+    @Req() req: RequestWithUser,
+    @Body() dto: CreateGameSessionDto
+  ): Promise<GameSessionConnectionResponseDto> {
+    try {
+      return await this._multiplayerService.create(req.user.id, dto);
+    } catch (error) {
+      this._rethrow(error, `create session for user ${req.user.id}`);
+    }
+  }
+
+  @Get()
+  @ApiOperation({ summary: "List game sessions for a project, from the caller's perspective" })
+  @ApiResponse({ status: HttpStatus.OK, type: GameSessionListResponseDto })
+  async list(
+    @Req() req: RequestWithUser,
+    @Query("projectId", ParseIntPipe) projectId: number
+  ): Promise<GameSessionListResponseDto> {
+    let sessions: GameSessionEx[];
 
     try {
-      hosts = await this._multiplayerService.lookupHosts(request.projectId, requestCtx.user.id);
+      sessions = await this._multiplayerService.list(projectId, req.user.id);
     } catch (error) {
-      if (error instanceof ProjectNotFoundError) {
-        throw new BadRequestException(error.message);
-      }
-
-      this._logger.error(`Error while looking up hosts for project ID ${request.projectId}`);
-      this._logger.error(error);
-
-      throw new InternalServerErrorException(getExcerrMessage(error));
+      this._rethrow(error, `list sessions for project ${projectId}`);
     }
 
-    const response = new LookupHostsResponseDto();
-    response.hosts = hosts.map((host) => {
-      const hostDto = new LookupHostsResponseDtoHost();
-      hostDto.sessionUuid = host.sessionId;
-      hostDto.sessionVisibility = host.visibility;
-      hostDto.playerCount = host.otherUsers.length + 1;
-    
-      return hostDto;
-    });
+    const response = new GameSessionListResponseDto();
+    response.sessions = sessions.map((session) => this._toResponse(session));
 
     return response;
   }
 
-  @Post("open-host")
-  @ApiOperation({ summary: "Open a new game host/session, with the caller being the game host" })
-  @ApiBody({ type: OpenHostRequestDto })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: "The game host/session has been successfully opened.",
-    type: OpenHostResponseDto
-  })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: "The user or project was not found."
-  })
-  // FIXME: See comment below
-  @ApiResponse({
-    status: HttpStatus.BAD_REQUEST,
-    description: "The user is already hosting a game session for this project."
-  })
-  async openHost(
-    @Req() requestCtx: RequestWithUser,
-    @Body() request: OpenHostRequestDto
-  ): Promise<OpenHostResponseDto>
-  {
-    let response: OpenHostResponseDto;
-
+  @Get(":sessionId")
+  @ApiOperation({ summary: "Fetch a single game session" })
+  @ApiResponse({ status: HttpStatus.OK, type: GameSessionResponseDto })
+  async get(
+    @Req() req: RequestWithUser,
+    @Param("sessionId") sessionId: string
+  ): Promise<GameSessionResponseDto> {
     try {
-      response = await this._multiplayerService.openHost(requestCtx.user.id, request.projectId, request.visibility);
+      const session = await this._multiplayerService.get(sessionId, req.user.id);
+      return this._toResponse(session);
     } catch (error) {
-      if (error instanceof MultiplayerUserDoesNotExistError ||
-          error instanceof MultiplayerHostNotFoundError) {
-        throw new NotFoundException(error.message);
-      } else if (error instanceof MultiplayerHostOpenedError) {
-        // FIXME: Should the user be able to open multiple hosts for the same project?
-        throw new BadRequestException(error.message);
-      }
-
-      this._logger.error(`Error while opening host for user ID ${requestCtx.user.id} and project ID ${request.projectId}`);
-      this._logger.error(error);
-
-      throw new InternalServerErrorException(getExcerrMessage(error));
+      this._rethrow(error, `get session ${sessionId}`);
     }
-
-    return response;
   }
 
-  @Delete("close-host")
-  @ApiOperation({ summary: "Close an existing game host/session, with the caller being the game host" })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: "The game host/session has been successfully closed."
-  })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: "The user, project, or game session was not found."
-  })
-  async closeHost(
-    @Req() requestCtx: RequestWithUser,
-    @Body() request: CloseHostRequestDto
+  @Patch(":sessionId")
+  @ApiOperation({ summary: "Update game session settings (host only)" })
+  @ApiBody({ type: UpdateGameSessionDto })
+  @ApiResponse({ status: HttpStatus.OK })
+  async update(
+    @Req() req: RequestWithUser,
+    @Param("sessionId") sessionId: string,
+    @Body() dto: UpdateGameSessionDto
   ): Promise<void> {
     try {
-      await this._multiplayerService.closeHost(requestCtx.user.id, request.projectId);
+      await this._multiplayerService.update(sessionId, req.user.id, dto);
     } catch (error) {
-      if (error instanceof MultiplayerUserDoesNotExistError ||
-          error instanceof ProjectNotFoundError) {
-        throw new NotFoundException(error.message);
-      } else if (error instanceof MultiplayerHostNotFoundError) {
-        throw new BadRequestException(error.message);
-      }
-
-      this._logger.error(`Error while closing host for user ID ${requestCtx.user.id} and project ID ${request.projectId}`);
-      this._logger.error(error);
-
-      throw new InternalServerErrorException(getExcerrMessage(error));
+      this._rethrow(error, `update session ${sessionId}`);
     }
   }
 
-  @Patch("join-host")
-  @ApiOperation({ summary: "Join an existing game host/session as a player" })
-  @ApiBody({ type: JoinHostRequestDto })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: "Successfully joined the game session.",
-    type: JoinHostResponseDto
-  })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: "Game session or user not found."
-  })
-  @ApiResponse({
-    status: HttpStatus.BAD_REQUEST,
-    description: "User is already in the session or is the host."
-  })
-  async joinHost(
-    @Req() requestCtx: RequestWithUser,
-    @Body() request: JoinHostRequestDto
-  ): Promise<JoinHostResponseDto> {
-    let response: JoinHostResponseDto;
-
-    try {
-      response = await this._multiplayerService.joinHost(
-        requestCtx.user.id, request.sessionUuid
-      );
-    } catch (error) {
-      if (error instanceof MultiplayerUserDoesNotExistError ||
-          error instanceof MultiplayerHostNotFoundError) {
-        throw new NotFoundException(error.message);
-      } else if (error instanceof MultiplayerUserAlreadyJoinedError) {
-        throw new BadRequestException(error.message);
-      }
-
-      this._logger.error(`Error while joining host for user ID ${requestCtx.user.id} and session UUID ${request.sessionUuid}`);
-      this._logger.error(error);
-
-      throw new InternalServerErrorException(getExcerrMessage(error));
-    }
-
-    return response;
-  }
-
-  @Patch("leave-host")
-  @ApiOperation({ summary: "Leave a game host/session as a player" })
-  @ApiBody({ type: LeaveHostRequestDto })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: "Successfully left the game session."
-  })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: "Game session or user not found."
-  })
-  @ApiResponse({
-    status: HttpStatus.BAD_REQUEST,
-    description: "User is not part of the session or is the host."
-  })
-  async leaveHost(
-    @Req() requestCtx: RequestWithUser,
-    @Body() request: LeaveHostRequestDto
+  @Delete(":sessionId")
+  @ApiOperation({ summary: "Close/delete a game session (host only)" })
+  @ApiResponse({ status: HttpStatus.OK })
+  async remove(
+    @Req() req: RequestWithUser,
+    @Param("sessionId") sessionId: string
   ): Promise<void> {
     try {
-      await this._multiplayerService.leaveHost(requestCtx.user.id, request.sessionUuid);
+      await this._multiplayerService.delete(sessionId, req.user.id);
     } catch (error) {
-      if (error instanceof MultiplayerUserNotInSessionError ||
-          error instanceof MultiplayerHostNotFoundError) {
-        throw new NotFoundException(error.message);
-      }
-
-      this._logger.error(`Error while leaving host for user ID ${requestCtx.user.id} and session UUID ${request.sessionUuid}`);
-      this._logger.error(error);
-
-      throw new InternalServerErrorException(getExcerrMessage(error));
+      this._rethrow(error, `delete session ${sessionId}`);
     }
+  }
+
+  @Post(":sessionId/join")
+  @ApiOperation({ summary: "Join a game session as a player" })
+  @ApiBody({ type: JoinGameSessionDto })
+  @ApiResponse({ status: HttpStatus.OK, type: GameSessionConnectionResponseDto })
+  async join(
+    @Req() req: RequestWithUser,
+    @Param("sessionId") sessionId: string,
+    @Body() dto: JoinGameSessionDto
+  ): Promise<GameSessionConnectionResponseDto> {
+    try {
+      return await this._multiplayerService.join(sessionId, req.user.id, dto.joinCode);
+    } catch (error) {
+      this._rethrow(error, `join session ${sessionId}`);
+    }
+  }
+
+  @Post(":sessionId/leave")
+  @ApiOperation({ summary: "Leave a game session as a player" })
+  @ApiResponse({ status: HttpStatus.OK })
+  async leave(
+    @Req() req: RequestWithUser,
+    @Param("sessionId") sessionId: string
+  ): Promise<void> {
+    try {
+      await this._multiplayerService.leave(sessionId, req.user.id);
+    } catch (error) {
+      this._rethrow(error, `leave session ${sessionId}`);
+    }
+  }
+
+  // --------------------------------------------------------------------------
+
+  private _toResponse(session: GameSessionEx): GameSessionResponseDto {
+    const dto = new GameSessionResponseDto();
+
+    dto.sessionUuid = session.sessionId;
+    dto.title = session.title;
+    dto.visibility = session.visibility;
+    dto.hostId = session.hostId;
+    dto.maxPlayers = session.maxPlayers;
+    dto.playerCount = session.otherUsers.length + 1;
+
+    return dto;
+  }
+
+  // Maps domain errors to HTTP exceptions; unknown errors become a 500.
+  private _rethrow(error: unknown, context: string): never {
+    if (error instanceof ProjectNotFoundError ||
+        error instanceof MultiplayerGameSessionNotFoundError) {
+      throw new NotFoundException(error.message);
+    }
+
+    if (error instanceof MultiplayerForbiddenError) {
+      throw new ForbiddenException(error.message);
+    }
+
+    if (error instanceof MultiplayerHostOpenedError ||
+        error instanceof MultiplayerUserAlreadyJoinedError ||
+        error instanceof MultiplayerSessionFullError) {
+      throw new ConflictException(error.message);
+    }
+
+    if (error instanceof MultiplayerInvalidJoinCodeError ||
+        error instanceof MultiplayerUserNotInSessionError) {
+      throw new BadRequestException(error.message);
+    }
+
+    this._logger.error(`Error while trying to ${context}`);
+    this._logger.error(error);
+
+    throw new InternalServerErrorException(getExcerrMessage(error));
   }
 }
