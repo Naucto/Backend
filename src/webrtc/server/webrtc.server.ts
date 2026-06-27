@@ -401,26 +401,33 @@ export class WebRTCServer<OptsT extends WebRTCServerOptions = WebRTCServerOption
 
     this._wsServer.handleUpgrade(request, httpClientSocket, head,
       (clientSocket: WebSocket) => {
-        let authHandlerI: number = -1;
+        // A denied or throwing auth handler must abort the connection entirely;
+        // we use a plain loop (not forEach) so we can short-circuit out of this
+        // callback and never reach the connection wiring below.
+        for (let authHandlerI = 0; authHandlerI < this._authEventHandlers.length; authHandlerI++) {
+          const handler = this._authEventHandlers[authHandlerI]!;
 
-        try {
-          this._authEventHandlers.forEach((handler, i) => {
-            authHandlerI = i;
+          let allowed: boolean;
 
-            if (!handler(request, httpClientSocket, head)) {
-              this._logger.verbose(
-                `Auth handler ${authHandlerI} denied access to ${tcpSocket.remoteAddress}`
-              );
-              httpClientSocket.destroy();
-              return;
-            }
-          });
-        } catch (err) {
-          this._logger.verbose(
-            `Auth handler #${authHandlerI} threw for ${tcpSocket.remoteAddress}: ${err}`
-          );
-          httpClientSocket.destroy();
-          return;
+          try {
+            allowed = handler.apply(this, [request, httpClientSocket, head]);
+          } catch (err) {
+            this._logger.verbose(
+              `Auth handler #${authHandlerI} threw for ${tcpSocket.remoteAddress}: ${err}`
+            );
+            clientSocket.terminate();
+            httpClientSocket.destroy();
+            return;
+          }
+
+          if (!allowed) {
+            this._logger.verbose(
+              `Auth handler ${authHandlerI} denied access to ${tcpSocket.remoteAddress}`
+            );
+            clientSocket.terminate();
+            httpClientSocket.destroy();
+            return;
+          }
         }
 
         this.applyEventHandlers(clientSocket);
