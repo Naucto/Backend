@@ -8,7 +8,9 @@ import { RolesGuard } from "./guards/roles.guard";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { MissingEnvVarError, BadEnvVarError } from "./auth.error";
-import { GoogleAuthService } from "./google-auth.service";
+import { GoogleAuthService } from "./providers/google-auth.service";
+import { GithubAuthService } from "./providers/github-auth.service";
+import { MicrosoftAuthService } from "./providers/microsoft-auth.service";
 import { Module, Logger } from "@nestjs/common";
 
 type DurationString = `${number}${"s" | "m" | "h" | "d"}`;
@@ -65,6 +67,8 @@ function parseExpiresIn(v?: string): number | DurationString {
     RolesGuard,
     AuthService,
     GoogleAuthService,
+    GithubAuthService,
+    MicrosoftAuthService,
     JwtStrategy
   ],
   exports: [JwtAuthGuard, RolesGuard, JwtModule],

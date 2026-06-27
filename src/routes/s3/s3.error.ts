@@ -40,7 +40,9 @@ export class S3UploadException extends Error {
     public readonly fileName: string,
     public readonly cause?: unknown
   ) {
-    super(`Error while uploading file "${fileName}" to bucket ${bucketName}: ${cause}`);
+    super(
+      `Error while uploading file "${fileName}" to bucket ${bucketName}: ${cause}`
+    );
     this.name = this.constructor.name;
   }
 }
@@ -51,7 +53,9 @@ export class S3DownloadException extends Error {
     public readonly key: string,
     public readonly cause?: unknown
   ) {
-    super(`Error downloading file "${key}" from bucket ${bucketName}: ${cause}`);
+    super(
+      `Error downloading file "${key}" from bucket ${bucketName}: ${cause}`
+    );
     this.name = this.constructor.name;
   }
 }
@@ -117,7 +121,9 @@ export class S3GetMetadataException extends Error {
     public readonly key: string,
     public readonly cause?: unknown
   ) {
-    super(`Error fetching metadata for file "${key}" in bucket ${bucketName}: ${cause}`);
+    super(
+      `Error fetching metadata for file "${key}" in bucket ${bucketName}: ${cause}`
+    );
     this.name = this.constructor.name;
   }
 }

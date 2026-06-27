@@ -7,38 +7,48 @@ import { WebRTCService } from "@webrtc/webrtc.service";
 import { availableParallelism } from "os";
 
 import { Socket as TCPSocket } from "net";
-import { Server as HTTPServer, createServer as createHttpServer, IncomingMessage } from "http";
+import {
+  Server as HTTPServer,
+  createServer as createHttpServer,
+  IncomingMessage
+} from "http";
 import { WebSocket, WebSocketServer } from "ws";
 import { Logger } from "@nestjs/common";
 import { Duplex } from "stream";
 
 interface WebRTCSocketLikeObject {
   on(event: string, listener: (...args: unknown[]) => void): void;
-};
+}
 
 // https://developer.mozilla.org/en-US/docs/Web/API/WebSocket/readyState
 export enum WebRTCClientReadyState {
   CONNECTING = 0,
-  OPEN       = 1,
-  CLOSING    = 2,
-  CLOSED     = 3
-};
+  OPEN = 1,
+  CLOSING = 2,
+  CLOSED = 3
+}
 
 type WebRTCClientSocketData = {
   readyState: WebRTCClientReadyState;
   remoteAddress: string | undefined;
 };
 
-export type WebRTCClientSocket<TExtraData = object> =
-  Omit<WebSocket, keyof WebRTCClientSocketData> & TExtraData & WebRTCClientSocketData;
-export type WebRTCServerSocket<TExtraData = object> =
-  WebSocketServer & TExtraData;
+export type WebRTCClientSocket<TExtraData = object> = Omit<
+  WebSocket,
+  keyof WebRTCClientSocketData
+> &
+  TExtraData &
+  WebRTCClientSocketData;
+export type WebRTCServerSocket<TExtraData = object> = WebSocketServer &
+  TExtraData;
 
-type WebRTCEventHandler        = (...args: unknown[]) => void;
-type WebRTCEventHandlerMap     = Map<string, Array<WebRTCEventHandler>>;
+type WebRTCEventHandler = (...args: unknown[]) => void;
+type WebRTCEventHandlerMap = Map<string, Array<WebRTCEventHandler>>;
 
-type WebRTCAuthEventHandler    = (
-  httpRequest: IncomingMessage, httpClientSocket: Duplex, head: Buffer
+type WebRTCAuthEventHandler = (
+  httpRequest: IncomingMessage,
+  httpClientSocket: Duplex,
+  head: Buffer
 ) => boolean;
 type WebRTCAuthEventHandlerSet = Array<WebRTCAuthEventHandler>;
 
@@ -48,27 +58,25 @@ type WebRTCDecoratorTarget = Record<string | symbol, unknown>;
 
 const WEBRTC_SERVER_EVENTS_META_KEY = Symbol("webrtc:serverEvents");
 const WEBRTC_CLIENT_EVENTS_META_KEY = Symbol("webrtc:clientEvents");
-const WEBRTC_AUTH_EVENTS_META_KEY   = Symbol("webrtc:authEvents");
+const WEBRTC_AUTH_EVENTS_META_KEY = Symbol("webrtc:authEvents");
 
-function isWebRTCPrototypeTarget(target: unknown): target is WebRTCDecoratorTarget
-{
+function isWebRTCPrototypeTarget(
+  target: unknown
+): target is WebRTCDecoratorTarget {
   if (typeof target !== "object" || target === undefined) {
     return false;
   }
 
   return (
     target === WebRTCServer.prototype ||
-    Object.prototype.isPrototypeOf.call(
-      WebRTCServer.prototype,
-      target!
-    )
+    Object.prototype.isPrototypeOf.call(WebRTCServer.prototype, target!)
   );
 }
 
 function WebRTCBaseEvent(
   eventLevel: WebRTCEventKind,
-  eventName: string): MethodDecorator
-{
+  eventName: string
+): MethodDecorator {
   const decoratorWrapper: MethodDecorator = (
     target: unknown,
     _key: string | symbol,
@@ -77,9 +85,9 @@ function WebRTCBaseEvent(
     if (!isWebRTCPrototypeTarget(target)) {
       throw new WebRTCServerDecoratorError(
         `The @WebRTC${eventLevel[0]!.toUpperCase() + eventLevel.slice(1)}Event ` +
-        "decorator can only be applied to methods of the WebRTCServer and " +
-        "derived classes"
-      ); 
+          "decorator can only be applied to methods of the WebRTCServer and " +
+          "derived classes"
+      );
     }
 
     const eventMapKey =
@@ -113,18 +121,15 @@ function WebRTCBaseEvent(
   return decoratorWrapper;
 }
 
-export function WebRTCServerEvent(eventName: string): MethodDecorator
-{
+export function WebRTCServerEvent(eventName: string): MethodDecorator {
   return WebRTCBaseEvent("server", eventName);
 }
 
-export function WebRTCClientEvent(eventName: string): MethodDecorator
-{
+export function WebRTCClientEvent(eventName: string): MethodDecorator {
   return WebRTCBaseEvent("client", eventName);
 }
 
-export function WebRTCServerAuthEvent(): MethodDecorator
-{
+export function WebRTCServerAuthEvent(): MethodDecorator {
   const decoratorWrapper: MethodDecorator = (
     target: unknown,
     _key: string | symbol,
@@ -133,14 +138,18 @@ export function WebRTCServerAuthEvent(): MethodDecorator
     if (!isWebRTCPrototypeTarget(target)) {
       throw new WebRTCServerDecoratorError(
         "The @WebRTCServerAuthEvent decorator can only be applied to methods " +
-        "of the WebRTCServer and derived class"
-      ); 
+          "of the WebRTCServer and derived class"
+      );
     }
 
     let eventMap: WebRTCAuthEventHandlerSet | undefined;
 
-    if (Object.prototype.hasOwnProperty.call(target, WEBRTC_AUTH_EVENTS_META_KEY)) {
-      eventMap = target[WEBRTC_AUTH_EVENTS_META_KEY] as WebRTCAuthEventHandlerSet;
+    if (
+      Object.prototype.hasOwnProperty.call(target, WEBRTC_AUTH_EVENTS_META_KEY)
+    ) {
+      eventMap = target[
+        WEBRTC_AUTH_EVENTS_META_KEY
+      ] as WebRTCAuthEventHandlerSet;
     }
 
     if (!eventMap) {
@@ -162,14 +171,13 @@ export class WebRTCServerOptions {
   port?: number;
   compressed: boolean = true;
   compressionThreshold: number = 256;
-};
+}
 
 // Bare-bones implementation of a generic WebRTC server.
 // You'll be interested in the derived classes more than this one for examples.
-export class WebRTCServer<OptsT extends WebRTCServerOptions = WebRTCServerOptions> {
-  private static readonly SEQUENTIAL_PORT_BASE = 4096;
-  private static _nextAvailablePort = this.SEQUENTIAL_PORT_BASE;
-
+export class WebRTCServer<
+  OptsT extends WebRTCServerOptions = WebRTCServerOptions
+> {
   private readonly _logger: Logger;
 
   private readonly _port: number;
@@ -177,9 +185,9 @@ export class WebRTCServer<OptsT extends WebRTCServerOptions = WebRTCServerOption
   private readonly _wsServer: WebSocketServer;
   private readonly _extraOpts: OptsT;
 
-  private readonly _authEventHandlers:   WebRTCAuthEventHandlerSet = [];
-  private readonly _serverEventHandlers: WebRTCEventHandlerMap     = new Map();
-  private readonly _clientEventHandlers: WebRTCEventHandlerMap     = new Map();
+  private readonly _authEventHandlers: WebRTCAuthEventHandlerSet = [];
+  private readonly _serverEventHandlers: WebRTCEventHandlerMap = new Map();
+  private readonly _clientEventHandlers: WebRTCEventHandlerMap = new Map();
 
   constructor(
     webrtcService: WebRTCService,
@@ -189,7 +197,7 @@ export class WebRTCServer<OptsT extends WebRTCServerOptions = WebRTCServerOption
     if (extraOpts.port !== undefined) {
       this._port = extraOpts.port;
     } else {
-      this._port = WebRTCServer._nextAvailablePort++;
+      this._port = webrtcService.allocatePort();
     }
 
     extraOpts.port = this._port;
@@ -199,24 +207,26 @@ export class WebRTCServer<OptsT extends WebRTCServerOptions = WebRTCServerOption
     this._httpServer = createHttpServer();
     this._wsServer = new WebSocketServer({
       noServer: true,
-      perMessageDeflate: extraOpts.compressed ? {
-        zlibDeflateOptions: {
-          // Use page-sized chunks for compression
-          chunkSize: 4096,
-          // https://docs.verygoodsecurity.com/vault/developer-tools/larky/library-api/zlib#zlib.compressobj-level-6-method-8-wbits-15-memlevel-0-strategy-0-zdict-none
-          memLevel: 7,
-          level: 5
-        },
-        zlibInflateOptions: {
-          // Ditto
-          // https://docs.verygoodsecurity.com/vault/developer-tools/larky/library-api/zlib#zlib.compressobj-level-6-method-8-wbits-15-memlevel-0-strategy-0-zdict-none
-          chunkSize: 4096
-        },
-        // Use all cores minus 2 so that the server can still respond to requests
-        concurrencyLimit: availableParallelism() - 2,
-        // Don't compress if smaller than the given amount of bytes
-        threshold: extraOpts.compressionThreshold
-      } : {}
+      perMessageDeflate: extraOpts.compressed
+        ? {
+            zlibDeflateOptions: {
+              // Use page-sized chunks for compression
+              chunkSize: 4096,
+              // https://docs.verygoodsecurity.com/vault/developer-tools/larky/library-api/zlib#zlib.compressobj-level-6-method-8-wbits-15-memlevel-0-strategy-0-zdict-none
+              memLevel: 7,
+              level: 5
+            },
+            zlibInflateOptions: {
+              // Ditto
+              // https://docs.verygoodsecurity.com/vault/developer-tools/larky/library-api/zlib#zlib.compressobj-level-6-method-8-wbits-15-memlevel-0-strategy-0-zdict-none
+              chunkSize: 4096
+            },
+            // Use all cores minus 2 so that the server can still respond to requests
+            concurrencyLimit: availableParallelism() - 2,
+            // Don't compress if smaller than the given amount of bytes
+            threshold: extraOpts.compressionThreshold
+          }
+        : {}
     });
 
     this._extraOpts = extraOpts;
@@ -266,18 +276,24 @@ export class WebRTCServer<OptsT extends WebRTCServerOptions = WebRTCServerOption
     }
 
     prototypeChain.reverse().forEach((prototype) => {
-      const serverEventMap =
-        Object.prototype.hasOwnProperty.call(prototype, WEBRTC_SERVER_EVENTS_META_KEY)
-          ? prototype[WEBRTC_SERVER_EVENTS_META_KEY] as WebRTCEventHandlerMap
-          : undefined;
-      const clientEventMap =
-        Object.prototype.hasOwnProperty.call(prototype, WEBRTC_CLIENT_EVENTS_META_KEY)
-          ? prototype[WEBRTC_CLIENT_EVENTS_META_KEY] as WebRTCEventHandlerMap
-          : undefined;
-      const authEventSet   =
-        Object.prototype.hasOwnProperty.call(prototype, WEBRTC_AUTH_EVENTS_META_KEY)
-          ? prototype[WEBRTC_AUTH_EVENTS_META_KEY] as WebRTCAuthEventHandlerSet
-          : undefined;
+      const serverEventMap = Object.prototype.hasOwnProperty.call(
+        prototype,
+        WEBRTC_SERVER_EVENTS_META_KEY
+      )
+        ? (prototype[WEBRTC_SERVER_EVENTS_META_KEY] as WebRTCEventHandlerMap)
+        : undefined;
+      const clientEventMap = Object.prototype.hasOwnProperty.call(
+        prototype,
+        WEBRTC_CLIENT_EVENTS_META_KEY
+      )
+        ? (prototype[WEBRTC_CLIENT_EVENTS_META_KEY] as WebRTCEventHandlerMap)
+        : undefined;
+      const authEventSet = Object.prototype.hasOwnProperty.call(
+        prototype,
+        WEBRTC_AUTH_EVENTS_META_KEY
+      )
+        ? (prototype[WEBRTC_AUTH_EVENTS_META_KEY] as WebRTCAuthEventHandlerSet)
+        : undefined;
 
       serverEventMap?.forEach((handlers, eventName) => {
         const knownHandlers = this._serverEventHandlers.get(eventName) ?? [];
@@ -335,7 +351,7 @@ export class WebRTCServer<OptsT extends WebRTCServerOptions = WebRTCServerOption
       socket.on(eventName, (...args) => {
         handlers.forEach((handler) => {
           try {
-            handler.apply(this, [ specializedSocket, ...args ]);
+            handler.apply(this, [specializedSocket, ...args]);
           } catch (error) {
             let message;
 
@@ -361,8 +377,7 @@ export class WebRTCServer<OptsT extends WebRTCServerOptions = WebRTCServerOption
     _serverSocket: WebSocketServer,
     rawClientSocket: WebSocket,
     httpRequest: IncomingMessage
-  ): void
-  {
+  ): void {
     const clientSocket = rawClientSocket as WebRTCClientSocket;
 
     clientSocket.remoteAddress = httpRequest.socket.remoteAddress;
@@ -375,11 +390,10 @@ export class WebRTCServer<OptsT extends WebRTCServerOptions = WebRTCServerOption
     clientSocket: WebRTCClientSocket,
     code: number,
     reason: Buffer
-  ): void
-  {
+  ): void {
     this._logger.verbose(
       `Client ${clientSocket.remoteAddress} disconnected — code: ${code}` +
-      (reason.length ? `, reason: ${reason.toString()}` : "")
+        (reason.length ? `, reason: ${reason.toString()}` : "")
     );
   }
 
@@ -387,9 +401,10 @@ export class WebRTCServer<OptsT extends WebRTCServerOptions = WebRTCServerOption
   protected _internal_base_onError(
     clientSocket: WebRTCClientSocket,
     err: Error
-  ): void
-  {
-    this._logger.error(`Client ${clientSocket.remoteAddress} error: ${err.message}`);
+  ): void {
+    this._logger.error(
+      `Client ${clientSocket.remoteAddress} error: ${err.message}`
+    );
   }
 
   protected _internal_base_onUpgrade(
@@ -399,7 +414,10 @@ export class WebRTCServer<OptsT extends WebRTCServerOptions = WebRTCServerOption
   ): void {
     const tcpSocket = httpClientSocket as TCPSocket;
 
-    this._wsServer.handleUpgrade(request, httpClientSocket, head,
+    this._wsServer.handleUpgrade(
+      request,
+      httpClientSocket,
+      head,
       (clientSocket: WebSocket) => {
         // A denied or throwing auth handler must abort the connection entirely;
         // we use a plain loop (not forEach) so we can short-circuit out of this
@@ -444,7 +462,7 @@ export class WebRTCServer<OptsT extends WebRTCServerOptions = WebRTCServerOption
         `Closing this server with ${this._wsServer.clients.size} clients alive`
       );
 
-      this._wsServer.clients.forEach(client => client.terminate());
+      this._wsServer.clients.forEach((client) => client.terminate());
 
       this._wsServer.close();
       this._httpServer.close();
@@ -452,4 +470,4 @@ export class WebRTCServer<OptsT extends WebRTCServerOptions = WebRTCServerOption
       this._logger.log("Done closing this server");
     });
   }
-};
+}

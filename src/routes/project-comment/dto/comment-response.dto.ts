@@ -7,7 +7,12 @@ export class CommentAuthorDto {
   @ApiProperty({ example: "john_doe" })
   username!: string;
 
-  @ApiProperty({ example: "John", nullable: true, type: String, required: false })
+  @ApiProperty({
+    example: "John",
+    nullable: true,
+    type: String,
+    required: false
+  })
   nickname?: string | null;
 }
 

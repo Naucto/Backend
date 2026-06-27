@@ -14,6 +14,8 @@ export class CommentProjectNotPublishedException extends BadRequestException {
 
 export class CommentNestedReplyException extends BadRequestException {
   constructor() {
-    super("Cannot reply to a reply. Only top-level comments can receive replies.");
+    super(
+      "Cannot reply to a reply. Only top-level comments can receive replies."
+    );
   }
 }

@@ -84,7 +84,8 @@ export class ProjectCommentService {
   ): Promise<PaginatedCommentsResponseDto> {
     const pagination = this.normalizePagination(page, limit);
     const orderBy = sort === "newest" ? "desc" : "asc";
-    const visibleCommentWhere = this.buildVisibleTopLevelCommentWhere(projectId);
+    const visibleCommentWhere =
+      this.buildVisibleTopLevelCommentWhere(projectId);
 
     const [comments, total] = await Promise.all([
       this.prisma.comment.findMany({
@@ -255,9 +256,7 @@ export class ProjectCommentService {
     const isProjectCreator = project?.userId === userId;
 
     if (comment.authorId !== userId && !isProjectCreator) {
-      throw new ForbiddenException(
-        "You can only delete your own comments"
-      );
+      throw new ForbiddenException("You can only delete your own comments");
     }
 
     if (comment._count.replies > 0) {

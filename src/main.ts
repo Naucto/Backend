@@ -76,13 +76,17 @@ if (isProduction) {
     next();
   });
 
-  setupSwagger(app);
+  if (process.env["ENABLE_SWAGGER"] !== "false") {
+    setupSwagger(app);
+  } else {
+    logger.log("Swagger disabled (ENABLE_SWAGGER=false)");
+  }
 
   await app.init();
 
   const port = configService.get<number>("PORT") || 3000;
 
-  await app.listen(port);
+  await app.listen(port, "0.0.0.0");
 
   const address = app.getHttpServer().address();
   const actualPort =
@@ -95,4 +99,3 @@ if (isProduction) {
 
   logger.log(`Server listening on port ${actualPort}`);
 })();
-

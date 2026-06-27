@@ -96,6 +96,14 @@ npm run generate:client
 
 a folder named `generated_client` will be created in the root directory containing the generated API client, copy this folder to the frontend project in the `src/api` directory.
 
+### 🤝 Conventions & project structure
+
+Code conventions, the architecture map, and guidance for both contributors and AI agents live
+in [`AGENTS.md`](./AGENTS.md). Commit and branch rules are in [`CONTRIBUTING.md`](./CONTRIBUTING.md),
+and the vulnerability disclosure policy is in [`SECURITY.md`](./SECURITY.md).
+
+---
+
 ### 📄 License
 
 This project is licensed under the **GNU General Public License v3.0 (GPLv3)**.
