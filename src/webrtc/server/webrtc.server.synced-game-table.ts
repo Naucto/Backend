@@ -30,15 +30,19 @@ export interface SyncedGameTableTicket {
   role: SyncedGameTableRole;
   // Total players allowed in the session (host included).
   maxPlayers: number;
-};
+}
 
 // Pure synchronous verifier; throws if the raw ticket is invalid/expired.
-export type SyncedGameTableTicketVerifier = (raw: string) => SyncedGameTableTicket;
+export type SyncedGameTableTicketVerifier = (
+  raw: string
+) => SyncedGameTableTicket;
 
 // Stashed on the upgrade request by the auth handler, read by the connection
 // handler (both receive the same IncomingMessage instance).
 const TICKET_KEY = Symbol("syncedGameTable:ticket");
-type TicketedRequest = IncomingMessage & { [TICKET_KEY]?: SyncedGameTableTicket };
+type TicketedRequest = IncomingMessage & {
+  [TICKET_KEY]?: SyncedGameTableTicket;
+};
 
 // ----------------------------------------------------------------------------
 // Wire protocol — payloads are opaque; the backend never inspects `data`.
@@ -46,39 +50,39 @@ type TicketedRequest = IncomingMessage & { [TICKET_KEY]?: SyncedGameTableTicket 
 
 export enum SyncedGameTableMessageType {
   // host -> all slaves: authoritative table state/patch
-  STATE    = "state",
+  STATE = "state",
   // slave -> host: request to read/modify
-  REQUEST  = "request",
+  REQUEST = "request",
   // host -> one slave: reply to a request
   RESPONSE = "response"
-};
+}
 
 // Server -> client control frames (sent, never received as handlers).
 enum SyncedGameTableControlType {
-  PEER_JOINED   = "peer-joined",
-  PEER_LEFT     = "peer-left",
+  PEER_JOINED = "peer-joined",
+  PEER_LEFT = "peer-left",
   SESSION_ENDED = "session-ended"
-};
+}
 
 class GameTableStateMessage {
   type!: string;
   data?: unknown;
-};
+}
 
 class GameTableRequestMessage {
   type!: string;
   data?: unknown;
-};
+}
 
 class GameTableResponseMessage {
   type!: string;
 
   // userId of the slave this response is addressed to.
   @IsInt()
-    to!: number;
+  to!: number;
 
   data?: unknown;
-};
+}
 
 // ----------------------------------------------------------------------------
 // Sockets / rooms
@@ -95,7 +99,7 @@ interface SyncedGameTableRoom {
   // keyed by userId for O(1) response routing
   slaves: Map<number, SyncedGameTableClientSocket>;
   maxPlayers: number;
-};
+}
 
 type SyncedGameTableServerSocket = WebRTCServerSocket<{
   rooms: Map<string, SyncedGameTableRoom>;
@@ -103,7 +107,7 @@ type SyncedGameTableServerSocket = WebRTCServerSocket<{
 
 // ----------------------------------------------------------------------------
 
-export class SyncedGameTableWebRTCServerOptions extends EventBasedWebRTCServerOptions {};
+export class SyncedGameTableWebRTCServerOptions extends EventBasedWebRTCServerOptions {}
 
 // Star-topology relay with host authority for multiplayer game-table sync.
 //
@@ -112,16 +116,14 @@ export class SyncedGameTableWebRTCServerOptions extends EventBasedWebRTCServerOp
 // backend routes purely by message type and connection role; it never parses
 // the synced payload and has no notion of field-level permissions (those live
 // entirely on the frontend engine).
-export class SyncedGameTableWebRTCServer
-  extends EventBasedWebRTCServer<SyncedGameTableWebRTCServerOptions> {
+export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGameTableWebRTCServerOptions> {
   private readonly _verifyTicket: SyncedGameTableTicketVerifier;
 
   constructor(
     webrtcService: WebRTCService,
     whatFor: string,
     verifyTicket: SyncedGameTableTicketVerifier,
-    extraOpts: SyncedGameTableWebRTCServerOptions =
-      new SyncedGameTableWebRTCServerOptions()
+    extraOpts: SyncedGameTableWebRTCServerOptions = new SyncedGameTableWebRTCServerOptions()
   ) {
     super(webrtcService, whatFor, extraOpts);
 
@@ -183,11 +185,15 @@ export class SyncedGameTableWebRTCServer
     // A slave reconnecting under the same userId is a replacement, not a new
     // player — it neither counts against capacity nor re-announces a join.
     const existingSlave =
-      ticket.role === "slave" ? existingRoom?.slaves.get(ticket.userId) : undefined;
+      ticket.role === "slave"
+        ? existingRoom?.slaves.get(ticket.userId)
+        : undefined;
 
     if (ticket.role === "host") {
-      if (existingRoom?.host &&
-          existingRoom.host.readyState === WebRTCClientReadyState.OPEN) {
+      if (
+        existingRoom?.host &&
+        existingRoom.host.readyState === WebRTCClientReadyState.OPEN
+      ) {
         this.logger.verbose(
           `Rejecting duplicate host for session ${ticket.sessionId}`
         );
@@ -201,7 +207,7 @@ export class SyncedGameTableWebRTCServer
       if (currentSlaves >= ticket.maxPlayers - 1) {
         this.logger.verbose(
           `Rejecting slave for full session ${ticket.sessionId} ` +
-          `(${currentSlaves}/${ticket.maxPlayers - 1} slots)`
+            `(${currentSlaves}/${ticket.maxPlayers - 1} slots)`
         );
         rawClientSocket.close();
         return;
@@ -211,8 +217,8 @@ export class SyncedGameTableWebRTCServer
     // Accepted — stamp identity and register into the room.
     const socket = rawClientSocket;
     socket.sessionId = ticket.sessionId;
-    socket.userId    = ticket.userId;
-    socket.role      = ticket.role;
+    socket.userId = ticket.userId;
+    socket.role = ticket.role;
 
     let room = existingRoom;
     if (!room) {
@@ -309,7 +315,10 @@ export class SyncedGameTableWebRTCServer
     });
   }
 
-  @EventBasedMessage(SyncedGameTableMessageType.REQUEST, GameTableRequestMessage)
+  @EventBasedMessage(
+    SyncedGameTableMessageType.REQUEST,
+    GameTableRequestMessage
+  )
   protected _internal_sgt_onRequest(
     socket: SyncedGameTableClientSocket,
     body: GameTableRequestMessage
@@ -331,7 +340,10 @@ export class SyncedGameTableWebRTCServer
     });
   }
 
-  @EventBasedMessage(SyncedGameTableMessageType.RESPONSE, GameTableResponseMessage)
+  @EventBasedMessage(
+    SyncedGameTableMessageType.RESPONSE,
+    GameTableResponseMessage
+  )
   protected _internal_sgt_onResponse(
     socket: SyncedGameTableClientSocket,
     body: GameTableResponseMessage
@@ -397,4 +409,4 @@ export class SyncedGameTableWebRTCServer
     );
     socket.close();
   }
-};
+}

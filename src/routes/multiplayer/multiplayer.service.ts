@@ -1,6 +1,11 @@
 import { Injectable } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
-import { GameSession, GameSessionVisibility, Prisma, User } from "@prisma/client";
+import {
+  GameSession,
+  GameSessionVisibility,
+  Prisma,
+  User
+} from "@prisma/client";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { ProjectService } from "@project/project.service";
 import { WebRTCService } from "@webrtc/webrtc.service";
@@ -41,12 +46,13 @@ interface GameTableTicketPayload {
   userId: number;
   role: SyncedGameTableRole;
   maxPlayers: number;
-};
+}
 
 @Injectable()
 export class MultiplayerService {
   private static readonly JOIN_CODE_LENGTH = 8;
-  private static readonly JOIN_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  private static readonly JOIN_CODE_ALPHABET =
+    "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   private static readonly TICKET_TTL = "60s";
   private static readonly MAX_DB_RETRIES = 5;
 
@@ -75,7 +81,9 @@ export class MultiplayerService {
   ): Promise<GameSessionConnectionResponseDto> {
     const project = await this._projectService.findOne(dto.projectId);
     if (!project) {
-      throw new ProjectNotFoundError(`Project with ID ${dto.projectId} not found`);
+      throw new ProjectNotFoundError(
+        `Project with ID ${dto.projectId} not found`
+      );
     }
 
     const existing = await this._prismaService.gameSession.findFirst({
@@ -98,8 +106,13 @@ export class MultiplayerService {
     const created =
       dto.visibility === GameSessionVisibility.INVITE_CODE
         ? await this._withFreshJoinCode((joinCode) =>
-          this._prismaService.gameSession.create({ data: { ...baseData, joinCode } }))
-        : await this._prismaService.gameSession.create({ data: { ...baseData, joinCode: null } });
+            this._prismaService.gameSession.create({
+              data: { ...baseData, joinCode }
+            })
+          )
+        : await this._prismaService.gameSession.create({
+            data: { ...baseData, joinCode: null }
+          });
 
     return this._buildConnection(created, userId, "host");
   }
@@ -114,20 +127,20 @@ export class MultiplayerService {
 
     sessions.forEach((session) => {
       switch (session.visibility) {
-      case GameSessionVisibility.PUBLIC:
-        visible.push(session);
-        break;
+        case GameSessionVisibility.PUBLIC:
+          visible.push(session);
+          break;
 
-      case GameSessionVisibility.FRIENDS_ONLY:
-        // FIXME: friends system not implemented yet; hide friends-only sessions
-        // from listings until areFriends() exists.
-        // visible.push(session) when isFriend(userId, session.hostId)
-        void userId;
-        break;
+        case GameSessionVisibility.FRIENDS_ONLY:
+          // FIXME: friends system not implemented yet; hide friends-only sessions
+          // from listings until areFriends() exists.
+          // visible.push(session) when isFriend(userId, session.hostId)
+          void userId;
+          break;
 
-      case GameSessionVisibility.INVITE_CODE:
-        // Not discoverable through listing — joinable by code only.
-        break;
+        case GameSessionVisibility.INVITE_CODE:
+          // Not discoverable through listing — joinable by code only.
+          break;
       }
     });
 
@@ -184,10 +197,17 @@ export class MultiplayerService {
 
     if (needsFreshJoinCode) {
       return this._withFreshJoinCode((joinCode) =>
-        this._prismaService.gameSession.update({ where: { sessionId }, data: { ...data, joinCode } }));
+        this._prismaService.gameSession.update({
+          where: { sessionId },
+          data: { ...data, joinCode }
+        })
+      );
     }
 
-    return this._prismaService.gameSession.update({ where: { sessionId }, data });
+    return this._prismaService.gameSession.update({
+      where: { sessionId },
+      data
+    });
   }
 
   async delete(sessionId: string, userId: number): Promise<void> {
@@ -224,49 +244,52 @@ export class MultiplayerService {
     }
 
     switch (session.visibility) {
-    case GameSessionVisibility.INVITE_CODE:
-      if (!joinCode || joinCode !== session.joinCode) {
-        throw new MultiplayerInvalidJoinCodeError("Invalid join code");
-      }
-      break;
+      case GameSessionVisibility.INVITE_CODE:
+        if (!joinCode || joinCode !== session.joinCode) {
+          throw new MultiplayerInvalidJoinCodeError("Invalid join code");
+        }
+        break;
 
-    case GameSessionVisibility.FRIENDS_ONLY:
-      // FIXME: friends system not implemented yet; deny until areFriends() exists.
-      throw new MultiplayerForbiddenError(
-        "Friends-only game sessions cannot be joined yet"
-      );
+      case GameSessionVisibility.FRIENDS_ONLY:
+        // FIXME: friends system not implemented yet; deny until areFriends() exists.
+        throw new MultiplayerForbiddenError(
+          "Friends-only game sessions cannot be joined yet"
+        );
 
-    case GameSessionVisibility.PUBLIC:
-      break;
+      case GameSessionVisibility.PUBLIC:
+        break;
     }
 
     // Re-check capacity and connect atomically: a plain read-then-write would
     // let concurrent joiners both pass the check and overflow maxPlayers.
     await this._retryOnSerializationFailure(() =>
-      this._prismaService.$transaction(async (tx) => {
-        const fresh = await tx.gameSession.findUnique({
-          where: { sessionId },
-          include: { otherUsers: true }
-        });
+      this._prismaService.$transaction(
+        async (tx) => {
+          const fresh = await tx.gameSession.findUnique({
+            where: { sessionId },
+            include: { otherUsers: true }
+          });
 
-        if (!fresh) {
-          throw new MultiplayerGameSessionNotFoundError(
-            `No game session found for UUID ${sessionId}`
-          );
-        }
-        if (fresh.otherUsers.some((user) => user.id === userId)) {
-          return;
-        }
-        // Host counts toward maxPlayers.
-        if (fresh.otherUsers.length + 1 >= fresh.maxPlayers) {
-          throw new MultiplayerSessionFullError("Game session is full");
-        }
+          if (!fresh) {
+            throw new MultiplayerGameSessionNotFoundError(
+              `No game session found for UUID ${sessionId}`
+            );
+          }
+          if (fresh.otherUsers.some((user) => user.id === userId)) {
+            return;
+          }
+          // Host counts toward maxPlayers.
+          if (fresh.otherUsers.length + 1 >= fresh.maxPlayers) {
+            throw new MultiplayerSessionFullError("Game session is full");
+          }
 
-        await tx.gameSession.update({
-          where: { sessionId },
-          data: { otherUsers: { connect: { id: userId } } }
-        });
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })
+          await tx.gameSession.update({
+            where: { sessionId },
+            data: { otherUsers: { connect: { id: userId } } }
+          });
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+      )
     );
 
     return this._buildConnection(session, userId, "slave");
@@ -335,9 +358,11 @@ export class MultiplayerService {
       session.maxPlayers
     );
 
-    if (role === "host" &&
-        session.visibility === GameSessionVisibility.INVITE_CODE &&
-        session.joinCode) {
+    if (
+      role === "host" &&
+      session.visibility === GameSessionVisibility.INVITE_CODE &&
+      session.joinCode
+    ) {
       response.joinCode = session.joinCode;
     }
 
@@ -364,13 +389,16 @@ export class MultiplayerService {
   }
 
   private _verifyTicket(raw: string): SyncedGameTableTicket {
-    const payload = this._jwtService.verify<Partial<GameTableTicketPayload>>(raw);
+    const payload =
+      this._jwtService.verify<Partial<GameTableTicketPayload>>(raw);
 
-    if (payload.kind !== "game-table" ||
-        typeof payload.sessionId !== "string" ||
-        typeof payload.userId !== "number" ||
-        typeof payload.maxPlayers !== "number" ||
-        (payload.role !== "host" && payload.role !== "slave")) {
+    if (
+      payload.kind !== "game-table" ||
+      typeof payload.sessionId !== "string" ||
+      typeof payload.userId !== "number" ||
+      typeof payload.maxPlayers !== "number" ||
+      (payload.role !== "host" && payload.role !== "slave")
+    ) {
       throw new MultiplayerInvalidStateError("Malformed game-table ticket");
     }
 
@@ -387,30 +415,45 @@ export class MultiplayerService {
   private async _withFreshJoinCode<T>(
     op: (joinCode: string) => Promise<T>
   ): Promise<T> {
-    for (let attempt = 0; attempt < MultiplayerService.MAX_DB_RETRIES; attempt++) {
+    for (
+      let attempt = 0;
+      attempt < MultiplayerService.MAX_DB_RETRIES;
+      attempt++
+    ) {
       try {
         return await op(this._randomJoinCode());
       } catch (err) {
-        if (this._isJoinCodeConflict(err) &&
-            attempt < MultiplayerService.MAX_DB_RETRIES - 1) {
+        if (
+          this._isJoinCodeConflict(err) &&
+          attempt < MultiplayerService.MAX_DB_RETRIES - 1
+        ) {
           continue;
         }
         throw err;
       }
     }
 
-    throw new MultiplayerInvalidStateError("Failed to generate a unique join code");
+    throw new MultiplayerInvalidStateError(
+      "Failed to generate a unique join code"
+    );
   }
 
   // Retries `op` on a serialization conflict (P2034), which is the expected,
   // recoverable outcome of two Serializable transactions racing to join.
-  private async _retryOnSerializationFailure<T>(op: () => Promise<T>): Promise<T> {
-    for (let attempt = 0; attempt < MultiplayerService.MAX_DB_RETRIES; attempt++) {
+  private async _retryOnSerializationFailure<T>(
+    op: () => Promise<T>
+  ): Promise<T> {
+    for (
+      let attempt = 0;
+      attempt < MultiplayerService.MAX_DB_RETRIES;
+      attempt++
+    ) {
       try {
         return await op();
       } catch (err) {
         const conflict =
-          err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2034";
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === "P2034";
 
         if (conflict && attempt < MultiplayerService.MAX_DB_RETRIES - 1) {
           continue;
@@ -423,7 +466,10 @@ export class MultiplayerService {
   }
 
   private _isJoinCodeConflict(err: unknown): boolean {
-    if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== "P2002") {
+    if (
+      !(err instanceof Prisma.PrismaClientKnownRequestError) ||
+      err.code !== "P2002"
+    ) {
       return false;
     }
 

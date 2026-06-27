@@ -28,7 +28,9 @@ function fakeSocket(
 }
 
 describe("SyncedGameTableWebRTCServer", () => {
-  const webrtcService = { registerServer: jest.fn() } as unknown as WebRTCService;
+  const webrtcService = {
+    registerServer: jest.fn()
+  } as unknown as WebRTCService;
   const verifyTicket = jest.fn();
 
   let server: SyncedGameTableWebRTCServer;
@@ -41,16 +43,21 @@ describe("SyncedGameTableWebRTCServer", () => {
     Object.assign(options, { port: nextPort++ });
 
     server = new SyncedGameTableWebRTCServer(
-      webrtcService, "test", verifyTicket, options
+      webrtcService,
+      "test",
+      verifyTicket,
+      options
     );
 
     host = fakeSocket("s1", 1, "host");
     slave = fakeSocket("s1", 2, "slave");
 
     // Seed a room directly on the server socket.
-    const rooms = (server as unknown as {
-      wss(): { rooms: Map<string, unknown> };
-    }).wss().rooms;
+    const rooms = (
+      server as unknown as {
+        wss(): { rooms: Map<string, unknown> };
+      }
+    ).wss().rooms;
 
     rooms.set("s1", { host, slaves: new Map([[2, slave]]), maxPlayers: 4 });
   });
@@ -60,21 +67,27 @@ describe("SyncedGameTableWebRTCServer", () => {
   });
 
   function onState(socket: FakeSocket, data: unknown): void {
-    (server as unknown as {
-      _internal_sgt_onState(s: FakeSocket, b: unknown): void;
-    })._internal_sgt_onState(socket, { type: "state", data });
+    (
+      server as unknown as {
+        _internal_sgt_onState(s: FakeSocket, b: unknown): void;
+      }
+    )._internal_sgt_onState(socket, { type: "state", data });
   }
 
   function onRequest(socket: FakeSocket, data: unknown): void {
-    (server as unknown as {
-      _internal_sgt_onRequest(s: FakeSocket, b: unknown): void;
-    })._internal_sgt_onRequest(socket, { type: "request", data });
+    (
+      server as unknown as {
+        _internal_sgt_onRequest(s: FakeSocket, b: unknown): void;
+      }
+    )._internal_sgt_onRequest(socket, { type: "request", data });
   }
 
   function onResponse(socket: FakeSocket, to: number, data: unknown): void {
-    (server as unknown as {
-      _internal_sgt_onResponse(s: FakeSocket, b: unknown): void;
-    })._internal_sgt_onResponse(socket, { type: "response", to, data });
+    (
+      server as unknown as {
+        _internal_sgt_onResponse(s: FakeSocket, b: unknown): void;
+      }
+    )._internal_sgt_onResponse(socket, { type: "response", to, data });
   }
 
   it("relays host state to slaves", () => {
@@ -97,7 +110,11 @@ describe("SyncedGameTableWebRTCServer", () => {
 
     expect(host.send).toHaveBeenCalledTimes(1);
     const payload = JSON.parse(host.send.mock.calls[0]![0] as string);
-    expect(payload).toMatchObject({ type: "request", from: 2, data: { action: "read" } });
+    expect(payload).toMatchObject({
+      type: "request",
+      from: 2,
+      data: { action: "read" }
+    });
   });
 
   it("rejects and closes a host that sends a request", () => {
@@ -120,9 +137,11 @@ describe("SyncedGameTableWebRTCServer", () => {
     expect(host.close).toHaveBeenCalled();
     expect(slave.close).toHaveBeenCalled();
 
-    const rooms = (server as unknown as {
-      wss(): { rooms: Map<string, unknown> };
-    }).wss().rooms;
+    const rooms = (
+      server as unknown as {
+        wss(): { rooms: Map<string, unknown> };
+      }
+    ).wss().rooms;
     expect(rooms.has("s1")).toBe(false);
   });
 });
@@ -131,14 +150,22 @@ interface Room {
   host: FakeSocket | null;
   slaves: Map<number, FakeSocket>;
   maxPlayers: number;
-};
+}
 
 interface Internals {
-  _internal_sgt_authenticate(req: unknown, sock: unknown, head: unknown): boolean;
-  _internal_sgt_onConnection(serverSock: unknown, sock: FakeSocket, req: unknown): void;
+  _internal_sgt_authenticate(
+    req: unknown,
+    sock: unknown,
+    head: unknown
+  ): boolean;
+  _internal_sgt_onConnection(
+    serverSock: unknown,
+    sock: FakeSocket,
+    req: unknown
+  ): void;
   _internal_sgt_onClose(sock: FakeSocket): void;
   wss(): { rooms: Map<string, Room> };
-};
+}
 
 function rawSocket(): FakeSocket {
   return {
@@ -150,7 +177,9 @@ function rawSocket(): FakeSocket {
 }
 
 describe("SyncedGameTableWebRTCServer — connection lifecycle", () => {
-  const webrtcService = { registerServer: jest.fn() } as unknown as WebRTCService;
+  const webrtcService = {
+    registerServer: jest.fn()
+  } as unknown as WebRTCService;
   const verifyTicket = jest.fn();
 
   let server: SyncedGameTableWebRTCServer;
@@ -161,7 +190,12 @@ describe("SyncedGameTableWebRTCServer — connection lifecycle", () => {
     const options = new SyncedGameTableWebRTCServerOptions();
     Object.assign(options, { port: nextPort++ });
 
-    server = new SyncedGameTableWebRTCServer(webrtcService, "test", verifyTicket, options);
+    server = new SyncedGameTableWebRTCServer(
+      webrtcService,
+      "test",
+      verifyTicket,
+      options
+    );
     internals = server as unknown as Internals;
   });
 
@@ -170,7 +204,10 @@ describe("SyncedGameTableWebRTCServer — connection lifecycle", () => {
   });
 
   function ticket(
-    sessionId: string, userId: number, role: SyncedGameTableRole, maxPlayers = 4
+    sessionId: string,
+    userId: number,
+    role: SyncedGameTableRole,
+    maxPlayers = 4
   ): unknown {
     return { sessionId, userId, role, maxPlayers };
   }
@@ -190,14 +227,23 @@ describe("SyncedGameTableWebRTCServer — connection lifecycle", () => {
   }
 
   it("rejects a ticketless upgrade", () => {
-    expect(internals._internal_sgt_authenticate({ url: "/" }, {}, Buffer.alloc(0))).toBe(false);
+    expect(
+      internals._internal_sgt_authenticate({ url: "/" }, {}, Buffer.alloc(0))
+    ).toBe(false);
     expect(verifyTicket).not.toHaveBeenCalled();
   });
 
   it("rejects an upgrade whose ticket fails to verify", () => {
-    verifyTicket.mockImplementationOnce(() => { throw new Error("bad ticket"); });
-    expect(internals._internal_sgt_authenticate({ url: "/?ticket=t" }, {}, Buffer.alloc(0)))
-      .toBe(false);
+    verifyTicket.mockImplementationOnce(() => {
+      throw new Error("bad ticket");
+    });
+    expect(
+      internals._internal_sgt_authenticate(
+        { url: "/?ticket=t" },
+        {},
+        Buffer.alloc(0)
+      )
+    ).toBe(false);
   });
 
   it("registers the host and stamps its identity", () => {
@@ -225,8 +271,10 @@ describe("SyncedGameTableWebRTCServer — connection lifecycle", () => {
     authAndConnect(ticket("s2", 2, "slave"), slave);
 
     expect(roomOf("s2")!.slaves.get(2)).toBe(slave);
-    expect(JSON.parse(host.send.mock.calls[0]![0] as string))
-      .toMatchObject({ type: "peer-joined", userId: 2 });
+    expect(JSON.parse(host.send.mock.calls[0]![0] as string)).toMatchObject({
+      type: "peer-joined",
+      userId: 2
+    });
   });
 
   it("rejects a slave when the room is full", () => {
@@ -271,8 +319,10 @@ describe("SyncedGameTableWebRTCServer — connection lifecycle", () => {
     internals._internal_sgt_onClose(slave);
 
     expect(roomOf("s2")!.slaves.has(2)).toBe(false);
-    expect(JSON.parse(host.send.mock.calls[0]![0] as string))
-      .toMatchObject({ type: "peer-left", userId: 2 });
+    expect(JSON.parse(host.send.mock.calls[0]![0] as string)).toMatchObject({
+      type: "peer-left",
+      userId: 2
+    });
   });
 
   it("ends the room when the host disconnects", () => {
@@ -283,8 +333,9 @@ describe("SyncedGameTableWebRTCServer — connection lifecycle", () => {
 
     internals._internal_sgt_onClose(host);
 
-    expect(JSON.parse(slave.send.mock.calls[0]![0] as string))
-      .toMatchObject({ type: "session-ended" });
+    expect(JSON.parse(slave.send.mock.calls[0]![0] as string)).toMatchObject({
+      type: "session-ended"
+    });
     expect(slave.close).toHaveBeenCalled();
     expect(roomOf("s2")).toBeUndefined();
   });

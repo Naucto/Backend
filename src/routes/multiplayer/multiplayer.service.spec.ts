@@ -64,10 +64,14 @@ describe("MultiplayerService", () => {
     // resetAllMocks (not clearAllMocks) also drains queued *Once values, so a
     // mock left unconsumed by one test can't leak into the next.
     jest.resetAllMocks();
-    SyncedGameTableServerMock.mockImplementation(() => ({ closeRoom: jest.fn() }));
+    SyncedGameTableServerMock.mockImplementation(() => ({
+      closeRoom: jest.fn()
+    }));
     webrtcService.buildOffer.mockReturnValue({});
     jwtService.sign.mockReturnValue("signed.ticket");
-    $transaction.mockImplementation((cb: (tx: unknown) => unknown) => cb({ gameSession }));
+    $transaction.mockImplementation((cb: (tx: unknown) => unknown) =>
+      cb({ gameSession })
+    );
 
     const module = await Test.createTestingModule({
       providers: [
@@ -134,11 +138,14 @@ describe("MultiplayerService", () => {
     it("generates a join code for INVITE_CODE sessions", async () => {
       projectService.findOne.mockResolvedValueOnce({ id: 1 });
       gameSession.findFirst.mockResolvedValueOnce(null);
-      gameSession.create.mockImplementationOnce(({ data }: { data: { joinCode: string } }) =>
-        Promise.resolve(makeSession({
-          visibility: GameSessionVisibility.INVITE_CODE,
-          joinCode: data.joinCode
-        }))
+      gameSession.create.mockImplementationOnce(
+        ({ data }: { data: { joinCode: string } }) =>
+          Promise.resolve(
+            makeSession({
+              visibility: GameSessionVisibility.INVITE_CODE,
+              joinCode: data.joinCode
+            })
+          )
       );
 
       const result = await service.create(1, {
@@ -155,22 +162,26 @@ describe("MultiplayerService", () => {
 
   describe("join", () => {
     it("rejects an invalid join code on INVITE_CODE sessions", async () => {
-      gameSession.findUnique.mockResolvedValueOnce(makeSession({
-        visibility: GameSessionVisibility.INVITE_CODE,
-        joinCode: "RIGHTCOD"
-      }));
-
-      await expect(service.join("session-uuid", 2, "WRONG")).rejects.toBeInstanceOf(
-        MultiplayerInvalidJoinCodeError
+      gameSession.findUnique.mockResolvedValueOnce(
+        makeSession({
+          visibility: GameSessionVisibility.INVITE_CODE,
+          joinCode: "RIGHTCOD"
+        })
       );
+
+      await expect(
+        service.join("session-uuid", 2, "WRONG")
+      ).rejects.toBeInstanceOf(MultiplayerInvalidJoinCodeError);
     });
 
     it("rejects when the session is full", async () => {
       // full check now runs inside the transaction, which re-reads via findUnique
-      gameSession.findUnique.mockResolvedValue(makeSession({
-        maxPlayers: 2,
-        otherUsers: [{ id: 5 } as User]
-      }));
+      gameSession.findUnique.mockResolvedValue(
+        makeSession({
+          maxPlayers: 2,
+          otherUsers: [{ id: 5 } as User]
+        })
+      );
 
       await expect(service.join("session-uuid", 2)).rejects.toBeInstanceOf(
         MultiplayerSessionFullError
@@ -178,9 +189,11 @@ describe("MultiplayerService", () => {
     });
 
     it("rejects a user that already joined", async () => {
-      gameSession.findUnique.mockResolvedValueOnce(makeSession({
-        otherUsers: [{ id: 2 } as User]
-      }));
+      gameSession.findUnique.mockResolvedValueOnce(
+        makeSession({
+          otherUsers: [{ id: 2 } as User]
+        })
+      );
 
       await expect(service.join("session-uuid", 2)).rejects.toBeInstanceOf(
         MultiplayerUserAlreadyJoinedError

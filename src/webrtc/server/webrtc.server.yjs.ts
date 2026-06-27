@@ -18,56 +18,56 @@ import { IsArray, IsEnum, IsString } from "class-validator";
 type YjsWebRTCTopicID = string;
 
 type YjsWebRTCClientSocket = WebRTCClientSocket<{
-  pinged: boolean,
-  pingChecker: NodeJS.Timeout,
-  subscribedTopics: Set<YjsWebRTCTopicID>
+  pinged: boolean;
+  pingChecker: NodeJS.Timeout;
+  subscribedTopics: Set<YjsWebRTCTopicID>;
 }>;
 
 type YjsWebRTCServerSocket = WebRTCServerSocket<{
-  topics: Map<YjsWebRTCTopicID, Set<YjsWebRTCClientSocket>>
+  topics: Map<YjsWebRTCTopicID, Set<YjsWebRTCClientSocket>>;
 }>;
 
 // ----------------------------------------------------------------------------
 
 enum YjsMessageType {
-  SUBSCRIBE   = "subscribe",
+  SUBSCRIBE = "subscribe",
   UNSUBSCRIBE = "unsubscribe",
-  PUBLISH     = "publish",
-  PING        = "ping",
-  PONG        = "pong"
-};
+  PUBLISH = "publish",
+  PING = "ping",
+  PONG = "pong"
+}
 
 class YjsMessage {
   @IsEnum(YjsMessageType)
-    type!: YjsMessageType;
-};
+  type!: YjsMessageType;
+}
 
 class YjsMessageSubscribe extends YjsMessage {
   @IsArray()
   @IsString({ each: true })
-    topics!: YjsWebRTCTopicID[];
-};
+  topics!: YjsWebRTCTopicID[];
+}
 
 class YjsMessageUnsubscribe extends YjsMessage {
   @IsArray()
   @IsString({ each: true })
-    topics!: YjsWebRTCTopicID[];
-};
+  topics!: YjsWebRTCTopicID[];
+}
 
 class YjsMessagePublish extends YjsMessage {
   @IsString()
-    topic!: YjsWebRTCTopicID;
+  topic!: YjsWebRTCTopicID;
 
   data?: unknown;
-};
+}
 
-class YjsMessagePing extends YjsMessage {};
+class YjsMessagePing extends YjsMessage {}
 
 // ----------------------------------------------------------------------------
 
 export class YjsWebRTCServerOptions extends EventBasedWebRTCServerOptions {
   pingTimeout: number = 30000;
-};
+}
 
 // y-webrtc compatible signaling/relay server. The message handling
 // (subscribe/unsubscribe/publish/ping) is expressed as @EventBasedMessage
@@ -93,10 +93,12 @@ export class YjsWebRTCServer extends EventBasedWebRTCServer<YjsWebRTCServerOptio
   ): void {
     clientSocket.subscribedTopics = new Set<string>();
 
-    clientSocket.pinged      = true;
+    clientSocket.pinged = true;
     clientSocket.pingChecker = setInterval(() => {
       if (!clientSocket.pinged) {
-        this.logger.verbose(`Client ${clientSocket.remoteAddress} ping timed out`);
+        this.logger.verbose(
+          `Client ${clientSocket.remoteAddress} ping timed out`
+        );
         clearInterval(clientSocket.pingChecker);
         clientSocket.close();
         return;
@@ -107,7 +109,9 @@ export class YjsWebRTCServer extends EventBasedWebRTCServer<YjsWebRTCServerOptio
       try {
         clientSocket.ping();
       } catch (err) {
-        this.logger.verbose(`Failed to ping client ${clientSocket.remoteAddress}: ${err}`);
+        this.logger.verbose(
+          `Failed to ping client ${clientSocket.remoteAddress}: ${err}`
+        );
         clientSocket.close();
       }
     }, this.extraOpts.pingTimeout);
@@ -122,8 +126,7 @@ export class YjsWebRTCServer extends EventBasedWebRTCServer<YjsWebRTCServerOptio
     socket.subscribedTopics.forEach((topicId) => {
       const topic = serverSocket.topics.get(topicId);
 
-      if (topic === undefined)
-        return;
+      if (topic === undefined) return;
 
       topic.delete(socket);
 
@@ -145,7 +148,7 @@ export class YjsWebRTCServer extends EventBasedWebRTCServer<YjsWebRTCServerOptio
   ): void {
     const serverSocket = this.wss<YjsWebRTCServerSocket>();
 
-    messageBody.topics.forEach(topicId => {
+    messageBody.topics.forEach((topicId) => {
       if (!serverSocket.topics.has(topicId)) {
         serverSocket.topics.set(topicId, new Set<YjsWebRTCClientSocket>());
       }
@@ -166,7 +169,7 @@ export class YjsWebRTCServer extends EventBasedWebRTCServer<YjsWebRTCServerOptio
   ): void {
     const serverSocket = this.wss<YjsWebRTCServerSocket>();
 
-    messageBody.topics.forEach(topicId => {
+    messageBody.topics.forEach((topicId) => {
       if (!serverSocket.topics.has(topicId)) {
         return;
       }
@@ -195,4 +198,4 @@ export class YjsWebRTCServer extends EventBasedWebRTCServer<YjsWebRTCServerOptio
   protected _internal_yjs_onPing(socket: YjsWebRTCClientSocket): void {
     this.send(socket, { type: YjsMessageType.PONG });
   }
-};
+}

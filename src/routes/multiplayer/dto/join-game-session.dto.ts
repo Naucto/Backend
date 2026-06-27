@@ -7,5 +7,5 @@ export class JoinGameSessionDto {
   })
   @IsOptional()
   @IsString()
-    joinCode?: string;
-};
+  joinCode?: string;
+}

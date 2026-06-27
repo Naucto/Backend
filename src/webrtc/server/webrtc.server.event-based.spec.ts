@@ -12,12 +12,12 @@ class GreetMessage {
   type!: string;
 
   @IsString()
-    name!: string;
-};
+  name!: string;
+}
 
 class BoomMessage {
   type!: string;
-};
+}
 
 class TestEventBasedServer extends EventBasedWebRTCServer {
   public readonly greeted: string[] = [];
@@ -31,7 +31,7 @@ class TestEventBasedServer extends EventBasedWebRTCServer {
   protected _onBoom(): void {
     throw new Error("handler blew up");
   }
-};
+}
 
 function fakeSocket(): WebRTCClientSocket {
   return {
@@ -43,12 +43,16 @@ function fakeSocket(): WebRTCClientSocket {
 }
 
 describe("EventBasedWebRTCServer", () => {
-  const webrtcService = { registerServer: jest.fn() } as unknown as WebRTCService;
+  const webrtcService = {
+    registerServer: jest.fn()
+  } as unknown as WebRTCService;
 
   let server: TestEventBasedServer;
   let nextPort = 14096;
 
-  function build(opts: Partial<EventBasedWebRTCServerOptions> = {}): TestEventBasedServer {
+  function build(
+    opts: Partial<EventBasedWebRTCServerOptions> = {}
+  ): TestEventBasedServer {
     const options = new EventBasedWebRTCServerOptions();
     Object.assign(options, opts, { port: nextPort++ });
     return new TestEventBasedServer(webrtcService, "test", options);
@@ -58,10 +62,16 @@ describe("EventBasedWebRTCServer", () => {
     server?.shutdown();
   });
 
-  function dispatch(s: TestEventBasedServer, socket: WebRTCClientSocket, payload: unknown): void {
-    (s as unknown as {
-      _internal_eb_onMessage(sock: WebRTCClientSocket, raw: string): void;
-    })._internal_eb_onMessage(socket, JSON.stringify(payload));
+  function dispatch(
+    s: TestEventBasedServer,
+    socket: WebRTCClientSocket,
+    payload: unknown
+  ): void {
+    (
+      s as unknown as {
+        _internal_eb_onMessage(sock: WebRTCClientSocket, raw: string): void;
+      }
+    )._internal_eb_onMessage(socket, JSON.stringify(payload));
   }
 
   it("dispatches a valid message to the registered handler", () => {
@@ -116,9 +126,11 @@ describe("EventBasedWebRTCServer", () => {
     server = build();
     const socket = fakeSocket();
 
-    (server as unknown as {
-      _internal_eb_onMessage(sock: WebRTCClientSocket, raw: string): void;
-    })._internal_eb_onMessage(socket, "{not json");
+    (
+      server as unknown as {
+        _internal_eb_onMessage(sock: WebRTCClientSocket, raw: string): void;
+      }
+    )._internal_eb_onMessage(socket, "{not json");
 
     expect(socket.close).toHaveBeenCalled();
   });

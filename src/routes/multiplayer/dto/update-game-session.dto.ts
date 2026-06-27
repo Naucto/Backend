@@ -1,22 +1,32 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { GameSessionVisibility } from "@prisma/client";
-import { IsEnum, IsInt, IsOptional, IsString, Length, Min } from "class-validator";
+import {
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Length,
+  Min
+} from "class-validator";
 
 export class UpdateGameSessionDto {
   @ApiPropertyOptional({ description: "New title of the session" })
   @IsOptional()
   @IsString()
   @Length(1, 80)
-    title?: string;
+  title?: string;
 
-  @ApiPropertyOptional({ description: "New maximum number of players, host included", minimum: 2 })
+  @ApiPropertyOptional({
+    description: "New maximum number of players, host included",
+    minimum: 2
+  })
   @IsOptional()
   @IsInt()
   @Min(2)
-    maxPlayers?: number;
+  maxPlayers?: number;
 
   @ApiPropertyOptional({ enum: GameSessionVisibility })
   @IsOptional()
   @IsEnum(GameSessionVisibility)
-    visibility?: GameSessionVisibility;
-};
+  visibility?: GameSessionVisibility;
+}

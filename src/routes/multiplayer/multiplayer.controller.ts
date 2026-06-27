@@ -1,4 +1,10 @@
-import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiOperation,
+  ApiResponse,
+  ApiTags
+} from "@nestjs/swagger";
 import { GameSessionEx, MultiplayerService } from "./multiplayer.service";
 
 import {
@@ -40,7 +46,10 @@ import { CreateGameSessionDto } from "./dto/create-game-session.dto";
 import { UpdateGameSessionDto } from "./dto/update-game-session.dto";
 import { JoinGameSessionDto } from "./dto/join-game-session.dto";
 import { GameSessionConnectionResponseDto } from "./dto/game-session-connection.dto";
-import { GameSessionListResponseDto, GameSessionResponseDto } from "./dto/game-session.dto";
+import {
+  GameSessionListResponseDto,
+  GameSessionResponseDto
+} from "./dto/game-session.dto";
 
 @ApiTags("game-sessions")
 @ApiBearerAuth("JWT-auth")
@@ -49,14 +58,17 @@ import { GameSessionListResponseDto, GameSessionResponseDto } from "./dto/game-s
 export class MultiplayerController {
   private readonly _logger = new Logger(MultiplayerController.name);
 
-  constructor(
-    private readonly _multiplayerService: MultiplayerService
-  ) {}
+  constructor(private readonly _multiplayerService: MultiplayerService) {}
 
   @Post()
-  @ApiOperation({ summary: "Create a new game session, with the caller as host" })
+  @ApiOperation({
+    summary: "Create a new game session, with the caller as host"
+  })
   @ApiBody({ type: CreateGameSessionDto })
-  @ApiResponse({ status: HttpStatus.CREATED, type: GameSessionConnectionResponseDto })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    type: GameSessionConnectionResponseDto
+  })
   async create(
     @Req() req: RequestWithUser,
     @Body() dto: CreateGameSessionDto
@@ -69,7 +81,9 @@ export class MultiplayerController {
   }
 
   @Get()
-  @ApiOperation({ summary: "List game sessions for a project, from the caller's perspective" })
+  @ApiOperation({
+    summary: "List game sessions for a project, from the caller's perspective"
+  })
   @ApiResponse({ status: HttpStatus.OK, type: GameSessionListResponseDto })
   async list(
     @Req() req: RequestWithUser,
@@ -97,7 +111,10 @@ export class MultiplayerController {
     @Param("sessionId") sessionId: string
   ): Promise<GameSessionResponseDto> {
     try {
-      const session = await this._multiplayerService.get(sessionId, req.user.id);
+      const session = await this._multiplayerService.get(
+        sessionId,
+        req.user.id
+      );
       return this._toResponse(session);
     } catch (error) {
       this._rethrow(error, `get session ${sessionId}`);
@@ -137,14 +154,21 @@ export class MultiplayerController {
   @Post(":sessionId/join")
   @ApiOperation({ summary: "Join a game session as a player" })
   @ApiBody({ type: JoinGameSessionDto })
-  @ApiResponse({ status: HttpStatus.OK, type: GameSessionConnectionResponseDto })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    type: GameSessionConnectionResponseDto
+  })
   async join(
     @Req() req: RequestWithUser,
     @Param("sessionId") sessionId: string,
     @Body() dto: JoinGameSessionDto
   ): Promise<GameSessionConnectionResponseDto> {
     try {
-      return await this._multiplayerService.join(sessionId, req.user.id, dto.joinCode);
+      return await this._multiplayerService.join(
+        sessionId,
+        req.user.id,
+        dto.joinCode
+      );
     } catch (error) {
       this._rethrow(error, `join session ${sessionId}`);
     }
@@ -181,8 +205,10 @@ export class MultiplayerController {
 
   // Maps domain errors to HTTP exceptions; unknown errors become a 500.
   private _rethrow(error: unknown, context: string): never {
-    if (error instanceof ProjectNotFoundError ||
-        error instanceof MultiplayerGameSessionNotFoundError) {
+    if (
+      error instanceof ProjectNotFoundError ||
+      error instanceof MultiplayerGameSessionNotFoundError
+    ) {
       throw new NotFoundException(error.message);
     }
 
@@ -190,14 +216,18 @@ export class MultiplayerController {
       throw new ForbiddenException(error.message);
     }
 
-    if (error instanceof MultiplayerHostOpenedError ||
-        error instanceof MultiplayerUserAlreadyJoinedError ||
-        error instanceof MultiplayerSessionFullError) {
+    if (
+      error instanceof MultiplayerHostOpenedError ||
+      error instanceof MultiplayerUserAlreadyJoinedError ||
+      error instanceof MultiplayerSessionFullError
+    ) {
       throw new ConflictException(error.message);
     }
 
-    if (error instanceof MultiplayerInvalidJoinCodeError ||
-        error instanceof MultiplayerUserNotInSessionError) {
+    if (
+      error instanceof MultiplayerInvalidJoinCodeError ||
+      error instanceof MultiplayerUserNotInSessionError
+    ) {
       throw new BadRequestException(error.message);
     }
 
