@@ -1,7 +1,7 @@
 enum GameSessionVisibility {
   PUBLIC
   FRIENDS_ONLY
-  PRIVATE
+  INVITE_CODE
 }
 
 model GameSession {
@@ -13,10 +13,14 @@ model GameSession {
   startedAt DateTime  @default(now())
   endedAt   DateTime?
 
-  visibility GameSessionVisibility @default(PRIVATE)
+  title      String
+  maxPlayers Int
+  visibility GameSessionVisibility @default(PUBLIC)
   otherUsers User[]                @relation("UserJoinedGameSessions")
 
-  sessionId String @unique @default(uuid())
+  // Short join code generated only for INVITE_CODE sessions
+  joinCode  String? @unique
+  sessionId String  @unique @default(uuid())
 
   @@index([hostId])
   @@index([projectId])
