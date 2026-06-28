@@ -1,36 +1,39 @@
-import { Injectable, InternalServerErrorException, UnauthorizedException } from "@nestjs/common";
+import { Injectable, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { OAuthUserPayload } from "../auth.types";
 import * as jwt from "jsonwebtoken";
 import jwksRsa from "jwks-rsa";
+import { OAuthProviderService } from "./oauth-provider.base";
 
 @Injectable()
-export class MicrosoftAuthService {
-  private readonly clientId: string;
-  private readonly tenantId: string;
-  private readonly jwksClient: jwksRsa.JwksClient;
+export class MicrosoftAuthService extends OAuthProviderService {
+  private readonly clientId!: string;
+  private readonly tenantId!: string;
+  private readonly jwksClient!: jwksRsa.JwksClient;
 
   constructor(configService: ConfigService) {
-    const clientId = configService.get<string>("MICROSOFT_CLIENT_ID");
-    const tenantId = configService.get<string>("MICROSOFT_TENANT_ID");
+    super("Microsoft");
 
-    if (!clientId || !tenantId) {
-      throw new InternalServerErrorException(
-        "Missing Microsoft OAuth configuration: MICROSOFT_CLIENT_ID and MICROSOFT_TENANT_ID are required"
-      );
+    const config = this.loadConfig(configService, [
+      "MICROSOFT_CLIENT_ID",
+      "MICROSOFT_TENANT_ID"
+    ]);
+
+    if (config) {
+      this.clientId = config["MICROSOFT_CLIENT_ID"]!;
+      this.tenantId = config["MICROSOFT_TENANT_ID"]!;
+      this.jwksClient = jwksRsa({
+        jwksUri: `https://login.microsoftonline.com/${this.tenantId}/discovery/v2.0/keys`,
+        cache: true,
+        cacheMaxAge: 10 * 60 * 1000,
+        rateLimit: true
+      });
     }
-
-    this.clientId = clientId;
-    this.tenantId = tenantId;
-    this.jwksClient = jwksRsa({
-      jwksUri: `https://login.microsoftonline.com/${tenantId}/discovery/v2.0/keys`,
-      cache: true,
-      cacheMaxAge: 10 * 60 * 1000,
-      rateLimit: true,
-    });
   }
 
   async verifyToken(idToken: string): Promise<OAuthUserPayload> {
+    this.ensureAvailable();
+
     const decoded = jwt.decode(idToken, { complete: true });
 
     if (!decoded || typeof decoded.payload === "string") {
@@ -50,7 +53,7 @@ export class MicrosoftAuthService {
       payload = jwt.verify(idToken, publicKey, {
         algorithms: ["RS256"],
         audience: this.clientId,
-        issuer: `https://login.microsoftonline.com/${this.tenantId}/v2.0`,
+        issuer: `https://login.microsoftonline.com/${this.tenantId}/v2.0`
       }) as jwt.JwtPayload;
     } catch {
       throw new UnauthorizedException("Microsoft token signature invalid");
