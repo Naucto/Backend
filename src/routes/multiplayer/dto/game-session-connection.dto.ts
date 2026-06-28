@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { IsOptional, IsString, IsUUID } from "class-validator";
+import { IsInt, IsOptional, IsString, IsUUID } from "class-validator";
 import { WebRTCOfferDto } from "@webrtc/webrtc.dto";
 
 // Returned on create/join: everything a client needs to open its WebRTC
@@ -9,6 +9,12 @@ export class GameSessionConnectionResponseDto {
   @ApiProperty()
   @IsUUID()
     sessionUuid!: string;
+
+  // The id this client plays under — its real user id, or a synthetic one for an
+  // editor self-join. Clients must use it (not their account id) as net.id().
+  @ApiProperty({ description: "Player id assigned to this connection" })
+  @IsInt()
+    playerId!: number;
 
   @ApiProperty({ type: () => WebRTCOfferDto })
   @Type(() => WebRTCOfferDto)

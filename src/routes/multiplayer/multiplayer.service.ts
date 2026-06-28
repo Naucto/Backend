@@ -464,6 +464,7 @@ export class MultiplayerService {
     const response = new GameSessionConnectionResponseDto();
 
     response.sessionUuid = session.sessionId;
+    response.playerId = userId;
     response.webrtcConfig = this._webrtcService.buildOffer(this._syncServer);
     response.connectionTicket = this._mintTicket(
       session.sessionId,
