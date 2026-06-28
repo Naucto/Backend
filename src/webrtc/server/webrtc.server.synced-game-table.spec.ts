@@ -46,6 +46,7 @@ describe("SyncedGameTableWebRTCServer", () => {
       webrtcService,
       "test",
       verifyTicket,
+      undefined,
       options
     );
 
@@ -222,6 +223,7 @@ describe("SyncedGameTableWebRTCServer — connection lifecycle", () => {
       webrtcService,
       "test",
       verifyTicket,
+      undefined,
       options
     );
     internals = server as unknown as Internals;

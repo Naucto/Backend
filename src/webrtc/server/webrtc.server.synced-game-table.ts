@@ -41,6 +41,10 @@ export type SyncedGameTableTicketVerifier = (
   raw: string
 ) => SyncedGameTableTicket;
 
+// Notified when a room's host connection goes away (close / ping timeout), so
+// the REST layer can end the persisted session. Fire-and-forget.
+export type SyncedGameTableHostDisconnectHandler = (sessionId: string) => void;
+
 // Stashed on the upgrade request by the auth handler, read by the connection
 // handler (both receive the same IncomingMessage instance).
 const TICKET_KEY = Symbol("syncedGameTable:ticket");
@@ -79,6 +83,8 @@ type SyncedGameTableClientSocket = WebRTCClientSocket<{
   sessionId: string;
   userId: number;
   role: SyncedGameTableRole;
+  pinged: boolean;
+  pingChecker: NodeJS.Timeout;
 }>;
 
 interface SyncedGameTableRoom {
@@ -104,17 +110,26 @@ export class SyncedGameTableWebRTCServerOptions extends EventBasedWebRTCServerOp
 // the synced payload and has no notion of field-level permissions (those live
 // entirely on the frontend engine).
 export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGameTableWebRTCServerOptions> {
+  // Half-open hosts (crash / network drop, no clean close) are detected within
+  // ~2x this interval and torn down like a graceful disconnect.
+  private static readonly PING_INTERVAL_MS = 30000;
+
   private readonly _verifyTicket: SyncedGameTableTicketVerifier;
+  private readonly _onHostDisconnected:
+    | SyncedGameTableHostDisconnectHandler
+    | undefined;
 
   constructor(
     webrtcService: WebRTCService,
     whatFor: string,
     verifyTicket: SyncedGameTableTicketVerifier,
+    onHostDisconnected?: SyncedGameTableHostDisconnectHandler,
     extraOpts: SyncedGameTableWebRTCServerOptions = new SyncedGameTableWebRTCServerOptions()
   ) {
     super(webrtcService, whatFor, extraOpts);
 
     this._verifyTicket = verifyTicket;
+    this._onHostDisconnected = onHostDisconnected;
 
     const serverSocket = this.wss<SyncedGameTableServerSocket>();
     serverSocket.rooms = new Map<string, SyncedGameTableRoom>();
@@ -207,6 +222,8 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
     socket.userId = ticket.userId;
     socket.role = ticket.role;
 
+    this._startHeartbeat(socket);
+
     let room = existingRoom;
     if (!room) {
       room = { host: null, slaves: new Map(), maxPlayers: ticket.maxPlayers };
@@ -234,6 +251,9 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
 
   @WebRTCClientEvent("close")
   protected _internal_sgt_onClose(socket: SyncedGameTableClientSocket): void {
+    // No-op if it was never started (socket rejected before acceptance).
+    clearInterval(socket.pingChecker);
+
     // A socket rejected before acceptance never received a sessionId.
     if (!socket.sessionId) {
       return;
@@ -255,6 +275,7 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
       });
 
       serverSocket.rooms.delete(socket.sessionId);
+      this._onHostDisconnected?.(socket.sessionId);
     } else if (socket.role === "slave") {
       // If a newer connection for this user has already replaced us in the
       // room, this close belongs to the superseded socket — leave the live one
@@ -276,6 +297,38 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
         serverSocket.rooms.delete(socket.sessionId);
       }
     }
+  }
+
+  @WebRTCClientEvent("pong")
+  protected _internal_sgt_onPong(socket: SyncedGameTableClientSocket): void {
+    socket.pinged = true;
+  }
+
+  // A missed interval closes the socket, which routes through onClose — ending
+  // the session if it was the host.
+  private _startHeartbeat(socket: SyncedGameTableClientSocket): void {
+    socket.pinged = true;
+    socket.pingChecker = setInterval(() => {
+      if (!socket.pinged) {
+        this.logger.verbose(
+          `Game-table client ${socket.remoteAddress} ping timed out`
+        );
+        clearInterval(socket.pingChecker);
+        socket.close();
+        return;
+      }
+
+      socket.pinged = false;
+
+      try {
+        socket.ping();
+      } catch (err) {
+        this.logger.verbose(
+          `Failed to ping ${socket.remoteAddress}: ${err}`
+        );
+        socket.close();
+      }
+    }, SyncedGameTableWebRTCServer.PING_INTERVAL_MS);
   }
 
   // --------------------------------------------------------------------------
