@@ -11,12 +11,16 @@ import {
   EventBasedWebRTCServer,
   EventBasedWebRTCServerOptions
 } from "@webrtc/server/webrtc.server.event-based";
+import {
+  GameTableRequestMessage,
+  GameTableResponseMessage,
+  GameTableSignalMessage,
+  GameTableStateMessage
+} from "@webrtc/server/webrtc.server.synced-game-table.dto";
 import { WebRTCService } from "@webrtc/webrtc.service";
 
 import { IncomingMessage } from "http";
 import { Duplex } from "stream";
-
-import { IsInt } from "class-validator";
 
 // ----------------------------------------------------------------------------
 // Ticket — minted by the REST layer, verified synchronously at WS upgrade.
@@ -54,7 +58,10 @@ export enum SyncedGameTableMessageType {
   // slave -> host: request to read/modify
   REQUEST = "request",
   // host -> one slave: reply to a request
-  RESPONSE = "response"
+  RESPONSE = "response",
+  // slave <-> host: opaque WebRTC signaling, relayed to bring up a direct P2P
+  // data channel; the relay path above keeps working when it can't.
+  SIGNAL = "signal"
 }
 
 // Server -> client control frames (sent, never received as handlers).
@@ -62,26 +69,6 @@ enum SyncedGameTableControlType {
   PEER_JOINED = "peer-joined",
   PEER_LEFT = "peer-left",
   SESSION_ENDED = "session-ended"
-}
-
-class GameTableStateMessage {
-  type!: string;
-  data?: unknown;
-}
-
-class GameTableRequestMessage {
-  type!: string;
-  data?: unknown;
-}
-
-class GameTableResponseMessage {
-  type!: string;
-
-  // userId of the slave this response is addressed to.
-  @IsInt()
-  to!: number;
-
-  data?: unknown;
 }
 
 // ----------------------------------------------------------------------------
@@ -361,6 +348,43 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
 
     this.send(target, {
       type: SyncedGameTableMessageType.RESPONSE,
+      data: body.data
+    });
+  }
+
+  // Role-agnostic by design: a slave's signal always goes to the host (its only
+  // peer), the host addresses a slave by `to`. `from` is server-stamped from the
+  // authenticated identity, never trusted from the client.
+  @EventBasedMessage(SyncedGameTableMessageType.SIGNAL, GameTableSignalMessage)
+  protected _internal_sgt_onSignal(
+    socket: SyncedGameTableClientSocket,
+    body: GameTableSignalMessage
+  ): void {
+    const room = this._roomOf(socket);
+    if (!room)
+      return;
+
+    if (socket.role === "slave") {
+      if (!room.host)
+        return;
+
+      this.send(room.host, {
+        type: SyncedGameTableMessageType.SIGNAL,
+        from: socket.userId,
+        data: body.data
+      });
+      return;
+    }
+
+    if (body.to === undefined)
+      return;
+
+    const target = room.slaves.get(body.to);
+    if (!target)
+      return;
+
+    this.send(target, {
+      type: SyncedGameTableMessageType.SIGNAL,
       data: body.data
     });
   }

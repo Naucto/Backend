@@ -90,6 +90,14 @@ describe("SyncedGameTableWebRTCServer", () => {
     )._internal_sgt_onResponse(socket, { type: "response", to, data });
   }
 
+  function onSignal(socket: FakeSocket, body: Record<string, unknown>): void {
+    (
+      server as unknown as {
+        _internal_sgt_onSignal(s: FakeSocket, b: unknown): void;
+      }
+    )._internal_sgt_onSignal(socket, { type: "signal", ...body });
+  }
+
   it("relays host state to slaves", () => {
     onState(host, { hp: 10 });
 
@@ -129,6 +137,26 @@ describe("SyncedGameTableWebRTCServer", () => {
     expect(slave.send).toHaveBeenCalledTimes(1);
     const payload = JSON.parse(slave.send.mock.calls[0]![0] as string);
     expect(payload).toMatchObject({ type: "response", data: { ok: true } });
+  });
+
+  it("relays a slave signal to the host with a server-stamped `from`", () => {
+    onSignal(slave, { data: { sdp: "offer" } });
+
+    expect(host.send).toHaveBeenCalledTimes(1);
+    const payload = JSON.parse(host.send.mock.calls[0]![0] as string);
+    expect(payload).toMatchObject({
+      type: "signal",
+      from: 2,
+      data: { sdp: "offer" }
+    });
+  });
+
+  it("relays a host signal to the addressed slave", () => {
+    onSignal(host, { to: 2, data: { sdp: "answer" } });
+
+    expect(slave.send).toHaveBeenCalledTimes(1);
+    const payload = JSON.parse(slave.send.mock.calls[0]![0] as string);
+    expect(payload).toMatchObject({ type: "signal", data: { sdp: "answer" } });
   });
 
   it("closeRoom ends the room and disconnects everyone", () => {
