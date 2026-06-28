@@ -1,9 +1,11 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
+import { Cron, CronExpression } from "@nestjs/schedule";
 import { JwtService } from "@nestjs/jwt";
 import {
   GameSession,
   GameSessionVisibility,
   Prisma,
+  Project,
   User
 } from "@prisma/client";
 import { PrismaService } from "@ourPrisma/prisma.service";
@@ -33,10 +35,18 @@ import { GameSessionConnectionResponseDto } from "./dto/game-session-connection.
 
 import { randomBytes } from "crypto";
 
-// "Extended" game session including its joined (non-host) users.
+// Game session with the relations the listing/host operations need.
 export type GameSessionEx = GameSession & {
   otherUsers: User[];
+  host: User;
+  project: Project;
 };
+
+const SESSION_RELATIONS = {
+  otherUsers: true,
+  host: true,
+  project: true
+} as const;
 
 // Payload embedded in a connection ticket. `kind` disambiguates it from regular
 // auth tokens that share the same signing secret.
@@ -55,7 +65,11 @@ export class MultiplayerService {
     "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   private static readonly TICKET_TTL = "60s";
   private static readonly MAX_DB_RETRIES = 5;
+  // Backstop for sessions orphaned by an ungraceful server shutdown (the
+  // heartbeat + host-disconnect hook handle the normal cases live).
+  private static readonly MAX_SESSION_AGE_MS = 12 * 60 * 60 * 1000;
 
+  private readonly _logger = new Logger(MultiplayerService.name);
   private readonly _syncServer: SyncedGameTableWebRTCServer;
 
   constructor(
@@ -67,7 +81,10 @@ export class MultiplayerService {
     this._syncServer = new SyncedGameTableWebRTCServer(
       _webrtcService,
       "Multiplayer",
-      (raw) => this._verifyTicket(raw)
+      (raw) => this._verifyTicket(raw),
+      // The host leaving (reload/disconnect/ping timeout) ends the session: it is
+      // the sole authority, and there is no promotion.
+      (sessionId) => void this.endSession(sessionId)
     );
   }
 
@@ -87,7 +104,7 @@ export class MultiplayerService {
     }
 
     const existing = await this._prismaService.gameSession.findFirst({
-      where: { hostId: userId, projectId: dto.projectId }
+      where: { hostId: userId, projectId: dto.projectId, endedAt: null }
     });
     if (existing) {
       throw new MultiplayerHostOpenedError(
@@ -106,41 +123,41 @@ export class MultiplayerService {
     const created =
       dto.visibility === GameSessionVisibility.INVITE_CODE
         ? await this._withFreshJoinCode((joinCode) =>
-            this._prismaService.gameSession.create({
-              data: { ...baseData, joinCode }
-            })
-          )
+          this._prismaService.gameSession.create({
+            data: { ...baseData, joinCode }
+          })
+        )
         : await this._prismaService.gameSession.create({
-            data: { ...baseData, joinCode: null }
-          });
+          data: { ...baseData, joinCode: null }
+        });
 
     return this._buildConnection(created, userId, "host");
   }
 
   async list(projectId: number, userId: number): Promise<GameSessionEx[]> {
     const sessions = await this._prismaService.gameSession.findMany({
-      include: { otherUsers: true },
-      where: { projectId }
+      include: SESSION_RELATIONS,
+      where: { projectId, endedAt: null }
     });
 
     const visible: GameSessionEx[] = [];
 
     sessions.forEach((session) => {
       switch (session.visibility) {
-        case GameSessionVisibility.PUBLIC:
-          visible.push(session);
-          break;
+      case GameSessionVisibility.PUBLIC:
+        visible.push(session);
+        break;
 
-        case GameSessionVisibility.FRIENDS_ONLY:
-          // FIXME: friends system not implemented yet; hide friends-only sessions
-          // from listings until areFriends() exists.
-          // visible.push(session) when isFriend(userId, session.hostId)
-          void userId;
-          break;
+      case GameSessionVisibility.FRIENDS_ONLY:
+        // FIXME: friends system not implemented yet; hide friends-only sessions
+        // from listings until areFriends() exists.
+        // visible.push(session) when isFriend(userId, session.hostId)
+        void userId;
+        break;
 
-        case GameSessionVisibility.INVITE_CODE:
-          // Not discoverable through listing — joinable by code only.
-          break;
+      case GameSessionVisibility.INVITE_CODE:
+        // Not discoverable through listing — joinable by code only.
+        break;
       }
     });
 
@@ -215,10 +232,41 @@ export class MultiplayerService {
 
     this._assertHost(session, userId);
 
-    // Deleting the session also clears the implicit otherUsers join rows.
-    await this._prismaService.gameSession.delete({ where: { sessionId } });
-
+    // Soft-end keeps history instead of hard-deleting the row.
+    await this._softEnd(sessionId);
     this._syncServer.closeRoom(sessionId);
+  }
+
+  // Idempotent, so the host-disconnect hook and REST delete can both call it.
+  async endSession(sessionId: string): Promise<void> {
+    try {
+      await this._softEnd(sessionId);
+    } catch (err) {
+      this._logger.error(`Failed to end session ${sessionId}: ${err}`);
+    }
+  }
+
+  // Backstop sweep: ends sessions left active past the max lifetime, which can
+  // only happen if the process died before its disconnect hooks ran.
+  @Cron(CronExpression.EVERY_30_MINUTES)
+  async reapStaleSessions(): Promise<void> {
+    const cutoff = new Date(Date.now() - MultiplayerService.MAX_SESSION_AGE_MS);
+
+    const { count } = await this._prismaService.gameSession.updateMany({
+      where: { endedAt: null, startedAt: { lt: cutoff } },
+      data: { endedAt: new Date() }
+    });
+
+    if (count > 0) {
+      this._logger.log(`Reaped ${count} stale game session(s)`);
+    }
+  }
+
+  private async _softEnd(sessionId: string): Promise<void> {
+    await this._prismaService.gameSession.updateMany({
+      where: { sessionId, endedAt: null },
+      data: { endedAt: new Date() }
+    });
   }
 
   // --------------------------------------------------------------------------
@@ -228,36 +276,49 @@ export class MultiplayerService {
   async join(
     sessionId: string,
     userId: number,
-    joinCode?: string
+    joinCode?: string,
+    editorTest = false
   ): Promise<GameSessionConnectionResponseDto> {
     const session = await this._findSessionOrThrow(sessionId);
 
-    if (session.hostId === userId) {
+    const isMember =
+      session.hostId === userId ||
+      session.otherUsers.some((user) => user.id === userId);
+
+    if (isMember) {
+      // The game editor opts in (editorTest) so a developer can open a second
+      // client as a distinct synthetic player and test multiplayer alone; the
+      // published game viewer never sends the flag, so normal "already a member"
+      // blocking applies. This is self-scoped and safe in any environment: it only
+      // ever adds a player to a session you already belong to, the synthetic id is
+      // never persisted (no such User row), and the WS layer still caps it against
+      // maxPlayers.
+      if (editorTest) {
+        return this._buildConnection(session, this._syntheticSlaveId(), "slave");
+      }
+
       throw new MultiplayerUserAlreadyJoinedError(
-        "User is the host of this game session"
-      );
-    }
-    if (session.otherUsers.some((user) => user.id === userId)) {
-      throw new MultiplayerUserAlreadyJoinedError(
-        "User has already joined this game session"
+        session.hostId === userId
+          ? "User is the host of this game session"
+          : "User has already joined this game session"
       );
     }
 
     switch (session.visibility) {
-      case GameSessionVisibility.INVITE_CODE:
-        if (!joinCode || joinCode !== session.joinCode) {
-          throw new MultiplayerInvalidJoinCodeError("Invalid join code");
-        }
-        break;
+    case GameSessionVisibility.INVITE_CODE:
+      if (!joinCode || joinCode !== session.joinCode) {
+        throw new MultiplayerInvalidJoinCodeError("Invalid join code");
+      }
+      break;
 
-      case GameSessionVisibility.FRIENDS_ONLY:
-        // FIXME: friends system not implemented yet; deny until areFriends() exists.
-        throw new MultiplayerForbiddenError(
-          "Friends-only game sessions cannot be joined yet"
-        );
+    case GameSessionVisibility.FRIENDS_ONLY:
+      // FIXME: friends system not implemented yet; deny until areFriends() exists.
+      throw new MultiplayerForbiddenError(
+        "Friends-only game sessions cannot be joined yet"
+      );
 
-      case GameSessionVisibility.PUBLIC:
-        break;
+    case GameSessionVisibility.PUBLIC:
+      break;
     }
 
     // Re-check capacity and connect atomically: a plain read-then-write would
@@ -299,17 +360,18 @@ export class MultiplayerService {
   // without first knowing the (non-discoverable) session UUID.
   async joinByCode(
     joinCode: string,
-    userId: number
+    userId: number,
+    editorTest = false
   ): Promise<GameSessionConnectionResponseDto> {
-    const session = await this._prismaService.gameSession.findUnique({
-      where: { joinCode }
+    const session = await this._prismaService.gameSession.findFirst({
+      where: { joinCode, endedAt: null }
     });
 
     if (!session) {
       throw new MultiplayerInvalidJoinCodeError("Invalid join code");
     }
 
-    return this.join(session.sessionId, userId, joinCode);
+    return this.join(session.sessionId, userId, joinCode, editorTest);
   }
 
   // Mint a fresh connection ticket for a member of the session (host or slave),
@@ -348,9 +410,10 @@ export class MultiplayerService {
   // --------------------------------------------------------------------------
 
   private async _findSessionOrThrow(sessionId: string): Promise<GameSessionEx> {
-    const session = await this._prismaService.gameSession.findUnique({
-      where: { sessionId },
-      include: { otherUsers: true }
+    // Ended sessions are treated as gone for every membership/host operation.
+    const session = await this._prismaService.gameSession.findFirst({
+      where: { sessionId, endedAt: null },
+      include: SESSION_RELATIONS
     });
 
     if (!session) {
@@ -360,6 +423,13 @@ export class MultiplayerService {
     }
 
     return session;
+  }
+
+  // Negative ids never collide with real (positive, auto-increment) user ids, so
+  // an editor self-join behaves as a separate player without polluting the User
+  // table or the room's userId keying.
+  private _syntheticSlaveId(): number {
+    return -(1 + (randomBytes(4).readUInt32BE(0) % 2_000_000_000));
   }
 
   private _assertHost(session: GameSession, userId: number): void {

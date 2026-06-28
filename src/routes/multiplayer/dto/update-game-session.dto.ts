@@ -14,7 +14,7 @@ export class UpdateGameSessionDto {
   @IsOptional()
   @IsString()
   @Length(1, 80)
-  title?: string;
+    title?: string;
 
   @ApiPropertyOptional({
     description: "New maximum number of players, host included",
@@ -23,10 +23,10 @@ export class UpdateGameSessionDto {
   @IsOptional()
   @IsInt()
   @Min(2)
-  maxPlayers?: number;
+    maxPlayers?: number;
 
   @ApiPropertyOptional({ enum: GameSessionVisibility })
   @IsOptional()
   @IsEnum(GameSessionVisibility)
-  visibility?: GameSessionVisibility;
+    visibility?: GameSessionVisibility;
 }

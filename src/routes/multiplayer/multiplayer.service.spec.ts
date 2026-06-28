@@ -52,6 +52,7 @@ describe("MultiplayerService", () => {
     findUnique: jest.fn(),
     findMany: jest.fn(),
     update: jest.fn(),
+    updateMany: jest.fn(),
     delete: jest.fn()
   };
   // Runs the interactive transaction callback against the same gameSession mock.
@@ -163,7 +164,7 @@ describe("MultiplayerService", () => {
 
   describe("join", () => {
     it("rejects an invalid join code on INVITE_CODE sessions", async () => {
-      gameSession.findUnique.mockResolvedValueOnce(
+      gameSession.findFirst.mockResolvedValueOnce(
         makeSession({
           visibility: GameSessionVisibility.INVITE_CODE,
           joinCode: "RIGHTCOD"
@@ -176,13 +177,14 @@ describe("MultiplayerService", () => {
     });
 
     it("rejects when the session is full", async () => {
-      // full check now runs inside the transaction, which re-reads via findUnique
-      gameSession.findUnique.mockResolvedValue(
-        makeSession({
-          maxPlayers: 2,
-          otherUsers: [{ id: 5 } as User]
-        })
-      );
+      // _findSessionOrThrow reads via findFirst; the capacity check re-reads
+      // inside the transaction via findUnique.
+      const full = makeSession({
+        maxPlayers: 2,
+        otherUsers: [{ id: 5 } as User]
+      });
+      gameSession.findFirst.mockResolvedValue(full);
+      gameSession.findUnique.mockResolvedValue(full);
 
       await expect(service.join("session-uuid", 2)).rejects.toBeInstanceOf(
         MultiplayerSessionFullError
@@ -190,7 +192,7 @@ describe("MultiplayerService", () => {
     });
 
     it("rejects a user that already joined", async () => {
-      gameSession.findUnique.mockResolvedValueOnce(
+      gameSession.findFirst.mockResolvedValueOnce(
         makeSession({
           otherUsers: [{ id: 2 } as User]
         })
@@ -202,6 +204,7 @@ describe("MultiplayerService", () => {
     });
 
     it("joins a public session and returns a slave ticket", async () => {
+      gameSession.findFirst.mockResolvedValue(makeSession());
       gameSession.findUnique.mockResolvedValue(makeSession());
       gameSession.update.mockResolvedValue(makeSession());
 
@@ -214,11 +217,35 @@ describe("MultiplayerService", () => {
         })
       );
     });
+
+    it("lets a member self-join as a synthetic player when editorTest is set", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(makeSession({ hostId: 1 }));
+
+      const result = await service.join("session-uuid", 1, undefined, true);
+
+      expect(result.connectionTicket).toBe("signed.ticket");
+      // Not persisted as a real member, and minted with a distinct negative id.
+      expect(gameSession.update).not.toHaveBeenCalled();
+      const payload = jwtService.sign.mock.calls[0]![0] as {
+        role: string;
+        userId: number;
+      };
+      expect(payload.role).toBe("slave");
+      expect(payload.userId).toBeLessThan(0);
+    });
+
+    it("still blocks a self-join without the editorTest flag", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(makeSession({ hostId: 1 }));
+
+      await expect(service.join("session-uuid", 1)).rejects.toBeInstanceOf(
+        MultiplayerUserAlreadyJoinedError
+      );
+    });
   });
 
   describe("host-only actions", () => {
     it("update is forbidden for a non-host", async () => {
-      gameSession.findUnique.mockResolvedValueOnce(makeSession({ hostId: 1 }));
+      gameSession.findFirst.mockResolvedValueOnce(makeSession({ hostId: 1 }));
 
       await expect(
         service.update("session-uuid", 999, { title: "new" })
@@ -226,28 +253,30 @@ describe("MultiplayerService", () => {
     });
 
     it("delete is forbidden for a non-host", async () => {
-      gameSession.findUnique.mockResolvedValueOnce(makeSession({ hostId: 1 }));
+      gameSession.findFirst.mockResolvedValueOnce(makeSession({ hostId: 1 }));
 
       await expect(service.delete("session-uuid", 999)).rejects.toBeInstanceOf(
         MultiplayerForbiddenError
       );
     });
 
-    it("delete tears down the session and closes the room", async () => {
-      gameSession.findUnique.mockResolvedValueOnce(makeSession({ hostId: 1 }));
-      gameSession.delete.mockResolvedValueOnce(makeSession());
+    it("delete soft-ends the session and closes the room", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(makeSession({ hostId: 1 }));
+      gameSession.updateMany.mockResolvedValueOnce({ count: 1 });
 
       await service.delete("session-uuid", 1);
 
-      expect(gameSession.delete).toHaveBeenCalledWith({
-        where: { sessionId: "session-uuid" }
-      });
+      expect(gameSession.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { sessionId: "session-uuid", endedAt: null }
+        })
+      );
     });
   });
 
   describe("joinByCode", () => {
     it("rejects an unknown code", async () => {
-      gameSession.findUnique.mockResolvedValueOnce(null);
+      gameSession.findFirst.mockResolvedValueOnce(null);
 
       await expect(service.joinByCode("NOPE", 2)).rejects.toBeInstanceOf(
         MultiplayerInvalidJoinCodeError
@@ -255,12 +284,12 @@ describe("MultiplayerService", () => {
     });
 
     it("resolves the session by code and joins it", async () => {
-      gameSession.findUnique.mockResolvedValue(
-        makeSession({
-          visibility: GameSessionVisibility.INVITE_CODE,
-          joinCode: "ABCDEFGH"
-        })
-      );
+      const invite = makeSession({
+        visibility: GameSessionVisibility.INVITE_CODE,
+        joinCode: "ABCDEFGH"
+      });
+      gameSession.findFirst.mockResolvedValue(invite);
+      gameSession.findUnique.mockResolvedValue(invite);
       gameSession.update.mockResolvedValue(makeSession());
 
       const result = await service.joinByCode("ABCDEFGH", 2);
@@ -276,7 +305,7 @@ describe("MultiplayerService", () => {
 
   describe("refreshTicket", () => {
     it("mints a fresh ticket for the host", async () => {
-      gameSession.findUnique.mockResolvedValueOnce(makeSession({ hostId: 1 }));
+      gameSession.findFirst.mockResolvedValueOnce(makeSession({ hostId: 1 }));
 
       const result = await service.refreshTicket("session-uuid", 1);
 
@@ -284,7 +313,7 @@ describe("MultiplayerService", () => {
     });
 
     it("mints a fresh ticket for a joined slave", async () => {
-      gameSession.findUnique.mockResolvedValueOnce(
+      gameSession.findFirst.mockResolvedValueOnce(
         makeSession({ hostId: 1, otherUsers: [{ id: 2 } as User] })
       );
 
@@ -294,11 +323,41 @@ describe("MultiplayerService", () => {
     });
 
     it("rejects a non-member", async () => {
-      gameSession.findUnique.mockResolvedValueOnce(makeSession({ hostId: 1 }));
+      gameSession.findFirst.mockResolvedValueOnce(makeSession({ hostId: 1 }));
 
       await expect(
         service.refreshTicket("session-uuid", 99)
       ).rejects.toBeInstanceOf(MultiplayerUserNotInSessionError);
+    });
+  });
+
+  describe("endSession", () => {
+    it("soft-ends an active session", async () => {
+      gameSession.updateMany.mockResolvedValueOnce({ count: 1 });
+
+      await service.endSession("session-uuid");
+
+      expect(gameSession.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { sessionId: "session-uuid", endedAt: null }
+        })
+      );
+    });
+  });
+
+  describe("reapStaleSessions", () => {
+    it("soft-ends sessions left active past the max lifetime", async () => {
+      gameSession.updateMany.mockResolvedValueOnce({ count: 2 });
+
+      await service.reapStaleSessions();
+
+      const arg = gameSession.updateMany.mock.calls[0]![0] as {
+        where: { endedAt: null; startedAt: { lt: Date } };
+        data: { endedAt: Date };
+      };
+      expect(arg.where.endedAt).toBeNull();
+      expect(arg.where.startedAt.lt).toBeInstanceOf(Date);
+      expect(arg.data.endedAt).toBeInstanceOf(Date);
     });
   });
 });

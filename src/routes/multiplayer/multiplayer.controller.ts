@@ -95,7 +95,11 @@ export class MultiplayerController {
     @Body() dto: JoinByCodeDto
   ): Promise<GameSessionConnectionResponseDto> {
     try {
-      return await this._multiplayerService.joinByCode(dto.joinCode, req.user.id);
+      return await this._multiplayerService.joinByCode(
+        dto.joinCode,
+        req.user.id,
+        dto.editorTest
+      );
     } catch (error) {
       this._rethrow(error, "join session by code");
     }
@@ -188,7 +192,8 @@ export class MultiplayerController {
       return await this._multiplayerService.join(
         sessionId,
         req.user.id,
-        dto.joinCode
+        dto.joinCode,
+        dto.editorTest
       );
     } catch (error) {
       this._rethrow(error, `join session ${sessionId}`);
@@ -240,6 +245,11 @@ export class MultiplayerController {
     dto.title = session.title;
     dto.visibility = session.visibility;
     dto.hostId = session.hostId;
+    dto.hostUsername = session.host.username;
+    if (session.host.nickname) {
+      dto.hostNickname = session.host.nickname;
+    }
+    dto.projectName = session.project.name;
     dto.maxPlayers = session.maxPlayers;
     dto.playerCount = session.otherUsers.length + 1;
 

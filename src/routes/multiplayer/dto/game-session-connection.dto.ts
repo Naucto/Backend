@@ -8,17 +8,17 @@ import { WebRTCOfferDto } from "@webrtc/webrtc.dto";
 export class GameSessionConnectionResponseDto {
   @ApiProperty()
   @IsUUID()
-  sessionUuid!: string;
+    sessionUuid!: string;
 
   @ApiProperty({ type: () => WebRTCOfferDto })
   @Type(() => WebRTCOfferDto)
-  webrtcConfig!: WebRTCOfferDto;
+    webrtcConfig!: WebRTCOfferDto;
 
   @ApiProperty({
     description: "Short-lived signed ticket presented on the WebRTC connection"
   })
   @IsString()
-  connectionTicket!: string;
+    connectionTicket!: string;
 
   @ApiPropertyOptional({
     description:
@@ -26,5 +26,5 @@ export class GameSessionConnectionResponseDto {
   })
   @IsOptional()
   @IsString()
-  joinCode?: string;
+    joinCode?: string;
 }
