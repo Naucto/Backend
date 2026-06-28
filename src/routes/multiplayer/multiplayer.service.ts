@@ -21,7 +21,6 @@ import { ProjectNotFoundError } from "@project/project.error";
 import {
   MultiplayerForbiddenError,
   MultiplayerGameSessionNotFoundError,
-  MultiplayerHostOpenedError,
   MultiplayerInvalidJoinCodeError,
   MultiplayerInvalidStateError,
   MultiplayerSessionFullError,
@@ -103,13 +102,15 @@ export class MultiplayerService {
       );
     }
 
+    // Re-hosting replaces the host's previous session for this project (e.g.
+    // after an editor reload): end it and evict anyone still connected so the
+    // developer can iterate without waiting for the old one to expire.
     const existing = await this._prismaService.gameSession.findFirst({
       where: { hostId: userId, projectId: dto.projectId, endedAt: null }
     });
     if (existing) {
-      throw new MultiplayerHostOpenedError(
-        "User is already hosting a game session for this project"
-      );
+      await this.endSession(existing.sessionId);
+      this._syncServer.closeRoom(existing.sessionId);
     }
 
     const baseData = {

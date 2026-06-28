@@ -11,7 +11,6 @@ import { MultiplayerService } from "./multiplayer.service";
 import { SyncedGameTableWebRTCServer } from "@webrtc/server/webrtc.server.synced-game-table";
 import {
   MultiplayerForbiddenError,
-  MultiplayerHostOpenedError,
   MultiplayerInvalidJoinCodeError,
   MultiplayerSessionFullError,
   MultiplayerUserAlreadyJoinedError,
@@ -106,18 +105,25 @@ describe("MultiplayerService", () => {
       ).rejects.toBeInstanceOf(ProjectNotFoundError);
     });
 
-    it("throws if the user already hosts a session for the project", async () => {
+    it("ends the host's previous session before creating a new one", async () => {
       projectService.findOne.mockResolvedValueOnce({ id: 1 });
-      gameSession.findFirst.mockResolvedValueOnce(makeSession());
+      gameSession.findFirst.mockResolvedValueOnce(
+        makeSession({ sessionId: "old-uuid" })
+      );
+      gameSession.updateMany.mockResolvedValueOnce({ count: 1 });
+      gameSession.create.mockResolvedValueOnce(makeSession());
 
-      await expect(
-        service.create(1, {
-          projectId: 1,
-          title: "x",
-          maxPlayers: 4,
-          visibility: GameSessionVisibility.PUBLIC
-        })
-      ).rejects.toBeInstanceOf(MultiplayerHostOpenedError);
+      await service.create(1, {
+        projectId: 1,
+        title: "x",
+        maxPlayers: 4,
+        visibility: GameSessionVisibility.PUBLIC
+      });
+
+      expect(gameSession.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { sessionId: "old-uuid", endedAt: null } })
+      );
+      expect(gameSession.create).toHaveBeenCalled();
     });
 
     it("creates a session and returns a connection ticket", async () => {
