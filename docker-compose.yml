@@ -63,9 +63,10 @@ services:
       - .env
     ports:
       - "${BACKEND_PORT}:3000"
-      - 4096:4096
-      - 4097:4097
-      - 4098:4098
+      # WebRTC signaling servers bind sequentially from BACKEND_WEBRTC_PORT_BASE
+      # (one per server: collaboration + multiplayer). Published identity-mapped
+      # because the backend advertises the exact bound port to clients.
+      - "${BACKEND_WEBRTC_PORT_BASE:-10000}-${BACKEND_WEBRTC_PORT_END:-10009}:${BACKEND_WEBRTC_PORT_BASE:-10000}-${BACKEND_WEBRTC_PORT_END:-10009}"
     restart: on-failure
     networks:
       - naucto
