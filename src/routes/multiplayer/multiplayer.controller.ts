@@ -45,6 +45,7 @@ import {
 import { CreateGameSessionDto } from "./dto/create-game-session.dto";
 import { UpdateGameSessionDto } from "./dto/update-game-session.dto";
 import { JoinGameSessionDto } from "./dto/join-game-session.dto";
+import { JoinByCodeDto } from "./dto/join-by-code.dto";
 import { GameSessionConnectionResponseDto } from "./dto/game-session-connection.dto";
 import {
   GameSessionListResponseDto,
@@ -77,6 +78,26 @@ export class MultiplayerController {
       return await this._multiplayerService.create(req.user.id, dto);
     } catch (error) {
       this._rethrow(error, `create session for user ${req.user.id}`);
+    }
+  }
+
+  // Declared before the ":sessionId" routes so "join-by-code" is never matched as
+  // a session id.
+  @Post("join-by-code")
+  @ApiOperation({ summary: "Join an invite-code game session by its code" })
+  @ApiBody({ type: JoinByCodeDto })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    type: GameSessionConnectionResponseDto
+  })
+  async joinByCode(
+    @Req() req: RequestWithUser,
+    @Body() dto: JoinByCodeDto
+  ): Promise<GameSessionConnectionResponseDto> {
+    try {
+      return await this._multiplayerService.joinByCode(dto.joinCode, req.user.id);
+    } catch (error) {
+      this._rethrow(error, "join session by code");
     }
   }
 
@@ -185,6 +206,28 @@ export class MultiplayerController {
       await this._multiplayerService.leave(sessionId, req.user.id);
     } catch (error) {
       this._rethrow(error, `leave session ${sessionId}`);
+    }
+  }
+
+  @Post(":sessionId/ticket")
+  @ApiOperation({
+    summary: "Mint a fresh connection ticket for the caller's session"
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    type: GameSessionConnectionResponseDto
+  })
+  async refreshTicket(
+    @Req() req: RequestWithUser,
+    @Param("sessionId") sessionId: string
+  ): Promise<GameSessionConnectionResponseDto> {
+    try {
+      return await this._multiplayerService.refreshTicket(
+        sessionId,
+        req.user.id
+      );
+    } catch (error) {
+      this._rethrow(error, `refresh ticket for session ${sessionId}`);
     }
   }
 

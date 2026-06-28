@@ -295,6 +295,34 @@ export class MultiplayerService {
     return this._buildConnection(session, userId, "slave");
   }
 
+  // Resolve an invite-code session by its code, then join it. Lets a player join
+  // without first knowing the (non-discoverable) session UUID.
+  async joinByCode(
+    joinCode: string,
+    userId: number
+  ): Promise<GameSessionConnectionResponseDto> {
+    const session = await this._prismaService.gameSession.findUnique({
+      where: { joinCode }
+    });
+
+    if (!session) {
+      throw new MultiplayerInvalidJoinCodeError("Invalid join code");
+    }
+
+    return this.join(session.sessionId, userId, joinCode);
+  }
+
+  // Mint a fresh connection ticket for a member of the session (host or slave),
+  // so a client can reconnect after the short-lived ticket expires.
+  async refreshTicket(
+    sessionId: string,
+    userId: number
+  ): Promise<GameSessionConnectionResponseDto> {
+    const session = await this._findSessionOrThrow(sessionId);
+
+    return this._buildConnection(session, userId, this._roleOf(session, userId));
+  }
+
   async leave(sessionId: string, userId: number): Promise<void> {
     const session = await this._findSessionOrThrow(sessionId);
 
@@ -340,6 +368,22 @@ export class MultiplayerService {
         "Only the host can perform this action"
       );
     }
+  }
+
+  private _roleOf(
+    session: GameSessionEx,
+    userId: number
+  ): SyncedGameTableRole {
+    if (session.hostId === userId) {
+      return "host";
+    }
+    if (session.otherUsers.some((user) => user.id === userId)) {
+      return "slave";
+    }
+
+    throw new MultiplayerUserNotInSessionError(
+      "User is not part of this game session"
+    );
   }
 
   private _buildConnection(

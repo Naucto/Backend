@@ -14,7 +14,8 @@ import {
   MultiplayerHostOpenedError,
   MultiplayerInvalidJoinCodeError,
   MultiplayerSessionFullError,
-  MultiplayerUserAlreadyJoinedError
+  MultiplayerUserAlreadyJoinedError,
+  MultiplayerUserNotInSessionError
 } from "./multiplayer.error";
 
 // Avoid spinning up a real WebRTC/HTTP server during the service constructor.
@@ -241,6 +242,63 @@ describe("MultiplayerService", () => {
       expect(gameSession.delete).toHaveBeenCalledWith({
         where: { sessionId: "session-uuid" }
       });
+    });
+  });
+
+  describe("joinByCode", () => {
+    it("rejects an unknown code", async () => {
+      gameSession.findUnique.mockResolvedValueOnce(null);
+
+      await expect(service.joinByCode("NOPE", 2)).rejects.toBeInstanceOf(
+        MultiplayerInvalidJoinCodeError
+      );
+    });
+
+    it("resolves the session by code and joins it", async () => {
+      gameSession.findUnique.mockResolvedValue(
+        makeSession({
+          visibility: GameSessionVisibility.INVITE_CODE,
+          joinCode: "ABCDEFGH"
+        })
+      );
+      gameSession.update.mockResolvedValue(makeSession());
+
+      const result = await service.joinByCode("ABCDEFGH", 2);
+
+      expect(result.connectionTicket).toBe("signed.ticket");
+      expect(gameSession.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { otherUsers: { connect: { id: 2 } } }
+        })
+      );
+    });
+  });
+
+  describe("refreshTicket", () => {
+    it("mints a fresh ticket for the host", async () => {
+      gameSession.findUnique.mockResolvedValueOnce(makeSession({ hostId: 1 }));
+
+      const result = await service.refreshTicket("session-uuid", 1);
+
+      expect(result.connectionTicket).toBe("signed.ticket");
+    });
+
+    it("mints a fresh ticket for a joined slave", async () => {
+      gameSession.findUnique.mockResolvedValueOnce(
+        makeSession({ hostId: 1, otherUsers: [{ id: 2 } as User] })
+      );
+
+      const result = await service.refreshTicket("session-uuid", 2);
+
+      expect(result.connectionTicket).toBe("signed.ticket");
+    });
+
+    it("rejects a non-member", async () => {
+      gameSession.findUnique.mockResolvedValueOnce(makeSession({ hostId: 1 }));
+
+      await expect(
+        service.refreshTicket("session-uuid", 99)
+      ).rejects.toBeInstanceOf(MultiplayerUserNotInSessionError);
     });
   });
 });
