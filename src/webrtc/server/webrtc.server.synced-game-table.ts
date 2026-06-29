@@ -446,6 +446,17 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
   // Public API for the REST layer
   // --------------------------------------------------------------------------
 
+  // Live number of connected players (host + slaves), including transient editor
+  // self-joins that are never written to the DB. 0 when no room is up.
+  public connectedCount(sessionId: string): number {
+    const room = this.wss<SyncedGameTableServerSocket>().rooms.get(sessionId);
+
+    if (!room)
+      return 0;
+
+    return room.slaves.size + (room.host ? 1 : 0);
+  }
+
   // Tear down a room and disconnect every peer; called when a session is
   // closed/deleted.
   public closeRoom(sessionId: string): void {

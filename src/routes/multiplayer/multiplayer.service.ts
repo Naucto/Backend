@@ -165,6 +165,12 @@ export class MultiplayerService {
     return visible;
   }
 
+  // Live connected-player count (host + slaves) from the WebRTC room, so the
+  // figure includes editor self-joins that aren't persisted as members.
+  connectedPlayerCount(sessionId: string): number {
+    return this._syncServer.connectedCount(sessionId);
+  }
+
   async get(sessionId: string, userId: number): Promise<GameSessionEx> {
     const session = await this._findSessionOrThrow(sessionId);
 
@@ -426,11 +432,12 @@ export class MultiplayerService {
     return session;
   }
 
-  // Negative ids never collide with real (positive, auto-increment) user ids, so
-  // an editor self-join behaves as a separate player without polluting the User
-  // table or the room's userId keying.
+  // A random positive 31-bit id for an editor self-join. The wide range makes a
+  // clash with a real (small, auto-increment) user id — or another self-join —
+  // negligible. It is never persisted (no User row): it only keys the WebRTC room
+  // and surfaces as net.id().
   private _syntheticSlaveId(): number {
-    return -(1 + (randomBytes(4).readUInt32BE(0) % 2_000_000_000));
+    return (randomBytes(4).readUInt32BE(0) & 0x7fffffff) || 1;
   }
 
   private _assertHost(session: GameSession, userId: number): void {

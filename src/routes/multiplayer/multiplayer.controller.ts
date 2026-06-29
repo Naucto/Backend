@@ -251,7 +251,11 @@ export class MultiplayerController {
     }
     dto.projectName = session.project.name;
     dto.maxPlayers = session.maxPlayers;
-    dto.playerCount = session.otherUsers.length + 1;
+    // Prefer the live connected count (includes editor self-joins); fall back to
+    // persisted membership when no WebRTC room is up.
+    dto.playerCount =
+      this._multiplayerService.connectedPlayerCount(session.sessionId) ||
+      session.otherUsers.length + 1;
 
     return dto;
   }

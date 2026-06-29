@@ -230,14 +230,15 @@ describe("MultiplayerService", () => {
       const result = await service.join("session-uuid", 1, undefined, true);
 
       expect(result.connectionTicket).toBe("signed.ticket");
-      // Not persisted as a real member, and minted with a distinct negative id.
+      // Not persisted as a real member, and minted with a distinct positive id.
       expect(gameSession.update).not.toHaveBeenCalled();
       const payload = jwtService.sign.mock.calls[0]![0] as {
         role: string;
         userId: number;
       };
       expect(payload.role).toBe("slave");
-      expect(payload.userId).toBeLessThan(0);
+      expect(payload.userId).toBeGreaterThan(0);
+      expect(payload.userId).not.toBe(1);
     });
 
     it("still blocks a self-join without the editorTest flag", async () => {
