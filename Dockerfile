@@ -46,9 +46,12 @@ FROM base AS prod
 ENV PORT=${BACKEND_PORT}
 # Swagger UI is not served in production, so drop its bundled static assets.
 ENV ENABLE_SWAGGER=false
-# --omit=optional drops the Prisma CLI + TypeScript, which @prisma/client only
-# declares as optional peer deps (the runtime client needs neither).
-RUN npm ci --omit=dev --omit=optional \
+# Keep optional peer deps so the Prisma CLI (an optional peer of @prisma/client)
+# stays in the image: the prod deploy self-runs `prisma migrate deploy` in this
+# container at startup, so it needs the CLI. --omit=dev still drops the dev toolchain.
+# TODO(NCTO-XXX): move migrations to the dedicated `migrate` stage so prod can
+# re-add --omit=optional and slim back down (see migrate stage + docker-compose).
+RUN npm ci --omit=dev \
     && rm -rf node_modules/swagger-ui-dist \
     && npm cache clean --force
 COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
