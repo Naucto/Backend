@@ -13,13 +13,13 @@ export class AdminCommentFilterDto extends AdminPaginationDto {
   @IsOptional()
   @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
   @IsInt()
-  projectId?: number;
+    projectId?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
   @IsInt()
-  authorId?: number;
+    authorId?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -27,7 +27,7 @@ export class AdminCommentFilterDto extends AdminPaginationDto {
     value === "true" ? true : value === "false" ? false : value
   )
   @IsBoolean()
-  hidden?: boolean;
+    hidden?: boolean;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -35,7 +35,7 @@ export class AdminCommentFilterDto extends AdminPaginationDto {
     value === "true" ? true : value === "false" ? false : value
   )
   @IsBoolean()
-  deleted?: boolean;
+    deleted?: boolean;
 
   @ApiPropertyOptional({ enum: ["id", "createdAt"] })
   @IsOptional()

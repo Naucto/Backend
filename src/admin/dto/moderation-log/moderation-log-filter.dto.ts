@@ -17,31 +17,31 @@ export class ModerationLogFilterDto extends AdminPaginationDto {
   @IsOptional()
   @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
   @IsInt()
-  actorId?: number;
+    actorId?: number;
 
   @ApiPropertyOptional({ enum: ModerationTargetType })
   @IsOptional()
   @IsEnum(ModerationTargetType)
-  targetType?: ModerationTargetType;
+    targetType?: ModerationTargetType;
 
   @ApiPropertyOptional()
   @IsOptional()
   @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
   @IsInt()
-  targetId?: number;
+    targetId?: number;
 
   @ApiPropertyOptional({ enum: ModerationActionType })
   @IsOptional()
   @IsEnum(ModerationActionType)
-  action?: ModerationActionType;
+    action?: ModerationActionType;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  createdAfter?: string;
+    createdAfter?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  createdBefore?: string;
+    createdBefore?: string;
 }

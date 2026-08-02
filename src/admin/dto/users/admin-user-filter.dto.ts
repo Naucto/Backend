@@ -11,12 +11,12 @@ export class AdminUserFilterDto extends AdminPaginationDto {
   @ApiPropertyOptional({ enum: AccountStatus })
   @IsOptional()
   @IsEnum(AccountStatus)
-  accountStatus?: AccountStatus;
+    accountStatus?: AccountStatus;
 
   @ApiPropertyOptional({ description: "Filter users having this role name" })
   @IsOptional()
   @IsString()
-  role?: string;
+    role?: string;
 
   @ApiPropertyOptional({
     enum: ["id", "email", "username", "nickname", "createdAt", "accountStatus"]

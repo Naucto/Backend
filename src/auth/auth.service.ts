@@ -22,6 +22,7 @@ import { CreateUserDto } from "@user/dto/create-user.dto";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { ConfigService } from "@nestjs/config";
 import { parseExpiresIn, timespanToMs } from "./auth.utils";
+import { AccountStatus, AnalyticsEventType } from "@prisma/client";
 import { AnalyticsService } from "src/analytics/analytics.service";
 import { v4 as uuidv4 } from "uuid";
 
@@ -204,18 +205,36 @@ export class AuthService {
 
   private async loginWithOAuth(
     email: string,
-    name: string
+    name: string,
+    provider: string
   ): Promise<AuthResponseDto> {
     let user = await this.userService.findByEmail(email);
 
     if (!user) {
-      let safeUsername = name.replace(/\s+/g, "_");
-      const existingUser = await this.userService.findAll({
+      const usernameSource = name.trim() || email.split("@")[0] || "user";
+      const baseUsername =
+        usernameSource
+          .replace(/\s+/g, "_")
+          .replace(/[^\w.-]/g, "")
+          .slice(0, 20) || `user_${uuidv4().slice(0, 8)}`;
+      const safeUsername =
+        baseUsername.length >= 3
+          ? baseUsername
+          : `user_${uuidv4().slice(0, 8)}`;
+      const existingUsers = await this.userService.findAll({
         where: { username: safeUsername }
       });
+
+      user = await this.userService.createOAuthUser(
+        email,
+        existingUsers.length === 0
+          ? safeUsername
+          : `${safeUsername.slice(0, 11)}_${uuidv4().slice(0, 8)}`
+      );
+
       await this.analyticsService?.record(AnalyticsEventType.ACCOUNT_CREATED, {
         userId: user.id,
-        metadata: { provider: "google" }
+        metadata: { provider }
       });
     } else if (user.accountStatus === AccountStatus.BANNED) {
       throw new ForbiddenException("This account has been banned.");
@@ -229,7 +248,7 @@ export class AuthService {
 
     await this.analyticsService?.record(AnalyticsEventType.LOGIN, {
       userId: user.id,
-      metadata: { provider: "google" }
+      metadata: { provider }
     });
 
     return { access_token, refresh_token };
@@ -237,17 +256,17 @@ export class AuthService {
 
   async loginWithGoogleCode(code: string, codeVerifier: string): Promise<AuthResponseDto> {
     const { email, name } = await this.googleAuthService.getUserFromCode(code, codeVerifier);
-    return this.loginWithOAuth(email, name);
+    return this.loginWithOAuth(email, name, "google");
   }
 
   async loginWithGithub(code: string): Promise<AuthResponseDto> {
     const { email, name } = await this.githubAuthService.getUserFromCode(code);
-    return this.loginWithOAuth(email, name);
+    return this.loginWithOAuth(email, name, "github");
   }
 
   async loginWithMicrosoft(idToken: string): Promise<AuthResponseDto> {
     const { email, name } = await this.microsoftAuthService.verifyToken(idToken);
-    return this.loginWithOAuth(email, name);
+    return this.loginWithOAuth(email, name, "microsoft");
   }
 
   async refreshToken(oldToken: string): Promise<AuthResponseDto> {
@@ -262,7 +281,7 @@ export class AuthService {
       payload = this.jwtService.verify(oldToken, {
         secret: jwtSecret
       });
-    } catch (e) {
+    } catch {
       throw new UnauthorizedException("Invalid or expired refresh token");
     }
 

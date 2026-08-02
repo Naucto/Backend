@@ -17,57 +17,57 @@ export class AdminUpdateProjectDto {
   @IsOptional()
   @IsString()
   @MaxLength(10000)
-  longDesc?: string | null;
+    longDesc?: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @IsString()
-  publishedName?: string | null;
+    publishedName?: string | null;
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @IsString()
-  publishedShortDesc?: string | null;
+    publishedShortDesc?: string | null;
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @IsString()
-  publishedLongDesc?: string | null;
-
-  @ApiPropertyOptional({ type: [String] })
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  tags?: string[];
+    publishedLongDesc?: string | null;
 
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  publishedTags?: string[];
+    tags?: string[];
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+    publishedTags?: string[];
 
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @IsString()
-  iconUrl?: string | null;
+    iconUrl?: string | null;
 
   @ApiPropertyOptional({ enum: MonetizationType })
   @IsOptional()
   @IsEnum(MonetizationType)
-  monetization?: MonetizationType;
+    monetization?: MonetizationType;
 
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @IsNumber()
-  price?: number | null;
+    price?: number | null;
 
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @IsString()
   @MaxLength(500)
-  hiddenReason?: string | null;
+    hiddenReason?: string | null;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   @MaxLength(500)
-  reason?: string;
+    reason?: string;
 }

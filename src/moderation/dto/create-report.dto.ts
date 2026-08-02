@@ -15,11 +15,11 @@ export class CreateReportDto {
     example: ReportTargetType.PROJECT
   })
   @IsEnum(ReportTargetType)
-  targetType!: ReportTargetType;
+    targetType!: ReportTargetType;
 
   @ApiProperty({ example: 123 })
   @IsInt()
-  targetId!: number;
+    targetId!: number;
 
   @ApiProperty({
     example: "Harassment or hateful content",
@@ -29,7 +29,7 @@ export class CreateReportDto {
   @IsString()
   @MinLength(3)
   @MaxLength(120)
-  reason!: string;
+    reason!: string;
 
   @ApiProperty({
     example: "The comment contains direct personal attacks.",
@@ -39,5 +39,5 @@ export class CreateReportDto {
   @IsOptional()
   @IsString()
   @MaxLength(1000)
-  details?: string;
+    details?: string;
 }

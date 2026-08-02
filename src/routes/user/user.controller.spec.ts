@@ -6,6 +6,7 @@ import { S3Service } from "@s3/s3.service";
 import { CloudfrontService } from "src/routes/s3/edge.service";
 import { ConfigService } from "@nestjs/config";
 import { HttpException, HttpStatus } from "@nestjs/common";
+import { RequestWithUser } from "@auth/auth.types";
 
 describe("UserController", () => {
   let controller: UserController;
@@ -68,8 +69,8 @@ describe("UserController", () => {
       try {
         await controller.uploadProfileBackground(
           222,
-          { originalname: "bg.png" } as any,
-          { user: { id: 111 } } as any
+          { originalname: "bg.png" } as Express.Multer.File,
+          { user: { id: 111 } } as RequestWithUser
         );
         throw new Error("Expected uploadProfileBackground to throw");
       } catch (err) {

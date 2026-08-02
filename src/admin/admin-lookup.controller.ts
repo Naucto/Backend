@@ -1,6 +1,16 @@
 import { Controller, Get, Query, UseGuards } from "@nestjs/common";
 import { ApiCookieAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import { Prisma } from "@prisma/client";
+import {
+  AnalyticsEvent,
+  DailyAnalyticsRollup,
+  FriendRequest,
+  Friendship,
+  GameSession,
+  Like,
+  Prisma,
+  Subscription,
+  WorkSession
+} from "@prisma/client";
 import { Roles } from "@auth/decorators/roles.decorator";
 import { RolesGuard } from "@auth/guards/roles.guard";
 import { PrismaService } from "@ourPrisma/prisma.service";
@@ -32,6 +42,11 @@ function meta(total: number, page: number, limit: number): {
   };
 }
 
+type AdminLookupResponse<T> = {
+  data: T[];
+  meta: ReturnType<typeof meta>;
+};
+
 @ApiTags("admin-lookup")
 @ApiCookieAuth("AdminCookie")
 @UseGuards(AdminCookieJwtGuard, RolesGuard)
@@ -42,7 +57,9 @@ export class AdminLookupController {
 
   @Get("likes")
   @ApiOperation({ summary: "List likes" })
-  async likes(@Query() filter: AdminPaginationDto) {
+  async likes(
+    @Query() filter: AdminPaginationDto
+  ): Promise<AdminLookupResponse<Like>> {
     const { skip, take, page, limit } = pagination(filter);
     const orderBy: Prisma.LikeOrderByWithRelationInput = {
       createdAt: filter.order ?? "desc"
@@ -56,7 +73,9 @@ export class AdminLookupController {
 
   @Get("friendships")
   @ApiOperation({ summary: "List friendships" })
-  async friendships(@Query() filter: AdminPaginationDto) {
+  async friendships(
+    @Query() filter: AdminPaginationDto
+  ): Promise<AdminLookupResponse<Friendship>> {
     const { skip, take, page, limit } = pagination(filter);
     const [rows, total] = await Promise.all([
       this.prisma.friendship.findMany({
@@ -71,7 +90,9 @@ export class AdminLookupController {
 
   @Get("friend-requests")
   @ApiOperation({ summary: "List friend requests" })
-  async friendRequests(@Query() filter: AdminPaginationDto) {
+  async friendRequests(
+    @Query() filter: AdminPaginationDto
+  ): Promise<AdminLookupResponse<FriendRequest>> {
     const { skip, take, page, limit } = pagination(filter);
     const [rows, total] = await Promise.all([
       this.prisma.friendRequest.findMany({
@@ -86,7 +107,9 @@ export class AdminLookupController {
 
   @Get("subscriptions")
   @ApiOperation({ summary: "List subscriptions" })
-  async subscriptions(@Query() filter: AdminPaginationDto) {
+  async subscriptions(
+    @Query() filter: AdminPaginationDto
+  ): Promise<AdminLookupResponse<Subscription>> {
     const { skip, take, page, limit } = pagination(filter);
     const [rows, total] = await Promise.all([
       this.prisma.subscription.findMany({
@@ -101,7 +124,9 @@ export class AdminLookupController {
 
   @Get("game-sessions")
   @ApiOperation({ summary: "List game sessions" })
-  async gameSessions(@Query() filter: AdminPaginationDto) {
+  async gameSessions(
+    @Query() filter: AdminPaginationDto
+  ): Promise<AdminLookupResponse<GameSession>> {
     const { skip, take, page, limit } = pagination(filter);
     const [rows, total] = await Promise.all([
       this.prisma.gameSession.findMany({
@@ -116,7 +141,9 @@ export class AdminLookupController {
 
   @Get("work-sessions")
   @ApiOperation({ summary: "List work sessions" })
-  async workSessions(@Query() filter: AdminPaginationDto) {
+  async workSessions(
+    @Query() filter: AdminPaginationDto
+  ): Promise<AdminLookupResponse<WorkSession>> {
     const { skip, take, page, limit } = pagination(filter);
     const [rows, total] = await Promise.all([
       this.prisma.workSession.findMany({
@@ -132,7 +159,9 @@ export class AdminLookupController {
   @Get("analytics-events")
   @Roles("Admin")
   @ApiOperation({ summary: "List analytics events (admin only)" })
-  async analyticsEvents(@Query() filter: AdminPaginationDto) {
+  async analyticsEvents(
+    @Query() filter: AdminPaginationDto
+  ): Promise<AdminLookupResponse<AnalyticsEvent>> {
     const { skip, take, page, limit } = pagination(filter);
     const [rows, total] = await Promise.all([
       this.prisma.analyticsEvent.findMany({
@@ -148,7 +177,9 @@ export class AdminLookupController {
   @Get("daily-rollups")
   @Roles("Admin")
   @ApiOperation({ summary: "List daily analytics rollups (admin only)" })
-  async dailyRollups(@Query() filter: AdminPaginationDto) {
+  async dailyRollups(
+    @Query() filter: AdminPaginationDto
+  ): Promise<AdminLookupResponse<DailyAnalyticsRollup>> {
     const { skip, take, page, limit } = pagination(filter);
     const [rows, total] = await Promise.all([
       this.prisma.dailyAnalyticsRollup.findMany({

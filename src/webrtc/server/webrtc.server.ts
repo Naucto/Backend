@@ -209,23 +209,23 @@ export class WebRTCServer<
       noServer: true,
       perMessageDeflate: extraOpts.compressed
         ? {
-            zlibDeflateOptions: {
-              // Use page-sized chunks for compression
-              chunkSize: 4096,
-              // https://docs.verygoodsecurity.com/vault/developer-tools/larky/library-api/zlib#zlib.compressobj-level-6-method-8-wbits-15-memlevel-0-strategy-0-zdict-none
-              memLevel: 7,
-              level: 5
-            },
-            zlibInflateOptions: {
-              // Ditto
-              // https://docs.verygoodsecurity.com/vault/developer-tools/larky/library-api/zlib#zlib.compressobj-level-6-method-8-wbits-15-memlevel-0-strategy-0-zdict-none
-              chunkSize: 4096
-            },
-            // Use all cores minus 2 so that the server can still respond to requests
-            concurrencyLimit: availableParallelism() - 2,
-            // Don't compress if smaller than the given amount of bytes
-            threshold: extraOpts.compressionThreshold
-          }
+          zlibDeflateOptions: {
+            // Use page-sized chunks for compression
+            chunkSize: 4096,
+            // https://docs.verygoodsecurity.com/vault/developer-tools/larky/library-api/zlib#zlib.compressobj-level-6-method-8-wbits-15-memlevel-0-strategy-0-zdict-none
+            memLevel: 7,
+            level: 5
+          },
+          zlibInflateOptions: {
+            // Ditto
+            // https://docs.verygoodsecurity.com/vault/developer-tools/larky/library-api/zlib#zlib.compressobj-level-6-method-8-wbits-15-memlevel-0-strategy-0-zdict-none
+            chunkSize: 4096
+          },
+          // Use all cores minus 2 so that the server can still respond to requests
+          concurrencyLimit: availableParallelism() - 2,
+          // Don't compress if smaller than the given amount of bytes
+          threshold: extraOpts.compressionThreshold
+        }
         : {}
     });
 

@@ -20,15 +20,15 @@ export class ModerationLogResponseDto {
 
 export class ModerationLogDetailDto extends ModerationLogResponseDto {
   @ApiPropertyOptional({ type: Object, nullable: true })
-  before?: unknown;
+    before?: unknown;
   @ApiPropertyOptional({ type: Object, nullable: true })
-  after?: unknown;
+    after?: unknown;
 }
 
 export class ModerationLogListResponseDto {
   @ApiProperty({ type: [ModerationLogResponseDto] })
-  data!: ModerationLogResponseDto[];
+    data!: ModerationLogResponseDto[];
 
   @ApiProperty({ type: PaginatedMetaDto })
-  meta!: PaginatedMetaDto;
+    meta!: PaginatedMetaDto;
 }

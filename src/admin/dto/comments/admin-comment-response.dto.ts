@@ -19,8 +19,8 @@ export class AdminCommentResponseDto {
 
 export class AdminCommentListResponseDto {
   @ApiProperty({ type: [AdminCommentResponseDto] })
-  data!: AdminCommentResponseDto[];
+    data!: AdminCommentResponseDto[];
 
   @ApiProperty({ type: PaginatedMetaDto })
-  meta!: PaginatedMetaDto;
+    meta!: PaginatedMetaDto;
 }

@@ -4,38 +4,38 @@ import { AccountStatus } from "@prisma/client";
 
 export class UserDto {
   @ApiProperty({ example: 1, description: "User ID" })
-  id!: number;
+    id!: number;
 
   @ApiProperty({ example: "user@example.com", description: "User email" })
-  email!: string;
+    email!: string;
 
   @ApiProperty({ example: "user_name", description: "Username" })
-  username!: string;
+    username!: string;
 
   @ApiProperty({
     example: "First",
     required: false,
     description: "Optional nickname"
   })
-  nickname?: string | null;
+    nickname?: string | null;
 
   @ApiProperty({
     example: "2025-05-05T12:51:04.098Z",
     description: "Date of creation"
   })
-  createdAt!: Date;
+    createdAt!: Date;
 
   @ApiProperty({
     enum: AccountStatus,
     example: AccountStatus.ACTIVE,
     description: "Current account moderation status"
   })
-  accountStatus!: AccountStatus;
+    accountStatus!: AccountStatus;
 
   @ApiProperty({
     type: [RoleDto],
     required: false,
     description: "List of user roles"
   })
-  roles?: RoleDto[];
+    roles?: RoleDto[];
 }

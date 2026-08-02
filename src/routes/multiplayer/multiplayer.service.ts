@@ -56,17 +56,17 @@ export class MultiplayerService {
 
     matchingGSes.forEach((gameSession) => {
       switch (gameSession.visibility) {
-        case GameSessionVisibility.PUBLIC:
-          break;
+      case GameSessionVisibility.PUBLIC:
+        break;
 
-        case GameSessionVisibility.FRIENDS_ONLY:
-          // FIXME: Check if otherUsers contains at least userId in their friend list
-          // gameSession.otherUsers.some(otherUser => userService.areFriends(userId, otherUserId));
-          void userId;
-          break;
+      case GameSessionVisibility.FRIENDS_ONLY:
+        // FIXME: Check if otherUsers contains at least userId in their friend list
+        // gameSession.otherUsers.some(otherUser => userService.areFriends(userId, otherUserId));
+        void userId;
+        break;
 
-        case GameSessionVisibility.PRIVATE:
-          return;
+      case GameSessionVisibility.PRIVATE:
+        return;
       }
 
       userAvailableGSes.push(gameSession);

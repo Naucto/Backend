@@ -13,24 +13,24 @@ export class AdminReportFilterDto extends AdminPaginationDto {
   @ApiPropertyOptional({ enum: ReportTargetType })
   @IsOptional()
   @IsEnum(ReportTargetType)
-  targetType?: ReportTargetType;
+    targetType?: ReportTargetType;
 
   @ApiPropertyOptional()
   @IsOptional()
   @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
   @IsInt()
-  targetId?: number;
+    targetId?: number;
 
   @ApiPropertyOptional({ enum: ReportStatus })
   @IsOptional()
   @IsEnum(ReportStatus)
-  status?: ReportStatus;
+    status?: ReportStatus;
 
   @ApiPropertyOptional()
   @IsOptional()
   @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
   @IsInt()
-  reporterId?: number;
+    reporterId?: number;
 
   @ApiPropertyOptional({ enum: ["id", "createdAt", "updatedAt", "status"] })
   @IsOptional()

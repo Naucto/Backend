@@ -12,13 +12,13 @@ export class CreateRoleDto {
   @IsString()
   @IsNotEmpty()
   @Length(2, 40)
-  name!: string;
+    name!: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   @MaxLength(500)
-  reason?: string;
+    reason?: string;
 }
 
 export class UpdateRoleDto {
@@ -26,13 +26,13 @@ export class UpdateRoleDto {
   @IsString()
   @IsNotEmpty()
   @Length(2, 40)
-  name!: string;
+    name!: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   @MaxLength(500)
-  reason?: string;
+    reason?: string;
 }
 
 export class DeleteRoleDto {
@@ -40,7 +40,7 @@ export class DeleteRoleDto {
   @IsOptional()
   @IsString()
   @MaxLength(500)
-  reason?: string;
+    reason?: string;
 }
 
 export class AdminRoleResponseDto {

@@ -13,10 +13,10 @@ export class AdminProjectResponseDto {
   @ApiPropertyOptional({ nullable: true }) publishedShortDesc?: string | null;
   @ApiPropertyOptional({ nullable: true }) publishedLongDesc?: string | null;
   @ApiPropertyOptional({ enum: ProjectStatus, nullable: true })
-  status?: ProjectStatus | null;
+    status?: ProjectStatus | null;
   @ApiPropertyOptional({ nullable: true }) iconUrl?: string | null;
   @ApiPropertyOptional({ enum: MonetizationType, nullable: true })
-  monetization?: MonetizationType | null;
+    monetization?: MonetizationType | null;
   @ApiPropertyOptional({ nullable: true }) price?: number | null;
   @ApiProperty() createdAt!: string;
   @ApiProperty() updatedAt!: string;
@@ -32,8 +32,8 @@ export class AdminProjectResponseDto {
 
 export class AdminProjectListResponseDto {
   @ApiProperty({ type: [AdminProjectResponseDto] })
-  data!: AdminProjectResponseDto[];
+    data!: AdminProjectResponseDto[];
 
   @ApiProperty({ type: PaginatedMetaDto })
-  meta!: PaginatedMetaDto;
+    meta!: PaginatedMetaDto;
 }

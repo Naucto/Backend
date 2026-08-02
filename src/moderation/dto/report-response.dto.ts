@@ -3,26 +3,26 @@ import { ReportStatus, ReportTargetType } from "@prisma/client";
 
 export class ReportResponseDto {
   @ApiProperty({ example: 1 })
-  id!: number;
+    id!: number;
 
   @ApiProperty({ enum: ReportTargetType })
-  targetType!: ReportTargetType;
+    targetType!: ReportTargetType;
 
   @ApiProperty({ example: 123 })
-  targetId!: number;
+    targetId!: number;
 
   @ApiProperty({ example: 42 })
-  reporterId!: number;
+    reporterId!: number;
 
   @ApiProperty({ example: "Harassment or hateful content" })
-  reason!: string;
+    reason!: string;
 
   @ApiProperty({ example: "More context from the reporter", nullable: true })
-  details?: string | null;
+    details?: string | null;
 
   @ApiProperty({ enum: ReportStatus })
-  status!: ReportStatus;
+    status!: ReportStatus;
 
   @ApiProperty({ example: "2026-05-10T00:00:00.000Z" })
-  createdAt!: Date;
+    createdAt!: Date;
 }

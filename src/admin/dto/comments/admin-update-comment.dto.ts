@@ -11,11 +11,11 @@ export class AdminUpdateCommentDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(5000)
-  content!: string;
+    content!: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   @MaxLength(500)
-  reason?: string;
+    reason?: string;
 }

@@ -73,6 +73,7 @@ import { CloudfrontService } from "src/routes/s3/edge.service";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { Public } from "@auth/decorators/public.decorator";
 import { ImageUrlResponseDto } from "src/routes/common/dto/image-url-response.dto";
+import { OptionalJwtAuthGuard } from "@auth/guards/optional-jwt-auth.guard";
 import { LikeResponseDto } from "./dto/like-response.dto";
 import { ViewResponseDto } from "./dto/view-response.dto";
 
@@ -606,7 +607,7 @@ export class ProjectController {
           errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY
         })
     )
-    file: Express.Multer.File
+      file: Express.Multer.File
   ): Promise<{ message: string; id: number }> {
     await this.projectService.save(id, file);
 
@@ -643,7 +644,7 @@ export class ProjectController {
         .addFileTypeValidator({ fileType: /^image\/(jpeg|png|gif|webp)$/ })
         .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY })
     )
-    file: Express.Multer.File,
+      file: Express.Multer.File,
     @Req() req: RequestWithUser
   ): Promise<{ message: string; id: number }> {
     await this.projectService.findOne(id);

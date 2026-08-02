@@ -274,6 +274,7 @@ export class AuthController {
           decryptRefreshToken(refresh_cookie)
         );
       } catch {
+        // Ignore unreadable refresh cookies; logout should still clear them.
       }
       res.clearCookie("refresh_token", this.getRefreshCookieOptions());
     }

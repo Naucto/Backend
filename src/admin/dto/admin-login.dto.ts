@@ -4,10 +4,10 @@ import { IsEmail, IsNotEmpty, IsString } from "class-validator";
 export class AdminLoginDto {
   @ApiProperty({ example: "admin@naucto.com" })
   @IsEmail()
-  email!: string;
+    email!: string;
 
   @ApiProperty({ example: "********" })
   @IsString()
   @IsNotEmpty()
-  password!: string;
+    password!: string;
 }

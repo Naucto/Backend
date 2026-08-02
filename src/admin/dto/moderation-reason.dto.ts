@@ -10,7 +10,7 @@ export class ModerationReasonDto {
   @IsOptional()
   @IsString()
   @MaxLength(500)
-  reason?: string;
+    reason?: string;
 
   @ApiProperty({
     required: false,
@@ -19,5 +19,5 @@ export class ModerationReasonDto {
   @IsOptional()
   @IsInt()
   @IsPositive()
-  reportId?: number;
+    reportId?: number;
 }

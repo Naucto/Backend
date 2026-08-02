@@ -17,7 +17,7 @@ export class AdminProjectFilterDto extends AdminPaginationDto {
   @ApiPropertyOptional({ enum: ProjectStatus })
   @IsOptional()
   @IsEnum(ProjectStatus)
-  status?: ProjectStatus;
+    status?: ProjectStatus;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -25,13 +25,13 @@ export class AdminProjectFilterDto extends AdminPaginationDto {
     value === "true" ? true : value === "false" ? false : value
   )
   @IsBoolean()
-  hidden?: boolean;
+    hidden?: boolean;
 
   @ApiPropertyOptional()
   @IsOptional()
   @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
   @IsInt()
-  userId?: number;
+    userId?: number;
 
   @ApiPropertyOptional({
     enum: ["id", "name", "createdAt", "updatedAt", "publishedAt", "likes", "viewCount"]

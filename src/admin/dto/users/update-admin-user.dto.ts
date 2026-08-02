@@ -12,25 +12,25 @@ export class UpdateAdminUserDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsEmail()
-  email?: string;
+    email?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   @Length(3, 20)
-  username?: string;
+    username?: string;
 
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @IsString()
   @Length(3, 30)
-  nickname?: string | null;
+    nickname?: string | null;
 
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  roles?: string[];
+    roles?: string[];
 
   @ApiPropertyOptional({
     description: "Free-form audit reason, recorded in the moderation log"
@@ -38,5 +38,5 @@ export class UpdateAdminUserDto {
   @IsOptional()
   @IsString()
   @MaxLength(500)
-  reason?: string;
+    reason?: string;
 }

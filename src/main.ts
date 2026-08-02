@@ -71,7 +71,20 @@ if (isProduction) {
   );
 
   app.enableCors({
-    origin: isProduction ? frontendUrl : true,
+    origin: isProduction
+      ? (
+        origin: string | undefined,
+        callback: (err: Error | null, allow?: boolean) => void
+      ) => {
+        if (!origin || allowedOrigins.has(origin)) {
+          callback(null, true);
+          return;
+        }
+
+        logger.warn(`CORS rejected request from origin: ${origin}`);
+        callback(new Error("CORS denied"));
+      }
+      : true,
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-CSRF-Token"]

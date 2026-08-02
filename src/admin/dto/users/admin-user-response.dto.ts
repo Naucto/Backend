@@ -17,10 +17,10 @@ export class AdminUserResponseDto {
 
 export class AdminUserListResponseDto {
   @ApiProperty({ type: [AdminUserResponseDto] })
-  data!: AdminUserResponseDto[];
+    data!: AdminUserResponseDto[];
 
   @ApiProperty({ type: PaginatedMetaDto })
-  meta!: PaginatedMetaDto;
+    meta!: PaginatedMetaDto;
 }
 
 export class AdminUserDetailDto extends AdminUserResponseDto {

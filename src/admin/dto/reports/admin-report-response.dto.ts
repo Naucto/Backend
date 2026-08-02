@@ -21,13 +21,13 @@ export class AdminReportResponseDto {
 
 export class AdminReportListResponseDto {
   @ApiProperty({ type: [AdminReportResponseDto] })
-  data!: AdminReportResponseDto[];
+    data!: AdminReportResponseDto[];
 
   @ApiProperty({ type: PaginatedMetaDto })
-  meta!: PaginatedMetaDto;
+    meta!: PaginatedMetaDto;
 }
 
 export class AdminReportDetailDto extends AdminReportResponseDto {
   @ApiProperty({ type: Object, isArray: true })
-  moderationActions!: Array<Record<string, unknown>>;
+    moderationActions!: Array<Record<string, unknown>>;
 }

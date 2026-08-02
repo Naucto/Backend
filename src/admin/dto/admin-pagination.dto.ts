@@ -8,7 +8,7 @@ export class AdminPaginationDto {
   @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
   @IsInt()
   @Min(1)
-  page?: number = 1;
+    page?: number = 1;
 
   @ApiProperty({ required: false, default: 25, minimum: 1, maximum: 100 })
   @IsOptional()
@@ -16,29 +16,29 @@ export class AdminPaginationDto {
   @IsInt()
   @Min(1)
   @Max(100)
-  limit?: number = 25;
+    limit?: number = 25;
 
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()
-  sortBy?: string;
+    sortBy?: string;
 
   @ApiProperty({ required: false, enum: ["asc", "desc"], default: "desc" })
   @IsOptional()
   @IsIn(["asc", "desc"])
-  order?: "asc" | "desc" = "desc";
+    order?: "asc" | "desc" = "desc";
 }
 
 export class PaginatedMetaDto {
   @ApiProperty()
-  page!: number;
+    page!: number;
 
   @ApiProperty()
-  limit!: number;
+    limit!: number;
 
   @ApiProperty()
-  total!: number;
+    total!: number;
 
   @ApiProperty()
-  totalPages!: number;
+    totalPages!: number;
 }

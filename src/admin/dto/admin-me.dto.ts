@@ -3,20 +3,20 @@ import { AccountStatus } from "@prisma/client";
 
 export class AdminMeDto {
   @ApiProperty({ example: 1 })
-  id!: number;
+    id!: number;
 
   @ApiProperty({ example: "admin@naucto.com" })
-  email!: string;
+    email!: string;
 
   @ApiProperty({ example: "admin" })
-  username!: string;
+    username!: string;
 
   @ApiProperty({ required: false, nullable: true })
-  nickname!: string | null;
+    nickname!: string | null;
 
   @ApiProperty({ enum: AccountStatus, example: AccountStatus.ACTIVE })
-  accountStatus!: AccountStatus;
+    accountStatus!: AccountStatus;
 
   @ApiProperty({ type: [String], example: ["Admin"] })
-  roles!: string[];
+    roles!: string[];
 }

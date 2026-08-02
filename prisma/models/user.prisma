@@ -9,7 +9,8 @@ model User {
   email            String        @unique
   username         String        @unique
   nickname         String?
-  password         String
+  description      String?
+  password         String?
   createdAt        DateTime      @default(now())
   accountStatus    AccountStatus @default(ACTIVE)
   moderationReason String?

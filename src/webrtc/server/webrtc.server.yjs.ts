@@ -40,24 +40,24 @@ enum YjsMessageType {
 
 class YjsMessage {
   @IsEnum(YjsMessageType)
-  type!: YjsMessageType;
+    type!: YjsMessageType;
 }
 
 class YjsMessageSubscribe extends YjsMessage {
   @IsArray()
   @IsString({ each: true })
-  topics!: YjsWebRTCTopicID[];
+    topics!: YjsWebRTCTopicID[];
 }
 
 class YjsMessageUnsubscribe extends YjsMessage {
   @IsArray()
   @IsString({ each: true })
-  topics!: YjsWebRTCTopicID[];
+    topics!: YjsWebRTCTopicID[];
 }
 
 class YjsMessagePublish extends YjsMessage {
   @IsString()
-  topic!: YjsWebRTCTopicID;
+    topic!: YjsWebRTCTopicID;
 
   data?: unknown;
 }
@@ -218,30 +218,30 @@ export class YjsWebRTCServer extends WebRTCServer<YjsWebRTCServerOptions> {
     if (!validateInternal(messageBody)) return;
 
     switch (baseNotificationBody.type) {
-      case YjsMessageType.SUBSCRIBE:
-        this._internal_yjs_onMessage_subscribe(
-          socket,
+    case YjsMessageType.SUBSCRIBE:
+      this._internal_yjs_onMessage_subscribe(
+        socket,
           messageBody as YjsMessageSubscribe
-        );
-        break;
+      );
+      break;
 
-      case YjsMessageType.UNSUBSCRIBE:
-        this._internal_yjs_onMessage_unsubscribe(
-          socket,
+    case YjsMessageType.UNSUBSCRIBE:
+      this._internal_yjs_onMessage_unsubscribe(
+        socket,
           messageBody as YjsMessageUnsubscribe
-        );
-        break;
+      );
+      break;
 
-      case YjsMessageType.PUBLISH:
-        this._internal_yjs_onMessage_publish(
-          socket,
+    case YjsMessageType.PUBLISH:
+      this._internal_yjs_onMessage_publish(
+        socket,
           messageBody as YjsMessagePublish
-        );
-        break;
+      );
+      break;
 
-      case YjsMessageType.PING:
-        this._internal_yjs_onMessage_ping(socket);
-        break;
+    case YjsMessageType.PING:
+      this._internal_yjs_onMessage_ping(socket);
+      break;
     }
   }
 

@@ -13,28 +13,28 @@ import {
 export class CreateAdminUserDto {
   @ApiProperty({ example: "moderator@naucto.com" })
   @IsEmail()
-  email!: string;
+    email!: string;
 
   @ApiProperty({ example: "mod_jane" })
   @IsString()
   @Length(3, 20)
-  username!: string;
+    username!: string;
 
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()
   @Length(3, 30)
-  nickname?: string;
+    nickname?: string;
 
   @ApiProperty({ example: "********" })
   @IsString()
   @MinLength(8)
-  password!: string;
+    password!: string;
 
   @ApiProperty({ type: [String], example: ["Moderator"] })
   @IsArray()
   @ArrayNotEmpty()
   @ArrayMinSize(1)
   @IsString({ each: true })
-  roles!: string[];
+    roles!: string[];
 }
