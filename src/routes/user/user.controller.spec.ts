@@ -5,6 +5,7 @@ import { PrismaService } from "@ourPrisma/prisma.service";
 import { S3Service } from "@s3/s3.service";
 import { CloudfrontService } from "src/routes/s3/edge.service";
 import { ConfigService } from "@nestjs/config";
+import { HttpException, HttpStatus } from "@nestjs/common";
 
 describe("UserController", () => {
   let controller: UserController;
@@ -60,5 +61,21 @@ describe("UserController", () => {
 
   it("should be defined", () => {
     expect(controller).toBeDefined();
+  });
+
+  describe("uploadProfileBackground", () => {
+    it("throws Forbidden when req.user.id !== id", async () => {
+      try {
+        await controller.uploadProfileBackground(
+          222,
+          { originalname: "bg.png" } as any,
+          { user: { id: 111 } } as any
+        );
+        throw new Error("Expected uploadProfileBackground to throw");
+      } catch (err) {
+        expect(err).toBeInstanceOf(HttpException);
+        expect((err as HttpException).getStatus()).toBe(HttpStatus.FORBIDDEN);
+      }
+    });
   });
 });

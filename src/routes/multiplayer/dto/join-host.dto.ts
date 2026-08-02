@@ -6,11 +6,11 @@ import { WebRTCOfferDto } from "@webrtc/webrtc.dto";
 export class JoinHostRequestDto {
   @ApiProperty()
   @IsUUID()
-    sessionUuid!: string;
-};
+  sessionUuid!: string;
+}
 
 export class JoinHostResponseDto {
   @ApiProperty({ type: () => WebRTCOfferDto })
   @Type(() => WebRTCOfferDto)
-    webrtcConfig!: WebRTCOfferDto;
-};
+  webrtcConfig!: WebRTCOfferDto;
+}

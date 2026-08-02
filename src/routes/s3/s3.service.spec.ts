@@ -40,7 +40,7 @@ describe("S3Service", () => {
     });
 
     it("throws when no bucket", () => {
-      const emptyConfig: Pick<ConfigService, "get"> = { 
+      const emptyConfig: Pick<ConfigService, "get"> = {
         get: (key: string) => {
           if (key === "S3_ENDPOINT") return "https://s3.fr-par.scw.cloud";
           if (key === "S3_REGION") return "fr-par";
@@ -76,9 +76,9 @@ describe("S3Service", () => {
     it("throws S3ListObjectsException on error", async () => {
       const err = new Error("Access Denied");
       mockS3.send.mockRejectedValueOnce(err);
-      await expect(s3Service.listObjects({ bucketName: "bucket" })).rejects.toThrow(
-        S3ListObjectsException
-      );
+      await expect(
+        s3Service.listObjects({ bucketName: "bucket" })
+      ).rejects.toThrow(S3ListObjectsException);
     });
   });
 });

@@ -28,24 +28,26 @@ class WebRTCServiceConfig {
     relays!: WebRTCServiceConfigRelay[];
 };
 
-// FIXME: If we need to use this elsewhere, move it to a separate file
-type IpifyResponse = {
-  ip: string;
-};
-
 @Injectable()
 export class WebRTCService implements OnModuleInit {
+  private static DEV_HOSTNAME = "localhost";
+
   private readonly _logger = new Logger(WebRTCService.name);
 
   private readonly _hookedServers = new Set<WebRTCServer>();
 
   private _config?: WebRTCServiceConfig;
+  private _nextPort?: number;
   public _publicAddress?: string | undefined;
 
   constructor(
     @Inject(ConfigService) private readonly _configService: ConfigService
   )
   {}
+
+  public get isLocalDevEnv(): boolean {
+    return this._publicAddress === WebRTCService.DEV_HOSTNAME;
+  }
 
   async onModuleInit(): Promise<void> {
     this._publicAddress = this._configService.get<string>("BACKEND_WEBRTC_HOSTNAME");
@@ -60,6 +62,15 @@ export class WebRTCService implements OnModuleInit {
     this._hookedServers.add(server);
   }
 
+  public allocatePort(): number {
+    if (this._nextPort === undefined) {
+      const base = Number(this._configService.get<string>("BACKEND_WEBRTC_PORT_BASE"));
+      this._nextPort = Number.isInteger(base) && base > 0 ? base : 10000;
+    }
+
+    return this._nextPort++;
+  }
+
   public shutdownAllServers(): void {
     this._logger.log(`Shutting down ${this._hookedServers.size} WebRTC servers`);
     this._hookedServers.forEach(server => server.shutdown());
@@ -72,28 +83,14 @@ export class WebRTCService implements OnModuleInit {
         this._publicAddress
       );
       return;
-    } else {
-      this._logger.warn(
-        "No public address set, will use the hosts' IP -- this CANNOT work " +
-        "for production"
-      );
     }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
+    this._publicAddress = WebRTCService.DEV_HOSTNAME;
 
-    try {
-      const res = await fetch("https://api.ipify.org?format=json", { signal: controller.signal });
-      const data = await res.json() as IpifyResponse;
-      this._publicAddress = data.ip;
-    } catch (err) {
-      if (err instanceof Error) {
-        this._logger.error(`Failed to fetch public IP address for WebRTC service: ${err.message}`);
-      }
-      this._logger.error(err);
-    } finally {
-      clearTimeout(timeout);
-    }
+    this._logger.warn(
+      `No public address set, falling back to ${this._publicAddress} -- ` +
+      "this CANNOT work for production"
+    );
   }
 
   private async loadConfig(): Promise<void> {
@@ -122,8 +119,23 @@ export class WebRTCService implements OnModuleInit {
     }
   }
 
+  private buildSignalingUrl(targetServer: WebRTCServer | string): string {
+    if (targetServer instanceof WebRTCServer) {
+      const protocol = this.isLocalDevEnv ? "ws" : "wss";
+      return `${protocol}://${this._publicAddress}:${targetServer.port}`;
+    }
+
+    if (!/ws(s)?:\/\//.test(targetServer)) {
+      throw new WebRTCServerRuntimeError(
+        `Malformed websocket target server URL: ${targetServer}`
+      );
+    }
+
+    return targetServer;
+  }
+
   // targetServer can be either a concrete WebRTCServer or a URL to that server
-  buildOffer(targetServer: WebRTCServer | string): WebRTCOfferDto {
+  public buildOffer(targetServer: WebRTCServer | string): WebRTCOfferDto {
     if (!this._config) {
       this._logger.error("Attempt at creating WebRTC offer without a valid initialization, bailing out.");
       throw new WebRTCServiceOfferError("WebRTC service is not properly initialized");
@@ -131,19 +143,7 @@ export class WebRTCService implements OnModuleInit {
 
     const offerDto = new WebRTCOfferDto();
 
-    let signalingUrl: string;
-
-    if (targetServer instanceof WebRTCServer) {
-      signalingUrl = `wss://${this._publicAddress}:${targetServer.port}`;
-    } else {
-      if (!/ws(s)?:\/\//.test(targetServer)) {
-        throw new WebRTCServerRuntimeError(
-          `Malformed websocket target server URL: ${targetServer}`
-        );
-      }
-
-      signalingUrl = targetServer;
-    }
+    const signalingUrl = this.buildSignalingUrl(targetServer);
 
     offerDto.signaling = [ signalingUrl ];
 

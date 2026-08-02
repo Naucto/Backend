@@ -42,7 +42,10 @@ import { WorkSessionModule } from "@work-session/work-session.module";
 import { WebRTCModule } from "@webrtc/webrtc.module";
 import { WebRTCService } from "@webrtc/webrtc.service";
 
-import { GracefulShutdownModule, IGracefulShutdownConfigOptions } from "@tygra/nestjs-graceful-shutdown";
+import {
+  GracefulShutdownModule,
+  IGracefulShutdownConfigOptions
+} from "@tygra/nestjs-graceful-shutdown";
 
 import { Module, InjectionToken, Provider } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
@@ -60,7 +63,9 @@ const nullProvider = (token: InjectionToken): Provider => ({
     GracefulShutdownModule.forRootAsync({
       imports: [WebRTCModule],
       inject: [WebRTCService],
-      useFactory: async (webrtcService: WebRTCService): Promise<IGracefulShutdownConfigOptions> => {
+      useFactory: async (
+        webrtcService: WebRTCService
+      ): Promise<IGracefulShutdownConfigOptions> => {
         return {
           cleanup: async (/* app, signal */): Promise<void> =>
             webrtcService.shutdownAllServers()

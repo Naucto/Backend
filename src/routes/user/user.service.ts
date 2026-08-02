@@ -13,11 +13,86 @@ export class UserService {
   constructor(private readonly prisma: PrismaService) {}
   private static readonly BCRYPT_SALT_ROUNDS = 10;
 
+  async findPublicProfile(id: number): Promise<{
+    id: number;
+    username: string;
+    nickname: string | null;
+    description: string | null;
+  }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        username: true,
+        nickname: true,
+        description: true
+      }
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    return user;
+  }
+
+  async findPublicProfileByUsername(username: string): Promise<{
+    id: number;
+    username: string;
+    nickname: string | null;
+    description: string | null;
+  }> {
+    const user = await this.prisma.user.findUnique({
+      where: { username },
+      select: {
+        id: true,
+        username: true,
+        nickname: true,
+        description: true
+      }
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with username ${username} not found`);
+    }
+
+    return user;
+  }
+
+  async updateMyProfile(
+    id: number,
+    data: { description?: string | null }
+  ): Promise<{
+    id: number;
+    username: string;
+    description: string | null;
+  }> {
+    const nextProfileText = data.description;
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id },
+      data: {
+        ...(nextProfileText !== undefined
+          ? {
+            description: nextProfileText
+          }
+          : {})
+      },
+      select: {
+        id: true,
+        username: true,
+        description: true
+      }
+    });
+
+    return updatedUser;
+  }
+
   async findRolesByNames(names: string[]): Promise<Role[]> {
     return this.prisma.role.findMany({
       where: {
         name: { in: names }
-      },
+      }
     });
   }
 
@@ -31,11 +106,14 @@ export class UserService {
       throw new NotFoundException(`User with ID ${userId} not found`);
     }
 
-    return user.roles.map(role => role.name);
+    return user.roles.map((role) => role.name);
   }
 
   async create(createUserDto: CreateUserDto): Promise<User> {
-    const hashedPassword = await bcrypt.hash(createUserDto.password, UserService.BCRYPT_SALT_ROUNDS);
+    const hashedPassword = await bcrypt.hash(
+      createUserDto.password,
+      UserService.BCRYPT_SALT_ROUNDS
+    );
 
     const rolesToAssign = createUserDto.roles?.length
       ? await this.findRolesByNames(createUserDto.roles)
@@ -54,7 +132,29 @@ export class UserService {
     });
   }
 
-  async findAll(params?: {skip?: number, take?: number, where?: Prisma.UserWhereInput, orderBy?: Prisma.UserOrderByWithRelationInput }): Promise<User[]> {
+  async createOAuthUser(email: string, username: string): Promise<User> {
+    return this.prisma.user.create({
+      data: { email, username, password: null, roles: { connect: [] } }
+    });
+  }
+
+  async updatePassword(userId: number, plainPassword: string): Promise<void> {
+    const hashed = await bcrypt.hash(
+      plainPassword,
+      UserService.BCRYPT_SALT_ROUNDS
+    );
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { password: hashed }
+    });
+  }
+
+  async findAll(params?: {
+    skip?: number;
+    take?: number;
+    where?: Prisma.UserWhereInput;
+    orderBy?: Prisma.UserOrderByWithRelationInput;
+  }): Promise<User[]> {
     const query: Prisma.UserFindManyArgs = {};
     if (params?.skip !== undefined) query.skip = params.skip;
     if (params?.take !== undefined) query.take = params.take;
@@ -71,7 +171,10 @@ export class UserService {
     return this.prisma.user.count(countArgs);
   }
 
-  async findOne<ComplexFieldsT>(id: number, whatElse: Record<string, boolean> = {}): Promise<User & ComplexFieldsT> {
+  async findOne<ComplexFieldsT>(
+    id: number,
+    whatElse: Record<string, boolean> = {}
+  ): Promise<User & ComplexFieldsT> {
     const user = await this.prisma.user.findUnique({
       where: { id },
       include: whatElse
@@ -86,23 +189,31 @@ export class UserService {
 
   async update(id: number, updateUserDto: UpdateUserDto): Promise<User> {
     const { roles, ...rest } = updateUserDto;
-    
+
     const data: Prisma.UserUpdateInput = {
       ...rest,
-      ...(roles ? { roles: { set: roles.map(roleName => ({ name: roleName })) } } : {}),
+      ...(roles
+        ? { roles: { connect: roles.map((roleName) => ({ name: roleName })) } }
+        : {})
     };
 
     if (updateUserDto.password) {
-      data.password = await bcrypt.hash(updateUserDto.password, UserService.BCRYPT_SALT_ROUNDS);
+      data.password = await bcrypt.hash(
+        updateUserDto.password,
+        UserService.BCRYPT_SALT_ROUNDS
+      );
     }
 
     try {
       return await this.prisma.user.update({
         where: { id },
-        data,
+        data
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2025"
+      ) {
         throw new NotFoundException(`User with ID ${id} not found`);
       }
       throw error;
@@ -122,13 +233,19 @@ export class UserService {
     return user ?? undefined;
   }
 
-  async attachGameSession(userId: number, gameSessionId: number, hosted: boolean): Promise<void> {
+  async attachGameSession(
+    userId: number,
+    gameSessionId: number,
+    hosted: boolean
+  ): Promise<void> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       throw new UserNotFoundError("User not found");
     }
 
-    const gameSession = await this.prisma.gameSession.findUnique({ where: { id: gameSessionId } });
+    const gameSession = await this.prisma.gameSession.findUnique({
+      where: { id: gameSessionId }
+    });
     if (!gameSession) {
       throw new UserGameSessionNotFoundError("Game session not found");
     }
@@ -143,13 +260,19 @@ export class UserService {
     });
   }
 
-  async detachGameSession(userId: number, gameSessionId: number, hosted: boolean): Promise<void> {
+  async detachGameSession(
+    userId: number,
+    gameSessionId: number,
+    hosted: boolean
+  ): Promise<void> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       throw new UserNotFoundError("User not found");
     }
 
-    const gameSession = await this.prisma.gameSession.findUnique({ where: { id: gameSessionId } });
+    const gameSession = await this.prisma.gameSession.findUnique({
+      where: { id: gameSessionId }
+    });
     if (!gameSession) {
       throw new UserGameSessionNotFoundError("Game session not found");
     }

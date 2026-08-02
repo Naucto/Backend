@@ -1,17 +1,13 @@
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import {
-  BadEnvVarError,
-  MissingEnvVarError,
-} from "@auth/auth.error";
+import { BadEnvVarError, MissingEnvVarError } from "@auth/auth.error";
 
 @Injectable()
 export class CloudfrontService {
   constructor(private readonly configService: ConfigService) {}
 
   private getEdgeEndpointRaw(): string {
-    const endpoint =
-      this.configService.get<string>("EDGE_ENDPOINT");
+    const endpoint = this.configService.get<string>("EDGE_ENDPOINT");
     if (!endpoint) throw new MissingEnvVarError("EDGE_ENDPOINT");
     return endpoint;
   }
@@ -55,7 +51,7 @@ export class CloudfrontService {
   }
 
   generateSignedUrl(fileKey: string): string {
-      return this.buildResourceUrl(fileKey);
+    return this.buildResourceUrl(fileKey);
   }
 
   getCDNUrl(key: string): string {

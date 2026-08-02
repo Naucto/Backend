@@ -1,17 +1,12 @@
 import { Transform } from "class-transformer";
-import {
-  IsString,
-  Matches,
-  MaxLength,
-  MinLength,
-} from "class-validator";
+import { IsString, Matches, MaxLength, MinLength } from "class-validator";
 import { ApiProperty } from "@nestjs/swagger";
 import {
   COMMENT_MAX_CONSECUTIVE_LINE_BREAKS,
   COMMENT_MAX_LENGTH,
   COMMENT_MAX_LINE_BREAKS,
   hasMaxLineBreaks,
-  normalizeCommentContent,
+  normalizeCommentContent
 } from "src/util/comment-content.util";
 
 export class CreateCommentDto {
@@ -27,11 +22,16 @@ export class CreateCommentDto {
   @IsString()
   @MinLength(1)
   @MaxLength(COMMENT_MAX_LENGTH)
-  @Matches(new RegExp(`^(?!.*\\n{${COMMENT_MAX_CONSECUTIVE_LINE_BREAKS + 1},})[\\s\\S]*$`), {
-    message: `Comment cannot contain more than ${COMMENT_MAX_CONSECUTIVE_LINE_BREAKS} consecutive line breaks`,
-  })
+  @Matches(
+    new RegExp(
+      `^(?!.*\\n{${COMMENT_MAX_CONSECUTIVE_LINE_BREAKS + 1},})[\\s\\S]*$`
+    ),
+    {
+      message: `Comment cannot contain more than ${COMMENT_MAX_CONSECUTIVE_LINE_BREAKS} consecutive line breaks`
+    }
+  )
   @hasMaxLineBreaks(COMMENT_MAX_LINE_BREAKS, {
-    message: `Comment cannot contain more than ${COMMENT_MAX_LINE_BREAKS} line breaks`,
+    message: `Comment cannot contain more than ${COMMENT_MAX_LINE_BREAKS} line breaks`
   })
   content!: string;
 }

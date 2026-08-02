@@ -6,5 +6,5 @@ import { IsUUID } from "class-validator";
 export class CloseHostRequestDto {
   @ApiProperty({ description: "ID of the project whose session to close" })
   @IsUUID()
-    projectId!: number;
-};
+  projectId!: number;
+}

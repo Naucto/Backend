@@ -19,67 +19,67 @@ import { IsArray, IsEnum, IsString, validateSync } from "class-validator";
 type YjsWebRTCTopicID = string;
 
 type YjsWebRTCClientSocket = WebRTCClientSocket<{
-  pinged: boolean,
-  pingChecker: NodeJS.Timeout,
-  subscribedTopics: Set<YjsWebRTCTopicID>
+  pinged: boolean;
+  pingChecker: NodeJS.Timeout;
+  subscribedTopics: Set<YjsWebRTCTopicID>;
 }>;
 
 type YjsWebRTCServerSocket = WebRTCServerSocket<{
-  topics: Map<YjsWebRTCTopicID, Set<YjsWebRTCClientSocket>>
+  topics: Map<YjsWebRTCTopicID, Set<YjsWebRTCClientSocket>>;
 }>;
 
 // ----------------------------------------------------------------------------
 
 enum YjsMessageType {
-  SUBSCRIBE   = "subscribe",
+  SUBSCRIBE = "subscribe",
   UNSUBSCRIBE = "unsubscribe",
-  PUBLISH     = "publish",
-  PING        = "ping",
-  PONG        = "pong"
-};
+  PUBLISH = "publish",
+  PING = "ping",
+  PONG = "pong"
+}
 
 class YjsMessage {
   @IsEnum(YjsMessageType)
-    type!: YjsMessageType;
-};
+  type!: YjsMessageType;
+}
 
 class YjsMessageSubscribe extends YjsMessage {
   @IsArray()
   @IsString({ each: true })
-    topics!: YjsWebRTCTopicID[];
-};
+  topics!: YjsWebRTCTopicID[];
+}
 
 class YjsMessageUnsubscribe extends YjsMessage {
   @IsArray()
   @IsString({ each: true })
-    topics!: YjsWebRTCTopicID[];
-};
+  topics!: YjsWebRTCTopicID[];
+}
 
 class YjsMessagePublish extends YjsMessage {
   @IsString()
-    topic!: YjsWebRTCTopicID;
+  topic!: YjsWebRTCTopicID;
 
   data?: unknown;
-};
+}
 
-class YjsMessagePing extends YjsMessage {};
+class YjsMessagePing extends YjsMessage {}
 
-type YjsMessageConstructor  = new (...args: unknown[]) => object;
+type YjsMessageConstructor = new (...args: unknown[]) => object;
 type YjsMessageTypeRegistry = Record<YjsMessageType, YjsMessageConstructor>;
 
 // ----------------------------------------------------------------------------
 
 export class YjsWebRTCServerOptions extends WebRTCServerOptions {
   pingTimeout: number = 30000;
-};
+}
 
 export class YjsWebRTCServer extends WebRTCServer<YjsWebRTCServerOptions> {
   private static readonly TYPE_CONVERTERS: YjsMessageTypeRegistry = {
-    [YjsMessageType.SUBSCRIBE]:   YjsMessageSubscribe,
+    [YjsMessageType.SUBSCRIBE]: YjsMessageSubscribe,
     [YjsMessageType.UNSUBSCRIBE]: YjsMessageUnsubscribe,
-    [YjsMessageType.PUBLISH]:     YjsMessagePublish,
-    [YjsMessageType.PING]:        YjsMessagePing,
-    [YjsMessageType.PONG]:        YjsMessage
+    [YjsMessageType.PUBLISH]: YjsMessagePublish,
+    [YjsMessageType.PING]: YjsMessagePing,
+    [YjsMessageType.PONG]: YjsMessage
   } as const;
 
   constructor(
@@ -101,10 +101,12 @@ export class YjsWebRTCServer extends WebRTCServer<YjsWebRTCServerOptions> {
   ): void {
     clientSocket.subscribedTopics = new Set<string>();
 
-    clientSocket.pinged      = true;
+    clientSocket.pinged = true;
     clientSocket.pingChecker = setInterval(() => {
       if (!clientSocket.pinged) {
-        this.logger.verbose(`Client ${clientSocket.remoteAddress} ping timed out`);
+        this.logger.verbose(
+          `Client ${clientSocket.remoteAddress} ping timed out`
+        );
         clearInterval(clientSocket.pingChecker);
         clientSocket.close();
         return;
@@ -115,7 +117,9 @@ export class YjsWebRTCServer extends WebRTCServer<YjsWebRTCServerOptions> {
       try {
         clientSocket.ping();
       } catch (err) {
-        this.logger.verbose(`Failed to ping client ${clientSocket.remoteAddress}: ${err}`);
+        this.logger.verbose(
+          `Failed to ping client ${clientSocket.remoteAddress}: ${err}`
+        );
         clientSocket.close();
       }
     }, this.extraOpts.pingTimeout);
@@ -130,8 +134,7 @@ export class YjsWebRTCServer extends WebRTCServer<YjsWebRTCServerOptions> {
     socket.subscribedTopics.forEach((topicId) => {
       const topic = serverSocket.topics.get(topicId);
 
-      if (topic === undefined)
-        return;
+      if (topic === undefined) return;
 
       topic.delete(socket);
 
@@ -154,15 +157,16 @@ export class YjsWebRTCServer extends WebRTCServer<YjsWebRTCServerOptions> {
     const validateInternal = <T extends object>(object: T): boolean => {
       const errors = validateSync(object);
 
-      if (errors.length === 0)
-        return true;
+      if (errors.length === 0) return true;
 
-      errors.forEach(error => {
+      errors.forEach((error) => {
         const path = error.children?.length
           ? `${error.property}.${error.children[0]!.property}`
           : error.property;
 
-        this.logger.verbose(`Validation error for ${socket.remoteAddress} — ${path}: ${Object.values(error.constraints || {}).join(", ")}`);
+        this.logger.verbose(
+          `Validation error for ${socket.remoteAddress} — ${path}: ${Object.values(error.constraints || {}).join(", ")}`
+        );
       });
 
       // Client badly behaved, kick them >:3
@@ -191,12 +195,16 @@ export class YjsWebRTCServer extends WebRTCServer<YjsWebRTCServerOptions> {
       }
     } catch (err) {
       if (err instanceof SyntaxError) {
-        this.logger.verbose(`Failed to parse JSON from ${socket.remoteAddress}`);
+        this.logger.verbose(
+          `Failed to parse JSON from ${socket.remoteAddress}`
+        );
         socket.close();
         return;
       }
 
-      this.logger.error(`Unexpected error parsing message from ${socket.remoteAddress}: ${err}`);
+      this.logger.error(
+        `Unexpected error parsing message from ${socket.remoteAddress}: ${err}`
+      );
       throw err;
     }
 
@@ -210,21 +218,30 @@ export class YjsWebRTCServer extends WebRTCServer<YjsWebRTCServerOptions> {
     if (!validateInternal(messageBody)) return;
 
     switch (baseNotificationBody.type) {
-    case YjsMessageType.SUBSCRIBE:
-      this._internal_yjs_onMessage_subscribe(socket, messageBody as YjsMessageSubscribe);
-      break;
+      case YjsMessageType.SUBSCRIBE:
+        this._internal_yjs_onMessage_subscribe(
+          socket,
+          messageBody as YjsMessageSubscribe
+        );
+        break;
 
-    case YjsMessageType.UNSUBSCRIBE:
-      this._internal_yjs_onMessage_unsubscribe(socket, messageBody as YjsMessageUnsubscribe);
-      break;
+      case YjsMessageType.UNSUBSCRIBE:
+        this._internal_yjs_onMessage_unsubscribe(
+          socket,
+          messageBody as YjsMessageUnsubscribe
+        );
+        break;
 
-    case YjsMessageType.PUBLISH:
-      this._internal_yjs_onMessage_publish(socket, messageBody as YjsMessagePublish);
-      break;
+      case YjsMessageType.PUBLISH:
+        this._internal_yjs_onMessage_publish(
+          socket,
+          messageBody as YjsMessagePublish
+        );
+        break;
 
-    case YjsMessageType.PING:
-      this._internal_yjs_onMessage_ping(socket);
-      break;
+      case YjsMessageType.PING:
+        this._internal_yjs_onMessage_ping(socket);
+        break;
     }
   }
 
@@ -232,8 +249,10 @@ export class YjsWebRTCServer extends WebRTCServer<YjsWebRTCServerOptions> {
     socket: YjsWebRTCClientSocket,
     response: YjsMessage
   ): void {
-    if (socket.readyState !== WebRTCClientReadyState.CONNECTING &&
-        socket.readyState !== WebRTCClientReadyState.OPEN) {
+    if (
+      socket.readyState !== WebRTCClientReadyState.CONNECTING &&
+      socket.readyState !== WebRTCClientReadyState.OPEN
+    ) {
       const stateName = WebRTCClientReadyState[socket.readyState];
 
       this.logger.verbose(
@@ -260,7 +279,7 @@ export class YjsWebRTCServer extends WebRTCServer<YjsWebRTCServerOptions> {
   ): void {
     const serverSocket = this.wss<YjsWebRTCServerSocket>();
 
-    messageBody.topics.forEach(topicId => {
+    messageBody.topics.forEach((topicId) => {
       if (!serverSocket.topics.has(topicId)) {
         serverSocket.topics.set(topicId, new Set<YjsWebRTCClientSocket>());
       }
@@ -280,7 +299,7 @@ export class YjsWebRTCServer extends WebRTCServer<YjsWebRTCServerOptions> {
   ): void {
     const serverSocket = this.wss<YjsWebRTCServerSocket>();
 
-    messageBody.topics.forEach(topicId => {
+    messageBody.topics.forEach((topicId) => {
       if (!serverSocket.topics.has(topicId)) {
         return;
       }
@@ -303,7 +322,7 @@ export class YjsWebRTCServer extends WebRTCServer<YjsWebRTCServerOptions> {
 
     const message = JSON.stringify(messageBody);
 
-    topic.forEach(client => {
+    topic.forEach((client) => {
       if (
         client !== socket &&
         client.readyState === WebRTCClientReadyState.OPEN
@@ -318,4 +337,4 @@ export class YjsWebRTCServer extends WebRTCServer<YjsWebRTCServerOptions> {
 
     this._internal_yjs_send(socket, responseBody);
   }
-};
+}

@@ -20,7 +20,9 @@ import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import { format } from "date-fns-tz";
 
-if (process.env["NODE_ENV"] === "production") {
+const isProduction = process.env["NODE_ENV"] === "production";
+
+if (isProduction) {
   dotenv.config({ path: ".env.production" });
 } else {
   dotenv.config();
@@ -69,17 +71,7 @@ if (process.env["NODE_ENV"] === "production") {
   );
 
   app.enableCors({
-    origin: (
-      origin: string | undefined,
-      callback: (err: Error | null, allow?: boolean) => void
-    ) => {
-      if (!origin || allowedOrigins.has(origin)) {
-        callback(null, true);
-      } else {
-        logger.warn(`CORS rejected request from origin: ${origin}`);
-        callback(new Error("CORS denied"));
-      }
-    },
+    origin: isProduction ? frontendUrl : true,
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-CSRF-Token"]
@@ -99,13 +91,17 @@ if (process.env["NODE_ENV"] === "production") {
     next();
   });
 
-  setupSwagger(app);
+  if (process.env["ENABLE_SWAGGER"] !== "false") {
+    setupSwagger(app);
+  } else {
+    logger.log("Swagger disabled (ENABLE_SWAGGER=false)");
+  }
 
   await app.init();
 
   const port = configService.get<number>("PORT") || 3000;
 
-  await app.listen(port);
+  await app.listen(port, "0.0.0.0");
 
   const address = app.getHttpServer().address();
   const actualPort =

@@ -6,31 +6,45 @@ import {
   IsNumber,
   IsUrl,
   Min,
-  IsEnum
+  IsEnum,
+  IsNotEmpty,
+  MaxLength
 } from "class-validator";
 import { ProjectStatus, MonetizationType } from "@prisma/client";
+import {
+  PROJECT_NAME_MAX_LENGTH,
+  PROJECT_SHORT_DESC_MAX_LENGTH,
+  PROJECT_LONG_DESC_MAX_LENGTH
+} from "./project-field-limits";
 
 export class UpdateProjectDto {
   @ApiProperty({
     description: "The name of the project",
-    example: "MySuperVideoGame"
+    example: "MySuperVideoGame",
+    maxLength: PROJECT_NAME_MAX_LENGTH
   })
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(PROJECT_NAME_MAX_LENGTH)
   name!: string;
 
   @ApiProperty({
     description: "A short description of the project",
-    example: "A 2D platformer game with pixel art graphics"
+    example: "A 2D platformer game with pixel art graphics",
+    maxLength: PROJECT_SHORT_DESC_MAX_LENGTH
   })
   @IsString()
+  @MaxLength(PROJECT_SHORT_DESC_MAX_LENGTH)
   shortDesc!: string;
 
   @ApiProperty({
     description: "A detailed description of the project",
     example: "This game features multiple levels, power-ups, and boss fights.",
-    required: false
+    required: false,
+    maxLength: PROJECT_LONG_DESC_MAX_LENGTH
   })
   @IsString()
+  @MaxLength(PROJECT_LONG_DESC_MAX_LENGTH)
   longDesc?: string | null;
 
   @ApiProperty({

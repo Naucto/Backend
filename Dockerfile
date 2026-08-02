@@ -15,20 +15,46 @@ WORKDIR /app
 
 ENV DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}"
 
-COPY package.json ./
+COPY package.json package-lock.json ./
 COPY prisma.config.ts ./
 COPY prisma ./prisma
 
-RUN npm install
+# Full dependency set (build + dev tooling), shared by the dev and build stages.
+FROM base AS deps
+RUN npm ci
 RUN npx prisma generate
 
-FROM base AS dev
+FROM deps AS dev
 ENV PORT=${BACKEND_PORT}
 COPY . .
 CMD ["sh", "-c", "npx prisma migrate deploy && npm run start:dev"]
 
-FROM base AS prod
+FROM deps AS build
 COPY . .
 RUN npm run build
+
+# Migration runner: reuses the build stage (which has the Prisma CLI) to apply
+# pending migrations as a one-off step, decoupled from the runtime image.
+FROM build AS migrate
+CMD ["npx", "prisma", "migrate", "deploy"]
+
+# Slim production runtime: production dependencies only (no Prisma CLI, no dev
+# tooling), the generated Prisma client copied from the build stage, and the
+# compiled output -- no source or test assets. Migrations run via the `migrate`
+# stage above, not here.
+FROM base AS prod
 ENV PORT=${BACKEND_PORT}
-CMD ["sh", "-c", "npx prisma migrate deploy && npm run start:prod"]
+# Swagger UI is not served in production, so drop its bundled static assets.
+ENV ENABLE_SWAGGER=false
+# Keep optional peer deps so the Prisma CLI (an optional peer of @prisma/client)
+# stays in the image: the prod deploy self-runs `prisma migrate deploy` in this
+# container at startup, so it needs the CLI. --omit=dev still drops the dev toolchain.
+# TODO(NCTO-XXX): move migrations to the dedicated `migrate` stage so prod can
+# re-add --omit=optional and slim back down (see migrate stage + docker-compose).
+RUN npm ci --omit=dev \
+    && rm -rf node_modules/swagger-ui-dist \
+    && npm cache clean --force
+COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=build /app/dist ./dist
+COPY package.json config* ./config/
+CMD ["npm", "run", "start:prod"]

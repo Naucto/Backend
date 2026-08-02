@@ -11,8 +11,16 @@ services:
   backend:
     build:
       target: dev
+    # The dev image bundles the Prisma CLI and self-migrates on start (see the
+    # dev stage CMD), so the prod-only `migrate` service is not needed here.
+    depends_on: !override
+      db:
+        condition: service_healthy
     networks:
       - naucto-dev
+    volumes:
+      - .:/app
+      - /app/node_modules
     environment:
       NODE_ENV: development
       HOT_RELOAD: true

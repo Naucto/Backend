@@ -7,19 +7,19 @@ import { Type } from "class-transformer";
 export class OpenHostRequestDto {
   @ApiProperty()
   @IsInt()
-    projectId!: number;
+  projectId!: number;
 
   @ApiProperty({ enum: GameSessionVisibility })
   @IsEnum(GameSessionVisibility)
-    visibility!: GameSessionVisibility;
-};
+  visibility!: GameSessionVisibility;
+}
 
 export class OpenHostResponseDto {
   @ApiProperty()
   @IsUUID()
-    sessionUuid!: string;
+  sessionUuid!: string;
 
   @ApiProperty({ type: () => WebRTCOfferDto })
   @Type(() => WebRTCOfferDto)
-    webrtcConfig!: WebRTCOfferDto;
-};
+  webrtcConfig!: WebRTCOfferDto;
+}

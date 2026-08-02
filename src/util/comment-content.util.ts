@@ -1,7 +1,7 @@
 import {
   ValidationArguments,
   ValidationOptions,
-  registerDecorator,
+  registerDecorator
 } from "class-validator";
 
 export const COMMENT_MAX_LENGTH = 500;
@@ -30,9 +30,9 @@ export function hasMaxLineBreaks(
 
           const [maxLineBreaks] = args.constraints as [number];
           return (value.match(/\n/g) ?? []).length <= maxLineBreaks;
-        },
+        }
       },
-      ...(validationOptions ? { options: validationOptions } : {}),
+      ...(validationOptions ? { options: validationOptions } : {})
     });
   };
 }

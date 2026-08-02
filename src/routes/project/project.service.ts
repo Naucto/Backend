@@ -132,6 +132,24 @@ export class ProjectService {
     );
   }
 
+  private normalizePagination(
+    page: number,
+    limit: number
+  ): { page: number; limit: number; skip: number } {
+    const safePage = Number.isFinite(page)
+      ? Math.max(DEFAULT_PAGE, Math.trunc(page))
+      : DEFAULT_PAGE;
+    const safeLimit = Number.isFinite(limit)
+      ? Math.min(MAX_LIMIT, Math.max(1, Math.trunc(limit)))
+      : DEFAULT_LIMIT;
+
+    return {
+      page: safePage,
+      limit: safeLimit,
+      skip: (safePage - 1) * safeLimit
+    };
+  }
+
   private withCommentCount(project: ProjectWithCounts): ReleaseProject {
     const { _count, ...rest } = project;
     return {
@@ -939,6 +957,85 @@ export class ProjectService {
     });
   }
 
+  async fetchPublishedGamesByUser(
+    userId: number,
+    page: number = DEFAULT_PAGE,
+    limit: number = DEFAULT_LIMIT
+  ): Promise<ReleaseProject[]> {
+    return this.fetchPublishedGamesByUserWhere(
+      {
+        status: "COMPLETED",
+        OR: [
+          { userId },
+          {
+            collaborators: {
+              some: { id: userId }
+            }
+          }
+        ]
+      },
+      page,
+      limit
+    );
+  }
+
+  async fetchLikedPublishedGamesByUser(
+    userId: number,
+    page: number = DEFAULT_PAGE,
+    limit: number = DEFAULT_LIMIT
+  ): Promise<ReleaseProject[]> {
+    return this.fetchPublishedGamesByUserWhere(
+      {
+        status: "COMPLETED",
+        userLikes: {
+          some: { userId }
+        }
+      },
+      page,
+      limit
+    );
+  }
+
+  private async fetchPublishedGamesByUserWhere(
+    where: Prisma.ProjectWhereInput,
+    page: number,
+    limit: number
+  ): Promise<ReleaseProject[]> {
+    const pagination = this.normalizePagination(page, limit);
+
+    const projects = await this.prisma.project.findMany({
+      where,
+      orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }],
+      skip: pagination.skip,
+      take: pagination.limit,
+      include: {
+        collaborators: {
+          select: ProjectService.COLLABORATOR_SELECT
+        },
+        creator: {
+          select: ProjectService.CREATOR_SELECT
+        },
+        _count: {
+          select: {
+            forks: true,
+            comments: { where: { deleted: false } }
+          }
+        }
+      }
+    });
+
+    return projects.map((project) =>
+      this.applyPublishedSnapshot(
+        this.withCommentCount(project as ProjectWithCounts & {
+          publishedName?: string | null;
+          publishedShortDesc?: string | null;
+          publishedLongDesc?: string | null;
+          publishedTags?: string[];
+        })
+      )
+    );
+  }
+
   async registerReleaseView(projectId: number): Promise<{ viewCount: number }> {
     const project = await this.prisma.project.findFirst({
       where: {
@@ -970,118 +1067,67 @@ export class ProjectService {
 
   // ─── Like Methods ───────────────────────────────────────────────────
 
+  /**
+   * Recompute the denormalized `likes` counter from the actual Like rows and
+   * persist it. Using a count instead of increment/decrement keeps the counter
+   * accurate even under concurrent / rapidly repeated requests (no drift).
+   */
+  private async syncLikeCount(projectId: number): Promise<number> {
+    const likes = await this.prisma.like.count({ where: { projectId } });
+    await this.prisma.project.update({
+      where: { id: projectId },
+      data: { likes }
+    });
+    return likes;
+  }
+
   async likeProject(
     projectId: number,
-    userId?: number
+    userId: number
   ): Promise<{ likes: number; liked: boolean }> {
-    const project = await this.prisma.project.findFirst({
-      where: { id: projectId, status: "COMPLETED", hidden: false },
-      select: { id: true, likes: true }
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true }
     });
 
     if (!project) {
       throw new NotFoundException(`Project with ID ${projectId} not found`);
     }
 
-    if (!userId) {
-      // Anonymous like — just increment counter
-      const updated = await this.prisma.project.update({
-        where: { id: projectId },
-        data: { likes: { increment: 1 } },
-        select: { likes: true }
-      });
-      await this.analyticsService?.record(AnalyticsEventType.LIKE_CREATED, {
-        projectId,
-        metadata: { anonymous: true }
-      });
-      return { likes: updated.likes, liked: true };
-    }
-
-    // Authenticated like — toggle
-    const existingLike = await this.prisma.like.findUnique({
-      where: {
-        userId_projectId: { userId, projectId }
-      }
+    // Idempotent: a user can only ever hold a single like for a project.
+    // Spamming the endpoint creates no duplicates and never over-counts.
+    await this.prisma.like.upsert({
+      where: { userId_projectId: { userId, projectId } },
+      create: { userId, projectId },
+      update: {}
     });
 
-    if (existingLike) {
-      // Already liked — unlike
-      await this.prisma.$transaction([
-        this.prisma.like.delete({
-          where: { id: existingLike.id }
-        }),
-        this.prisma.project.update({
-          where: { id: projectId },
-          data: { likes: { decrement: 1 } }
-        })
-      ]);
-
-      const updated = await this.prisma.project.findUnique({
-        where: { id: projectId },
-        select: { likes: true }
-      });
-      await this.analyticsService?.record(AnalyticsEventType.LIKE_REMOVED, {
-        userId,
-        projectId
-      });
-      return { likes: updated!.likes, liked: false };
-    } else {
-      // Not liked — like
-      await this.prisma.$transaction([
-        this.prisma.like.create({
-          data: { userId, projectId }
-        }),
-        this.prisma.project.update({
-          where: { id: projectId },
-          data: { likes: { increment: 1 } }
-        })
-      ]);
-
-      const updated = await this.prisma.project.findUnique({
-        where: { id: projectId },
-        select: { likes: true }
-      });
-      await this.analyticsService?.record(AnalyticsEventType.LIKE_CREATED, {
-        userId,
-        projectId
-      });
-      return { likes: updated!.likes, liked: true };
-    }
+    const likes = await this.syncLikeCount(projectId);
+    return { likes, liked: true };
   }
 
   async unlikeProject(
     projectId: number,
     userId: number
   ): Promise<{ likes: number; liked: boolean }> {
-    const existingLike = await this.prisma.like.findUnique({
-      where: {
-        userId_projectId: { userId, projectId }
-      }
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true }
     });
 
-    if (!existingLike) {
-      throw new NotFoundException("Like not found");
+    if (!project) {
+      throw new NotFoundException(`Project with ID ${projectId} not found`);
     }
 
-    await this.prisma.$transaction([
-      this.prisma.like.delete({
-        where: { id: existingLike.id }
-      }),
-      this.prisma.project.update({
-        where: { id: projectId },
-        data: { likes: { decrement: 1 } }
-      })
-    ]);
+    // Idempotent: removing a non-existent like is a no-op rather than an error.
+    await this.prisma.like.deleteMany({ where: { userId, projectId } });
 
-    const updated = await this.prisma.project.findUnique({
-      where: { id: projectId },
-      select: { likes: true }
-    });
+    const likes = await this.syncLikeCount(projectId);
     await this.analyticsService?.record(AnalyticsEventType.LIKE_REMOVED, {
       userId,
       projectId
     });
-    return { likes: updated!.likes, liked: false };
+    return { likes, liked: false };
   }
 
   async getLikeStatus(

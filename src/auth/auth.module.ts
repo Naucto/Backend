@@ -10,7 +10,9 @@ import { AccountWriteGuard } from "./guards/account-write.guard";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { MissingEnvVarError, BadEnvVarError } from "./auth.error";
-import { GoogleAuthService } from "./google-auth.service";
+import { GoogleAuthService } from "./providers/google-auth.service";
+import { GithubAuthService } from "./providers/github-auth.service";
+import { MicrosoftAuthService } from "./providers/microsoft-auth.service";
 import { Module, Logger } from "@nestjs/common";
 import { AnalyticsModule } from "src/analytics/analytics.module";
 
@@ -71,7 +73,10 @@ function parseExpiresIn(v?: string): number | DurationString {
     AuthService,
     GoogleAuthService,
     JwtStrategy,
-    AdminJwtStrategy
+    AdminJwtStrategy,
+    GithubAuthService,
+    MicrosoftAuthService,
+    JwtStrategy
   ],
   exports: [JwtAuthGuard, RolesGuard, AccountWriteGuard, JwtModule, AuthService],
   controllers: [AuthController]

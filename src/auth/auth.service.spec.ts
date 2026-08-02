@@ -5,77 +5,155 @@ import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcryptjs";
 import { ConflictException, UnauthorizedException } from "@nestjs/common";
 import { Prisma, User } from "@prisma/client";
-import { GoogleAuthService } from "./google-auth.service";
+import { GoogleAuthService } from "./providers/google-auth.service";
+import { GithubAuthService } from "./providers/github-auth.service";
+import { MicrosoftAuthService } from "./providers/microsoft-auth.service";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { ConfigService } from "@nestjs/config";
 
 jest.mock("bcryptjs", () => ({
-  compare: jest.fn()
+  compare: jest.fn(),
+  hash: jest.fn().mockResolvedValue("hashed_value")
 }));
+
+const configServiceValue = {
+  get: jest.fn((key: string) => {
+    if (key === "JWT_SECRET") return "test-secret-key";
+    if (key === "JWT_EXPIRES_IN") return "1h";
+    if (key === "JWT_REFRESH_EXPIRES_IN") return "7d";
+    return undefined;
+  })
+};
+
+type RefreshTokenMock = {
+  create: jest.Mock;
+  deleteMany: jest.Mock;
+  findMany: jest.Mock;
+  findUnique: jest.Mock;
+  delete: jest.Mock;
+};
+
+type TransactionClientMock = {
+  refreshToken: Pick<RefreshTokenMock, "create" | "deleteMany" | "delete">;
+};
+
+type PrismaServiceMock = {
+  $transaction: jest.Mock;
+  refreshToken: RefreshTokenMock;
+};
+
+function makeRefreshTokenMock(
+  overrides: Record<string, jest.Mock> = {}
+): RefreshTokenMock {
+  return {
+    create: jest.fn().mockResolvedValue({
+      id: 1,
+      token: "hashed",
+      userId: 1,
+      expiresAt: new Date()
+    }),
+    deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+    findMany: jest.fn().mockResolvedValue([]),
+    findUnique: jest.fn().mockResolvedValue(null),
+    delete: jest.fn().mockResolvedValue({ id: 1 }),
+    ...overrides
+  };
+}
+
+function makePrisma(
+  refreshTokenOverrides: Record<string, jest.Mock> = {}
+): PrismaServiceMock {
+  return {
+    $transaction: jest.fn((cb: (tx: TransactionClientMock) => unknown) =>
+      cb({
+        refreshToken: {
+          create: jest.fn().mockResolvedValue({
+            id: 2,
+            token: "hashed",
+            userId: 1,
+            expiresAt: new Date()
+          }),
+          deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+          delete: jest.fn().mockResolvedValue({ id: 1 })
+        }
+      })
+    ),
+    refreshToken: makeRefreshTokenMock(refreshTokenOverrides)
+  };
+}
 
 describe("AuthService", () => {
   let authService: AuthService;
 
   const userRecord = <T extends object>(user: T): T & Pick<
     User,
-    "accountStatus" | "moderationReason" | "moderatedAt" | "moderatedById"
+    | "description"
+    | "accountStatus"
+    | "moderationReason"
+    | "moderatedAt"
+    | "moderatedById"
   > => ({
-    accountStatus: "ACTIVE",
-    moderationReason: null,
-    moderatedAt: null,
-    moderatedById: null,
-    ...user
-  });
+      description: null,
+      accountStatus: "ACTIVE",
+      moderationReason: null,
+      moderatedAt: null,
+      moderatedById: null,
+      ...user
+    });
 
   const userService: jest.Mocked<
-    Pick<UserService, "findByEmail" | "findAll" | "create">
+    Pick<UserService, "findByEmail" | "findAll" | "create" | "createOAuthUser">
   > = {
     findByEmail: jest.fn(),
     findAll: jest.fn(),
-    create: jest.fn()
+    create: jest.fn(),
+    createOAuthUser: jest.fn()
   };
 
-  const jwtService: jest.Mocked<Pick<JwtService, "sign">> = {
-    sign: jest.fn()
+  const jwtService: jest.Mocked<
+    Pick<JwtService, "sign" | "decode" | "verify">
+  > = {
+    sign: jest.fn().mockReturnValue("token123"),
+    decode: jest.fn().mockReturnValue({ sub: 1, email: "test@test.com" }),
+    verify: jest.fn().mockReturnValue({ sub: 1, email: "test@test.com" })
   };
 
-  const prismaService = {
-    $transaction: jest.fn((callback: any) => {
-      // Create a mock transaction client
-      const txClient = {
-        refreshToken: {
-          create: jest.fn().mockResolvedValue({ id: 1, token: "refresh_token123", userId: 1, expiresAt: new Date() }),
-          deleteMany: jest.fn().mockResolvedValue({ count: 0 })
-        }
-      };
-      return callback(txClient);
-    }),
-    refreshToken: {
-      create: jest.fn(),
-      deleteMany: jest.fn()
-    }
-  };
+  const prismaService = makePrisma();
 
-  beforeEach(async () => {
-    jest.clearAllMocks();
-    (bcrypt.compare as jest.Mock).mockResolvedValue(true);
-
+  async function buildModule(
+    prisma: PrismaServiceMock = prismaService,
+    googleAuth: unknown = {}
+  ): Promise<AuthService> {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
         { provide: UserService, useValue: userService },
         { provide: JwtService, useValue: jwtService },
-        { provide: GoogleAuthService, useValue: {} },
-        { provide: PrismaService, useValue: prismaService },
-        { provide: ConfigService, useValue: { get: jest.fn((key: string) => {
-          if (key === "JWT_EXPIRES_IN") return "1h";
-          if (key === "JWT_REFRESH_EXPIRES_IN") return "7d";
-          return undefined;
-        }) } }
+        { provide: GoogleAuthService, useValue: googleAuth },
+        { provide: GithubAuthService, useValue: {} },
+        { provide: MicrosoftAuthService, useValue: {} },
+        { provide: PrismaService, useValue: prisma },
+        { provide: ConfigService, useValue: configServiceValue }
       ]
     }).compile();
+    return module.get<AuthService>(AuthService);
+  }
 
-    authService = module.get<AuthService>(AuthService);
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    (jwtService.sign as jest.Mock).mockReturnValue("token123");
+    (jwtService.decode as jest.Mock).mockReturnValue({
+      sub: 1,
+      email: "test@test.com"
+    });
+    (jwtService.verify as jest.Mock).mockReturnValue({
+      sub: 1,
+      email: "test@test.com"
+    });
+    (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+    (bcrypt.hash as jest.Mock).mockResolvedValue("hashed_value");
+
+    authService = await buildModule();
   });
 
   it("should be defined", () => {
@@ -85,7 +163,6 @@ describe("AuthService", () => {
   describe("validateUser", () => {
     it("should throw UnauthorizedException if user not found", async () => {
       userService.findByEmail.mockResolvedValue(undefined);
-
       await expect(
         authService.validateUser("test@example.com", "password")
       ).rejects.toThrow(UnauthorizedException);
@@ -97,12 +174,12 @@ describe("AuthService", () => {
         email: "test@example.com",
         username: "testuser",
         nickname: null,
+        description: null,
         password: "hashedPass",
         createdAt: new Date()
       }));
 
       (bcrypt.compare as jest.Mock).mockResolvedValueOnce(false);
-
       await expect(
         authService.validateUser("test@example.com", "wrongpass")
       ).rejects.toThrow(UnauthorizedException);
@@ -115,10 +192,10 @@ describe("AuthService", () => {
         password: "hashedPass",
         username: "testuser",
         nickname: null,
+        description: null,
         createdAt: new Date()
       });
       userService.findByEmail.mockResolvedValue(mockUser);
-
       const result = await authService.validateUser(
         "test@example.com",
         "password"
@@ -135,18 +212,21 @@ describe("AuthService", () => {
         password: "hashedPass",
         username: "testuser",
         nickname: null,
+        description: null,
         createdAt: new Date()
       });
 
       jest.spyOn(authService, "validateUser").mockResolvedValue(mockUser);
-      jwtService.sign.mockReturnValue("token123");
 
       const result = await authService.login("test@example.com", "password");
-      expect(result).toEqual({ access_token: "token123", refresh_token: "token123" });
-      expect(jwtService.sign).toHaveBeenCalledWith({
-        sub: mockUser.id,
-        email: mockUser.email
-      }, expect.any(Object));
+      expect(result).toEqual({
+        access_token: "token123",
+        refresh_token: "token123"
+      });
+      expect(jwtService.sign).toHaveBeenCalledWith(
+        { sub: mockUser.id, email: mockUser.email },
+        expect.any(Object)
+      );
     });
   });
 
@@ -155,19 +235,15 @@ describe("AuthService", () => {
       userService.findAll.mockImplementation(
         async (params?: Prisma.UserFindManyArgs): Promise<User[]> => {
           const where = params?.where || {};
-
           let emailFilter: string | undefined;
           if (where.email) {
-            if (typeof where.email === "string") {
-              emailFilter = where.email;
-            } else if (
+            if (typeof where.email === "string") emailFilter = where.email;
+            else if (
               "equals" in where.email &&
               typeof where.email.equals === "string"
-            ) {
+            )
               emailFilter = where.email.equals;
-            }
           }
-
           if (emailFilter === "exists@example.com") {
             return [
               userRecord({
@@ -175,6 +251,7 @@ describe("AuthService", () => {
                 email: emailFilter,
                 username: "user",
                 nickname: null,
+                description: null,
                 password: "hashedPass",
                 createdAt: new Date()
               })
@@ -198,19 +275,16 @@ describe("AuthService", () => {
       userService.findAll.mockImplementation(
         async (params?: Prisma.UserFindManyArgs): Promise<User[]> => {
           const where = params?.where || {};
-
           let usernameFilter: string | undefined;
           if (where.username) {
-            if (typeof where.username === "string") {
+            if (typeof where.username === "string")
               usernameFilter = where.username;
-            } else if (
+            else if (
               "equals" in where.username &&
               typeof where.username.equals === "string"
-            ) {
+            )
               usernameFilter = where.username.equals;
-            }
           }
-
           if (usernameFilter === "existsUser") {
             return [
               userRecord({
@@ -218,6 +292,7 @@ describe("AuthService", () => {
                 email: "user@example.com",
                 username: usernameFilter,
                 nickname: null,
+                description: null,
                 password: "hashedPass",
                 createdAt: new Date()
               })
@@ -239,18 +314,15 @@ describe("AuthService", () => {
 
     it("should create user and return access token", async () => {
       userService.findAll.mockResolvedValue([]);
-
-      const newUser = userRecord({
+      userService.create.mockResolvedValue(userRecord({
         id: 1,
         email: "new@example.com",
         username: "newUser",
         nickname: null,
+        description: null,
         password: "hashedPassword",
         createdAt: new Date()
-      });
-
-      userService.create.mockResolvedValue(newUser);
-      jwtService.sign.mockReturnValue("token123");
+      }));
 
       const result = await authService.register({
         email: "new@example.com",
@@ -264,7 +336,7 @@ describe("AuthService", () => {
     });
   });
 
-  describe("loginWithGoogle", () => {
+  describe("loginWithGoogleCode", () => {
     it("should create new user and return tokens for new Google user", async () => {
       const googleUser = {
         email: "google@example.com",
@@ -272,48 +344,38 @@ describe("AuthService", () => {
       };
 
       const googleAuthService = {
-        verifyGoogleToken: jest.fn().mockResolvedValue(googleUser)
+        getUserFromCode: jest.fn().mockResolvedValue(googleUser)
       };
 
       userService.findByEmail.mockResolvedValue(undefined);
+      userService.findAll.mockResolvedValue([]);
 
       const newUser = userRecord({
         id: 5,
         email: googleUser.email,
         username: "Google_User",
         nickname: null,
-        password: "",
+        password: null,
         createdAt: new Date()
       });
-      userService.create.mockResolvedValue(newUser);
+      userService.createOAuthUser.mockResolvedValue(newUser);
       jwtService.sign.mockReturnValue("google-token-abc");
 
-      const module: TestingModule = await Test.createTestingModule({
-        providers: [
-          AuthService,
-          { provide: UserService, useValue: userService },
-          { provide: JwtService, useValue: jwtService },
-          { provide: GoogleAuthService, useValue: googleAuthService },
-          { provide: PrismaService, useValue: prismaService },
-          { provide: ConfigService, useValue: { get: jest.fn((key: string) => {
-            if (key === "JWT_EXPIRES_IN") return "1h";
-            if (key === "JWT_REFRESH_EXPIRES_IN") return "7d";
-            return undefined;
-          }) } }
-        ]
-      }).compile();
+      const testAuthService = await buildModule(prismaService, googleAuthService);
 
-      const testAuthService = module.get<AuthService>(AuthService);
+      const result = await testAuthService.loginWithGoogleCode(
+        "google-code",
+        "google-verifier"
+      );
 
-      const result = await testAuthService.loginWithGoogle("google-oauth-token");
-
-      expect(googleAuthService.verifyGoogleToken).toHaveBeenCalledWith("google-oauth-token");
-      expect(userService.create).toHaveBeenCalledWith({
-        email: googleUser.email,
-        username: "Google_User",
-        password: "",
-        roles: []
-      });
+      expect(googleAuthService.getUserFromCode).toHaveBeenCalledWith(
+        "google-code",
+        "google-verifier"
+      );
+      expect(userService.createOAuthUser).toHaveBeenCalledWith(
+        googleUser.email,
+        "Google_User"
+      );
       expect(result).toEqual({
         access_token: "google-token-abc",
         refresh_token: "google-token-abc"
@@ -336,32 +398,23 @@ describe("AuthService", () => {
       });
 
       const googleAuthService = {
-        verifyGoogleToken: jest.fn().mockResolvedValue(googleUser)
+        getUserFromCode: jest.fn().mockResolvedValue(googleUser)
       };
 
       userService.findByEmail.mockResolvedValue(existingUser);
       jwtService.sign.mockReturnValue("existing-token-xyz");
 
-      const module: TestingModule = await Test.createTestingModule({
-        providers: [
-          AuthService,
-          { provide: UserService, useValue: userService },
-          { provide: JwtService, useValue: jwtService },
-          { provide: GoogleAuthService, useValue: googleAuthService },
-          { provide: PrismaService, useValue: prismaService },
-          { provide: ConfigService, useValue: { get: jest.fn((key: string) => {
-            if (key === "JWT_EXPIRES_IN") return "1h";
-            if (key === "JWT_REFRESH_EXPIRES_IN") return "7d";
-            return undefined;
-          }) } }
-        ]
-      }).compile();
+      const testAuthService = await buildModule(prismaService, googleAuthService);
 
-      const testAuthService = module.get<AuthService>(AuthService);
+      const result = await testAuthService.loginWithGoogleCode(
+        "google-code",
+        "google-verifier"
+      );
 
-      const result = await testAuthService.loginWithGoogle("google-oauth-token");
-
-      expect(googleAuthService.verifyGoogleToken).toHaveBeenCalledWith("google-oauth-token");
+      expect(googleAuthService.getUserFromCode).toHaveBeenCalledWith(
+        "google-code",
+        "google-verifier"
+      );
       expect(userService.create).not.toHaveBeenCalled();
       expect(result).toEqual({
         access_token: "existing-token-xyz",
@@ -372,142 +425,86 @@ describe("AuthService", () => {
 
   describe("refreshToken", () => {
     it("should throw UnauthorizedException if refresh token not found", async () => {
-      const mockPrisma = {
-        ...prismaService,
-        refreshToken: {
-          findUnique: jest.fn().mockResolvedValue(null),
-          create: jest.fn(),
-          deleteMany: jest.fn(),
-          delete: jest.fn()
-        }
-      };
+      (jwtService.verify as jest.Mock).mockReturnValue({
+        sub: 1,
+        email: "test@test.com"
+      });
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
 
-      const module: TestingModule = await Test.createTestingModule({
-        providers: [
-          AuthService,
-          { provide: UserService, useValue: userService },
-          { provide: JwtService, useValue: jwtService },
-          { provide: GoogleAuthService, useValue: {} },
-          { provide: PrismaService, useValue: mockPrisma },
-          { provide: ConfigService, useValue: { get: jest.fn((key: string) => {
-            if (key === "JWT_EXPIRES_IN") return "1h";
-            if (key === "JWT_REFRESH_EXPIRES_IN") return "7d";
-            return undefined;
-          }) } }
-        ]
-      }).compile();
+      const prisma = makePrisma({ findMany: jest.fn().mockResolvedValue([]) });
+      const svc = await buildModule(prisma);
 
-      const testAuthService = module.get<AuthService>(AuthService);
-
-      await expect(
-        testAuthService.refreshToken("invalid-token")
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(svc.refreshToken("invalid-token")).rejects.toThrow(
+        UnauthorizedException
+      );
     });
 
     it("should throw UnauthorizedException if refresh token expired", async () => {
-      const expiredDate = new Date(Date.now() - 1000 * 60 * 60); // 1 hour ago
-      const mockPrisma = {
-        ...prismaService,
-        refreshToken: {
-          findUnique: jest.fn().mockResolvedValue({
-            id: 1,
-            token: "expired-token",
-            userId: 1,
-            expiresAt: expiredDate,
-            user: userRecord({
-              id: 1,
-              email: "user@example.com",
-              username: "user",
-              nickname: null,
-              password: "pass",
-              createdAt: new Date()
-            })
-          }),
-          delete: jest.fn(),
-          create: jest.fn(),
-          deleteMany: jest.fn()
+      const expiredDate = new Date(Date.now() - 1000 * 60 * 60);
+      const tokenRecord = {
+        id: 1,
+        token: "hashed-expired",
+        userId: 1,
+        expiresAt: expiredDate,
+        user: {
+          id: 1,
+          email: "user@example.com",
+          username: "user",
+          nickname: null,
+          password: "pass",
+          createdAt: new Date()
         }
       };
 
-      const module: TestingModule = await Test.createTestingModule({
-        providers: [
-          AuthService,
-          { provide: UserService, useValue: userService },
-          { provide: JwtService, useValue: jwtService },
-          { provide: GoogleAuthService, useValue: {} },
-          { provide: PrismaService, useValue: mockPrisma },
-          { provide: ConfigService, useValue: { get: jest.fn((key: string) => {
-            if (key === "JWT_EXPIRES_IN") return "1h";
-            if (key === "JWT_REFRESH_EXPIRES_IN") return "7d";
-            return undefined;
-          }) } }
-        ]
-      }).compile();
-
-      const testAuthService = module.get<AuthService>(AuthService);
-
-      await expect(
-        testAuthService.refreshToken("expired-token")
-      ).rejects.toThrow(UnauthorizedException);
-
-      expect(mockPrisma.refreshToken.delete).toHaveBeenCalledWith({
-        where: { id: 1 }
+      (jwtService.verify as jest.Mock).mockReturnValue({
+        sub: 1,
+        email: "user@example.com"
       });
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+
+      const deleteOne = jest.fn().mockResolvedValue({ id: 1 });
+      const prisma = makePrisma({
+        findMany: jest.fn().mockResolvedValue([tokenRecord]),
+        delete: deleteOne
+      });
+      const svc = await buildModule(prisma);
+
+      await expect(svc.refreshToken("expired-token")).rejects.toThrow(
+        UnauthorizedException
+      );
+      expect(deleteOne).toHaveBeenCalledWith({ where: { id: 1 } });
     });
 
     it("should return new tokens for valid refresh token", async () => {
-      const futureDate = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7); // 7 days from now
-      const mockPrisma = {
-        $transaction: jest.fn((callback: any) => {
-          const txClient = {
-            refreshToken: {
-              delete: jest.fn().mockResolvedValue({ id: 1 }),
-              create: jest.fn().mockResolvedValue({ id: 2, token: "new-refresh", userId: 1, expiresAt: futureDate })
-            }
-          };
-          return callback(txClient);
-        }),
-        refreshToken: {
-          findUnique: jest.fn().mockResolvedValue({
-            id: 1,
-            token: "valid-token",
-            userId: 1,
-            expiresAt: futureDate,
-            user: userRecord({
-              id: 1,
-              email: "user@example.com",
-              username: "user",
-              nickname: null,
-              password: "pass",
-              createdAt: new Date()
-            })
-          }),
-          create: jest.fn(),
-          deleteMany: jest.fn()
+      const futureDate = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7);
+      const tokenRecord = {
+        id: 1,
+        token: "hashed-valid",
+        userId: 1,
+        expiresAt: futureDate,
+        user: {
+          id: 1,
+          email: "user@example.com",
+          username: "user",
+          nickname: null,
+          password: "pass",
+          createdAt: new Date()
         }
       };
 
-      jwtService.sign.mockReturnValue("new-access-token");
+      (jwtService.verify as jest.Mock).mockReturnValue({
+        sub: 1,
+        email: "user@example.com"
+      });
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      (jwtService.sign as jest.Mock).mockReturnValue("new-access-token");
 
-      const module: TestingModule = await Test.createTestingModule({
-        providers: [
-          AuthService,
-          { provide: UserService, useValue: userService },
-          { provide: JwtService, useValue: jwtService },
-          { provide: GoogleAuthService, useValue: {} },
-          { provide: PrismaService, useValue: mockPrisma },
-          { provide: ConfigService, useValue: { get: jest.fn((key: string) => {
-            if (key === "JWT_EXPIRES_IN") return "1h";
-            if (key === "JWT_REFRESH_EXPIRES_IN") return "7d";
-            return undefined;
-          }) } }
-        ]
-      }).compile();
+      const prisma = makePrisma({
+        findMany: jest.fn().mockResolvedValue([tokenRecord])
+      });
+      const svc = await buildModule(prisma);
 
-      const testAuthService = module.get<AuthService>(AuthService);
-
-      const result = await testAuthService.refreshToken("valid-token");
-
+      const result = await svc.refreshToken("valid-token");
       expect(result).toEqual({
         access_token: "new-access-token",
         refresh_token: "new-access-token"
@@ -517,32 +514,24 @@ describe("AuthService", () => {
 
   describe("revokeRefreshToken", () => {
     it("should delete refresh token", async () => {
-      const mockPrisma = {
-        ...prismaService,
-        refreshToken: {
-          deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
-          create: jest.fn()
-        }
-      };
+      const tokenRecord = { id: 1, token: "hashed-token", userId: 1 };
 
-      const module: TestingModule = await Test.createTestingModule({
-        providers: [
-          AuthService,
-          { provide: UserService, useValue: userService },
-          { provide: JwtService, useValue: jwtService },
-          { provide: GoogleAuthService, useValue: {} },
-          { provide: PrismaService, useValue: mockPrisma },
-          { provide: ConfigService, useValue: { get: jest.fn() } }
-        ]
-      }).compile();
-
-      const testAuthService = module.get<AuthService>(AuthService);
-
-      await testAuthService.revokeRefreshToken("token-to-revoke");
-
-      expect(mockPrisma.refreshToken.deleteMany).toHaveBeenCalledWith({
-        where: { token: "token-to-revoke" }
+      (jwtService.decode as jest.Mock).mockReturnValue({
+        sub: 1,
+        email: "test@test.com"
       });
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+
+      const deleteOne = jest.fn().mockResolvedValue({ id: 1 });
+      const prisma = makePrisma({
+        findMany: jest.fn().mockResolvedValue([tokenRecord]),
+        delete: deleteOne
+      });
+      const svc = await buildModule(prisma);
+
+      await svc.revokeRefreshToken("token-to-revoke");
+
+      expect(deleteOne).toHaveBeenCalledWith({ where: { id: 1 } });
     });
   });
 
@@ -556,7 +545,7 @@ describe("AuthService", () => {
         password: null,
         createdAt: new Date()
       });
-      userService.findByEmail.mockResolvedValue(mockUser as any);
+      userService.findByEmail.mockResolvedValue(mockUser);
 
       await expect(
         authService.validateUser("google@example.com", "password")
