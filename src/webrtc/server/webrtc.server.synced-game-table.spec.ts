@@ -60,7 +60,12 @@ describe("SyncedGameTableWebRTCServer", () => {
       }
     ).wss().rooms;
 
-    rooms.set("s1", { host, slaves: new Map([[2, slave]]), maxPlayers: 4 });
+    rooms.set("s1", {
+      host,
+      slaves: new Map([[2, slave]]),
+      maxPlayers: 4,
+      hostGraceTimer: null
+    });
   });
 
   afterEach(() => {
@@ -98,6 +103,44 @@ describe("SyncedGameTableWebRTCServer", () => {
       }
     )._internal_sgt_onSignal(socket, { type: "signal", ...body });
   }
+
+  // Drives a frame through the REAL message pipeline (JSON decode + DTO
+  // validation + dispatch), unlike the on* helpers above which call handlers
+  // directly and so never exercise validation.
+  function deliver(socket: FakeSocket, frame: Record<string, unknown>): void {
+    (
+      server as unknown as {
+        _internal_eb_onMessage(s: FakeSocket, raw: string): void;
+      }
+    )._internal_eb_onMessage(socket, JSON.stringify(frame));
+  }
+
+  // Regression: the state/request DTOs must carry class-validator metadata, or
+  // validateSync (forbidUnknownValues) rejects every frame as "an unknown value"
+  // and the pipeline closes the sender — which broke all host->slave state and
+  // slave->host input.
+  it("validates and dispatches a host state broadcast (does not close the host)", () => {
+    deliver(host, { type: "state", data: { kind: "patch", ops: [] } });
+
+    expect(host.close).not.toHaveBeenCalled();
+    expect(slave.send).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(slave.send.mock.calls[0]![0] as string)).toMatchObject({
+      type: "state",
+      data: { kind: "patch", ops: [] }
+    });
+  });
+
+  it("validates and dispatches a slave request to the host (does not close the slave)", () => {
+    deliver(slave, { type: "request", data: { kind: "write" } });
+
+    expect(slave.close).not.toHaveBeenCalled();
+    expect(host.send).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(host.send.mock.calls[0]![0] as string)).toMatchObject({
+      type: "request",
+      from: 2,
+      data: { kind: "write" }
+    });
+  });
 
   it("relays host state to slaves", () => {
     onState(host, { hp: 10 });
@@ -179,6 +222,7 @@ interface Room {
   host: FakeSocket | null;
   slaves: Map<number, FakeSocket>;
   maxPlayers: number;
+  hostGraceTimer: NodeJS.Timeout | null;
 }
 
 interface Internals {
@@ -355,18 +399,64 @@ describe("SyncedGameTableWebRTCServer — connection lifecycle", () => {
     });
   });
 
-  it("ends the room when the host disconnects", () => {
-    const host = rawSocket();
-    const slave = rawSocket();
-    authAndConnect(ticket("s2", 1, "host"), host);
-    authAndConnect(ticket("s2", 2, "slave"), slave);
+  it("keeps the room alive during the host grace window, then ends it", () => {
+    jest.useFakeTimers();
+    try {
+      const host = rawSocket();
+      const slave = rawSocket();
+      authAndConnect(ticket("s2", 1, "host"), host);
+      authAndConnect(ticket("s2", 2, "slave"), slave);
+      slave.send.mockClear();
 
-    internals._internal_sgt_onClose(host);
+      internals._internal_sgt_onClose(host);
 
-    expect(JSON.parse(slave.send.mock.calls[0]![0] as string)).toMatchObject({
-      type: "session-ended"
-    });
-    expect(slave.close).toHaveBeenCalled();
-    expect(roomOf("s2")).toBeUndefined();
+      // Grace window: the session must NOT be torn down yet — the host is
+      // expected to reconnect (dev re-run / network blip).
+      expect(roomOf("s2")).toBeDefined();
+      expect(roomOf("s2")!.host).toBeNull();
+      expect(slave.send).not.toHaveBeenCalled();
+      expect(slave.close).not.toHaveBeenCalled();
+
+      // Host never returns: after the grace window the room ends and slaves are
+      // evicted with session-ended.
+      jest.advanceTimersByTime(15000);
+
+      expect(JSON.parse(slave.send.mock.calls[0]![0] as string)).toMatchObject({
+        type: "session-ended"
+      });
+      expect(slave.close).toHaveBeenCalled();
+      expect(roomOf("s2")).toBeUndefined();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("cancels the teardown when the host reconnects within the grace window", () => {
+    jest.useFakeTimers();
+    try {
+      const host = rawSocket();
+      const slave = rawSocket();
+      authAndConnect(ticket("s2", 1, "host"), host);
+      authAndConnect(ticket("s2", 2, "slave"), slave);
+      slave.send.mockClear();
+
+      internals._internal_sgt_onClose(host);
+      expect(roomOf("s2")!.host).toBeNull();
+
+      // Host reconnects with a fresh socket before the window elapses.
+      const hostB = rawSocket();
+      authAndConnect(ticket("s2", 1, "host"), hostB);
+      expect(roomOf("s2")!.host).toBe(hostB);
+
+      // The scheduled teardown must not fire now that the host is back.
+      jest.advanceTimersByTime(15000);
+
+      expect(roomOf("s2")).toBeDefined();
+      expect(roomOf("s2")!.host).toBe(hostB);
+      expect(slave.close).not.toHaveBeenCalled();
+      expect(roomOf("s2")!.slaves.get(2)).toBe(slave);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

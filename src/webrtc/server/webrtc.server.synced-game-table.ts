@@ -92,6 +92,10 @@ interface SyncedGameTableRoom {
   // keyed by userId for O(1) response routing
   slaves: Map<number, SyncedGameTableClientSocket>;
   maxPlayers: number;
+  // Set while the host is disconnected but still within its reconnection grace
+  // window (see HOST_DISCONNECT_GRACE_MS). Cleared when the host reconnects or
+  // when the room is torn down.
+  hostGraceTimer: NodeJS.Timeout | null;
 }
 
 type SyncedGameTableServerSocket = WebRTCServerSocket<{
@@ -113,6 +117,14 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
   // Half-open hosts (crash / network drop, no clean close) are detected within
   // ~2x this interval and torn down like a graceful disconnect.
   private static readonly PING_INTERVAL_MS = 30000;
+
+  // The host is the sole authority, but its signaling socket legitimately drops
+  // and reconnects (dev preview re-runs, network blips, tab throttling) — the
+  // client is built to reconnect with a fresh ticket. Ending the persisted
+  // session on the first close would race that reconnect and leave an
+  // unjoinable in-memory room over a dead DB row. So a host disconnect only
+  // *schedules* the teardown; a reconnect within this window cancels it.
+  private static readonly HOST_DISCONNECT_GRACE_MS = 15000;
 
   private readonly _verifyTicket: SyncedGameTableTicketVerifier;
   private readonly _onHostDisconnected:
@@ -226,11 +238,19 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
 
     let room = existingRoom;
     if (!room) {
-      room = { host: null, slaves: new Map(), maxPlayers: ticket.maxPlayers };
+      room = {
+        host: null,
+        slaves: new Map(),
+        maxPlayers: ticket.maxPlayers,
+        hostGraceTimer: null
+      };
       serverSocket.rooms.set(ticket.sessionId, room);
     }
 
     if (ticket.role === "host") {
+      // The host is back within its grace window: cancel the pending teardown so
+      // the persisted session (and every waiting slave) survives the reconnect.
+      this._clearHostGrace(room);
       room.host = socket;
       room.maxPlayers = ticket.maxPlayers;
     } else {
@@ -267,15 +287,12 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
     }
 
     if (socket.role === "host" && room.host === socket) {
-      // The host is the sole authority/state holder — no promotion. End the
-      // room and evict every slave.
-      room.slaves.forEach((slave) => {
-        this.send(slave, { type: SyncedGameTableControlType.SESSION_ENDED });
-        slave.close();
-      });
-
-      serverSocket.rooms.delete(socket.sessionId);
-      this._onHostDisconnected?.(socket.sessionId);
+      // The host is the sole authority/state holder — no promotion. Don't end
+      // the session outright: the client reconnects with a fresh ticket, so keep
+      // the room (and its slaves) and schedule the teardown, cancelled if the
+      // host returns within the grace window.
+      room.host = null;
+      this._scheduleHostGrace(room, socket.sessionId);
     } else if (socket.role === "slave") {
       // If a newer connection for this user has already replaced us in the
       // room, this close belongs to the superseded socket — leave the live one
@@ -293,7 +310,10 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
         });
       }
 
-      if (!room.host && room.slaves.size === 0) {
+      // While a host-grace teardown is pending, that timer is the sole teardown
+      // authority (it may still be cancelled by a host reconnect) — leave the
+      // empty room in place for it to reclaim or reap.
+      if (!room.host && room.slaves.size === 0 && !room.hostGraceTimer) {
         serverSocket.rooms.delete(socket.sessionId);
       }
     }
@@ -329,6 +349,44 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
         socket.close();
       }
     }, SyncedGameTableWebRTCServer.PING_INTERVAL_MS);
+  }
+
+  // Arm the host-reconnection grace window. If the host doesn't reconnect in
+  // time, the room is the host's authority and holds no recoverable state, so we
+  // evict every slave, drop the room, and notify the REST layer to end the
+  // persisted session. A reconnect (or an explicit closeRoom) clears this first.
+  private _scheduleHostGrace(
+    room: SyncedGameTableRoom,
+    sessionId: string
+  ): void {
+    this._clearHostGrace(room);
+
+    room.hostGraceTimer = setTimeout(() => {
+      room.hostGraceTimer = null;
+
+      const serverSocket = this.wss<SyncedGameTableServerSocket>();
+
+      // Only tear down if this is still the live room and the host never
+      // returned; a reconnect would have swapped in a new host and cleared us.
+      if (serverSocket.rooms.get(sessionId) !== room || room.host) {
+        return;
+      }
+
+      room.slaves.forEach((slave) => {
+        this.send(slave, { type: SyncedGameTableControlType.SESSION_ENDED });
+        slave.close();
+      });
+
+      serverSocket.rooms.delete(sessionId);
+      this._onHostDisconnected?.(sessionId);
+    }, SyncedGameTableWebRTCServer.HOST_DISCONNECT_GRACE_MS);
+  }
+
+  private _clearHostGrace(room: SyncedGameTableRoom): void {
+    if (room.hostGraceTimer) {
+      clearTimeout(room.hostGraceTimer);
+      room.hostGraceTimer = null;
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -466,6 +524,8 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
     if (!room) {
       return;
     }
+
+    this._clearHostGrace(room);
 
     if (room.host) {
       this.send(room.host, { type: SyncedGameTableControlType.SESSION_ENDED });
