@@ -26,23 +26,6 @@ export class MultiplayerHostInvalidError extends MultiplayerError {
   }
 }
 
-export class MultiplayerHostNotFoundError extends MultiplayerError {
-  constructor(message: string) {
-    super(message);
-    this.name = this.constructor.name;
-  }
-}
-
-// FIXME: This should rather be in a src/routes/user/user.error.ts file.
-//        Also, this should be thrown by the user service, evidently.
-//        Will do a lot of clean-up with the backend.
-export class MultiplayerUserDoesNotExistError extends MultiplayerError {
-  constructor(message: string) {
-    super(message);
-    this.name = this.constructor.name;
-  }
-}
-
 export class MultiplayerUserAlreadyJoinedError extends MultiplayerError {
   constructor(message: string) {
     super(message);

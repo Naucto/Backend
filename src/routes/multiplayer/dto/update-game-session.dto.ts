@@ -6,6 +6,7 @@ import {
   IsOptional,
   IsString,
   Length,
+  Max,
   Min
 } from "class-validator";
 
@@ -18,11 +19,13 @@ export class UpdateGameSessionDto {
 
   @ApiPropertyOptional({
     description: "New maximum number of players, host included",
-    minimum: 2
+    minimum: 2,
+    maximum: 16
   })
   @IsOptional()
   @IsInt()
   @Min(2)
+  @Max(16)
     maxPlayers?: number;
 
   @ApiPropertyOptional({ enum: GameSessionVisibility })

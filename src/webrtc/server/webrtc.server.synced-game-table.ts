@@ -253,6 +253,16 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
       this._clearHostGrace(room);
       room.host = socket;
       room.maxPlayers = ticket.maxPlayers;
+
+      // Rebuild the reconnected host's presence roster: replay a PEER_JOINED for
+      // every slave that stayed connected through the grace window, which the
+      // host would otherwise never learn about.
+      room.slaves.forEach((slave) => {
+        this.send(socket, {
+          type: SyncedGameTableControlType.PEER_JOINED,
+          userId: slave.userId
+        });
+      });
     } else {
       room.slaves.set(socket.userId, socket);
 
@@ -522,6 +532,17 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
       return 0;
 
     return room.slaves.size + (room.host ? 1 : 0);
+  }
+
+  // Clear every pending host-grace timer before delegating to the base
+  // shutdown. Left armed, a timer would keep the event loop alive for the grace
+  // window and then fire endSession() during/after teardown.
+  public override shutdown(): void {
+    const serverSocket = this.wss<SyncedGameTableServerSocket>();
+
+    serverSocket.rooms.forEach((room) => this._clearHostGrace(room));
+
+    super.shutdown();
   }
 
   // Tear down a room and disconnect every peer; called when a session is

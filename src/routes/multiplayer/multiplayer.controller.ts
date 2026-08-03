@@ -35,7 +35,6 @@ import { getExcerrMessage } from "src/util/errors";
 import {
   MultiplayerForbiddenError,
   MultiplayerGameSessionNotFoundError,
-  MultiplayerHostOpenedError,
   MultiplayerInvalidJoinCodeError,
   MultiplayerSessionFullError,
   MultiplayerUserAlreadyJoinedError,
@@ -274,7 +273,6 @@ export class MultiplayerController {
     }
 
     if (
-      error instanceof MultiplayerHostOpenedError ||
       error instanceof MultiplayerUserAlreadyJoinedError ||
       error instanceof MultiplayerSessionFullError
     ) {

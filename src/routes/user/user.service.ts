@@ -6,7 +6,6 @@ import { User, Prisma } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
 
 import { Role } from "@prisma/client";
-import { UserNotFoundError, UserGameSessionNotFoundError } from "./user.error";
 
 @Injectable()
 export class UserService {
@@ -229,59 +228,5 @@ export class UserService {
       where: { email }
     });
     return user ?? undefined;
-  }
-
-  async attachGameSession(
-    userId: number,
-    gameSessionId: number,
-    hosted: boolean
-  ): Promise<void> {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      throw new UserNotFoundError("User not found");
-    }
-
-    const gameSession = await this.prisma.gameSession.findUnique({
-      where: { id: gameSessionId }
-    });
-    if (!gameSession) {
-      throw new UserGameSessionNotFoundError("Game session not found");
-    }
-
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        [hosted ? "hostingGameSessions" : "joinedGameSessions"]: {
-          connect: { id: gameSessionId }
-        }
-      }
-    });
-  }
-
-  async detachGameSession(
-    userId: number,
-    gameSessionId: number,
-    hosted: boolean
-  ): Promise<void> {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      throw new UserNotFoundError("User not found");
-    }
-
-    const gameSession = await this.prisma.gameSession.findUnique({
-      where: { id: gameSessionId }
-    });
-    if (!gameSession) {
-      throw new UserGameSessionNotFoundError("Game session not found");
-    }
-
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        [hosted ? "hostingGameSessions" : "joinedGameSessions"]: {
-          disconnect: { id: gameSessionId }
-        }
-      }
-    });
   }
 }

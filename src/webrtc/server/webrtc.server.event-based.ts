@@ -7,7 +7,7 @@ import {
 } from "@webrtc/server/webrtc.server";
 import { WebRTCServerDecoratorError } from "@webrtc/server/webrtc.server.error";
 import { WebRTCService } from "@webrtc/webrtc.service";
-import { getExcerrMessage } from "src/util/errors";
+import { getExcerrMessage } from "@util/errors";
 
 import { RawData } from "ws";
 

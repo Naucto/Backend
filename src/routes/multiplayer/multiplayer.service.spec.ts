@@ -11,6 +11,7 @@ import { MultiplayerService } from "./multiplayer.service";
 import { SyncedGameTableWebRTCServer } from "@webrtc/server/webrtc.server.synced-game-table";
 import {
   MultiplayerForbiddenError,
+  MultiplayerGameSessionNotFoundError,
   MultiplayerInvalidJoinCodeError,
   MultiplayerSessionFullError,
   MultiplayerUserAlreadyJoinedError,
@@ -278,6 +279,85 @@ describe("MultiplayerService", () => {
           where: { sessionId: "session-uuid", endedAt: null }
         })
       );
+    });
+  });
+
+  describe("get (visibility access control)", () => {
+    it("hides a FRIENDS_ONLY session from a non-member (404)", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(
+        makeSession({
+          hostId: 1,
+          visibility: GameSessionVisibility.FRIENDS_ONLY
+        })
+      );
+
+      await expect(service.get("session-uuid", 99)).rejects.toBeInstanceOf(
+        MultiplayerGameSessionNotFoundError
+      );
+    });
+
+    it("hides an INVITE_CODE session from a non-member (404)", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(
+        makeSession({
+          hostId: 1,
+          visibility: GameSessionVisibility.INVITE_CODE,
+          joinCode: "ABCDEFGH"
+        })
+      );
+
+      await expect(service.get("session-uuid", 99)).rejects.toBeInstanceOf(
+        MultiplayerGameSessionNotFoundError
+      );
+    });
+
+    it("returns a non-public session for one of its members", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(
+        makeSession({
+          hostId: 1,
+          visibility: GameSessionVisibility.FRIENDS_ONLY,
+          otherUsers: [{ id: 2 } as User]
+        })
+      );
+
+      const session = await service.get("session-uuid", 2);
+
+      expect(session.sessionId).toBe("session-uuid");
+    });
+
+    it("returns a PUBLIC session for a non-member", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(
+        makeSession({ hostId: 1, visibility: GameSessionVisibility.PUBLIC })
+      );
+
+      const session = await service.get("session-uuid", 99);
+
+      expect(session.sessionId).toBe("session-uuid");
+    });
+  });
+
+  describe("list (visibility filtering)", () => {
+    it("returns PUBLIC sessions but omits FRIENDS_ONLY and INVITE_CODE", async () => {
+      gameSession.findMany.mockResolvedValueOnce([
+        makeSession({
+          sessionId: "public-uuid",
+          visibility: GameSessionVisibility.PUBLIC
+        }),
+        makeSession({
+          sessionId: "friends-uuid",
+          visibility: GameSessionVisibility.FRIENDS_ONLY
+        }),
+        makeSession({
+          sessionId: "invite-uuid",
+          visibility: GameSessionVisibility.INVITE_CODE,
+          joinCode: "ABCDEFGH"
+        })
+      ]);
+
+      const sessions = await service.list(1, 99);
+
+      expect(sessions.map((session) => session.sessionId)).toEqual([
+        "public-uuid"
+      ]);
     });
   });
 
