@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  InternalServerErrorException,
-  Logger,
-  UnauthorizedException
-} from "@nestjs/common";
+import { Injectable, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { OAuthUserPayload } from "../auth.types";
 import {
@@ -11,29 +6,30 @@ import {
   GithubTokenResponse,
   GithubUser
 } from "../dto/github-auth.dto";
-import { getExcerrMessage } from "../../util/errors";
+import { OAuthProviderService } from "./oauth-provider.base";
 
 @Injectable()
-export class GithubAuthService {
-  private readonly logger = new Logger(GithubAuthService.name);
-  private readonly clientId: string;
-  private readonly clientSecret: string;
+export class GithubAuthService extends OAuthProviderService {
+  private readonly clientId!: string;
+  private readonly clientSecret!: string;
 
   constructor(configService: ConfigService) {
-    const clientId = configService.get<string>("GITHUB_CLIENT_ID");
-    const clientSecret = configService.get<string>("GITHUB_CLIENT_SECRET");
+    super("GitHub");
 
-    if (!clientId || !clientSecret) {
-      throw new InternalServerErrorException(
-        "Missing GitHub OAuth configuration: GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET are required"
-      );
+    const config = this.loadConfig(configService, [
+      "GITHUB_CLIENT_ID",
+      "GITHUB_CLIENT_SECRET"
+    ]);
+
+    if (config) {
+      this.clientId = config["GITHUB_CLIENT_ID"]!;
+      this.clientSecret = config["GITHUB_CLIENT_SECRET"]!;
     }
-
-    this.clientId = clientId;
-    this.clientSecret = clientSecret;
   }
 
   async getUserFromCode(code: string): Promise<OAuthUserPayload> {
+    this.ensureAvailable();
+
     const accessToken = await this.exchangeCodeForToken(code);
     const githubUser = await this.fetchUser(accessToken);
     const email =
@@ -46,29 +42,22 @@ export class GithubAuthService {
   }
 
   private async exchangeCodeForToken(code: string): Promise<string> {
-    let response: Response;
-    try {
-      response = await fetch(
-        "https://github.com/login/oauth/access_token",
-        {
-          method: "POST",
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            client_id: this.clientId,
-            client_secret: this.clientSecret,
-            code
-          })
-        }
-      );
-    } catch (err) {
-      this.logger.error(`GitHub token endpoint unreachable: ${getExcerrMessage(err)}`);
-      throw new UnauthorizedException("GitHub authentication service unavailable");
-    }
-
-    const data = (await response.json()) as GithubTokenResponse;
+    const data = await this.fetchJson<GithubTokenResponse>(
+      "https://github.com/login/oauth/access_token",
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          client_id: this.clientId,
+          client_secret: this.clientSecret,
+          code
+        })
+      },
+      { unreachable: "GitHub authentication service unavailable" }
+    );
 
     if (data.error || !data.access_token) {
       this.logger.warn(
@@ -81,45 +70,36 @@ export class GithubAuthService {
   }
 
   private async fetchUser(accessToken: string): Promise<GithubUser> {
-    let response: Response;
-    try {
-      response = await fetch("https://api.github.com/user", {
+    return this.fetchJson<GithubUser>(
+      "https://api.github.com/user",
+      {
         headers: {
           Authorization: `Bearer ${accessToken}`,
           "User-Agent": "NestJS-Backend"
         }
-      });
-    } catch (err) {
-      this.logger.error(`GitHub user endpoint unreachable: ${getExcerrMessage(err)}`);
-      throw new UnauthorizedException("GitHub authentication service unavailable");
-    }
-
-    if (!response.ok) {
-      throw new UnauthorizedException("Failed to fetch GitHub user info");
-    }
-
-    return response.json() as Promise<GithubUser>;
+      },
+      {
+        unreachable: "GitHub authentication service unavailable",
+        badResponse: "Failed to fetch GitHub user info"
+      }
+    );
   }
 
   private async fetchPrimaryEmail(accessToken: string): Promise<string> {
-    let response: Response;
-    try {
-      response = await fetch("https://api.github.com/user/emails", {
+    const emails = await this.fetchJson<GithubEmail[]>(
+      "https://api.github.com/user/emails",
+      {
         headers: {
           Authorization: `Bearer ${accessToken}`,
           "User-Agent": "NestJS-Backend"
         }
-      });
-    } catch (err) {
-      this.logger.error(`GitHub emails endpoint unreachable: ${getExcerrMessage(err)}`);
-      throw new UnauthorizedException("GitHub authentication service unavailable");
-    }
+      },
+      {
+        unreachable: "GitHub authentication service unavailable",
+        badResponse: "Failed to fetch GitHub user emails"
+      }
+    );
 
-    if (!response.ok) {
-      throw new UnauthorizedException("Failed to fetch GitHub user emails");
-    }
-
-    const emails = (await response.json()) as GithubEmail[];
     const primary = emails.find((e) => e.primary && e.verified);
 
     if (!primary) {

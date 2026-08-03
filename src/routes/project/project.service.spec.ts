@@ -120,6 +120,11 @@ describe("ProjectService", () => {
     user: {
       findUnique: jest.fn()
     },
+    like: {
+      upsert: jest.fn(),
+      deleteMany: jest.fn(),
+      count: jest.fn()
+    },
     workSession: {
       findMany: jest.fn(),
       update: jest.fn()
@@ -170,6 +175,53 @@ describe("ProjectService", () => {
 
   it("should be defined", () => {
     expect(service).toBeDefined();
+  });
+
+  describe("likeProject / unlikeProject", () => {
+    it("is idempotent when liking: upserts the like and syncs the counter from a row count", async () => {
+      prismaMock.project.findUnique.mockResolvedValue({ id: 1 });
+      prismaMock.like.upsert.mockResolvedValue({ id: 10, userId: 7, projectId: 1 });
+      prismaMock.like.count.mockResolvedValue(1);
+      prismaMock.project.update.mockResolvedValue({ likes: 1 });
+
+      const result = await service.likeProject(1, 7);
+
+      expect(prismaMock.like.upsert).toHaveBeenCalledWith({
+        where: { userId_projectId: { userId: 7, projectId: 1 } },
+        create: { userId: 7, projectId: 1 },
+        update: {}
+      });
+      // Counter is recomputed from the actual rows, never incremented blindly.
+      expect(prismaMock.like.count).toHaveBeenCalledWith({ where: { projectId: 1 } });
+      expect(prismaMock.project.update).toHaveBeenCalledWith({
+        where: { id: 1 },
+        data: { likes: 1 }
+      });
+      expect(result).toEqual({ likes: 1, liked: true });
+    });
+
+    it("rejects liking a project that does not exist", async () => {
+      prismaMock.project.findUnique.mockResolvedValue(null);
+
+      await expect(service.likeProject(999, 7)).rejects.toBeInstanceOf(
+        NotFoundException
+      );
+      expect(prismaMock.like.upsert).not.toHaveBeenCalled();
+    });
+
+    it("is idempotent when unliking: deleteMany never throws on a missing like", async () => {
+      prismaMock.project.findUnique.mockResolvedValue({ id: 1 });
+      prismaMock.like.deleteMany.mockResolvedValue({ count: 0 });
+      prismaMock.like.count.mockResolvedValue(0);
+      prismaMock.project.update.mockResolvedValue({ likes: 0 });
+
+      const result = await service.unlikeProject(1, 7);
+
+      expect(prismaMock.like.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 7, projectId: 1 }
+      });
+      expect(result).toEqual({ likes: 0, liked: false });
+    });
   });
 
   describe("findAll", () => {

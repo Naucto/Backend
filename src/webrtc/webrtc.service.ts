@@ -37,6 +37,7 @@ export class WebRTCService implements OnModuleInit {
   private readonly _hookedServers = new Set<WebRTCServer>();
 
   private _config?: WebRTCServiceConfig;
+  private _nextPort?: number;
   public _publicAddress?: string | undefined;
 
   constructor(
@@ -59,6 +60,15 @@ export class WebRTCService implements OnModuleInit {
 
   public registerServer(server: WebRTCServer): void {
     this._hookedServers.add(server);
+  }
+
+  public allocatePort(): number {
+    if (this._nextPort === undefined) {
+      const base = Number(this._configService.get<string>("BACKEND_WEBRTC_PORT_BASE"));
+      this._nextPort = Number.isInteger(base) && base > 0 ? base : 10000;
+    }
+
+    return this._nextPort++;
   }
 
   public shutdownAllServers(): void {
