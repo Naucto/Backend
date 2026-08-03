@@ -16,6 +16,7 @@ import {
   Delete,
   ForbiddenException,
   Get,
+  HttpCode,
   HttpStatus,
   InternalServerErrorException,
   Logger,
@@ -84,6 +85,7 @@ export class MultiplayerController {
   // Declared before the ":sessionId" routes so "join-by-code" is never matched as
   // a session id.
   @Post("join-by-code")
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Join an invite-code game session by its code" })
   @ApiBody({ type: JoinByCodeDto })
   @ApiResponse({
@@ -178,6 +180,7 @@ export class MultiplayerController {
   }
 
   @Post(":sessionId/join")
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Join a game session as a player" })
   @ApiBody({ type: JoinGameSessionDto })
   @ApiResponse({
@@ -202,6 +205,7 @@ export class MultiplayerController {
   }
 
   @Post(":sessionId/leave")
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Leave a game session as a player" })
   @ApiResponse({ status: HttpStatus.OK })
   async leave(
@@ -216,6 +220,7 @@ export class MultiplayerController {
   }
 
   @Post(":sessionId/ticket")
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: "Mint a fresh connection ticket for the caller's session"
   })
