@@ -225,7 +225,7 @@ describe("MultiplayerService", () => {
       );
     });
 
-    it("lets a member self-join as a synthetic player when editorTest is set", async () => {
+    it("lets the host self-join as a synthetic player when editorTest is set", async () => {
       gameSession.findFirst.mockResolvedValueOnce(makeSession({ hostId: 1 }));
 
       const result = await service.join("session-uuid", 1, undefined, true);
@@ -248,6 +248,16 @@ describe("MultiplayerService", () => {
       await expect(service.join("session-uuid", 1)).rejects.toBeInstanceOf(
         MultiplayerUserAlreadyJoinedError
       );
+    });
+
+    it("blocks a non-host member's editorTest self-join", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(
+        makeSession({ hostId: 1, otherUsers: [{ id: 2 } as User] })
+      );
+
+      await expect(
+        service.join("session-uuid", 2, undefined, true)
+      ).rejects.toBeInstanceOf(MultiplayerUserAlreadyJoinedError);
     });
   });
 
@@ -433,18 +443,71 @@ describe("MultiplayerService", () => {
   });
 
   describe("reapStaleSessions", () => {
-    it("soft-ends sessions left active past the max lifetime", async () => {
+    it("soft-ends orphaned sessions left active past the max lifetime", async () => {
+      jest.spyOn(service, "connectedPlayerCount").mockReturnValue(0);
+      gameSession.findMany.mockResolvedValueOnce([
+        { sessionId: "stale-1" },
+        { sessionId: "stale-2" }
+      ]);
       gameSession.updateMany.mockResolvedValueOnce({ count: 2 });
 
       await service.reapStaleSessions();
 
-      const arg = gameSession.updateMany.mock.calls[0]![0] as {
+      const findArg = gameSession.findMany.mock.calls[0]![0] as {
         where: { endedAt: null; startedAt: { lt: Date } };
-        data: { endedAt: Date };
       };
-      expect(arg.where.endedAt).toBeNull();
-      expect(arg.where.startedAt.lt).toBeInstanceOf(Date);
-      expect(arg.data.endedAt).toBeInstanceOf(Date);
+      expect(findArg.where.endedAt).toBeNull();
+      expect(findArg.where.startedAt.lt).toBeInstanceOf(Date);
+      expect(gameSession.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { sessionId: { in: ["stale-1", "stale-2"] } }
+        })
+      );
+    });
+
+    it("leaves a still-live long-running session untouched", async () => {
+      jest
+        .spyOn(service, "connectedPlayerCount")
+        .mockImplementation((sessionId) => (sessionId === "live" ? 3 : 0));
+      gameSession.findMany.mockResolvedValueOnce([{ sessionId: "live" }]);
+
+      await service.reapStaleSessions();
+
+      expect(gameSession.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("leave", () => {
+    it("rejects the host trying to leave", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(makeSession({ hostId: 1 }));
+
+      await expect(service.leave("session-uuid", 1)).rejects.toBeInstanceOf(
+        MultiplayerUserNotInSessionError
+      );
+    });
+
+    it("rejects a non-member trying to leave", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(makeSession({ hostId: 1 }));
+
+      await expect(service.leave("session-uuid", 99)).rejects.toBeInstanceOf(
+        MultiplayerUserNotInSessionError
+      );
+    });
+
+    it("disconnects a member from the session", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(
+        makeSession({ hostId: 1, otherUsers: [{ id: 2 } as User] })
+      );
+      gameSession.update.mockResolvedValueOnce(makeSession());
+
+      await service.leave("session-uuid", 2);
+
+      expect(gameSession.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { sessionId: "session-uuid" },
+          data: { otherUsers: { disconnect: { id: 2 } } }
+        })
+      );
     });
   });
 });

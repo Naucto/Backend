@@ -253,20 +253,40 @@ export class MultiplayerService {
     }
   }
 
-  // Backstop sweep: ends sessions left active past the max lifetime, which can
-  // only happen if the process died before its disconnect hooks ran.
+  // Backstop sweep: ends sessions left active past the max lifetime, which
+  // normally only happens if the process died before its disconnect hooks ran.
   @Cron(CronExpression.EVERY_30_MINUTES)
   async reapStaleSessions(): Promise<void> {
     const cutoff = new Date(Date.now() - MultiplayerService.MAX_SESSION_AGE_MS);
 
-    const { count } = await this._prismaService.gameSession.updateMany({
+    const candidates = await this._prismaService.gameSession.findMany({
       where: { endedAt: null, startedAt: { lt: cutoff } },
+      select: { sessionId: true }
+    });
+
+    // A legitimately long-running session (host connected past the max lifetime)
+    // also matches by age, but its WebRTC room is still live — ending its DB row
+    // would desync it from the live room. Only reap sessions with no connected
+    // players, i.e. the orphans a dead process leaves behind.
+    const orphaned = candidates.filter(
+      (session) => this.connectedPlayerCount(session.sessionId) === 0
+    );
+
+    if (orphaned.length === 0) {
+      return;
+    }
+
+    await this._prismaService.gameSession.updateMany({
+      where: { sessionId: { in: orphaned.map((session) => session.sessionId) } },
       data: { endedAt: new Date() }
     });
 
-    if (count > 0) {
-      this._logger.log(`Reaped ${count} stale game session(s)`);
-    }
+    // Tear down any lingering in-memory room alongside the DB row.
+    orphaned.forEach((session) =>
+      this._syncServer.closeRoom(session.sessionId)
+    );
+
+    this._logger.log(`Reaped ${orphaned.length} stale game session(s)`);
   }
 
   private async _softEnd(sessionId: string): Promise<void> {
@@ -293,14 +313,13 @@ export class MultiplayerService {
       session.otherUsers.some((user) => user.id === userId);
 
     if (isMember) {
-      // The game editor opts in (editorTest) so a developer can open a second
-      // client as a distinct synthetic player and test multiplayer alone; the
-      // published game viewer never sends the flag, so normal "already a member"
-      // blocking applies. This is self-scoped and safe in any environment: it only
-      // ever adds a player to a session you already belong to, the synthetic id is
-      // never persisted (no such User row), and the WS layer still caps it against
-      // maxPlayers.
-      if (editorTest) {
+      // The game editor opts in (editorTest) so the host can open a second client
+      // as a distinct synthetic player and test multiplayer alone; the published
+      // game viewer never sends the flag. Restricted to the host: any other member
+      // could otherwise mint unlimited synthetic slaves and fill every maxPlayers
+      // slot with phantom players, denying real users entry. The synthetic id is
+      // never persisted (no such User row) and the WS layer still caps it.
+      if (editorTest && session.hostId === userId) {
         return this._buildConnection(session, this._syntheticSlaveId(), "slave");
       }
 
@@ -330,8 +349,8 @@ export class MultiplayerService {
 
     // Re-check capacity and connect atomically: a plain read-then-write would
     // let concurrent joiners both pass the check and overflow maxPlayers.
-    await this._retryOnSerializationFailure(() =>
-      this._prismaService.$transaction(
+    await this._retry(
+      () => this._prismaService.$transaction(
         async (tx) => {
           const fresh = await tx.gameSession.findUnique({
             where: { sessionId },
@@ -357,7 +376,13 @@ export class MultiplayerService {
           });
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
-      )
+      ),
+      // A serialization conflict (P2034) is the expected, recoverable outcome of
+      // two Serializable transactions racing to join.
+      (err) =>
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === "P2034",
+      "Exhausted transaction retries"
     );
 
     return this._buildConnection(session, userId, "slave");
@@ -538,33 +563,20 @@ export class MultiplayerService {
   private async _withFreshJoinCode<T>(
     op: (joinCode: string) => Promise<T>
   ): Promise<T> {
-    for (
-      let attempt = 0;
-      attempt < MultiplayerService.MAX_DB_RETRIES;
-      attempt++
-    ) {
-      try {
-        return await op(this._randomJoinCode());
-      } catch (err) {
-        if (
-          this._isJoinCodeConflict(err) &&
-          attempt < MultiplayerService.MAX_DB_RETRIES - 1
-        ) {
-          continue;
-        }
-        throw err;
-      }
-    }
-
-    throw new MultiplayerInvalidStateError(
+    return this._retry(
+      () => op(this._randomJoinCode()),
+      (err) => this._isJoinCodeConflict(err),
       "Failed to generate a unique join code"
     );
   }
 
-  // Retries `op` on a serialization conflict (P2034), which is the expected,
-  // recoverable outcome of two Serializable transactions racing to join.
-  private async _retryOnSerializationFailure<T>(
-    op: () => Promise<T>
+  // Retries `op` up to MAX_DB_RETRIES while `isRetryable` holds for the thrown
+  // error, surfacing MultiplayerInvalidStateError(exhaustedMessage) if the
+  // retries run out (and rethrowing any non-retryable error immediately).
+  private async _retry<T>(
+    op: () => Promise<T>,
+    isRetryable: (err: unknown) => boolean,
+    exhaustedMessage: string
   ): Promise<T> {
     for (
       let attempt = 0;
@@ -574,18 +586,17 @@ export class MultiplayerService {
       try {
         return await op();
       } catch (err) {
-        const conflict =
-          err instanceof Prisma.PrismaClientKnownRequestError &&
-          err.code === "P2034";
-
-        if (conflict && attempt < MultiplayerService.MAX_DB_RETRIES - 1) {
+        if (
+          isRetryable(err) &&
+          attempt < MultiplayerService.MAX_DB_RETRIES - 1
+        ) {
           continue;
         }
         throw err;
       }
     }
 
-    throw new MultiplayerInvalidStateError("Exhausted transaction retries");
+    throw new MultiplayerInvalidStateError(exhaustedMessage);
   }
 
   private _isJoinCodeConflict(err: unknown): boolean {

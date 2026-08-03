@@ -30,7 +30,7 @@ import {
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
 import { RequestWithUser } from "@auth/auth.types";
 import { ProjectNotFoundError } from "@project/project.error";
-import { getExcerrMessage } from "src/util/errors";
+import { getExcerrMessage } from "@util/errors";
 
 import {
   MultiplayerForbiddenError,
