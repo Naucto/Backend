@@ -601,11 +601,22 @@ export class MultiplayerService {
 
   private _randomJoinCode(): string {
     const { JOIN_CODE_LENGTH, JOIN_CODE_ALPHABET } = MultiplayerService;
-    const bytes = randomBytes(JOIN_CODE_LENGTH);
+    const alphabetLength = JOIN_CODE_ALPHABET.length;
+    const maxUnbiasedByte = Math.floor(256 / alphabetLength) * alphabetLength;
 
     let code = "";
-    for (let i = 0; i < JOIN_CODE_LENGTH; i++) {
-      code += JOIN_CODE_ALPHABET[bytes[i]! % JOIN_CODE_ALPHABET.length];
+    while (code.length < JOIN_CODE_LENGTH) {
+      const bytes = randomBytes(JOIN_CODE_LENGTH - code.length);
+      for (const byte of bytes) {
+        if (byte >= maxUnbiasedByte) {
+          continue;
+        }
+
+        code += JOIN_CODE_ALPHABET[byte % alphabetLength];
+        if (code.length === JOIN_CODE_LENGTH) {
+          break;
+        }
+      }
     }
 
     return code;
