@@ -274,6 +274,15 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
     // No-op if it was never started (socket rejected before acceptance).
     clearInterval(socket.pingChecker);
 
+    // During process teardown the server terminates every socket itself. The
+    // grace window and session-ending are for *runtime* host reconnects (dev
+    // re-runs, network blips), not restarts — running them here would hang
+    // shutdown for the grace period and end sessions that should survive the
+    // restart, so bail out after releasing the heartbeat above.
+    if (this.isShuttingDown) {
+      return;
+    }
+
     // A socket rejected before acceptance never received a sessionId.
     if (!socket.sessionId) {
       return;

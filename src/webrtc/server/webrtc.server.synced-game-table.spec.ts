@@ -460,3 +460,110 @@ describe("SyncedGameTableWebRTCServer — connection lifecycle", () => {
     }
   });
 });
+
+describe("SyncedGameTableWebRTCServer — shutdown", () => {
+  const webrtcService = {
+    registerServer: jest.fn()
+  } as unknown as WebRTCService;
+  const verifyTicket = jest.fn();
+
+  let server: SyncedGameTableWebRTCServer;
+  let onHostDisconnected: jest.Mock;
+  let nextPort = 17096;
+
+  function build(): SyncedGameTableWebRTCServer {
+    const options = new SyncedGameTableWebRTCServerOptions();
+    Object.assign(options, { port: nextPort++ });
+
+    onHostDisconnected = jest.fn();
+
+    return new SyncedGameTableWebRTCServer(
+      webrtcService,
+      "test",
+      verifyTicket,
+      onHostDisconnected,
+      options
+    );
+  }
+
+  afterEach(() => {
+    server?.shutdown();
+  });
+
+  // Regression: shutdown() used to terminate clients *inside* wss.close()'s
+  // callback, which in noServer mode never fires while clients are still alive —
+  // so a browser holding a socket open deadlocked the whole process teardown.
+  it("terminates every tracked client and flags itself as shutting down", () => {
+    server = build();
+
+    const wss = (
+      server as unknown as { wss(): { clients: Set<unknown> } }
+    ).wss();
+    const clientA = { terminate: jest.fn() };
+    const clientB = { terminate: jest.fn() };
+    wss.clients.add(clientA);
+    wss.clients.add(clientB);
+
+    server.shutdown();
+
+    expect(clientA.terminate).toHaveBeenCalledTimes(1);
+    expect(clientB.terminate).toHaveBeenCalledTimes(1);
+    expect(server.isShuttingDown).toBe(true);
+  });
+
+  // The 15s host-disconnect grace is for runtime reconnects; process teardown
+  // terminates every socket, and those closes must NOT schedule a grace timer
+  // (which would hang shutdown) or end the persisted session (it should survive
+  // the restart and be rejoinable).
+  it("does not schedule the host grace or end the session on a shutdown close", () => {
+    jest.useFakeTimers();
+    try {
+      server = build();
+      const internals = server as unknown as {
+        _internal_sgt_authenticate(r: unknown, s: unknown, h: unknown): boolean;
+        _internal_sgt_onConnection(sv: unknown, s: FakeSocket, r: unknown): void;
+        _internal_sgt_onClose(s: FakeSocket): void;
+        wss(): { rooms: Map<string, Room> };
+      };
+
+      const host = rawSocket();
+      const slave = rawSocket();
+
+      verifyTicket.mockReturnValueOnce({
+        sessionId: "s3",
+        userId: 1,
+        role: "host",
+        maxPlayers: 4
+      });
+      const hostReq = { url: "/?ticket=t" };
+      internals._internal_sgt_authenticate(hostReq, {}, Buffer.alloc(0));
+      internals._internal_sgt_onConnection(internals.wss(), host, hostReq);
+
+      verifyTicket.mockReturnValueOnce({
+        sessionId: "s3",
+        userId: 2,
+        role: "slave",
+        maxPlayers: 4
+      });
+      const slaveReq = { url: "/?ticket=t" };
+      internals._internal_sgt_authenticate(slaveReq, {}, Buffer.alloc(0));
+      internals._internal_sgt_onConnection(internals.wss(), slave, slaveReq);
+      slave.send.mockClear();
+
+      // Teardown begins, then the host's socket close arrives (as terminate()
+      // would drive it).
+      server.shutdown();
+      internals._internal_sgt_onClose(host);
+
+      const room = internals.wss().rooms.get("s3");
+      expect(room?.hostGraceTimer).toBeNull();
+
+      jest.advanceTimersByTime(15000);
+
+      expect(onHostDisconnected).not.toHaveBeenCalled();
+      expect(slave.close).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
