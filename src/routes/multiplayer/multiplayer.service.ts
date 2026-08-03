@@ -174,9 +174,7 @@ export class MultiplayerService {
   async get(sessionId: string, userId: number): Promise<GameSessionEx> {
     const session = await this._findSessionOrThrow(sessionId);
 
-    const isMember =
-      session.hostId === userId ||
-      session.otherUsers.some((user) => user.id === userId);
+    const isMember = this._isMember(session, userId);
 
     // Non-public sessions are not discoverable by non-members. We 404 rather
     // than 403 so a known UUID doesn't confirm a session exists or leak its
@@ -308,9 +306,7 @@ export class MultiplayerService {
   ): Promise<GameSessionConnectionResponseDto> {
     const session = await this._findSessionOrThrow(sessionId);
 
-    const isMember =
-      session.hostId === userId ||
-      session.otherUsers.some((user) => user.id === userId);
+    const isMember = this._isMember(session, userId);
 
     if (isMember) {
       // The game editor opts in (editorTest) so the host can open a second client
@@ -465,6 +461,13 @@ export class MultiplayerService {
     return (randomBytes(4).readUInt32BE(0) & 0x7fffffff) || 1;
   }
 
+  private _isMember(session: GameSessionEx, userId: number): boolean {
+    return (
+      session.hostId === userId ||
+      session.otherUsers.some((user) => user.id === userId)
+    );
+  }
+
   private _assertHost(session: GameSession, userId: number): void {
     if (session.hostId !== userId) {
       throw new MultiplayerForbiddenError(
@@ -480,7 +483,7 @@ export class MultiplayerService {
     if (session.hostId === userId) {
       return "host";
     }
-    if (session.otherUsers.some((user) => user.id === userId)) {
+    if (this._isMember(session, userId)) {
       return "slave";
     }
 
@@ -586,13 +589,12 @@ export class MultiplayerService {
       try {
         return await op();
       } catch (err) {
-        if (
-          isRetryable(err) &&
-          attempt < MultiplayerService.MAX_DB_RETRIES - 1
-        ) {
-          continue;
+        if (!isRetryable(err)) {
+          throw err;
         }
-        throw err;
+        if (attempt >= MultiplayerService.MAX_DB_RETRIES - 1) {
+          break;
+        }
       }
     }
 

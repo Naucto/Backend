@@ -2,6 +2,7 @@ import {
   ApiBearerAuth,
   ApiBody,
   ApiOperation,
+  ApiQuery,
   ApiResponse,
   ApiTags
 } from "@nestjs/swagger";
@@ -108,6 +109,7 @@ export class MultiplayerController {
   @ApiOperation({
     summary: "List game sessions for a project, from the caller's perspective"
   })
+  @ApiQuery({ name: "projectId", type: "number", required: true })
   @ApiResponse({ status: HttpStatus.OK, type: GameSessionListResponseDto })
   async list(
     @Req() req: RequestWithUser,

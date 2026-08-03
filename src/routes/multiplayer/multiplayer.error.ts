@@ -12,20 +12,6 @@ export class MultiplayerInvalidStateError extends MultiplayerError {
   }
 }
 
-export class MultiplayerHostOpenedError extends MultiplayerError {
-  constructor(message: string) {
-    super(message);
-    this.name = this.constructor.name;
-  }
-}
-
-export class MultiplayerHostInvalidError extends MultiplayerError {
-  constructor(message: string) {
-    super(message);
-    this.name = this.constructor.name;
-  }
-}
-
 export class MultiplayerUserAlreadyJoinedError extends MultiplayerError {
   constructor(message: string) {
     super(message);
