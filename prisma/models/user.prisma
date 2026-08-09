@@ -27,6 +27,7 @@ model User {
   hostingGameSessions GameSession[] @relation("UserHostedGameSessions")
 
   refreshTokens RefreshToken[]
+  notifications Notification[]
 }
 
 model Role {

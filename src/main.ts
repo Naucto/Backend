@@ -75,7 +75,6 @@ if (isProduction) {
 
     next();
   });
-
   if (process.env["ENABLE_SWAGGER"] !== "false") {
     setupSwagger(app);
   } else {
