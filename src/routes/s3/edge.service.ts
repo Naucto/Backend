@@ -1,10 +1,14 @@
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { BadEnvVarError, MissingEnvVarError } from "@auth/auth.error";
+import { S3Service } from "./s3.service";
 
 @Injectable()
 export class CloudfrontService {
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly s3Service: S3Service,
+  ) {}
 
   private getEdgeEndpointRaw(): string {
     const endpoint = this.configService.get<string>("EDGE_ENDPOINT");
@@ -56,5 +60,12 @@ export class CloudfrontService {
 
   getCDNUrl(key: string): string {
     return this.buildResourceUrl(key);
+  }
+
+  async getVersionedCDNUrl(key: string): Promise<string | null> {
+    const head = await this.s3Service.getFileMetadataOrNull(key);
+    if (!head) return null;
+    const version = head.ETag?.replace(/"/g, "") ?? Date.now().toString();
+    return `${this.buildResourceUrl(key)}?v=${version}`;
   }
 }

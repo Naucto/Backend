@@ -1,8 +1,7 @@
 import { Controller, Get, HttpStatus, Param, ParseIntPipe, Query } from "@nestjs/common";
 import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { Public } from "@auth/decorators/public.decorator";
-import { S3Service } from "@s3/s3.service";
-import { CloudfrontService } from "src/routes/s3/edge.service";
+import { CloudfrontService } from "@s3/edge.service";
 import { UserService } from "./user.service";
 import { PublicUserProfileResponseDto } from "./dto/public-user-profile-response.dto";
 import { ProjectService } from "@project/project.service";
@@ -16,20 +15,9 @@ const DEFAULT_GAMES_LIMIT = 20;
 export class UserPublicController {
   constructor(
     private readonly userService: UserService,
-    private readonly s3Service: S3Service,
     private readonly cloudfrontService: CloudfrontService,
     private readonly projectService: ProjectService
   ) {}
-
-  private async getPublicAssetUrl(key: string): Promise<string | null> {
-    const head = await this.s3Service.getFileMetadataOrNull(key);
-    if (!head) {
-      return null;
-    }
-
-    const version = head.ETag?.replace(/"/g, "") ?? Date.now().toString();
-    return `${this.cloudfrontService.getCDNUrl(key)}?v=${version}`;
-  }
 
   @Public()
   @Get(":id/profile")
@@ -45,8 +33,8 @@ export class UserPublicController {
     @Param("id", ParseIntPipe) id: number
   ): Promise<PublicUserProfileResponseDto> {
     const profile = await this.userService.findPublicProfile(id);
-    const profileImageUrl = await this.getPublicAssetUrl(`users/${id}/profile`);
-    const backgroundImageUrl = await this.getPublicAssetUrl(`users/${id}/background`);
+    const profileImageUrl = await this.cloudfrontService.getVersionedCDNUrl(`users/${id}/profile`);
+    const backgroundImageUrl = await this.cloudfrontService.getVersionedCDNUrl(`users/${id}/background`);
 
     return {
       statusCode: HttpStatus.OK,
@@ -73,10 +61,10 @@ export class UserPublicController {
     @Param("username") username: string
   ): Promise<PublicUserProfileResponseDto> {
     const profile = await this.userService.findPublicProfileByUsername(username);
-    const profileImageUrl = await this.getPublicAssetUrl(
+    const profileImageUrl = await this.cloudfrontService.getVersionedCDNUrl(
       `users/${profile.id}/profile`
     );
-    const backgroundImageUrl = await this.getPublicAssetUrl(
+    const backgroundImageUrl = await this.cloudfrontService.getVersionedCDNUrl(
       `users/${profile.id}/background`
     );
 

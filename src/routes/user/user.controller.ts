@@ -46,7 +46,7 @@ import { UserDto } from "@auth/dto/user.dto";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
 import { S3Service } from "@s3/s3.service";
-import { CloudfrontService } from "src/routes/s3/edge.service";
+import { CloudfrontService } from "@s3/edge.service";
 import { SignedCdnResourceDto } from "@common/dto/signed-cdn-resource.dto";
 import { UpdateUserProfileDto } from "./dto/update-user-profile.dto";
 import { PublicUserProfileResponseDto } from "./dto/public-user-profile-response.dto";
@@ -71,16 +71,6 @@ export class UserController {
     private readonly s3Service: S3Service,
     private readonly cloudfrontService: CloudfrontService
   ) {}
-
-  private async getPublicAssetUrl(key: string): Promise<string | null> {
-    const head = await this.s3Service.getFileMetadataOrNull(key);
-    if (!head) {
-      return null;
-    }
-
-    const version = head.ETag?.replace(/"/g, "") ?? Date.now().toString();
-    return `${this.cloudfrontService.getCDNUrl(key)}?v=${version}`;
-  }
 
   @Get("profile")
   @ApiOperation({ summary: "Get current user profile" })
@@ -118,8 +108,8 @@ export class UserController {
 
     const updated = await this.userService.updateMyProfile(req.user.id, update);
 
-    const profileImageUrl = await this.getPublicAssetUrl(`users/${req.user.id}/profile`);
-    const backgroundImageUrl = await this.getPublicAssetUrl(`users/${req.user.id}/background`);
+    const profileImageUrl = await this.cloudfrontService.getVersionedCDNUrl(`users/${req.user.id}/profile`);
+    const backgroundImageUrl = await this.cloudfrontService.getVersionedCDNUrl(`users/${req.user.id}/background`);
 
     return {
       statusCode: HttpStatus.OK,
@@ -161,7 +151,7 @@ export class UserController {
         .addFileTypeValidator({ fileType: ALLOWED_IMAGE_TYPES })
         .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY })
     )
-    file: Express.Multer.File,
+      file: Express.Multer.File,
     @Request() req: RequestWithUser
   ): Promise<{ message: string; id: number }> {
     if (req.user.id !== id) {
@@ -255,20 +245,15 @@ export class UserController {
     @Res() res: Response
   ): Promise<void> {
     const key = `users/${id}/profile`;
-    const head = await this.s3Service.getFileMetadataOrNull(key);
-    if (!head) {
+    const resourceUrl = await this.cloudfrontService.getVersionedCDNUrl(key);
+    if (!resourceUrl) {
       res
         .status(HttpStatus.NOT_FOUND)
         .json({ message: "Profile picture not found" });
       return;
     }
 
-    const version = head.ETag?.replace(/"/g, "") ?? Date.now().toString();
-    const resourceUrl = `${this.cloudfrontService.getCDNUrl(key)}?v=${version}`;
-
-    res.status(HttpStatus.OK).json({
-      resourceUrl
-    });
+    res.status(HttpStatus.OK).json({ resourceUrl });
   }
 
   @Get()
