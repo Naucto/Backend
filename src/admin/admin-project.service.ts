@@ -2,6 +2,11 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma, Project } from "@prisma/client";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { ModerationService } from "src/moderation/moderation.service";
+import {
+  buildOrderBy,
+  paginated,
+  resolvePage
+} from "./admin-pagination.util";
 import { AdminProjectFilterDto } from "./dto/projects/admin-project-filter.dto";
 import { AdminUpdateProjectDto } from "./dto/projects/admin-update-project.dto";
 import {
@@ -11,15 +16,24 @@ import {
 
 @Injectable()
 export class AdminProjectService {
+  private static readonly SORTABLE_FIELDS = [
+    "id",
+    "name",
+    "status",
+    "createdAt",
+    "updatedAt",
+    "publishedAt",
+    "viewCount",
+    "likes"
+  ] as const;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly moderationService: ModerationService
   ) {}
 
   async list(filter: AdminProjectFilterDto): Promise<AdminProjectListResponseDto> {
-    const page = filter.page ?? 1;
-    const limit = filter.limit ?? 25;
-    const skip = (page - 1) * limit;
+    const page = resolvePage(filter);
 
     const where: Prisma.ProjectWhereInput = {};
     if (filter.name)
@@ -28,24 +42,25 @@ export class AdminProjectService {
     if (filter.hidden !== undefined) where.hidden = filter.hidden;
     if (filter.userId !== undefined) where.userId = filter.userId;
 
-    const orderBy: Prisma.ProjectOrderByWithRelationInput = {};
-    const sortBy = filter.sortBy ?? "updatedAt";
-    (orderBy as Record<string, "asc" | "desc">)[sortBy] = filter.order ?? "desc";
+    const orderBy = buildOrderBy<Prisma.ProjectOrderByWithRelationInput>(
+      filter,
+      AdminProjectService.SORTABLE_FIELDS,
+      "updatedAt"
+    );
 
     const [projects, total] = await Promise.all([
-      this.prisma.project.findMany({ where, skip, take: limit, orderBy }),
+      this.prisma.project.findMany({
+        where,
+        skip: page.skip,
+        take: page.take,
+        orderBy
+      }),
       this.prisma.project.count({ where })
     ]);
 
-    return {
-      data: projects.map((project) => this.toResponse(project)),
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.max(1, Math.ceil(total / limit))
-      }
-    };
+    return paginated(projects, total, page, (project) =>
+      this.toResponse(project)
+    );
   }
 
   async findOne(id: number): Promise<AdminProjectResponseDto> {

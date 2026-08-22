@@ -224,7 +224,7 @@ describe("AuthService", () => {
         refresh_token: "token123"
       });
       expect(jwtService.sign).toHaveBeenCalledWith(
-        { sub: mockUser.id, email: mockUser.email },
+        { sub: mockUser.id, email: mockUser.email, scope: "user" },
         expect.any(Object)
       );
     });
@@ -509,6 +509,161 @@ describe("AuthService", () => {
         access_token: "new-access-token",
         refresh_token: "new-access-token"
       });
+    });
+  });
+
+  describe("token scope", () => {
+    // Admin cookies and API bearer tokens are signed with the same secret, so
+    // the scope claim is the only thing keeping them from being interchangeable.
+
+    it("stamps scope \"user\" on regular tokens", async () => {
+      (jwtService.sign as jest.Mock).mockReturnValue("signed");
+      const svc = await buildModule();
+
+      await svc.generateTokens({ sub: 7, email: "a@b.c" }, 7);
+
+      expect(jwtService.sign).toHaveBeenCalledWith(
+        { sub: 7, email: "a@b.c", scope: "user" },
+        expect.any(Object)
+      );
+    });
+
+    it("stamps scope \"admin\" on admin tokens", async () => {
+      (jwtService.sign as jest.Mock).mockReturnValue("signed");
+      const svc = await buildModule();
+
+      await svc.generateAdminTokens({ sub: 7, email: "a@b.c" }, 7);
+
+      expect(jwtService.sign).toHaveBeenCalledWith(
+        { sub: 7, email: "a@b.c", scope: "admin" },
+        expect.any(Object)
+      );
+    });
+
+    it("hashes the admin refresh token before storing it", async () => {
+      (jwtService.sign as jest.Mock).mockReturnValue("admin-refresh");
+      (bcrypt.hash as jest.Mock).mockResolvedValue("hashed_value");
+      const prisma = makePrisma();
+      const svc = await buildModule(prisma);
+
+      await svc.generateAdminTokens({ sub: 7, email: "a@b.c" }, 7);
+
+      // Stored plaintext would never match the bcrypt.compare in rotation,
+      // which silently broke every admin refresh.
+      expect(bcrypt.hash).toHaveBeenCalledWith("admin-refresh", 10);
+      expect(prisma.refreshToken.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ token: "hashed_value", userId: 7 })
+      });
+    });
+
+    it("returns cookie max-ages that match the admin token TTLs", async () => {
+      (jwtService.sign as jest.Mock).mockReturnValue("signed");
+      const svc = await buildModule();
+
+      const tokens = await svc.generateAdminTokens(
+        { sub: 7, email: "a@b.c" },
+        7
+      );
+
+      expect(tokens.access_token_max_age_ms).toBe(30 * 60 * 1000);
+      expect(tokens.refresh_token_max_age_ms).toBe(8 * 60 * 60 * 1000);
+    });
+  });
+
+  describe("refreshAdminTokens", () => {
+    const storedToken = (): Record<string, unknown> => ({
+      id: 1,
+      token: "hashed-valid",
+      userId: 1,
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      user: {
+        id: 1,
+        email: "staff@example.com",
+        username: "staff",
+        nickname: null,
+        password: "pass",
+        createdAt: new Date()
+      }
+    });
+
+    it("rejects an API refresh token presented to the admin flow", async () => {
+      (jwtService.verify as jest.Mock).mockReturnValue({
+        sub: 1,
+        email: "staff@example.com",
+        scope: "user"
+      });
+      const prisma = makePrisma({
+        findMany: jest.fn().mockResolvedValue([storedToken()])
+      });
+      const svc = await buildModule(prisma);
+
+      await expect(svc.refreshAdminTokens("user-token")).rejects.toThrow(
+        UnauthorizedException
+      );
+      // Rejected on the claim alone -- the DB is never consulted.
+      expect(prisma.refreshToken.findMany).not.toHaveBeenCalled();
+    });
+
+    it("rejects an admin refresh token presented to the API flow", async () => {
+      (jwtService.verify as jest.Mock).mockReturnValue({
+        sub: 1,
+        email: "staff@example.com",
+        scope: "admin"
+      });
+      const svc = await buildModule();
+
+      await expect(svc.refreshToken("admin-token")).rejects.toThrow(
+        UnauthorizedException
+      );
+    });
+
+    it("treats a token minted before the scope claim existed as a user token", async () => {
+      (jwtService.verify as jest.Mock).mockReturnValue({
+        sub: 1,
+        email: "staff@example.com"
+      });
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      (jwtService.sign as jest.Mock).mockReturnValue("new-token");
+      const prisma = makePrisma({
+        findMany: jest.fn().mockResolvedValue([storedToken()])
+      });
+      const svc = await buildModule(prisma);
+
+      await expect(svc.refreshToken("legacy-token")).resolves.toEqual({
+        access_token: "new-token",
+        refresh_token: "new-token"
+      });
+      await expect(svc.refreshAdminTokens("legacy-token")).rejects.toThrow(
+        UnauthorizedException
+      );
+    });
+
+    it("rotates and returns the user id so the controller need not decode the JWT", async () => {
+      (jwtService.verify as jest.Mock).mockReturnValue({
+        sub: 1,
+        email: "staff@example.com",
+        scope: "admin"
+      });
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      (jwtService.sign as jest.Mock).mockReturnValue("rotated");
+      const prisma = makePrisma({
+        findMany: jest.fn().mockResolvedValue([storedToken()])
+      });
+      const svc = await buildModule(prisma);
+
+      const result = await svc.refreshAdminTokens("admin-refresh");
+
+      expect(result).toEqual({
+        access_token: "rotated",
+        refresh_token: "rotated",
+        access_token_max_age_ms: 30 * 60 * 1000,
+        refresh_token_max_age_ms: 8 * 60 * 60 * 1000,
+        userId: 1
+      });
+      expect(jwtService.sign).toHaveBeenCalledWith(
+        { sub: 1, email: "staff@example.com", scope: "admin" },
+        expect.any(Object)
+      );
     });
   });
 

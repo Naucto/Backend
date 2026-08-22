@@ -8,6 +8,11 @@ import * as bcrypt from "bcryptjs";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { UserService } from "@user/user.service";
 import { ModerationService } from "src/moderation/moderation.service";
+import {
+  buildOrderBy,
+  paginated,
+  resolvePage
+} from "./admin-pagination.util";
 import { AdminUserFilterDto } from "./dto/users/admin-user-filter.dto";
 import { CreateAdminUserDto } from "./dto/users/create-admin-user.dto";
 import { UpdateAdminUserDto } from "./dto/users/update-admin-user.dto";
@@ -21,6 +26,15 @@ const BCRYPT_SALT_ROUNDS = 10;
 
 @Injectable()
 export class AdminUserService {
+  private static readonly SORTABLE_FIELDS = [
+    "id",
+    "email",
+    "username",
+    "nickname",
+    "accountStatus",
+    "createdAt"
+  ] as const;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly userService: UserService,
@@ -28,9 +42,7 @@ export class AdminUserService {
   ) {}
 
   async list(filter: AdminUserFilterDto): Promise<AdminUserListResponseDto> {
-    const page = filter.page ?? 1;
-    const limit = filter.limit ?? 25;
-    const skip = (page - 1) * limit;
+    const page = resolvePage(filter);
 
     const where: Prisma.UserWhereInput = {};
     if (filter.email)
@@ -42,30 +54,24 @@ export class AdminUserService {
     if (filter.accountStatus) where.accountStatus = filter.accountStatus;
     if (filter.role) where.roles = { some: { name: filter.role } };
 
-    const orderBy: Prisma.UserOrderByWithRelationInput = {};
-    const sortBy = filter.sortBy ?? "createdAt";
-    (orderBy as Record<string, "asc" | "desc">)[sortBy] = filter.order ?? "desc";
+    const orderBy = buildOrderBy<Prisma.UserOrderByWithRelationInput>(
+      filter,
+      AdminUserService.SORTABLE_FIELDS,
+      "createdAt"
+    );
 
     const [users, total] = await Promise.all([
       this.prisma.user.findMany({
         where,
-        skip,
-        take: limit,
+        skip: page.skip,
+        take: page.take,
         orderBy,
         include: { roles: true }
       }),
       this.prisma.user.count({ where })
     ]);
 
-    return {
-      data: users.map((user) => this.toResponse(user)),
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.max(1, Math.ceil(total / limit))
-      }
-    };
+    return paginated(users, total, page, (user) => this.toResponse(user));
   }
 
   async findOne(id: number): Promise<AdminUserDetailDto> {

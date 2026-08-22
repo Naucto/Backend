@@ -57,7 +57,7 @@ import {
 @ApiTags("game-sessions")
 @ApiBearerAuth("JWT-auth")
 @Controller("game-sessions")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, AccountWriteGuard)
 export class MultiplayerController {
   private readonly _logger = new Logger(MultiplayerController.name);
 

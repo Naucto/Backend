@@ -13,6 +13,7 @@ import { Roles } from "@auth/decorators/roles.decorator";
 import { RolesGuard } from "@auth/guards/roles.guard";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { AdminCookieJwtGuard } from "./guards/admin-cookie-jwt.guard";
+import { buildMeta, resolvePage } from "./admin-pagination.util";
 import { TargetLinkService } from "./services/target-link.service";
 import { ModerationLogFilterDto } from "./dto/moderation-log/moderation-log-filter.dto";
 import {
@@ -37,9 +38,7 @@ export class AdminModerationLogController {
   async list(
     @Query() filter: ModerationLogFilterDto
   ): Promise<ModerationLogListResponseDto> {
-    const page = filter.page ?? 1;
-    const limit = filter.limit ?? 25;
-    const skip = (page - 1) * limit;
+    const page = resolvePage(filter);
 
     const where: Prisma.ModerationActionWhereInput = {};
     if (filter.actorId !== undefined) where.actorId = filter.actorId;
@@ -64,8 +63,8 @@ export class AdminModerationLogController {
     const [actions, total] = await Promise.all([
       this.prisma.moderationAction.findMany({
         where,
-        skip,
-        take: limit,
+        skip: page.skip,
+        take: page.take,
         orderBy,
         include: {
           actor: { select: { id: true, username: true } }
@@ -98,12 +97,7 @@ export class AdminModerationLogController {
         reportId: action.reportId,
         createdAt: action.createdAt.toISOString()
       })),
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.max(1, Math.ceil(total / limit))
-      }
+      meta: buildMeta(total, page)
     };
   }
 

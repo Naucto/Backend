@@ -21,6 +21,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: JwtPayload): Promise<User | undefined> {
+    // Admin-panel cookies are signed with the same secret as API bearer tokens,
+    // so reject them here rather than let one stand in for the other.
+    if (payload.scope === "admin") {
+      throw new UnauthorizedException("This token is not valid for the API.");
+    }
+
     const user = await this.userService.findOne(payload.sub);
 
     if (user.accountStatus === AccountStatus.BANNED) {

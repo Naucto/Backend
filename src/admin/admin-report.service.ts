@@ -3,6 +3,11 @@ import { Prisma, ReportStatus } from "@prisma/client";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { ModerationService } from "src/moderation/moderation.service";
 import { TargetLinkService } from "./services/target-link.service";
+import {
+  buildMeta,
+  buildOrderBy,
+  resolvePage
+} from "./admin-pagination.util";
 import { AdminReportFilterDto } from "./dto/reports/admin-report-filter.dto";
 import {
   AdminReportDetailDto,
@@ -16,6 +21,14 @@ type ReportWithRels = Prisma.ReportGetPayload<{
 
 @Injectable()
 export class AdminReportService {
+  private static readonly SORTABLE_FIELDS = [
+    "id",
+    "status",
+    "targetType",
+    "createdAt",
+    "reviewedAt"
+  ] as const;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly moderationService: ModerationService,
@@ -23,9 +36,7 @@ export class AdminReportService {
   ) {}
 
   async list(filter: AdminReportFilterDto): Promise<AdminReportListResponseDto> {
-    const page = filter.page ?? 1;
-    const limit = filter.limit ?? 25;
-    const skip = (page - 1) * limit;
+    const page = resolvePage(filter);
 
     const where: Prisma.ReportWhereInput = {};
     if (filter.targetType) where.targetType = filter.targetType;
@@ -33,15 +44,17 @@ export class AdminReportService {
     if (filter.status) where.status = filter.status;
     if (filter.reporterId !== undefined) where.reporterId = filter.reporterId;
 
-    const orderBy: Prisma.ReportOrderByWithRelationInput = {};
-    const sortBy = filter.sortBy ?? "createdAt";
-    (orderBy as Record<string, "asc" | "desc">)[sortBy] = filter.order ?? "desc";
+    const orderBy = buildOrderBy<Prisma.ReportOrderByWithRelationInput>(
+      filter,
+      AdminReportService.SORTABLE_FIELDS,
+      "createdAt"
+    );
 
     const [reports, total] = await Promise.all([
       this.prisma.report.findMany({
         where,
-        skip,
-        take: limit,
+        skip: page.skip,
+        take: page.take,
         orderBy,
         include: { reporter: { select: { username: true } } }
       }),
@@ -63,12 +76,7 @@ export class AdminReportService {
             `${report.targetType} #${report.targetId}`
         )
       ),
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.max(1, Math.ceil(total / limit))
-      }
+      meta: buildMeta(total, page)
     };
   }
 

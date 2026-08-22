@@ -2,7 +2,7 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { ModerationService } from "./moderation.service";
 import { PrismaService } from "@ourPrisma/prisma.service";
-import { AnalyticsService } from "src/analytics/analytics.service";
+import { ProjectService } from "@project/project.service";
 
 type AnyFn = jest.Mock;
 
@@ -36,15 +36,24 @@ function makePrismaMock(): Record<string, Record<string, AnyFn>> {
   };
 }
 
+type ProjectServiceMock = { unpublish: AnyFn; removeReleaseArtifact: AnyFn };
+
+function makeProjectServiceMock(): ProjectServiceMock {
+  return {
+    unpublish: jest.fn().mockResolvedValue(undefined),
+    removeReleaseArtifact: jest.fn().mockResolvedValue(undefined)
+  };
+}
+
 async function buildService(
-  prismaMock: ReturnType<typeof makePrismaMock>
+  prismaMock: ReturnType<typeof makePrismaMock>,
+  projectServiceMock: ProjectServiceMock = makeProjectServiceMock()
 ): Promise<ModerationService> {
-  const analyticsMock = { record: jest.fn().mockResolvedValue(undefined) };
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       ModerationService,
       { provide: PrismaService, useValue: prismaMock },
-      { provide: AnalyticsService, useValue: analyticsMock }
+      { provide: ProjectService, useValue: projectServiceMock }
     ]
   }).compile();
   return module.get<ModerationService>(ModerationService);
@@ -142,6 +151,96 @@ describe("ModerationService", () => {
       expect(prisma["moderationAction"]!["create"]).toHaveBeenCalledWith({
         data: expect.objectContaining({ action: "RESTORE_PROJECT" })
       });
+    });
+
+    it("hideProject takes the published release off S3", async () => {
+      const prisma = makePrismaMock();
+      prisma["project"]!["findUnique"]!.mockResolvedValueOnce({
+        id: 10,
+        hidden: false,
+        status: "COMPLETED"
+      });
+      prisma["project"]!["update"]!.mockResolvedValueOnce({
+        id: 10,
+        hidden: true
+      });
+      const projectService = makeProjectServiceMock();
+      const service = await buildService(prisma, projectService);
+
+      await service.hideProject(10, 1, "tos", null);
+
+      // The release object is public-read, so hiding must also unpublish the
+      // build or the game stays playable by direct CDN URL.
+      expect(projectService.removeReleaseArtifact).toHaveBeenCalledWith(10);
+    });
+
+    it("hideProject leaves S3 alone for a project that was never published", async () => {
+      const prisma = makePrismaMock();
+      prisma["project"]!["findUnique"]!.mockResolvedValueOnce({
+        id: 11,
+        hidden: false,
+        status: "IN_PROGRESS"
+      });
+      prisma["project"]!["update"]!.mockResolvedValueOnce({
+        id: 11,
+        hidden: true
+      });
+      const projectService = makeProjectServiceMock();
+      const service = await buildService(prisma, projectService);
+
+      await service.hideProject(11, 1, null, null);
+
+      expect(projectService.removeReleaseArtifact).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("unpublishProject", () => {
+    it("delegates the state change to ProjectService instead of writing it itself", async () => {
+      const prisma = makePrismaMock();
+      prisma["project"]!["findUnique"]!
+        .mockResolvedValueOnce({ id: 20, status: "COMPLETED" })
+        .mockResolvedValueOnce({ id: 20, status: "IN_PROGRESS" });
+      const projectService = makeProjectServiceMock();
+      const service = await buildService(prisma, projectService);
+
+      await service.unpublishProject(20, 1, "tos", 7);
+
+      // Going through ProjectService is what keeps the S3 teardown and the
+      // analytics event from being skipped by a parallel prisma.update here.
+      expect(projectService.unpublish).toHaveBeenCalledWith(20);
+      expect(prisma["project"]!["update"]).not.toHaveBeenCalled();
+    });
+
+    it("audits the before/after around the delegated unpublish", async () => {
+      const prisma = makePrismaMock();
+      prisma["project"]!["findUnique"]!
+        .mockResolvedValueOnce({ id: 20, status: "COMPLETED" })
+        .mockResolvedValueOnce({ id: 20, status: "IN_PROGRESS" });
+      const service = await buildService(prisma);
+
+      await service.unpublishProject(20, 1, "tos", 7);
+
+      expect(prisma["moderationAction"]!["create"]).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          action: "UNPUBLISH_PROJECT",
+          targetType: "PROJECT",
+          targetId: 20,
+          reportId: 7,
+          reason: "tos"
+        })
+      });
+    });
+
+    it("throws NotFoundException without touching ProjectService", async () => {
+      const prisma = makePrismaMock();
+      prisma["project"]!["findUnique"]!.mockResolvedValueOnce(null);
+      const projectService = makeProjectServiceMock();
+      const service = await buildService(prisma, projectService);
+
+      await expect(service.unpublishProject(404, 1)).rejects.toThrow(
+        NotFoundException
+      );
+      expect(projectService.unpublish).not.toHaveBeenCalled();
     });
   });
 

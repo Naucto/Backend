@@ -30,6 +30,12 @@ export class AdminJwtStrategy extends PassportStrategy(Strategy, "admin-jwt") {
   }
 
   async validate(payload: JwtPayload): Promise<User> {
+    // Only tokens minted by the admin login/refresh flow carry this scope, so a
+    // regular API token cannot be pasted into the admin cookie to gain access.
+    if (payload.scope !== "admin") {
+      throw new UnauthorizedException("Admin session required.");
+    }
+
     const user = await this.userService.findOne(payload.sub);
 
     if (user.accountStatus === AccountStatus.BANNED) {

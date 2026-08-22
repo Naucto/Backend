@@ -2,6 +2,11 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { ModerationService } from "src/moderation/moderation.service";
+import {
+  buildOrderBy,
+  paginated,
+  resolvePage
+} from "./admin-pagination.util";
 import { AdminCommentFilterDto } from "./dto/comments/admin-comment-filter.dto";
 import {
   AdminCommentListResponseDto,
@@ -17,15 +22,19 @@ type CommentWithRels = Prisma.CommentGetPayload<{
 
 @Injectable()
 export class AdminCommentService {
+  private static readonly SORTABLE_FIELDS = [
+    "id",
+    "createdAt",
+    "hiddenAt"
+  ] as const;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly moderationService: ModerationService
   ) {}
 
   async list(filter: AdminCommentFilterDto): Promise<AdminCommentListResponseDto> {
-    const page = filter.page ?? 1;
-    const limit = filter.limit ?? 25;
-    const skip = (page - 1) * limit;
+    const page = resolvePage(filter);
 
     const where: Prisma.CommentWhereInput = {};
     if (filter.projectId !== undefined) where.projectId = filter.projectId;
@@ -33,15 +42,17 @@ export class AdminCommentService {
     if (filter.hidden !== undefined) where.hidden = filter.hidden;
     if (filter.deleted !== undefined) where.deleted = filter.deleted;
 
-    const orderBy: Prisma.CommentOrderByWithRelationInput = {};
-    const sortBy = filter.sortBy ?? "createdAt";
-    (orderBy as Record<string, "asc" | "desc">)[sortBy] = filter.order ?? "desc";
+    const orderBy = buildOrderBy<Prisma.CommentOrderByWithRelationInput>(
+      filter,
+      AdminCommentService.SORTABLE_FIELDS,
+      "createdAt"
+    );
 
     const [comments, total] = await Promise.all([
       this.prisma.comment.findMany({
         where,
-        skip,
-        take: limit,
+        skip: page.skip,
+        take: page.take,
         orderBy,
         include: {
           author: { select: { username: true } },
@@ -51,15 +62,9 @@ export class AdminCommentService {
       this.prisma.comment.count({ where })
     ]);
 
-    return {
-      data: comments.map((comment) => this.toResponse(comment)),
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.max(1, Math.ceil(total / limit))
-      }
-    };
+    return paginated(comments, total, page, (comment) =>
+      this.toResponse(comment)
+    );
   }
 
   async findOne(id: number): Promise<AdminCommentResponseDto> {

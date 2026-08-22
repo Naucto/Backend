@@ -1,13 +1,10 @@
 import {
   BadRequestException,
-  Inject,
   Injectable,
-  NotFoundException,
-  Optional
+  NotFoundException
 } from "@nestjs/common";
 import {
   AccountStatus,
-  AnalyticsEventType,
   ModerationActionType,
   ModerationTargetType,
   Prisma,
@@ -16,7 +13,7 @@ import {
   ReportTargetType
 } from "@prisma/client";
 import { PrismaService } from "@ourPrisma/prisma.service";
-import { AnalyticsService } from "src/analytics/analytics.service";
+import { ProjectService } from "@project/project.service";
 import { CreateReportDto } from "./dto/create-report.dto";
 
 type AuditInput = {
@@ -76,9 +73,7 @@ const ALLOWED_REPORT_TRANSITIONS: Record<ReportStatus, ReportStatus[]> = {
 export class ModerationService {
   constructor(
     private readonly prisma: PrismaService,
-    @Optional()
-    @Inject(AnalyticsService)
-    private readonly analyticsService?: AnalyticsService
+    private readonly projectService: ProjectService
   ) {}
 
   async createReport(
@@ -394,6 +389,12 @@ export class ModerationService {
       }
     });
 
+    // Hiding archives the project, so the published build has to come down too:
+    // the release object is public-read and would otherwise stay playable by URL.
+    if (before.status === ProjectStatus.COMPLETED) {
+      await this.projectService.removeReleaseArtifact(targetId);
+    }
+
     await this.audit({
       actorId,
       targetType: ModerationTargetType.PROJECT,
@@ -456,9 +457,13 @@ export class ModerationService {
       throw new NotFoundException(`Project with ID ${targetId} not found`);
     }
 
-    const after = await this.prisma.project.update({
-      where: { id: targetId },
-      data: { status: ProjectStatus.IN_PROGRESS }
+    // Delegate to the owning service rather than re-implementing the state
+    // change: it also tears down the public release object on S3 and records the
+    // analytics event, which a parallel prisma.update here would silently skip.
+    await this.projectService.unpublish(targetId);
+
+    const after = await this.prisma.project.findUnique({
+      where: { id: targetId }
     });
 
     await this.audit({
@@ -470,11 +475,6 @@ export class ModerationService {
       before: this.toJson(before),
       after: this.toJson(after),
       reportId: reportId ?? null
-    });
-
-    await this.analyticsService?.record(AnalyticsEventType.PROJECT_UNPUBLISHED, {
-      projectId: targetId,
-      userId: actorId ?? null
     });
   }
 

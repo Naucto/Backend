@@ -35,6 +35,12 @@ const CSRF_COOKIE = "naucto_admin_csrf";
 
 const STAFF_ROLES = ["Admin", "Moderator"] as const;
 
+/** The fields every admin-facing identity response is built from. */
+type StaffUser = Pick<
+  AdminMeDto,
+  "id" | "email" | "username" | "accountStatus"
+> & { nickname?: string | null };
+
 @ApiTags("admin-auth")
 @Controller("admin/auth")
 export class AdminAuthController {
@@ -59,17 +65,12 @@ export class AdminAuthController {
     @Res({ passthrough: true }) res: Response
   ): Promise<AdminMeDto> {
     const user = await this.authService.validateUser(dto.email, dto.password);
-    const roles = await this.userService.getUserRoles(user.id);
-    const isStaff = roles.some((role) =>
-      (STAFF_ROLES as readonly string[]).includes(role)
-    );
-
-    if (!isStaff) {
-      this.logger.warn(
-        `Non-staff user ${user.email} attempted admin login (roles=${roles.join(",")})`
-      );
-      throw new ForbiddenException("Staff access required");
-    }
+    const me = await this.describeStaff(user, {
+      onDenied: (roles) =>
+        this.logger.warn(
+          `Non-staff user ${user.email} attempted admin login (roles=${roles.join(",")})`
+        )
+    });
 
     const payload: JwtPayload = { sub: user.id, email: user.email };
     const tokens = await this.authService.generateAdminTokens(payload, user.id);
@@ -82,14 +83,7 @@ export class AdminAuthController {
       tokens.refresh_token_max_age_ms
     );
 
-    return {
-      id: user.id,
-      email: user.email,
-      username: user.username,
-      nickname: user.nickname ?? null,
-      accountStatus: user.accountStatus,
-      roles
-    };
+    return me;
   }
 
   @Post("refresh")
@@ -97,72 +91,38 @@ export class AdminAuthController {
   @ApiOperation({ summary: "Rotate the admin access token via refresh cookie" })
   @ApiResponse({ status: HttpStatus.OK, type: AdminMeDto })
   @ApiResponse({ status: HttpStatus.UNAUTHORIZED })
+  @ApiResponse({ status: HttpStatus.FORBIDDEN })
   async refresh(
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response
   ): Promise<AdminMeDto> {
-    const refreshToken = (
-      req as Request & { cookies?: Record<string, string> }
-    ).cookies?.[REFRESH_COOKIE];
+    const refreshToken = this.readCookie(req, REFRESH_COOKIE);
     if (!refreshToken) {
       throw new UnauthorizedException("Admin refresh token missing");
     }
 
-    const refreshed = await this.authService.refreshToken(refreshToken);
+    const tokens = await this.authService.refreshAdminTokens(refreshToken);
+    const user = await this.userService.findOne(tokens.userId);
 
-    // Decode payload (sub) without verifying because refreshToken already verified
-    const payloadSegment = refreshed.access_token.split(".")[1] ?? "";
-    let userId: number | null = null;
+    // Staff access can be revoked mid-session; re-check on every rotation so a
+    // demoted moderator loses the panel at the next refresh instead of at expiry.
+    let me: AdminMeDto;
     try {
-      const decoded = JSON.parse(
-        Buffer.from(payloadSegment, "base64").toString("utf-8")
-      ) as JwtPayload;
-      userId = typeof decoded.sub === "number" ? decoded.sub : null;
-    } catch {
-      userId = null;
-    }
-
-    if (!userId) {
-      throw new UnauthorizedException("Invalid refresh response");
-    }
-
-    const user = await this.userService.findOne(userId);
-    const roles = await this.userService.getUserRoles(user.id);
-    const isStaff = roles.some((role) =>
-      (STAFF_ROLES as readonly string[]).includes(role)
-    );
-
-    if (!isStaff) {
+      me = await this.describeStaff(user);
+    } catch (err) {
       this.clearAdminCookies(res);
-      throw new ForbiddenException("Staff access revoked");
+      throw err;
     }
-
-    // Re-derive max ages from configured envs (kept in sync with login)
-    const accessMaxAgeMs = this.parseDurationMs(
-      this.configService.get<string>("JWT_ADMIN_ACCESS_EXPIRES_IN"),
-      30 * 60 * 1000
-    );
-    const refreshMaxAgeMs = this.parseDurationMs(
-      this.configService.get<string>("JWT_ADMIN_REFRESH_EXPIRES_IN"),
-      8 * 60 * 60 * 1000
-    );
 
     this.setAdminCookies(
       res,
-      refreshed.access_token,
-      refreshed.refresh_token,
-      accessMaxAgeMs,
-      refreshMaxAgeMs
+      tokens.access_token,
+      tokens.refresh_token,
+      tokens.access_token_max_age_ms,
+      tokens.refresh_token_max_age_ms
     );
 
-    return {
-      id: user.id,
-      email: user.email,
-      username: user.username,
-      nickname: user.nickname ?? null,
-      accountStatus: user.accountStatus,
-      roles
-    };
+    return me;
   }
 
   @Post("logout")
@@ -175,9 +135,7 @@ export class AdminAuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response
   ): Promise<{ success: true }> {
-    const refreshToken = (
-      req as Request & { cookies?: Record<string, string> }
-    ).cookies?.[REFRESH_COOKIE];
+    const refreshToken = this.readCookie(req, REFRESH_COOKIE);
     if (refreshToken) {
       await this.authService.revokeRefreshToken(refreshToken);
     }
@@ -191,19 +149,40 @@ export class AdminAuthController {
   @ApiOperation({ summary: "Return the current authenticated staff user" })
   @ApiResponse({ status: HttpStatus.OK, type: AdminMeDto })
   async me(@Req() req: RequestWithUser): Promise<AdminMeDto> {
-    const roles = await this.userService.getUserRoles(req.user.id);
+    return this.describeStaff(req.user);
+  }
+
+  private readCookie(req: Request, name: string): string | undefined {
+    return (req as Request & { cookies?: Record<string, string> }).cookies?.[
+      name
+    ];
+  }
+
+  /**
+   * Resolves a user's roles, rejects non-staff, and shapes the `AdminMeDto` that
+   * login, refresh, and `me` all return -- so the three cannot drift on which
+   * roles count as staff or on what the panel receives.
+   */
+  private async describeStaff(
+    user: StaffUser,
+    options?: { onDenied?: (roles: string[]) => void }
+  ): Promise<AdminMeDto> {
+    const roles = await this.userService.getUserRoles(user.id);
     const isStaff = roles.some((role) =>
       (STAFF_ROLES as readonly string[]).includes(role)
     );
+
     if (!isStaff) {
+      options?.onDenied?.(roles);
       throw new ForbiddenException("Staff access required");
     }
+
     return {
-      id: req.user.id,
-      email: req.user.email,
-      username: req.user.username,
-      nickname: req.user.nickname ?? null,
-      accountStatus: req.user.accountStatus,
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      nickname: user.nickname ?? null,
+      accountStatus: user.accountStatus,
       roles
     };
   }
@@ -267,23 +246,5 @@ export class AdminAuthController {
       ...(domain ? { domain } : {}),
       path: "/"
     });
-  }
-
-  private parseDurationMs(value: string | undefined, fallback: number): number {
-    if (!value) return fallback;
-    const match = value.match(/^(\d+)([smhd])$/);
-    if (!match) {
-      const asNumber = Number(value);
-      return Number.isFinite(asNumber) ? asNumber * 1000 : fallback;
-    }
-    const amount = Number(match[1]);
-    const unit = match[2] as "s" | "m" | "h" | "d";
-    const multipliers = {
-      s: 1000,
-      m: 60 * 1000,
-      h: 60 * 60 * 1000,
-      d: 24 * 60 * 60 * 1000
-    };
-    return amount * multipliers[unit];
   }
 }

@@ -721,6 +721,18 @@ export class ProjectService {
     });
   }
 
+  /**
+   * Takes the published build off S3. Anything that stops a project from being
+   * publicly playable must call this -- the release object is set public-read on
+   * publish, so leaving it behind keeps the game reachable by CDN URL.
+   *
+   * S3 deletes are idempotent, so this is safe on a project that was never
+   * published.
+   */
+  async removeReleaseArtifact(projectId: number): Promise<void> {
+    await this.s3Service.deleteFile({ key: `release/${projectId}` });
+  }
+
   async unpublish(projectId: number): Promise<void> {
     await this.prisma.project.update({
       where: { id: projectId },
@@ -729,7 +741,7 @@ export class ProjectService {
       }
     });
 
-    await this.s3Service.deleteFile({ key: `release/${projectId}` });
+    await this.removeReleaseArtifact(projectId);
     await this.analyticsService?.record(AnalyticsEventType.PROJECT_UNPUBLISHED, {
       projectId
     });
