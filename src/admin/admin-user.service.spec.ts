@@ -142,8 +142,8 @@ describe("AdminUserService", () => {
       );
     });
 
-    it("grantModerator seeds the role before assigning it", async () => {
-      await service.grantModerator(5, 1);
+    it("grantRole seeds the role before assigning it", async () => {
+      await service.grantRole(5, 1, "Moderator");
 
       expect(prisma.role.upsert).toHaveBeenCalledWith(
         expect.objectContaining({ where: { name: "Moderator" } })
@@ -157,8 +157,42 @@ describe("AdminUserService", () => {
       );
     });
 
-    it("revokeModerator disconnects only that role", async () => {
-      await service.revokeModerator(5, 1);
+    it("grantRole promotes an existing moderator to Admin", async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        ...USER,
+        roles: [{ name: "Moderator" }]
+      });
+
+      await service.grantRole(5, 1, "Admin", "promoted");
+
+      expect(moderation["updateUserRoles"]).toHaveBeenCalledWith(
+        5,
+        1,
+        ["Admin"],
+        [],
+        "promoted"
+      );
+    });
+
+    it("grantRole refuses a role the user already holds", async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        ...USER,
+        roles: [{ name: "Moderator" }]
+      });
+
+      await expect(service.grantRole(5, 1, "Moderator")).rejects.toThrow(
+        BadRequestException
+      );
+      expect(moderation["updateUserRoles"]).not.toHaveBeenCalled();
+    });
+
+    it("revokeRole disconnects only that role", async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        ...USER,
+        roles: [{ name: "Moderator" }]
+      });
+
+      await service.revokeRole(5, 1, "Moderator");
 
       expect(moderation["updateUserRoles"]).toHaveBeenCalledWith(
         5,
@@ -166,6 +200,43 @@ describe("AdminUserService", () => {
         [],
         ["Moderator"],
         "Revoked Moderator access"
+      );
+    });
+
+    it("revokeRole refuses a role the user does not hold", async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        ...USER,
+        roles: [{ name: "Moderator" }]
+      });
+
+      await expect(service.revokeRole(5, 1, "Admin")).rejects.toThrow(
+        BadRequestException
+      );
+    });
+
+    it("refuses revoking your own Admin role", async () => {
+      // The last-admin guard does not catch this while other admins exist, and
+      // it would lock the actor out of every admin-only page.
+      await expect(service.revokeRole(1, 1, "Admin")).rejects.toThrow(
+        BadRequestException
+      );
+      expect(moderation["updateUserRoles"]).not.toHaveBeenCalled();
+    });
+
+    it("allows revoking someone else's Admin role", async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        ...USER,
+        roles: [{ name: "Admin" }]
+      });
+
+      await service.revokeRole(5, 1, "Admin", "stepping down");
+
+      expect(moderation["updateUserRoles"]).toHaveBeenCalledWith(
+        5,
+        1,
+        [],
+        ["Admin"],
+        "stepping down"
       );
     });
 

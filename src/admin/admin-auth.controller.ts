@@ -26,14 +26,13 @@ import { AuthService } from "@auth/auth.service";
 import { JwtPayload, RequestWithUser } from "@auth/auth.types";
 import { UserService } from "@user/user.service";
 import { AdminCookieJwtGuard } from "./guards/admin-cookie-jwt.guard";
+import { STAFF_ROLES } from "./admin-roles";
 import { AdminLoginDto } from "./dto/admin-login.dto";
 import { AdminMeDto } from "./dto/admin-me.dto";
 
 const ACCESS_COOKIE = "naucto_admin_access";
 const REFRESH_COOKIE = "naucto_admin_refresh";
 const CSRF_COOKIE = "naucto_admin_csrf";
-
-const STAFF_ROLES = ["Admin", "Moderator"] as const;
 
 /** The fields every admin-facing identity response is built from. */
 type StaffUser = Pick<

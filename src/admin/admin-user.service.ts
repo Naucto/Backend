@@ -13,6 +13,7 @@ import {
   paginated,
   resolvePage
 } from "./admin-pagination.util";
+import { StaffRole } from "./admin-roles";
 import { AdminUserFilterDto } from "./dto/users/admin-user-filter.dto";
 import { CreateAdminUserDto } from "./dto/users/create-admin-user.dto";
 import { UpdateAdminUserDto } from "./dto/users/update-admin-user.dto";
@@ -199,35 +200,75 @@ export class AdminUserService {
     return this.findOne(id);
   }
 
-  async grantModerator(
+  /**
+   * Grants a staff role. Parameterised rather than one endpoint per role, so
+   * adding a role never means adding a second copy of this flow.
+   */
+  async grantRole(
     id: number,
     actorId: number,
+    role: StaffRole,
     reason?: string
   ): Promise<AdminUserResponseDto> {
-    await this.ensureRoleSeeded("Moderator");
+    const current = await this.getRoleNames(id);
+    if (current.includes(role)) {
+      throw new BadRequestException(`User already has the ${role} role`);
+    }
+
+    await this.ensureRoleSeeded(role);
     await this.moderationService.updateUserRoles(
       id,
       actorId,
-      ["Moderator"],
+      [role],
       [],
-      reason ?? "Granted Moderator access"
+      reason ?? `Granted ${role} access`
     );
+
     return this.findOne(id);
   }
 
-  async revokeModerator(
+  async revokeRole(
     id: number,
     actorId: number,
+    role: StaffRole,
     reason?: string
   ): Promise<AdminUserResponseDto> {
+    // Revoking your own Admin locks you out of every admin-only page. The last
+    // -admin guard in ModerationService does not catch this while other admins
+    // exist, so refuse it here and let another admin do it.
+    if (id === actorId && role === "Admin") {
+      throw new BadRequestException(
+        "You cannot revoke your own Admin role. Ask another admin to do it."
+      );
+    }
+
+    const current = await this.getRoleNames(id);
+    if (!current.includes(role)) {
+      throw new BadRequestException(`User does not have the ${role} role`);
+    }
+
     await this.moderationService.updateUserRoles(
       id,
       actorId,
       [],
-      ["Moderator"],
-      reason ?? "Revoked Moderator access"
+      [role],
+      reason ?? `Revoked ${role} access`
     );
+
     return this.findOne(id);
+  }
+
+  private async getRoleNames(id: number): Promise<string[]> {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: { roles: { select: { name: true } } }
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    return user.roles.map((role) => role.name);
   }
 
   async resetPassword(

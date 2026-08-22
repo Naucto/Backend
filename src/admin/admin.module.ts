@@ -25,7 +25,6 @@ import { AdminReportService } from "./admin-report.service";
 import { AdminModerationLogController } from "./admin-moderation-log.controller";
 import { AdminRoleController } from "./admin-role.controller";
 import { AdminRoleService } from "./admin-role.service";
-import { AdminLookupController } from "./admin-lookup.controller";
 import { TargetLinkService } from "./services/target-link.service";
 
 @Module({
@@ -45,8 +44,7 @@ import { TargetLinkService } from "./services/target-link.service";
     AdminCommentController,
     AdminReportController,
     AdminModerationLogController,
-    AdminRoleController,
-    AdminLookupController
+    AdminRoleController
   ],
   providers: [
     AdminInsightsService,

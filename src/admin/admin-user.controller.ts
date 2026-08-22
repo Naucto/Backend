@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -15,12 +16,15 @@ import {
 import {
   ApiCookieAuth,
   ApiOperation,
+  ApiParam,
+  ApiResponse,
   ApiTags
 } from "@nestjs/swagger";
 import { Roles } from "@auth/decorators/roles.decorator";
 import { RolesGuard } from "@auth/guards/roles.guard";
 import { AdminCookieJwtGuard } from "./guards/admin-cookie-jwt.guard";
 import { AdminActor } from "./decorators/admin-actor.decorator";
+import { isStaffRole, STAFF_ROLES, StaffRole } from "./admin-roles";
 import { AdminUserService } from "./admin-user.service";
 import { AdminUserFilterDto } from "./dto/users/admin-user-filter.dto";
 import { CreateAdminUserDto } from "./dto/users/create-admin-user.dto";
@@ -139,28 +143,63 @@ export class AdminUserController {
     );
   }
 
-  @Post(":id/roles/moderator")
+  @Post(":id/roles/:role")
   @Roles("Admin")
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Grant Moderator role" })
-  async grantModerator(
+  @ApiOperation({ summary: "Grant a staff role (Admin or Moderator)" })
+  @ApiParam({ name: "role", enum: STAFF_ROLES })
+  @ApiResponse({ status: HttpStatus.OK, type: AdminUserResponseDto })
+  @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: "Unknown role" })
+  async grantRole(
     @Param("id", ParseIntPipe) id: number,
+    @Param("role") role: string,
     @Body() body: ModerationReasonDto,
     @AdminActor() actorId: number
   ): Promise<AdminUserResponseDto> {
-    return this.adminUserService.grantModerator(id, actorId, body.reason);
+    return this.adminUserService.grantRole(
+      id,
+      actorId,
+      this.parseStaffRole(role),
+      body.reason
+    );
   }
 
-  @Delete(":id/roles/moderator")
+  @Delete(":id/roles/:role")
   @Roles("Admin")
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Revoke Moderator role" })
-  async revokeModerator(
+  @ApiOperation({ summary: "Revoke a staff role (Admin or Moderator)" })
+  @ApiParam({ name: "role", enum: STAFF_ROLES })
+  @ApiResponse({ status: HttpStatus.OK, type: AdminUserResponseDto })
+  @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: "Unknown role" })
+  async revokeRole(
     @Param("id", ParseIntPipe) id: number,
+    @Param("role") role: string,
     @Body() body: ModerationReasonDto,
     @AdminActor() actorId: number
   ): Promise<AdminUserResponseDto> {
-    return this.adminUserService.revokeModerator(id, actorId, body.reason);
+    return this.adminUserService.revokeRole(
+      id,
+      actorId,
+      this.parseStaffRole(role),
+      body.reason
+    );
+  }
+
+  /**
+   * Only staff roles can be granted through this route. Arbitrary role names go
+   * through `PATCH /admin/users/:id`, which replaces the whole set deliberately.
+   */
+  private parseStaffRole(role: string): StaffRole {
+    const normalized =
+      role.charAt(0).toUpperCase() + role.slice(1).toLowerCase();
+
+    if (!isStaffRole(normalized)) {
+      throw new BadRequestException(
+        `Unknown staff role "${role}". Expected one of: ${STAFF_ROLES.join(", ")}`
+      );
+    }
+
+    return normalized;
   }
 
   @Post(":id/reset-password")

@@ -18,7 +18,6 @@ import { AdminCommentController } from "src/admin/admin-comment.controller";
 import { AdminReportController } from "src/admin/admin-report.controller";
 import { AdminModerationLogController } from "src/admin/admin-moderation-log.controller";
 import { AdminRoleController } from "src/admin/admin-role.controller";
-import { AdminLookupController } from "src/admin/admin-lookup.controller";
 import { NotificationsController } from "src/notifications/notifications.controller";
 
 import { ProjectService } from "@project/project.service";
@@ -94,7 +93,6 @@ const nullProvider = (token: InjectionToken): Provider => ({
     AdminReportController,
     AdminModerationLogController,
     AdminRoleController,
-    AdminLookupController,
     NotificationsController
   ],
   providers: [
