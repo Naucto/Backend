@@ -22,62 +22,38 @@ import { WebRTCService } from "@webrtc/webrtc.service";
 import { IncomingMessage } from "http";
 import { Duplex } from "stream";
 
-// ----------------------------------------------------------------------------
-// Ticket — minted by the REST layer, verified synchronously at WS upgrade.
-// ----------------------------------------------------------------------------
-
 export type SyncedGameTableRole = "host" | "slave";
 
 export interface SyncedGameTableTicket {
   sessionId: string;
   userId: number;
   role: SyncedGameTableRole;
-  // Total players allowed in the session (host included).
   maxPlayers: number;
 }
 
-// Pure synchronous verifier; throws if the raw ticket is invalid/expired.
 export type SyncedGameTableTicketVerifier = (
   raw: string
 ) => SyncedGameTableTicket;
 
-// Notified when a room's host connection goes away (close / ping timeout), so
-// the REST layer can end the persisted session. Fire-and-forget.
 export type SyncedGameTableHostDisconnectHandler = (sessionId: string) => void;
 
-// Stashed on the upgrade request by the auth handler, read by the connection
-// handler (both receive the same IncomingMessage instance).
 const TICKET_KEY = Symbol("syncedGameTable:ticket");
 type TicketedRequest = IncomingMessage & {
   [TICKET_KEY]?: SyncedGameTableTicket;
 };
 
-// ----------------------------------------------------------------------------
-// Wire protocol — payloads are opaque; the backend never inspects `data`.
-// ----------------------------------------------------------------------------
-
 export enum SyncedGameTableMessageType {
-  // host -> all slaves: authoritative table state/patch
   STATE = "state",
-  // slave -> host: request to read/modify
   REQUEST = "request",
-  // host -> one slave: reply to a request
   RESPONSE = "response",
-  // slave <-> host: opaque WebRTC signaling, relayed to bring up a direct P2P
-  // data channel; the relay path above keeps working when it can't.
   SIGNAL = "signal"
 }
 
-// Server -> client control frames (sent, never received as handlers).
 enum SyncedGameTableControlType {
   PEER_JOINED = "peer-joined",
   PEER_LEFT = "peer-left",
   SESSION_ENDED = "session-ended"
 }
-
-// ----------------------------------------------------------------------------
-// Sockets / rooms
-// ----------------------------------------------------------------------------
 
 type SyncedGameTableClientSocket = WebRTCClientSocket<{
   sessionId: string;
@@ -89,12 +65,8 @@ type SyncedGameTableClientSocket = WebRTCClientSocket<{
 
 interface SyncedGameTableRoom {
   host: SyncedGameTableClientSocket | null;
-  // keyed by userId for O(1) response routing
   slaves: Map<number, SyncedGameTableClientSocket>;
   maxPlayers: number;
-  // Set while the host is disconnected but still within its reconnection grace
-  // window (see HOST_DISCONNECT_GRACE_MS). Cleared when the host reconnects or
-  // when the room is torn down.
   hostGraceTimer: NodeJS.Timeout | null;
 }
 
@@ -102,28 +74,14 @@ type SyncedGameTableServerSocket = WebRTCServerSocket<{
   rooms: Map<string, SyncedGameTableRoom>;
 }>;
 
-// ----------------------------------------------------------------------------
-
 export class SyncedGameTableWebRTCServerOptions extends EventBasedWebRTCServerOptions {}
 
-// Star-topology relay with host authority for multiplayer game-table sync.
-//
-// One shared instance hosts many rooms keyed by GameSession.sessionId. Each
-// room has exactly one authoritative HOST client and N SLAVE clients. The
-// backend routes purely by message type and connection role; it never parses
-// the synced payload and has no notion of field-level permissions (those live
-// entirely on the frontend engine).
+// Host-authoritative relay for multiplayer game-table sync.
 export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGameTableWebRTCServerOptions> {
-  // Half-open hosts (crash / network drop, no clean close) are detected within
-  // ~2x this interval and torn down like a graceful disconnect.
+  // Heartbeat interval to detect half-open sockets.
   private static readonly PING_INTERVAL_MS = 30000;
 
-  // The host is the sole authority, but its signaling socket legitimately drops
-  // and reconnects (dev preview re-runs, network blips, tab throttling) — the
-  // client is built to reconnect with a fresh ticket. Ending the persisted
-  // session on the first close would race that reconnect and leave an
-  // unjoinable in-memory room over a dead DB row. So a host disconnect only
-  // *schedules* the teardown; a reconnect within this window cancels it.
+  // Delay before ending a hostless room so brief host reconnects can recover.
   private static readonly HOST_DISCONNECT_GRACE_MS = 15000;
 
   private readonly _verifyTicket: SyncedGameTableTicketVerifier;
@@ -146,10 +104,6 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
     const serverSocket = this.wss<SyncedGameTableServerSocket>();
     serverSocket.rooms = new Map<string, SyncedGameTableRoom>();
   }
-
-  // --------------------------------------------------------------------------
-  // Authentication (sync, at upgrade)
-  // --------------------------------------------------------------------------
 
   @WebRTCServerAuthEvent()
   protected _internal_sgt_authenticate(
@@ -189,15 +143,12 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
     const ticket = (httpRequest as TicketedRequest)[TICKET_KEY];
 
     if (!ticket) {
-      // Should be unreachable: the auth gate rejects ticketless upgrades.
       rawClientSocket.close();
       return;
     }
 
     const existingRoom = serverSocket.rooms.get(ticket.sessionId);
 
-    // A slave reconnecting under the same userId is a replacement, not a new
-    // player — it neither counts against capacity nor re-announces a join.
     const existingSlave =
       ticket.role === "slave"
         ? existingRoom?.slaves.get(ticket.userId)
@@ -217,7 +168,6 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
     } else if (!existingSlave) {
       const currentSlaves = existingRoom ? existingRoom.slaves.size : 0;
 
-      // host counts toward maxPlayers, so slaves are capped at maxPlayers - 1
       if (currentSlaves >= ticket.maxPlayers - 1) {
         this.logger.verbose(
           `Rejecting slave for full session ${ticket.sessionId} ` +
@@ -228,7 +178,6 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
       }
     }
 
-    // Accepted — stamp identity and register into the room.
     const socket = rawClientSocket;
     socket.sessionId = ticket.sessionId;
     socket.userId = ticket.userId;
@@ -248,15 +197,10 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
     }
 
     if (ticket.role === "host") {
-      // The host is back within its grace window: cancel the pending teardown so
-      // the persisted session (and every waiting slave) survives the reconnect.
       this._clearHostGrace(room);
       room.host = socket;
       room.maxPlayers = ticket.maxPlayers;
 
-      // Rebuild the reconnected host's presence roster: replay a PEER_JOINED for
-      // every slave that stayed connected through the grace window, which the
-      // host would otherwise never learn about.
       room.slaves.forEach((slave) => {
         this.send(socket, {
           type: SyncedGameTableControlType.PEER_JOINED,
@@ -267,8 +211,6 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
       room.slaves.set(socket.userId, socket);
 
       if (existingSlave && existingSlave !== socket) {
-        // Drop the superseded connection. Its later "close" is a no-op thanks
-        // to the identity guard in _internal_sgt_onClose.
         existingSlave.close();
       } else if (room.host) {
         this.send(room.host, {
@@ -281,19 +223,13 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
 
   @WebRTCClientEvent("close")
   protected _internal_sgt_onClose(socket: SyncedGameTableClientSocket): void {
-    // No-op if it was never started (socket rejected before acceptance).
     clearInterval(socket.pingChecker);
 
-    // During process teardown the server terminates every socket itself. The
-    // grace window and session-ending are for *runtime* host reconnects (dev
-    // re-runs, network blips), not restarts — running them here would hang
-    // shutdown for the grace period and end sessions that should survive the
-    // restart, so bail out after releasing the heartbeat above.
+    // Skip runtime teardown logic while the process is shutting down.
     if (this.isShuttingDown) {
       return;
     }
 
-    // A socket rejected before acceptance never received a sessionId.
     if (!socket.sessionId) {
       return;
     }
@@ -306,16 +242,9 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
     }
 
     if (socket.role === "host" && room.host === socket) {
-      // The host is the sole authority/state holder — no promotion. Don't end
-      // the session outright: the client reconnects with a fresh ticket, so keep
-      // the room (and its slaves) and schedule the teardown, cancelled if the
-      // host returns within the grace window.
       room.host = null;
       this._scheduleHostGrace(room, socket.sessionId);
     } else if (socket.role === "slave") {
-      // If a newer connection for this user has already replaced us in the
-      // room, this close belongs to the superseded socket — leave the live one
-      // (and its membership) untouched.
       if (room.slaves.get(socket.userId) !== socket) {
         return;
       }
@@ -329,9 +258,6 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
         });
       }
 
-      // While a host-grace teardown is pending, that timer is the sole teardown
-      // authority (it may still be cancelled by a host reconnect) — leave the
-      // empty room in place for it to reclaim or reap.
       if (!room.host && room.slaves.size === 0 && !room.hostGraceTimer) {
         serverSocket.rooms.delete(socket.sessionId);
       }
@@ -343,8 +269,6 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
     socket.pinged = true;
   }
 
-  // A missed interval closes the socket, which routes through onClose — ending
-  // the session if it was the host.
   private _startHeartbeat(socket: SyncedGameTableClientSocket): void {
     socket.pinged = true;
     socket.pingChecker = setInterval(() => {
@@ -370,10 +294,7 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
     }, SyncedGameTableWebRTCServer.PING_INTERVAL_MS);
   }
 
-  // Arm the host-reconnection grace window. If the host doesn't reconnect in
-  // time, the room is the host's authority and holds no recoverable state, so we
-  // evict every slave, drop the room, and notify the REST layer to end the
-  // persisted session. A reconnect (or an explicit closeRoom) clears this first.
+  // End the room if the host does not reconnect before the grace timeout.
   private _scheduleHostGrace(
     room: SyncedGameTableRoom,
     sessionId: string
@@ -385,8 +306,6 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
 
       const serverSocket = this.wss<SyncedGameTableServerSocket>();
 
-      // Only tear down if this is still the live room and the host never
-      // returned; a reconnect would have swapped in a new host and cleared us.
       if (serverSocket.rooms.get(sessionId) !== room || room.host) {
         return;
       }
@@ -408,16 +327,11 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
     }
   }
 
-  // --------------------------------------------------------------------------
-  // Message routing (role-enforced)
-  // --------------------------------------------------------------------------
-
   @EventBasedMessage(SyncedGameTableMessageType.STATE, GameTableStateMessage)
   protected _internal_sgt_onState(
     socket: SyncedGameTableClientSocket,
     body: GameTableStateMessage
   ): void {
-    // Host authority: only the host may broadcast authoritative state.
     if (socket.role !== "host") {
       this._rejectUnauthorized(socket, "state");
       return;
@@ -448,8 +362,6 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
     const room = this._roomOf(socket);
     if (!room || !room.host) return;
 
-    // `from` is server-stamped from the authenticated identity, never trusted
-    // from the client.
     this.send(room.host, {
       type: SyncedGameTableMessageType.REQUEST,
       from: socket.userId,
@@ -482,9 +394,6 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
     });
   }
 
-  // Role-agnostic by design: a slave's signal always goes to the host (its only
-  // peer), the host addresses a slave by `to`. `from` is server-stamped from the
-  // authenticated identity, never trusted from the client.
   @EventBasedMessage(SyncedGameTableMessageType.SIGNAL, GameTableSignalMessage)
   protected _internal_sgt_onSignal(
     socket: SyncedGameTableClientSocket,
@@ -519,12 +428,6 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
     });
   }
 
-  // --------------------------------------------------------------------------
-  // Public API for the REST layer
-  // --------------------------------------------------------------------------
-
-  // Live number of connected players (host + slaves), including transient editor
-  // self-joins that are never written to the DB. 0 when no room is up.
   public connectedCount(sessionId: string): number {
     const room = this.wss<SyncedGameTableServerSocket>().rooms.get(sessionId);
 
@@ -534,9 +437,7 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
     return room.slaves.size + (room.host ? 1 : 0);
   }
 
-  // Clear every pending host-grace timer before delegating to the base
-  // shutdown. Left armed, a timer would keep the event loop alive for the grace
-  // window and then fire endSession() during/after teardown.
+  // Clear host-grace timers to avoid delayed teardown callbacks after shutdown.
   public override shutdown(): void {
     const serverSocket = this.wss<SyncedGameTableServerSocket>();
 
@@ -545,8 +446,6 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
     super.shutdown();
   }
 
-  // Tear down a room and disconnect every peer; called when a session is
-  // closed/deleted.
   public closeRoom(sessionId: string): void {
     const serverSocket = this.wss<SyncedGameTableServerSocket>();
     const room = serverSocket.rooms.get(sessionId);
@@ -569,8 +468,6 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
 
     serverSocket.rooms.delete(sessionId);
   }
-
-  // --------------------------------------------------------------------------
 
   private _roomOf(
     socket: SyncedGameTableClientSocket
