@@ -52,7 +52,24 @@ if (isProduction) {
   app.use(cookieParser());
   app.use(
     helmet({
-      contentSecurityPolicy: false,
+      // Defence in depth for the few HTML responses this API serves (Swagger UI,
+      // framework error pages). Everything Swagger loads is same-origin, so
+      // "self" is enough; only its stylesheets are inline.
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", "data:", "https:"],
+          fontSrc: ["'self'", "data:"],
+          connectSrc: ["'self'"],
+          objectSrc: ["'none'"],
+          frameAncestors: ["'none'"],
+          baseUri: ["'self'"],
+          formAction: ["'self'"],
+          ...(isProduction ? { upgradeInsecureRequests: [] } : {})
+        }
+      },
       crossOriginResourcePolicy: { policy: "cross-origin" }
     })
   );

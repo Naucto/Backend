@@ -147,7 +147,9 @@ describe("ProjectService", () => {
     listObjects: jest.fn(),
     deleteFiles: jest.fn(),
     fileExists: jest.fn(),
-    downloadFile: jest.fn()
+    downloadFile: jest.fn(),
+    uploadFile: jest.fn(),
+    setObjectPublicRead: jest.fn()
   };
 
   const configServiceMock = {
@@ -956,6 +958,40 @@ describe("ProjectService", () => {
 
       await expect(service.fetchProjectPreview(404)).rejects.toThrow(
         NotFoundException
+      );
+    });
+  });
+
+  describe("stored content type", () => {
+    // The client's declared multipart mimetype must never reach S3: the release
+    // object is public-read and served straight off the CDN, outside this app's
+    // response headers.
+
+    it("save pins the stored type instead of trusting the upload", async () => {
+      s3ServiceMock.listObjects.mockResolvedValue([]);
+      prismaMock.project.update.mockResolvedValue({ id: 7 });
+
+      await service.save(7, {
+        mimetype: "text/html",
+        buffer: Buffer.from("<script>alert(1)</script>"),
+        originalname: "payload.html"
+      } as never);
+
+      expect(s3ServiceMock.uploadFile).toHaveBeenCalledWith(
+        expect.objectContaining({ contentType: "application/octet-stream" })
+      );
+    });
+
+    it("checkpoint pins the stored type", async () => {
+      s3ServiceMock.listObjects.mockResolvedValue([]);
+      jest
+        .spyOn(service, "fetchLastVersion")
+        .mockResolvedValue({ body: null, contentType: "text/html" } as never);
+
+      await service.checkpoint(7, "v1");
+
+      expect(s3ServiceMock.uploadFile).toHaveBeenCalledWith(
+        expect.objectContaining({ contentType: "application/octet-stream" })
       );
     });
   });

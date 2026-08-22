@@ -98,6 +98,13 @@ const RELEASE_WINDOW_DAYS: Record<Exclude<ReleaseWindow, "all">, number> = {
 
 @Injectable()
 export class ProjectService {
+  /**
+   * Project content is an opaque Yjs update blob that clients decode themselves.
+   * Storing and serving it under a fixed binary type keeps a client-declared
+   * `text/html` from ever being rendered off our origin or the CDN.
+   */
+  static readonly CONTENT_MIME_TYPE = "application/octet-stream";
+
   // The relations every "playable project" response carries. Shared so the
   // public release, the published listing, and the staff preview cannot drift
   // on which collaborators or which comments they count.
@@ -676,7 +683,8 @@ export class ProjectService {
     await this.updateLastTimeUpdate(projectId);
     await this.s3Service.uploadFile({
       file,
-      keyName: `save/${projectId}/${actual_time}`
+      keyName: `save/${projectId}/${actual_time}`,
+      contentType: ProjectService.CONTENT_MIME_TYPE
     });
   }
 
@@ -692,7 +700,8 @@ export class ProjectService {
 
     await this.s3Service.uploadFile({
       file: file,
-      keyName: `checkpoint/${projectId}/${name}`
+      keyName: `checkpoint/${projectId}/${name}`,
+      contentType: ProjectService.CONTENT_MIME_TYPE
     });
   }
 
@@ -733,7 +742,8 @@ export class ProjectService {
     const releaseKey = `release/${projectId}`;
     await this.s3Service.uploadFile({
       file: file,
-      keyName: releaseKey
+      keyName: releaseKey,
+      contentType: ProjectService.CONTENT_MIME_TYPE
     });
     await this.s3Service.setObjectPublicRead(releaseKey);
     await this.analyticsService?.record(AnalyticsEventType.PROJECT_PUBLISHED, {
@@ -789,7 +799,8 @@ export class ProjectService {
     const releaseKey = `release/${projectId}`;
     await this.s3Service.uploadFile({
       file: file,
-      keyName: releaseKey
+      keyName: releaseKey,
+      contentType: ProjectService.CONTENT_MIME_TYPE
     });
     await this.s3Service.setObjectPublicRead(releaseKey);
 

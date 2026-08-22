@@ -154,19 +154,35 @@ export class ProjectController {
 
   @Public()
   /**
-   * Streams a stored file to the client. Every download endpoint goes through
-   * this so they cannot drift on headers or on how a missing object is reported.
+   * Streams a stored project blob to the client. Every download endpoint goes
+   * through this so they cannot drift on headers or on how a missing object is
+   * reported.
+   *
+   * The stored `Content-Type` is deliberately NOT echoed. It originates from the
+   * client's multipart upload, so serving it back would let someone upload
+   * `text/html` and get script execution on this origin -- where a same-origin
+   * script can read the readable admin CSRF cookie and issue credentialed
+   * `/admin/*` calls. These endpoints all return opaque blobs the client decodes
+   * itself, so a fixed binary type plus `attachment` is both correct and inert.
    */
   private streamDownload(
     res: Response,
     file: DownloadedFile,
-    extraHeaders: Record<string, string | undefined> = {}
+    options: {
+      filename?: string;
+      extraHeaders?: Record<string, string | undefined>;
+    } = {}
   ): void {
     res.set({
-      "Content-Type": file.contentType,
+      "Content-Type": ProjectService.CONTENT_MIME_TYPE,
       "Content-Length": String(file.contentLength ?? 0),
-      ...extraHeaders
+      "X-Content-Type-Options": "nosniff",
+      ...(options.extraHeaders ?? {})
     });
+
+    // `res.attachment` encodes the filename properly; interpolating a
+    // user-chosen checkpoint name into the header by hand would not.
+    res.attachment(options.filename ?? "project-content.bin");
 
     file.body.pipe(res);
   }
@@ -623,6 +639,16 @@ export class ProjectController {
         .addMaxSizeValidator({
           maxSize: 100 * 1024 * 1024
         })
+        // The editor always sends the Yjs blob as octet-stream. Rejecting
+        // anything else keeps a renderable type from reaching S3 in the first
+        // place -- the release object is public-read and served off the CDN,
+        // outside this app's response headers.
+        .addFileTypeValidator({
+          fileType: /^application\/octet-stream$/,
+          // Check the declared type only: a Yjs update has no magic number, so
+          // content sniffing would reject every legitimate save.
+          skipMagicNumbersValidation: true
+        })
         .build({
           errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY
         })
@@ -1006,13 +1032,15 @@ export class ProjectController {
       const project = await this.projectService.findOne(id);
 
       this.streamDownload(res, file, {
-        "Content-Disposition": `attachment; filename="${checkpoint}"`,
-        "Cache-Control": "no-cache, no-store, must-revalidate",
-        Pragma: "no-cache",
-        Expires: "0",
-        ETag: project.contentUploadedAt
-          ? `W/"${project.contentUploadedAt.getTime()}"`
-          : undefined
+        filename: checkpoint,
+        extraHeaders: {
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          Pragma: "no-cache",
+          Expires: "0",
+          ETag: project.contentUploadedAt
+            ? `W/"${project.contentUploadedAt.getTime()}"`
+            : undefined
+        }
       });
     } catch (error) {
       this.failDownload(res, error, `Checkpoint ${checkpoint} of project ${id}`);
