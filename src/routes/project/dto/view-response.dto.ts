@@ -5,5 +5,5 @@ export class ViewResponseDto {
     example: 128,
     description: "The number of play opens registered for the project"
   })
-    viewCount!: number;
+  viewCount!: number;
 }

@@ -5,5 +5,5 @@ export class ImageUrlResponseDto {
     example: "https://cdn.example.com/projects/42/image",
     description: "The public CDN URL for the image"
   })
-    url!: string;
+  url!: string;
 }

@@ -5,11 +5,11 @@ export class LikeResponseDto {
     example: 42,
     description: "Total number of likes on the project"
   })
-    likes!: number;
+  likes!: number;
 
   @ApiProperty({
     example: true,
     description: "Whether the current user has liked this project"
   })
-    liked!: boolean;
+  liked!: boolean;
 }

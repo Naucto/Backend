@@ -39,24 +39,24 @@ enum YjsMessageType {
 
 class YjsMessage {
   @IsEnum(YjsMessageType)
-    type!: YjsMessageType;
+  type!: YjsMessageType;
 }
 
 class YjsMessageSubscribe extends YjsMessage {
   @IsArray()
   @IsString({ each: true })
-    topics!: YjsWebRTCTopicID[];
+  topics!: YjsWebRTCTopicID[];
 }
 
 class YjsMessageUnsubscribe extends YjsMessage {
   @IsArray()
   @IsString({ each: true })
-    topics!: YjsWebRTCTopicID[];
+  topics!: YjsWebRTCTopicID[];
 }
 
 class YjsMessagePublish extends YjsMessage {
   @IsString()
-    topic!: YjsWebRTCTopicID;
+  topic!: YjsWebRTCTopicID;
 
   data?: unknown;
 }

@@ -2,10 +2,10 @@ import { ApiProperty } from "@nestjs/swagger";
 
 export class CommentAuthorDto {
   @ApiProperty({ example: 1 })
-    id!: number;
+  id!: number;
 
   @ApiProperty({ example: "john_doe" })
-    username!: string;
+  username!: string;
 
   @ApiProperty({
     example: "John",
@@ -13,46 +13,46 @@ export class CommentAuthorDto {
     type: String,
     required: false
   })
-    nickname?: string | null;
+  nickname?: string | null;
 }
 
 export class CommentResponseDto {
   @ApiProperty({ example: 1 })
-    id!: number;
+  id!: number;
 
   @ApiProperty({ example: "Great game!" })
-    content!: string;
+  content!: string;
 
   @ApiProperty({ example: "2023-04-15T12:00:00Z" })
-    createdAt!: Date;
+  createdAt!: Date;
 
   @ApiProperty({ example: 1 })
-    projectId!: number;
+  projectId!: number;
 
   @ApiProperty({ type: CommentAuthorDto })
-    author!: CommentAuthorDto;
+  author!: CommentAuthorDto;
 
   @ApiProperty({ example: false, required: false })
-    deleted?: boolean;
+  deleted?: boolean;
 
   @ApiProperty({
     type: () => [CommentResponseDto],
     required: false,
     description: "Replies to this comment (only for top-level comments)"
   })
-    replies?: CommentResponseDto[] | undefined;
+  replies?: CommentResponseDto[] | undefined;
 }
 
 export class PaginatedCommentsResponseDto {
   @ApiProperty({ type: [CommentResponseDto] })
-    comments!: CommentResponseDto[];
+  comments!: CommentResponseDto[];
 
   @ApiProperty({ example: 42 })
-    total!: number;
+  total!: number;
 
   @ApiProperty({ example: 1 })
-    page!: number;
+  page!: number;
 
   @ApiProperty({ example: 20 })
-    limit!: number;
+  limit!: number;
 }

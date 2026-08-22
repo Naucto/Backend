@@ -12,7 +12,7 @@ class GreetMessage {
   type!: string;
 
   @IsString()
-    name!: string;
+  name!: string;
 }
 
 class BoomMessage {

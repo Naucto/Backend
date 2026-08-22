@@ -22,7 +22,7 @@ import { IsString, validateSync, ValidationError } from "class-validator";
 // message class is known. Every incoming message must at least carry a `type`.
 export class EventBasedEnvelope {
   @IsString()
-    type!: string;
+  type!: string;
 }
 
 // Any outgoing message must carry a `type` so the peer can route it. The

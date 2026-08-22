@@ -33,5 +33,5 @@ export class CreateCommentDto {
   @hasMaxLineBreaks(COMMENT_MAX_LINE_BREAKS, {
     message: `Comment cannot contain more than ${COMMENT_MAX_LINE_BREAKS} line breaks`
   })
-    content!: string;
+  content!: string;
 }

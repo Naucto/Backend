@@ -8,7 +8,7 @@ export class ChangePasswordDto {
   })
   @IsString()
   @IsOptional()
-    currentPassword?: string;
+  currentPassword?: string;
 
   @ApiProperty({
     description: "New password",
@@ -17,5 +17,5 @@ export class ChangePasswordDto {
   @IsString()
   @IsNotEmpty()
   @MinLength(6, { message: "Password must be at least 6 characters" })
-    newPassword!: string;
+  newPassword!: string;
 }
