@@ -1,74 +1,87 @@
-import { ProjectService, ProjectEx } from "@project/project.service";
-import { UserService } from "@user/user.service";
-import { PrismaService } from "@ourPrisma/prisma.service";
-import { ConfigService } from "@nestjs/config";
-import { S3Service } from "@s3/s3.service";
-import { WebRTCService } from "@webrtc/webrtc.service";
-import { MultiplayerService } from "./multiplayer.service";
 import { Test } from "@nestjs/testing";
-import { User, GameSession, GameSessionVisibility } from "@prisma/client";
+import { JwtService } from "@nestjs/jwt";
+import { GameSession, GameSessionVisibility, User } from "@prisma/client";
 
-jest.mock("@webrtc/server/webrtc.server", () => {
+import { ProjectService } from "@project/project.service";
+import { ProjectNotFoundError } from "@project/project.error";
+import { PrismaService } from "@ourPrisma/prisma.service";
+import { WebRTCService } from "@webrtc/webrtc.service";
+
+import { MultiplayerService } from "./multiplayer.service";
+import { SyncedGameTableWebRTCServer } from "@webrtc/server/webrtc.server.synced-game-table";
+import {
+  MultiplayerForbiddenError,
+  MultiplayerGameSessionNotFoundError,
+  MultiplayerInvalidJoinCodeError,
+  MultiplayerSessionFullError,
+  MultiplayerUserAlreadyJoinedError,
+  MultiplayerUserNotInSessionError
+} from "./multiplayer.error";
+
+// Avoid spinning up a real WebRTC/HTTP server during the service constructor.
+jest.mock("@webrtc/server/webrtc.server.synced-game-table");
+
+const SyncedGameTableServerMock =
+  SyncedGameTableWebRTCServer as unknown as jest.Mock;
+
+type GameSessionEx = GameSession & { otherUsers: User[] };
+
+function makeSession(overrides: Partial<GameSessionEx> = {}): GameSessionEx {
   return {
-    WebRTCServer: jest.fn().mockImplementation(() => ({
-      on: jest.fn(),
-      off: jest.fn(),
-      once: jest.fn(),
-      emit: jest.fn()
-    }))
+    id: 1,
+    hostId: 1,
+    projectId: 1,
+    startedAt: new Date(),
+    endedAt: null,
+    title: "My session",
+    maxPlayers: 4,
+    visibility: GameSessionVisibility.PUBLIC,
+    joinCode: null,
+    sessionId: "session-uuid",
+    otherUsers: [],
+    ...overrides
   };
-});
+}
 
 describe("MultiplayerService", () => {
   let service: MultiplayerService;
 
+  const gameSession = {
+    create: jest.fn(),
+    findFirst: jest.fn(),
+    findUnique: jest.fn(),
+    findMany: jest.fn(),
+    update: jest.fn(),
+    updateMany: jest.fn(),
+    delete: jest.fn()
+  };
+  // Runs the interactive transaction callback against the same gameSession mock.
+  const $transaction = jest.fn();
+
+  const projectService = { findOne: jest.fn() };
+  const webrtcService = { buildOffer: jest.fn() };
+  const jwtService = { sign: jest.fn(), verify: jest.fn() };
+
   beforeEach(async () => {
-    const webrtcServiceMock = {
-      buildOffer: jest.fn().mockReturnValue({})
-    };
-
-    const prismaServiceMock = {
-      project: {},
-      user: {},
-      workSession: {},
-      gameSession: {
-        create: jest.fn(),
-        findUnique: jest.fn(),
-        findMany: jest.fn(),
-        update: jest.fn()
-      },
-      $connect: jest.fn(),
-      $disconnect: jest.fn()
-    };
-
-    const userServiceMock = {
-      findOne: jest.fn(),
-      attachGameSession: jest.fn(),
-      detachGameSession: jest.fn()
-    };
+    // resetAllMocks (not clearAllMocks) also drains queued *Once values, so a
+    // mock left unconsumed by one test can't leak into the next.
+    jest.resetAllMocks();
+    SyncedGameTableServerMock.mockImplementation(() => ({
+      closeRoom: jest.fn()
+    }));
+    webrtcService.buildOffer.mockReturnValue({});
+    jwtService.sign.mockReturnValue("signed.ticket");
+    $transaction.mockImplementation((cb: (tx: unknown) => unknown) =>
+      cb({ gameSession })
+    );
 
     const module = await Test.createTestingModule({
       providers: [
         MultiplayerService,
-        ProjectService,
-        { provide: UserService, useValue: userServiceMock },
-        { provide: WebRTCService, useValue: webrtcServiceMock },
-        { provide: PrismaService, useValue: prismaServiceMock },
-        {
-          provide: ConfigService,
-          useValue: {
-            get: jest.fn((key: string) => {
-              if (key === "S3_MAX_AUTO_HISTORY_VERSION") return "5";
-              if (key === "S3_AUTO_HISTORY_DELAY") return "10";
-              if (key === "S3_MAX_CHECKPOINTS") return "5";
-              return undefined;
-            })
-          }
-        },
-        {
-          provide: S3Service,
-          useValue: {}
-        }
+        { provide: ProjectService, useValue: projectService },
+        { provide: WebRTCService, useValue: webrtcService },
+        { provide: PrismaService, useValue: { gameSession, $transaction } },
+        { provide: JwtService, useValue: jwtService }
       ]
     }).compile();
 
@@ -79,253 +92,422 @@ describe("MultiplayerService", () => {
     expect(service).toBeDefined();
   });
 
-  describe("lookupHosts", () => {
-    // TODO: Implement tests for lookupHosts once friends logic is implemented in the service
-  });
+  describe("create", () => {
+    it("throws if the project does not exist", async () => {
+      projectService.findOne.mockResolvedValueOnce(null);
 
-  describe("openHost", () => {
-    it("should throw if user does not exist", async () => {
-      jest
-        .spyOn(service["_userService"], "findOne")
-        .mockResolvedValueOnce(null as never);
       await expect(
-        service.openHost(
-          1,
-          1,
-          "PUBLIC" as import("@prisma/client").GameSessionVisibility
-        )
-      ).rejects.toThrow("User with ID 1 not found");
+        service.create(1, {
+          projectId: 99,
+          title: "x",
+          maxPlayers: 4,
+          visibility: GameSessionVisibility.PUBLIC
+        })
+      ).rejects.toBeInstanceOf(ProjectNotFoundError);
     });
-    it("should throw if project does not exist", async () => {
-      jest.spyOn(service["_userService"], "findOne").mockResolvedValueOnce({
-        id: 1,
-        email: "user@example.com",
-        username: "user",
-        nickname: null,
-        description: null,
-        password: "hashed",
-        createdAt: new Date(),
-        hostingGameSessions: []
-      } as unknown as User & { hostingGameSessions: GameSession[] });
-      jest
-        .spyOn(service["_projectService"], "findOne")
-        .mockResolvedValueOnce(null as never);
-      await expect(
-        service.openHost(1, 1, "PUBLIC" as GameSessionVisibility)
-      ).rejects.toThrow("Project with ID 1 not found");
-    });
-    it("should throw if user already hosting", async () => {
-      jest.spyOn(service["_userService"], "findOne").mockResolvedValueOnce({
-        id: 1,
-        email: "user@example.com",
-        username: "user",
-        nickname: null,
-        description: null,
-        password: "hashed",
-        createdAt: new Date(),
-        hostingGameSessions: [
-          {
-            id: 1,
-            hostId: 1,
-            projectId: 1,
-            startedAt: new Date(),
-            endedAt: null,
-            visibility: "PUBLIC" as GameSessionVisibility,
-            sessionId: "uuid"
-          }
-        ]
-      } as unknown as User & { hostingGameSessions: GameSession[] });
-      jest.spyOn(service["_projectService"], "findOne").mockResolvedValueOnce({
-        id: 1,
-        name: "Project",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        collaborators: [],
-        creator: { id: 1, username: "creator", email: "creator@example.com" }
-      } as unknown as ProjectEx);
-      await expect(
-        service.openHost(1, 1, "PUBLIC" as GameSessionVisibility)
-      ).rejects.toThrow("User already hosting a game session for this project");
-    });
-    it("should create a new game session", async () => {
-      jest.spyOn(service["_userService"], "findOne").mockResolvedValueOnce({
-        id: 1,
-        email: "user@example.com",
-        username: "user",
-        nickname: null,
-        description: null,
-        password: "hashed",
-        createdAt: new Date(),
-        hostingGameSessions: []
-      } as unknown as User & { hostingGameSessions: GameSession[] });
-      jest.spyOn(service["_projectService"], "findOne").mockResolvedValueOnce({
-        id: 1,
-        name: "Project",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        collaborators: [],
-        creator: { id: 1, username: "creator", email: "creator@example.com" }
-      } as unknown as ProjectEx);
-      jest
-        .spyOn(service["_prismaService"].gameSession, "create")
-        .mockResolvedValueOnce({
-          id: 1,
-          hostId: 1,
-          projectId: 1,
-          startedAt: new Date(),
-          endedAt: null,
-          visibility: "PUBLIC" as GameSessionVisibility,
-          sessionId: "uuid"
-        } as GameSession);
-      jest
-        .spyOn(service["_userService"], "attachGameSession")
-        .mockResolvedValueOnce(Promise.resolve());
-      const result = await service.openHost(
-        1,
-        1,
-        "PUBLIC" as GameSessionVisibility
+
+    it("ends the host's previous session before creating a new one", async () => {
+      projectService.findOne.mockResolvedValueOnce({ id: 1 });
+      gameSession.findFirst.mockResolvedValueOnce(
+        makeSession({ sessionId: "old-uuid" })
       );
-      expect(result).toHaveProperty("sessionUuid", "uuid");
+      gameSession.updateMany.mockResolvedValueOnce({ count: 1 });
+      gameSession.create.mockResolvedValueOnce(makeSession());
+
+      await service.create(1, {
+        projectId: 1,
+        title: "x",
+        maxPlayers: 4,
+        visibility: GameSessionVisibility.PUBLIC
+      });
+
+      expect(gameSession.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { sessionId: "old-uuid", endedAt: null } })
+      );
+      expect(gameSession.create).toHaveBeenCalled();
+    });
+
+    it("creates a session and returns a connection ticket", async () => {
+      projectService.findOne.mockResolvedValueOnce({ id: 1 });
+      gameSession.findFirst.mockResolvedValueOnce(null);
+      gameSession.create.mockResolvedValueOnce(makeSession());
+
+      const result = await service.create(1, {
+        projectId: 1,
+        title: "My session",
+        maxPlayers: 4,
+        visibility: GameSessionVisibility.PUBLIC
+      });
+
+      expect(result.sessionUuid).toBe("session-uuid");
+      expect(result.connectionTicket).toBe("signed.ticket");
+      expect(jwtService.sign).toHaveBeenCalled();
+    });
+
+    it("generates a join code for INVITE_CODE sessions", async () => {
+      projectService.findOne.mockResolvedValueOnce({ id: 1 });
+      gameSession.findFirst.mockResolvedValueOnce(null);
+      gameSession.create.mockImplementationOnce(
+        ({ data }: { data: { joinCode: string } }) =>
+          Promise.resolve(
+            makeSession({
+              visibility: GameSessionVisibility.INVITE_CODE,
+              joinCode: data.joinCode
+            })
+          )
+      );
+
+      const result = await service.create(1, {
+        projectId: 1,
+        title: "Invite",
+        maxPlayers: 4,
+        visibility: GameSessionVisibility.INVITE_CODE
+      });
+
+      expect(result.joinCode).toBeDefined();
+      expect(result.joinCode).toHaveLength(8);
     });
   });
 
-  describe("closeHost", () => {
-    it("should throw if user does not exist", async () => {
-      jest
-        .spyOn(service["_userService"], "findOne")
-        .mockResolvedValueOnce(null as never);
-      await expect(service.closeHost(1, 1)).rejects.toThrow();
+  describe("join", () => {
+    it("rejects an invalid join code on INVITE_CODE sessions", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(
+        makeSession({
+          visibility: GameSessionVisibility.INVITE_CODE,
+          joinCode: "RIGHTCOD"
+        })
+      );
+
+      await expect(
+        service.join("session-uuid", 2, "WRONG")
+      ).rejects.toBeInstanceOf(MultiplayerInvalidJoinCodeError);
     });
-    it("should throw if project does not exist", async () => {
-      jest.spyOn(service["_userService"], "findOne").mockResolvedValueOnce({
-        id: 1,
-        email: "user@example.com",
-        username: "user",
-        nickname: null,
-        description: null,
-        password: "hashed",
-        createdAt: new Date(),
-        hostingGameSessions: []
-      } as unknown as User & { hostingGameSessions: GameSession[] });
-      jest
-        .spyOn(service["_projectService"], "findOne")
-        .mockResolvedValueOnce(null as never);
-      await expect(service.closeHost(1, 1)).rejects.toThrow();
+
+    it("rejects when the session is full", async () => {
+      // _findSessionOrThrow reads via findFirst; the capacity check re-reads
+      // inside the transaction via findUnique.
+      const full = makeSession({
+        maxPlayers: 2,
+        otherUsers: [{ id: 5 } as User]
+      });
+      gameSession.findFirst.mockResolvedValue(full);
+      gameSession.findUnique.mockResolvedValue(full);
+
+      await expect(service.join("session-uuid", 2)).rejects.toBeInstanceOf(
+        MultiplayerSessionFullError
+      );
     });
-    it("should throw if not hosting", async () => {
-      jest.spyOn(service["_userService"], "findOne").mockResolvedValueOnce({
-        id: 1,
-        email: "user@example.com",
-        username: "user",
-        nickname: null,
-        description: null,
-        password: "hashed",
-        createdAt: new Date(),
-        hostingGameSessions: []
-      } as unknown as User & { hostingGameSessions: GameSession[] });
-      jest.spyOn(service["_projectService"], "findOne").mockResolvedValueOnce({
-        id: 1,
-        name: "Project",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        collaborators: [],
-        creator: { id: 1, username: "creator", email: "creator@example.com" }
-      } as unknown as ProjectEx);
-      await expect(service.closeHost(1, 1)).rejects.toThrow();
+
+    it("rejects a user that already joined", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(
+        makeSession({
+          otherUsers: [{ id: 2 } as User]
+        })
+      );
+
+      await expect(service.join("session-uuid", 2)).rejects.toBeInstanceOf(
+        MultiplayerUserAlreadyJoinedError
+      );
     });
-    it("should close the host session", async () => {
-      jest.spyOn(service["_userService"], "findOne").mockResolvedValueOnce({
-        id: 1,
-        email: "user@example.com",
-        username: "user",
-        nickname: null,
-        description: null,
-        password: "hashed",
-        createdAt: new Date(),
-        hostingGameSessions: [
-          {
-            id: 1,
-            hostId: 1,
-            projectId: 1,
-            startedAt: new Date(),
-            endedAt: null,
-            visibility: "PUBLIC" as GameSessionVisibility,
-            sessionId: "uuid"
-          }
-        ]
-      } as unknown as User & { hostingGameSessions: GameSession[] });
-      jest.spyOn(service["_projectService"], "findOne").mockResolvedValueOnce({
-        id: 1,
-        name: "Project",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        collaborators: [],
-        creator: { id: 1, username: "creator", email: "creator@example.com" }
-      } as unknown as ProjectEx);
-      jest
-        .spyOn(service["_prismaService"].gameSession, "findUnique")
-        .mockResolvedValueOnce({
-          id: 1,
+
+    it("joins a public session and returns a slave ticket", async () => {
+      gameSession.findFirst.mockResolvedValue(makeSession());
+      gameSession.findUnique.mockResolvedValue(makeSession());
+      gameSession.update.mockResolvedValue(makeSession());
+
+      const result = await service.join("session-uuid", 2);
+
+      expect(result.connectionTicket).toBe("signed.ticket");
+      expect(gameSession.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { otherUsers: { connect: { id: 2 } } }
+        })
+      );
+    });
+
+    it("lets the host self-join as a synthetic player when editorTest is set", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(makeSession({ hostId: 1 }));
+
+      const result = await service.join("session-uuid", 1, undefined, true);
+
+      expect(result.connectionTicket).toBe("signed.ticket");
+      // Not persisted as a real member, and minted with a distinct positive id.
+      expect(gameSession.update).not.toHaveBeenCalled();
+      const payload = jwtService.sign.mock.calls[0]![0] as {
+        role: string;
+        userId: number;
+      };
+      expect(payload.role).toBe("slave");
+      expect(payload.userId).toBeGreaterThan(0);
+      expect(payload.userId).not.toBe(1);
+    });
+
+    it("still blocks a self-join without the editorTest flag", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(makeSession({ hostId: 1 }));
+
+      await expect(service.join("session-uuid", 1)).rejects.toBeInstanceOf(
+        MultiplayerUserAlreadyJoinedError
+      );
+    });
+
+    it("blocks a non-host member's editorTest self-join", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(
+        makeSession({ hostId: 1, otherUsers: [{ id: 2 } as User] })
+      );
+
+      await expect(
+        service.join("session-uuid", 2, undefined, true)
+      ).rejects.toBeInstanceOf(MultiplayerUserAlreadyJoinedError);
+    });
+  });
+
+  describe("host-only actions", () => {
+    it("update is forbidden for a non-host", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(makeSession({ hostId: 1 }));
+
+      await expect(
+        service.update("session-uuid", 999, { title: "new" })
+      ).rejects.toBeInstanceOf(MultiplayerForbiddenError);
+    });
+
+    it("delete is forbidden for a non-host", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(makeSession({ hostId: 1 }));
+
+      await expect(service.delete("session-uuid", 999)).rejects.toBeInstanceOf(
+        MultiplayerForbiddenError
+      );
+    });
+
+    it("delete soft-ends the session and closes the room", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(makeSession({ hostId: 1 }));
+      gameSession.updateMany.mockResolvedValueOnce({ count: 1 });
+
+      await service.delete("session-uuid", 1);
+
+      expect(gameSession.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { sessionId: "session-uuid", endedAt: null }
+        })
+      );
+    });
+  });
+
+  describe("get (visibility access control)", () => {
+    it("hides a FRIENDS_ONLY session from a non-member (404)", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(
+        makeSession({
           hostId: 1,
-          projectId: 1,
-          startedAt: new Date(),
-          endedAt: null,
-          visibility: "PUBLIC" as GameSessionVisibility,
-          sessionId: "uuid",
-          otherUsers: []
-        } as import("@prisma/client").GameSession);
-      jest
-        .spyOn(service["_userService"], "attachGameSession")
-        .mockResolvedValueOnce(Promise.resolve());
-      const result = await service.closeHost(1, 1);
-      expect(result).toBeUndefined();
+          visibility: GameSessionVisibility.FRIENDS_ONLY
+        })
+      );
+
+      await expect(service.get("session-uuid", 99)).rejects.toBeInstanceOf(
+        MultiplayerGameSessionNotFoundError
+      );
     });
-    it("should throw if user does not exist", async () => {
-      jest
-        .spyOn(service["_userService"], "findOne")
-        .mockResolvedValueOnce(null as never);
-      await expect(service.joinHost(1, "uuid")).rejects.toThrow();
+
+    it("hides an INVITE_CODE session from a non-member (404)", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(
+        makeSession({
+          hostId: 1,
+          visibility: GameSessionVisibility.INVITE_CODE,
+          joinCode: "ABCDEFGH"
+        })
+      );
+
+      await expect(service.get("session-uuid", 99)).rejects.toBeInstanceOf(
+        MultiplayerGameSessionNotFoundError
+      );
     });
-    it("should throw if host session does not exist", async () => {
-      jest.spyOn(service["_userService"], "findOne").mockResolvedValueOnce({
-        id: 2,
-        email: "user2@example.com",
-        username: "user2",
-        nickname: null,
-        description: null,
-        password: "hashed",
-        createdAt: new Date(),
-        joinedGameSessions: []
-      } as unknown as User & { joinedGameSessions: GameSession[] });
-      jest
-        .spyOn(service["_prismaService"].gameSession, "findUnique")
-        .mockResolvedValueOnce(null);
-      await expect(service.joinHost(1, "uuid")).rejects.toThrow();
+
+    it("returns a non-public session for one of its members", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(
+        makeSession({
+          hostId: 1,
+          visibility: GameSessionVisibility.FRIENDS_ONLY,
+          otherUsers: [{ id: 2 } as User]
+        })
+      );
+
+      const session = await service.get("session-uuid", 2);
+
+      expect(session.sessionId).toBe("session-uuid");
+    });
+
+    it("returns a PUBLIC session for a non-member", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(
+        makeSession({ hostId: 1, visibility: GameSessionVisibility.PUBLIC })
+      );
+
+      const session = await service.get("session-uuid", 99);
+
+      expect(session.sessionId).toBe("session-uuid");
     });
   });
 
-  describe("joinHost", () => {
-    it("should throw if user does not exist", async () => {
-      jest
-        .spyOn(service["_userService"], "findOne")
-        .mockResolvedValueOnce(null as never);
-      await expect(service.joinHost(1, "uuid")).rejects.toThrow();
+  describe("list (visibility filtering)", () => {
+    it("returns PUBLIC sessions but omits FRIENDS_ONLY and INVITE_CODE", async () => {
+      gameSession.findMany.mockResolvedValueOnce([
+        makeSession({
+          sessionId: "public-uuid",
+          visibility: GameSessionVisibility.PUBLIC
+        }),
+        makeSession({
+          sessionId: "friends-uuid",
+          visibility: GameSessionVisibility.FRIENDS_ONLY
+        }),
+        makeSession({
+          sessionId: "invite-uuid",
+          visibility: GameSessionVisibility.INVITE_CODE,
+          joinCode: "ABCDEFGH"
+        })
+      ]);
+
+      const sessions = await service.list(1, 99);
+
+      expect(sessions.map((session) => session.sessionId)).toEqual([
+        "public-uuid"
+      ]);
     });
-    it("should throw if host session does not exist", async () => {
-      jest.spyOn(service["_userService"], "findOne").mockResolvedValueOnce({
-        id: 2,
-        email: "user2@example.com",
-        username: "user2",
-        nickname: null,
-        description: null,
-        password: "hashed",
-        createdAt: new Date(),
-        joinedGameSessions: []
-      } as unknown as User & { joinedGameSessions: GameSession[] });
+  });
+
+  describe("joinByCode", () => {
+    it("rejects an unknown code", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(null);
+
+      await expect(service.joinByCode("NOPE", 2)).rejects.toBeInstanceOf(
+        MultiplayerInvalidJoinCodeError
+      );
+    });
+
+    it("resolves the session by code and joins it", async () => {
+      const invite = makeSession({
+        visibility: GameSessionVisibility.INVITE_CODE,
+        joinCode: "ABCDEFGH"
+      });
+      gameSession.findFirst.mockResolvedValue(invite);
+      gameSession.findUnique.mockResolvedValue(invite);
+      gameSession.update.mockResolvedValue(makeSession());
+
+      const result = await service.joinByCode("ABCDEFGH", 2);
+
+      expect(result.connectionTicket).toBe("signed.ticket");
+      expect(gameSession.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { otherUsers: { connect: { id: 2 } } }
+        })
+      );
+    });
+  });
+
+  describe("refreshTicket", () => {
+    it("mints a fresh ticket for the host", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(makeSession({ hostId: 1 }));
+
+      const result = await service.refreshTicket("session-uuid", 1);
+
+      expect(result.connectionTicket).toBe("signed.ticket");
+    });
+
+    it("mints a fresh ticket for a joined slave", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(
+        makeSession({ hostId: 1, otherUsers: [{ id: 2 } as User] })
+      );
+
+      const result = await service.refreshTicket("session-uuid", 2);
+
+      expect(result.connectionTicket).toBe("signed.ticket");
+    });
+
+    it("rejects a non-member", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(makeSession({ hostId: 1 }));
+
+      await expect(
+        service.refreshTicket("session-uuid", 99)
+      ).rejects.toBeInstanceOf(MultiplayerUserNotInSessionError);
+    });
+  });
+
+  describe("endSession", () => {
+    it("soft-ends an active session", async () => {
+      gameSession.updateMany.mockResolvedValueOnce({ count: 1 });
+
+      await service.endSession("session-uuid");
+
+      expect(gameSession.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { sessionId: "session-uuid", endedAt: null }
+        })
+      );
+    });
+  });
+
+  describe("reapStaleSessions", () => {
+    it("soft-ends orphaned sessions left active past the max lifetime", async () => {
+      jest.spyOn(service, "connectedPlayerCount").mockReturnValue(0);
+      gameSession.findMany.mockResolvedValueOnce([
+        { sessionId: "stale-1" },
+        { sessionId: "stale-2" }
+      ]);
+      gameSession.updateMany.mockResolvedValueOnce({ count: 2 });
+
+      await service.reapStaleSessions();
+
+      const findArg = gameSession.findMany.mock.calls[0]![0] as {
+        where: { endedAt: null; startedAt: { lt: Date } };
+      };
+      expect(findArg.where.endedAt).toBeNull();
+      expect(findArg.where.startedAt.lt).toBeInstanceOf(Date);
+      expect(gameSession.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { sessionId: { in: ["stale-1", "stale-2"] } }
+        })
+      );
+    });
+
+    it("leaves a still-live long-running session untouched", async () => {
       jest
-        .spyOn(service["_prismaService"].gameSession, "findUnique")
-        .mockResolvedValueOnce(null);
-      await expect(service.leaveHost(1, "uuid")).rejects.toThrow();
+        .spyOn(service, "connectedPlayerCount")
+        .mockImplementation((sessionId) => (sessionId === "live" ? 3 : 0));
+      gameSession.findMany.mockResolvedValueOnce([{ sessionId: "live" }]);
+
+      await service.reapStaleSessions();
+
+      expect(gameSession.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("leave", () => {
+    it("rejects the host trying to leave", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(makeSession({ hostId: 1 }));
+
+      await expect(service.leave("session-uuid", 1)).rejects.toBeInstanceOf(
+        MultiplayerUserNotInSessionError
+      );
+    });
+
+    it("rejects a non-member trying to leave", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(makeSession({ hostId: 1 }));
+
+      await expect(service.leave("session-uuid", 99)).rejects.toBeInstanceOf(
+        MultiplayerUserNotInSessionError
+      );
+    });
+
+    it("disconnects a member from the session", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(
+        makeSession({ hostId: 1, otherUsers: [{ id: 2 } as User] })
+      );
+      gameSession.update.mockResolvedValueOnce(makeSession());
+
+      await service.leave("session-uuid", 2);
+
+      expect(gameSession.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { sessionId: "session-uuid" },
+          data: { otherUsers: { disconnect: { id: 2 } } }
+        })
+      );
     });
   });
 });
