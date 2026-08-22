@@ -19,6 +19,7 @@ import { AdminReportController } from "src/admin/admin-report.controller";
 import { AdminModerationLogController } from "src/admin/admin-moderation-log.controller";
 import { AdminRoleController } from "src/admin/admin-role.controller";
 import { AdminLookupController } from "src/admin/admin-lookup.controller";
+import { NotificationsController } from "src/notifications/notifications.controller";
 
 import { ProjectService } from "@project/project.service";
 import { S3Service } from "@s3/s3.service";
@@ -35,6 +36,7 @@ import { AdminCommentService } from "src/admin/admin-comment.service";
 import { AdminReportService } from "src/admin/admin-report.service";
 import { AdminRoleService } from "src/admin/admin-role.service";
 import { TargetLinkService } from "src/admin/services/target-link.service";
+import { NotificationsService } from "src/notifications/notifications.service";
 
 import { UserModule } from "@user/user.module";
 import { WorkSessionModule } from "@work-session/work-session.module";
@@ -92,7 +94,8 @@ const nullProvider = (token: InjectionToken): Provider => ({
     AdminReportController,
     AdminModerationLogController,
     AdminRoleController,
-    AdminLookupController
+    AdminLookupController,
+    NotificationsController
   ],
   providers: [
     nullProvider(PrismaService),
@@ -109,7 +112,8 @@ const nullProvider = (token: InjectionToken): Provider => ({
     nullProvider(AdminCommentService),
     nullProvider(AdminReportService),
     nullProvider(AdminRoleService),
-    nullProvider(TargetLinkService)
+    nullProvider(TargetLinkService),
+    nullProvider(NotificationsService)
   ]
 })
 export class SwaggerAppModule {}
