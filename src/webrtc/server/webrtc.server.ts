@@ -189,6 +189,8 @@ export class WebRTCServer<
   private readonly _serverEventHandlers: WebRTCEventHandlerMap = new Map();
   private readonly _clientEventHandlers: WebRTCEventHandlerMap = new Map();
 
+  private _isShuttingDown = false;
+
   constructor(
     webrtcService: WebRTCService,
     whatFor: string,
@@ -209,23 +211,23 @@ export class WebRTCServer<
       noServer: true,
       perMessageDeflate: extraOpts.compressed
         ? {
-            zlibDeflateOptions: {
-              // Use page-sized chunks for compression
-              chunkSize: 4096,
-              // https://docs.verygoodsecurity.com/vault/developer-tools/larky/library-api/zlib#zlib.compressobj-level-6-method-8-wbits-15-memlevel-0-strategy-0-zdict-none
-              memLevel: 7,
-              level: 5
-            },
-            zlibInflateOptions: {
-              // Ditto
-              // https://docs.verygoodsecurity.com/vault/developer-tools/larky/library-api/zlib#zlib.compressobj-level-6-method-8-wbits-15-memlevel-0-strategy-0-zdict-none
-              chunkSize: 4096
-            },
-            // Use all cores minus 2 so that the server can still respond to requests
-            concurrencyLimit: availableParallelism() - 2,
-            // Don't compress if smaller than the given amount of bytes
-            threshold: extraOpts.compressionThreshold
-          }
+          zlibDeflateOptions: {
+            // Use page-sized chunks for compression
+            chunkSize: 4096,
+            // https://docs.verygoodsecurity.com/vault/developer-tools/larky/library-api/zlib#zlib.compressobj-level-6-method-8-wbits-15-memlevel-0-strategy-0-zdict-none
+            memLevel: 7,
+            level: 5
+          },
+          zlibInflateOptions: {
+            // Ditto
+            // https://docs.verygoodsecurity.com/vault/developer-tools/larky/library-api/zlib#zlib.compressobj-level-6-method-8-wbits-15-memlevel-0-strategy-0-zdict-none
+            chunkSize: 4096
+          },
+          // Use all cores minus 2 so that the server can still respond to requests
+          concurrencyLimit: availableParallelism() - 2,
+          // Don't compress if smaller than the given amount of bytes
+          threshold: extraOpts.compressionThreshold
+        }
         : {}
     });
 
@@ -251,6 +253,14 @@ export class WebRTCServer<
 
   public get logger(): Logger {
     return this._logger;
+  }
+
+  // True once shutdown() has begun. Close handlers use this to tell process
+  // teardown (we terminate every socket ourselves) apart from a runtime client
+  // disconnect, so they can skip reconnection/grace logic that would otherwise
+  // keep the event loop alive or tear down state that should survive a restart.
+  public get isShuttingDown(): boolean {
+    return this._isShuttingDown;
   }
 
   protected get extraOpts(): OptsT {
@@ -419,26 +429,33 @@ export class WebRTCServer<
       httpClientSocket,
       head,
       (clientSocket: WebSocket) => {
-        let authHandlerI: number = -1;
+        // A denied or throwing auth handler must abort the connection entirely;
+        // we use a plain loop (not forEach) so we can short-circuit out of this
+        // callback and never reach the connection wiring below.
+        for (let authHandlerI = 0; authHandlerI < this._authEventHandlers.length; authHandlerI++) {
+          const handler = this._authEventHandlers[authHandlerI]!;
 
-        try {
-          this._authEventHandlers.forEach((handler, i) => {
-            authHandlerI = i;
+          let allowed: boolean;
 
-            if (!handler(request, httpClientSocket, head)) {
-              this._logger.verbose(
-                `Auth handler ${authHandlerI} denied access to ${tcpSocket.remoteAddress}`
-              );
-              httpClientSocket.destroy();
-              return;
-            }
-          });
-        } catch (err) {
-          this._logger.verbose(
-            `Auth handler #${authHandlerI} threw for ${tcpSocket.remoteAddress}: ${err}`
-          );
-          httpClientSocket.destroy();
-          return;
+          try {
+            allowed = handler.apply(this, [request, httpClientSocket, head]);
+          } catch (err) {
+            this._logger.verbose(
+              `Auth handler #${authHandlerI} threw for ${tcpSocket.remoteAddress}: ${err}`
+            );
+            clientSocket.terminate();
+            httpClientSocket.destroy();
+            return;
+          }
+
+          if (!allowed) {
+            this._logger.verbose(
+              `Auth handler ${authHandlerI} denied access to ${tcpSocket.remoteAddress}`
+            );
+            clientSocket.terminate();
+            httpClientSocket.destroy();
+            return;
+          }
         }
 
         this.applyEventHandlers(clientSocket);
@@ -450,17 +467,27 @@ export class WebRTCServer<
   // --------------------------------------------------------------------------
 
   public shutdown(): void {
-    this._wsServer.close(() => {
-      this._logger.log(
-        `Closing this server with ${this._wsServer.clients.size} clients alive`
-      );
+    if (this._isShuttingDown) {
+      return;
+    }
 
-      this._wsServer.clients.forEach((client) => client.terminate());
+    this._isShuttingDown = true;
 
-      this._wsServer.close();
-      this._httpServer.close();
+    this._logger.log(
+      `Closing this server with ${this._wsServer.clients.size} clients alive`
+    );
 
-      this._logger.log("Done closing this server");
-    });
+    // Force-terminate every live client BEFORE closing the servers. terminate()
+    // destroys the underlying TCP socket at once (no close handshake), so both
+    // `wss.close()` (which in noServer mode only completes once clients.size
+    // reaches 0) and `httpServer.close()` can resolve immediately. Terminating
+    // inside wss.close()'s callback would deadlock: that callback never fires
+    // while clients are still alive, and nothing else would ever close them.
+    this._wsServer.clients.forEach((client) => client.terminate());
+
+    this._wsServer.close();
+    this._httpServer.close();
+
+    this._logger.log("Done closing this server");
   }
 }
