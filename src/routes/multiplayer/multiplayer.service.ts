@@ -260,6 +260,33 @@ export class MultiplayerService {
     }
   }
 
+  /**
+   * Ends every live session for a project and tears down its rooms.
+   *
+   * Moderation uses this when a project comes down: flipping the project row
+   * alone leaves players connected to a running room, still playing the game
+   * that was just hidden or unpublished.
+   */
+  async endSessionsForProject(projectId: number): Promise<number> {
+    const live = await this._prismaService.gameSession.findMany({
+      where: { projectId, endedAt: null },
+      select: { sessionId: true }
+    });
+
+    for (const session of live) {
+      await this.endSession(session.sessionId);
+      this._syncServer.closeRoom(session.sessionId);
+    }
+
+    if (live.length > 0) {
+      this._logger.log(
+        `Ended ${live.length} live session(s) for project ${projectId}`
+      );
+    }
+
+    return live.length;
+  }
+
   // Backstop sweep: ends sessions left active past the max lifetime, which
   // normally only happens if the process died before its disconnect hooks ran.
   @Cron(CronExpression.EVERY_30_MINUTES)

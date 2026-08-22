@@ -9,7 +9,9 @@ import { AdminJwtStrategy } from "./admin-jwt.strategy";
 const ACTIVE_USER = {
   id: 1,
   email: "user@naucto.com",
-  accountStatus: AccountStatus.ACTIVE
+  accountStatus: AccountStatus.ACTIVE,
+  password: "$2b$10$averyrealbcrypthash",
+  roles: [{ id: 2, name: "Moderator" }]
 } as unknown as User;
 
 function makeDeps(user: User = ACTIVE_USER): {
@@ -40,16 +42,19 @@ describe("JWT scope separation", () => {
       const { config, userService } = makeDeps();
       const strategy = new JwtStrategy(config, userService);
 
-      await expect(strategy.validate(payload("user"))).resolves.toBe(
-        ACTIVE_USER
-      );
+      await expect(strategy.validate(payload("user"))).resolves.toMatchObject({
+        id: ACTIVE_USER.id,
+        email: ACTIVE_USER.email
+      });
     });
 
     it("accepts a token minted before the scope claim existed", async () => {
       const { config, userService } = makeDeps();
       const strategy = new JwtStrategy(config, userService);
 
-      await expect(strategy.validate(payload())).resolves.toBe(ACTIVE_USER);
+      await expect(strategy.validate(payload())).resolves.toMatchObject({
+        id: ACTIVE_USER.id
+      });
     });
 
     it("rejects an admin cookie token used as a bearer token", async () => {
@@ -60,6 +65,27 @@ describe("JWT scope separation", () => {
         UnauthorizedException
       );
       expect(userService.findOne).not.toHaveBeenCalled();
+    });
+
+    it("never puts the password hash on the request", async () => {
+      const { config, userService } = makeDeps();
+      const strategy = new JwtStrategy(config, userService);
+
+      const user = await strategy.validate(payload("user"));
+
+      // `req.user` is handed to every guarded handler; GET /users/profile used
+      // to echo it straight back, hash included.
+      expect(user?.password).toBeNull();
+    });
+
+    it("loads roles so handlers and staff UI can read them", async () => {
+      const { config, userService } = makeDeps();
+      const strategy = new JwtStrategy(config, userService);
+
+      const user = await strategy.validate(payload("user"));
+
+      expect(user?.roles).toEqual([{ id: 2, name: "Moderator" }]);
+      expect(userService.findOne).toHaveBeenCalledWith(1, { roles: true });
     });
 
     it("rejects a banned user", async () => {
@@ -81,9 +107,10 @@ describe("JWT scope separation", () => {
       const { config, userService } = makeDeps();
       const strategy = new AdminJwtStrategy(config, userService);
 
-      await expect(strategy.validate(payload("admin"))).resolves.toBe(
-        ACTIVE_USER
-      );
+      await expect(strategy.validate(payload("admin"))).resolves.toMatchObject({
+        id: ACTIVE_USER.id,
+        email: ACTIVE_USER.email
+      });
     });
 
     it("rejects an API token pasted into the admin cookie", async () => {
@@ -103,6 +130,15 @@ describe("JWT scope separation", () => {
       await expect(strategy.validate(payload())).rejects.toThrow(
         UnauthorizedException
       );
+    });
+
+    it("never puts the password hash on the request", async () => {
+      const { config, userService } = makeDeps();
+      const strategy = new AdminJwtStrategy(config, userService);
+
+      const user = await strategy.validate(payload("admin"));
+
+      expect(user.password).toBeNull();
     });
 
     it("rejects a banned staff account", async () => {

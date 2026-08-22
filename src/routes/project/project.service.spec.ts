@@ -145,7 +145,9 @@ describe("ProjectService", () => {
   const s3ServiceMock = {
     deleteFile: jest.fn(),
     listObjects: jest.fn(),
-    deleteFiles: jest.fn()
+    deleteFiles: jest.fn(),
+    fileExists: jest.fn(),
+    downloadFile: jest.fn()
   };
 
   const configServiceMock = {
@@ -843,6 +845,118 @@ describe("ProjectService", () => {
       );
       expect(result.page).toBe(1);
       expect(result.limit).toBe(100);
+    });
+  });
+
+  describe("removeReleaseArtifact", () => {
+    it("deletes the public release object for the project", async () => {
+      // clearAllMocks resets calls but not implementations, so an earlier
+      // rejection set on this shared mock would leak into this test.
+      s3ServiceMock.deleteFile.mockResolvedValue(undefined);
+
+      await service.removeReleaseArtifact(7);
+
+      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({
+        key: "release/7"
+      });
+    });
+  });
+
+  describe("fetchPreviewContent", () => {
+    it("serves the published release so staff test what players load", async () => {
+      prismaMock.project.findUnique.mockResolvedValue({
+        id: 7,
+        status: "COMPLETED"
+      });
+      s3ServiceMock.fileExists.mockResolvedValue(true);
+      s3ServiceMock.downloadFile.mockResolvedValue({ body: null });
+
+      await service.fetchPreviewContent(7);
+
+      expect(s3ServiceMock.downloadFile).toHaveBeenCalledWith({
+        key: "release/7"
+      });
+    });
+
+    it("falls back to the latest save for an unpublished project", async () => {
+      prismaMock.project.findUnique.mockResolvedValue({
+        id: 7,
+        status: "IN_PROGRESS"
+      });
+      const fallback = jest
+        .spyOn(service, "fetchLastVersion")
+        .mockResolvedValue({ body: null } as never);
+
+      await service.fetchPreviewContent(7);
+
+      expect(s3ServiceMock.fileExists).not.toHaveBeenCalled();
+      expect(fallback).toHaveBeenCalledWith(7);
+    });
+
+    it("falls back to the latest save when the release object is gone", async () => {
+      // Moderation removes the release object on hide/unpublish, so a project can
+      // read COMPLETED for a moment with no artifact behind it.
+      prismaMock.project.findUnique.mockResolvedValue({
+        id: 7,
+        status: "COMPLETED"
+      });
+      s3ServiceMock.fileExists.mockResolvedValue(false);
+      const fallback = jest
+        .spyOn(service, "fetchLastVersion")
+        .mockResolvedValue({ body: null } as never);
+
+      await service.fetchPreviewContent(7);
+
+      expect(fallback).toHaveBeenCalledWith(7);
+      expect(s3ServiceMock.downloadFile).not.toHaveBeenCalled();
+    });
+
+    it("throws NotFoundException for an unknown project", async () => {
+      prismaMock.project.findUnique.mockResolvedValue(null);
+
+      await expect(service.fetchPreviewContent(404)).rejects.toThrow(
+        NotFoundException
+      );
+    });
+  });
+
+  describe("fetchProjectPreview", () => {
+    it("returns an unpublished project the public endpoints hide", async () => {
+      prismaMock.project.findUnique.mockResolvedValue({
+        ...mockProjects[0],
+        id: 7,
+        status: "IN_PROGRESS",
+        hidden: false,
+        _count: { forks: 0, comments: 0 }
+      });
+
+      await expect(service.fetchProjectPreview(7)).resolves.toMatchObject({
+        id: 7,
+        status: "IN_PROGRESS"
+      });
+    });
+
+    it("returns a hidden project so staff can review what they took down", async () => {
+      prismaMock.project.findUnique.mockResolvedValue({
+        ...mockProjects[0],
+        id: 7,
+        status: "ARCHIVED",
+        hidden: true,
+        _count: { forks: 0, comments: 0 }
+      });
+
+      await expect(service.fetchProjectPreview(7)).resolves.toMatchObject({
+        id: 7,
+        hidden: true
+      });
+    });
+
+    it("throws NotFoundException for an unknown project", async () => {
+      prismaMock.project.findUnique.mockResolvedValue(null);
+
+      await expect(service.fetchProjectPreview(404)).rejects.toThrow(
+        NotFoundException
+      );
     });
   });
 });

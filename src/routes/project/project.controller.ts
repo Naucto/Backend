@@ -67,8 +67,11 @@ import {
   ProjectsCountResponseDto,
   SignedUrlResponseDto
 } from "./dto/project-response.dto";
+import { Roles } from "@auth/decorators/roles.decorator";
+import { RolesGuard } from "@auth/guards/roles.guard";
 import { S3DownloadException } from "@s3/s3.error";
 import { S3Service } from "@s3/s3.service";
+import { DownloadedFile } from "@s3/s3.interface";
 import { CloudfrontService } from "src/routes/s3/edge.service";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { Public } from "@auth/decorators/public.decorator";
@@ -150,6 +153,44 @@ export class ProjectController {
   }
 
   @Public()
+  /**
+   * Streams a stored file to the client. Every download endpoint goes through
+   * this so they cannot drift on headers or on how a missing object is reported.
+   */
+  private streamDownload(
+    res: Response,
+    file: DownloadedFile,
+    extraHeaders: Record<string, string | undefined> = {}
+  ): void {
+    res.set({
+      "Content-Type": file.contentType,
+      "Content-Length": String(file.contentLength ?? 0),
+      ...extraHeaders
+    });
+
+    file.body.pipe(res);
+  }
+
+  private failDownload(res: Response, error: unknown, context: string): void {
+    if (error instanceof S3DownloadException) {
+      this.logger.warn(`${context}: not found on storage (key: ${error.key})`);
+      if (!res.headersSent) {
+        res.status(404).json({ message: "File not found" });
+      }
+      return;
+    }
+
+    if (error instanceof Error) {
+      this.logger.error(`${context}: ${error.message}`, error.stack);
+    } else {
+      this.logger.error(`${context}: ${JSON.stringify(error)}`);
+    }
+
+    if (!res.headersSent) {
+      res.status(500).json({ message: "Internal server error" });
+    }
+  }
+
   @Get("releases")
   @ApiOperation({ summary: "Get all released projects" })
   @ApiResponse({
@@ -249,30 +290,9 @@ export class ProjectController {
   ): Promise<void> {
     try {
       const file = await this.projectService.fetchReleaseContent(Number(id));
-      res.set({
-        "Content-Type": file.contentType,
-        "Content-Length": file.contentLength
-      });
-
-      file.body.pipe(res);
+      this.streamDownload(res, file);
     } catch (error) {
-      if (error instanceof Error) {
-        this.logger.error(
-          `Failed to fetch content for project ${id}: ${error.message}`,
-          error.stack
-        );
-      } else {
-        this.logger.error(
-          `Failed to fetch content for project ${id}: ${JSON.stringify(error)}`
-        );
-      }
-
-      if (error instanceof S3DownloadException) {
-        res.status(404).json({ message: "File not found" });
-        return;
-      }
-      res.status(500).json({ message: "Internal server error" });
-      return;
+      this.failDownload(res, error, `Release content for project ${id}`);
     }
   }
 
@@ -733,6 +753,60 @@ export class ProjectController {
     return { url };
   }
 
+  // Staff preview. Moderators need to actually run a game to judge a report, and
+  // a project under review is usually either not published yet or already
+  // hidden -- both invisible to the public release endpoints above.
+  @Get(":id/preview")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("Admin", "Moderator")
+  @ApiOperation({
+    summary: "Get any project's metadata for staff preview, published or not"
+  })
+  @ApiParam({ name: "id", type: "string" })
+  @ApiResponse({
+    status: 200,
+    description: "Project metadata",
+    type: ProjectExResponseDto
+  })
+  @ApiResponse({ status: 403, description: "Staff access required" })
+  @ApiResponse({ status: 404, description: "Project not found" })
+  async getProjectPreview(
+    @Param("id") id: string
+  ): Promise<ProjectExResponseDto> {
+    return this.projectService.fetchProjectPreview(Number(id));
+  }
+
+  @Get(":id/preview/content")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("Admin", "Moderator")
+  @ApiOperation({
+    summary:
+      "Get any project's playable content for staff preview: the published release when there is one, otherwise the latest save"
+  })
+  @ApiParam({ name: "id", type: "string" })
+  @ApiResponse({
+    status: 200,
+    description: "Playable project content",
+    content: {
+      "application/octet-stream": {
+        schema: { type: "string", format: "binary" }
+      }
+    }
+  })
+  @ApiResponse({ status: 403, description: "Staff access required" })
+  @ApiResponse({ status: 404, description: "Project or content not found" })
+  async getProjectPreviewContent(
+    @Param("id") id: string,
+    @Res() res: Response
+  ): Promise<void> {
+    try {
+      const file = await this.projectService.fetchPreviewContent(Number(id));
+      this.streamDownload(res, file);
+    } catch (error) {
+      this.failDownload(res, error, `Preview content for project ${id}`);
+    }
+  }
+
   @Get(":id/fetchContent")
   @UseGuards(ProjectCollaboratorGuard)
   @ApiOperation({ summary: "Fetch project's content" })
@@ -754,31 +828,9 @@ export class ProjectController {
   ): Promise<void> {
     try {
       const file = await this.projectService.fetchLastVersion(id);
-
-      res.set({
-        "Content-Type": file.contentType,
-        "Content-Length": file.contentLength
-      });
-
-      file.body.pipe(res);
+      this.streamDownload(res, file);
     } catch (error) {
-      if (error instanceof Error) {
-        this.logger.error(
-          `Failed to fetch content for project ${id}: ${error.message}`,
-          error.stack
-        );
-      } else {
-        this.logger.error(
-          `Failed to fetch content for project ${id}: ${JSON.stringify(error)}`
-        );
-      }
-
-      if (error instanceof S3DownloadException) {
-        res.status(404).json({ message: "File not found" });
-        return;
-      }
-      res.status(500).json({ message: "Internal server error" });
-      return;
+      this.failDownload(res, error, `Content for project ${id}`);
     }
   }
 
@@ -920,31 +972,9 @@ export class ProjectController {
         Number(id),
         version
       );
-
-      res.set({
-        "Content-Type": file.contentType,
-        "Content-Length": file.contentLength
-      });
-
-      file.body.pipe(res);
+      this.streamDownload(res, file);
     } catch (error) {
-      if (error instanceof Error) {
-        this.logger.error(
-          `Failed to fetch content for project ${id}: ${error.message}`,
-          error.stack
-        );
-      } else {
-        this.logger.error(
-          `Failed to fetch content for project ${id}: ${JSON.stringify(error)}`
-        );
-      }
-
-      if (error instanceof S3DownloadException) {
-        res.status(404).json({ message: "File not found" });
-        return;
-      }
-      res.status(500).json({ message: "Internal server error" });
-      return;
+      this.failDownload(res, error, `Version ${version} of project ${id}`);
     }
   }
 
@@ -975,9 +1005,7 @@ export class ProjectController {
       );
       const project = await this.projectService.findOne(id);
 
-      res.set({
-        "Content-Type": file.contentType,
-        "Content-Length": (file.contentLength ?? 0).toString(),
+      this.streamDownload(res, file, {
         "Content-Disposition": `attachment; filename="${checkpoint}"`,
         "Cache-Control": "no-cache, no-store, must-revalidate",
         Pragma: "no-cache",
@@ -986,27 +1014,8 @@ export class ProjectController {
           ? `W/"${project.contentUploadedAt.getTime()}"`
           : undefined
       });
-
-      file.body.pipe(res);
     } catch (error) {
-      if (error instanceof S3DownloadException) {
-        this.logger.warn(
-          `S3 File not found for project ${id} (Key: ${error.key})`
-        );
-        res.status(404).json({ message: "File not found on storage server" });
-        return;
-      }
-      if (error instanceof Error) {
-        this.logger.error(`Download failed: ${error.message}`, error.stack);
-      } else {
-        this.logger.error("Download failed: Unknown error");
-      }
-
-      if (!res.headersSent) {
-        res
-          .status(500)
-          .json({ message: "Internal server error during download" });
-      }
+      this.failDownload(res, error, `Checkpoint ${checkpoint} of project ${id}`);
     }
   }
 

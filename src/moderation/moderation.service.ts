@@ -14,6 +14,7 @@ import {
 } from "@prisma/client";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { ProjectService } from "@project/project.service";
+import { MultiplayerService } from "@multiplayer/multiplayer.service";
 import { CreateReportDto } from "./dto/create-report.dto";
 
 type AuditInput = {
@@ -73,7 +74,8 @@ const ALLOWED_REPORT_TRANSITIONS: Record<ReportStatus, ReportStatus[]> = {
 export class ModerationService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly projectService: ProjectService
+    private readonly projectService: ProjectService,
+    private readonly multiplayerService: MultiplayerService
   ) {}
 
   async createReport(
@@ -395,6 +397,10 @@ export class ModerationService {
       await this.projectService.removeReleaseArtifact(targetId);
     }
 
+    // Players already in a live session keep playing the hidden game until the
+    // room is torn down, so end them rather than only flipping the project row.
+    await this.multiplayerService.endSessionsForProject(targetId);
+
     await this.audit({
       actorId,
       targetType: ModerationTargetType.PROJECT,
@@ -461,6 +467,7 @@ export class ModerationService {
     // change: it also tears down the public release object on S3 and records the
     // analytics event, which a parallel prisma.update here would silently skip.
     await this.projectService.unpublish(targetId);
+    await this.multiplayerService.endSessionsForProject(targetId);
 
     const after = await this.prisma.project.findUnique({
       where: { id: targetId }

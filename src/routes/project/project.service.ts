@@ -15,7 +15,13 @@ import {
   RemoveCollaboratorDto
 } from "./dto/collaborator-project.dto";
 import { S3Service } from "@s3/s3.service";
-import { AnalyticsEventType, Prisma, Project, User } from "@prisma/client";
+import {
+  AnalyticsEventType,
+  Prisma,
+  Project,
+  ProjectStatus,
+  User
+} from "@prisma/client";
 import { ConfigService } from "@nestjs/config";
 import { DownloadedFile } from "@s3/s3.interface";
 import { Readable } from "stream";
@@ -92,6 +98,20 @@ const RELEASE_WINDOW_DAYS: Record<Exclude<ReleaseWindow, "all">, number> = {
 
 @Injectable()
 export class ProjectService {
+  // The relations every "playable project" response carries. Shared so the
+  // public release, the published listing, and the staff preview cannot drift
+  // on which collaborators or which comments they count.
+  static readonly RELEASE_INCLUDE = {
+    collaborators: { select: COLLABORATOR_SELECT },
+    creator: { select: CREATOR_SELECT },
+    _count: {
+      select: {
+        forks: true,
+        comments: { where: { deleted: false, hidden: false } }
+      }
+    }
+  };
+
   static COLLABORATOR_SELECT = COLLABORATOR_SELECT;
   static CREATOR_SELECT = CREATOR_SELECT;
 
@@ -835,22 +855,7 @@ export class ProjectService {
         status: "COMPLETED",
         hidden: false
       },
-      include: {
-        collaborators: {
-          select: ProjectService.COLLABORATOR_SELECT
-        },
-        creator: {
-          select: ProjectService.CREATOR_SELECT
-        },
-        _count: {
-          select: {
-            forks: true,
-            comments: {
-              where: { deleted: false, hidden: false }
-            }
-          }
-        }
-      }
+      include: ProjectService.RELEASE_INCLUDE
     });
 
     if (!project) {
@@ -860,6 +865,55 @@ export class ProjectService {
     return this.applyPublishedSnapshot(
       this.withCommentCount(project as ProjectWithCounts)
     );
+  }
+
+  /**
+   * Metadata for the staff preview: the same shape the public release endpoint
+   * returns, but without the published/visible filter, so a moderator can look
+   * at a project before it goes live or after it has been hidden.
+   */
+  async fetchProjectPreview(projectId: number): Promise<ReleaseProject> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: ProjectService.RELEASE_INCLUDE
+    });
+
+    if (!project) {
+      throw new NotFoundException(`Project with ID ${projectId} not found`);
+    }
+
+    const mapped = this.withCommentCount(project as ProjectWithCounts);
+
+    // An unpublished project has no published snapshot to overlay, so preview
+    // shows its working fields; a published one shows what players actually see.
+    return project.status === ProjectStatus.COMPLETED
+      ? this.applyPublishedSnapshot(mapped)
+      : mapped;
+  }
+
+  /**
+   * The playable bytes for the staff preview: the published release when there
+   * is one, otherwise the latest working save. Previewing a published project
+   * therefore exercises the exact artifact players load.
+   */
+  async fetchPreviewContent(projectId: number): Promise<DownloadedFile> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true, status: true }
+    });
+
+    if (!project) {
+      throw new NotFoundException(`Project with ID ${projectId} not found`);
+    }
+
+    if (project.status === ProjectStatus.COMPLETED) {
+      const releaseKey = `release/${projectId}`;
+      if (await this.s3Service.fileExists(releaseKey)) {
+        return this.s3Service.downloadFile({ key: releaseKey });
+      }
+    }
+
+    return this.fetchLastVersion(projectId);
   }
 
   async fetchReleaseContent(projectId: number): Promise<DownloadedFile> {

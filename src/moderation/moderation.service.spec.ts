@@ -3,6 +3,7 @@ import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { ModerationService } from "./moderation.service";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { ProjectService } from "@project/project.service";
+import { MultiplayerService } from "@multiplayer/multiplayer.service";
 
 type AnyFn = jest.Mock;
 
@@ -37,6 +38,7 @@ function makePrismaMock(): Record<string, Record<string, AnyFn>> {
 }
 
 type ProjectServiceMock = { unpublish: AnyFn; removeReleaseArtifact: AnyFn };
+type MultiplayerServiceMock = { endSessionsForProject: AnyFn };
 
 function makeProjectServiceMock(): ProjectServiceMock {
   return {
@@ -45,15 +47,21 @@ function makeProjectServiceMock(): ProjectServiceMock {
   };
 }
 
+function makeMultiplayerServiceMock(): MultiplayerServiceMock {
+  return { endSessionsForProject: jest.fn().mockResolvedValue(0) };
+}
+
 async function buildService(
   prismaMock: ReturnType<typeof makePrismaMock>,
-  projectServiceMock: ProjectServiceMock = makeProjectServiceMock()
+  projectServiceMock: ProjectServiceMock = makeProjectServiceMock(),
+  multiplayerServiceMock: MultiplayerServiceMock = makeMultiplayerServiceMock()
 ): Promise<ModerationService> {
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       ModerationService,
       { provide: PrismaService, useValue: prismaMock },
-      { provide: ProjectService, useValue: projectServiceMock }
+      { provide: ProjectService, useValue: projectServiceMock },
+      { provide: MultiplayerService, useValue: multiplayerServiceMock }
     ]
   }).compile();
   return module.get<ModerationService>(ModerationService);
@@ -174,6 +182,29 @@ describe("ModerationService", () => {
       expect(projectService.removeReleaseArtifact).toHaveBeenCalledWith(10);
     });
 
+    it("hideProject ends the project's live multiplayer sessions", async () => {
+      const prisma = makePrismaMock();
+      prisma["project"]!["findUnique"]!.mockResolvedValueOnce({
+        id: 10,
+        hidden: false,
+        status: "COMPLETED"
+      });
+      prisma["project"]!["update"]!.mockResolvedValueOnce({
+        id: 10,
+        hidden: true
+      });
+      const multiplayer = makeMultiplayerServiceMock();
+      const service = await buildService(
+        prisma,
+        makeProjectServiceMock(),
+        multiplayer
+      );
+
+      await service.hideProject(10, 1, "tos", null);
+
+      expect(multiplayer.endSessionsForProject).toHaveBeenCalledWith(10);
+    });
+
     it("hideProject leaves S3 alone for a project that was never published", async () => {
       const prisma = makePrismaMock();
       prisma["project"]!["findUnique"]!.mockResolvedValueOnce({
@@ -229,6 +260,25 @@ describe("ModerationService", () => {
           reason: "tos"
         })
       });
+    });
+
+    it("ends the project's live multiplayer sessions", async () => {
+      const prisma = makePrismaMock();
+      prisma["project"]!["findUnique"]!
+        .mockResolvedValueOnce({ id: 20, status: "COMPLETED" })
+        .mockResolvedValueOnce({ id: 20, status: "IN_PROGRESS" });
+      const multiplayer = makeMultiplayerServiceMock();
+      const service = await buildService(
+        prisma,
+        makeProjectServiceMock(),
+        multiplayer
+      );
+
+      await service.unpublishProject(20, 1);
+
+      // Otherwise players stay connected to a running room and keep playing the
+      // game that was just taken down.
+      expect(multiplayer.endSessionsForProject).toHaveBeenCalledWith(20);
     });
 
     it("throws NotFoundException without touching ProjectService", async () => {
