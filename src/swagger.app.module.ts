@@ -27,6 +27,7 @@ import { S3Client } from "@aws-sdk/client-s3";
 import { MultiplayerService } from "src/routes/multiplayer/multiplayer.service";
 import { ProjectCommentService } from "@project-comment/project-comment.service";
 import { ModerationService } from "src/moderation/moderation.service";
+import { ModerationModule } from "src/moderation/moderation.module";
 import { AuditModule } from "src/moderation/audit";
 import { AdminInsightsService } from "src/admin/admin-insights.service";
 import { AdminUserService } from "src/admin/admin-user.service";
@@ -60,6 +61,7 @@ const nullProvider = (token: InjectionToken): Provider => ({
 @Module({
   imports: [
     AuditModule,
+    ModerationModule,
     GracefulShutdownModule.forRootAsync({
       imports: [WebRTCModule],
       inject: [WebRTCService],
