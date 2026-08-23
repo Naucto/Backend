@@ -1,4 +1,4 @@
-import { Module, OnModuleInit } from "@nestjs/common";
+import { Global, Module, OnModuleInit } from "@nestjs/common";
 import { ModerationService } from "./moderation.service";
 import { ReportController } from "./report.controller";
 import { AnalyticsModule } from "src/analytics/analytics.module";
@@ -7,6 +7,12 @@ import { ProjectService } from "@project/project.service";
 import { MultiplayerModule } from "@multiplayer/multiplayer.module";
 import { MultiplayerService } from "@multiplayer/multiplayer.service";
 
+/**
+ * Global for the same reason AuditModule is: moderation is cross-cutting, and
+ * making feature modules import it creates cycles (UserModule -> here ->
+ * MultiplayerModule -> UserModule).
+ */
+@Global()
 @Module({
   imports: [AnalyticsModule, ProjectModule, MultiplayerModule],
   controllers: [ReportController],

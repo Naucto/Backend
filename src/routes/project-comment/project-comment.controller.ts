@@ -31,6 +31,7 @@ import { Request } from "express";
 import { ProjectCommentService } from "./project-comment.service";
 import { CreateCommentDto } from "./dto/create-comment.dto";
 import { UpdateCommentDto } from "./dto/update-comment.dto";
+import { ModeratedCommentFieldsDto } from "./dto/comment-response.dto";
 import {
   CommentResponseDto,
   PaginatedCommentsResponseDto
@@ -140,7 +141,7 @@ export class ProjectCommentController {
     @Param("commentId", ParseIntPipe) commentId: number,
     @Body() dto: UpdateCommentDto,
     @CurrentActor() actor: Actor
-  ): Promise<CommentResponseDto> {
+  ): Promise<CommentResponseDto & ModeratedCommentFieldsDto> {
     return this.projectCommentService.updateComment(commentId, actor, dto);
   }
 

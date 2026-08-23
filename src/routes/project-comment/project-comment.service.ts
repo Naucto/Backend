@@ -246,7 +246,7 @@ export class ProjectCommentService {
     commentId: number,
     actor: Actor,
     patch: { content?: string; hidden?: boolean; moderationReason?: string }
-  ): Promise<CommentResponseDto> {
+  ): Promise<CommentResponseDto & ModeratedCommentFieldsDto> {
     const { content, hidden, moderationReason: reason } = patch;
 
     if (hidden !== undefined && !actor.isModerator) {
@@ -284,7 +284,8 @@ export class ProjectCommentService {
           : {})
       },
       include: {
-        author: { select: AUTHOR_SELECT }
+        author: { select: AUTHOR_SELECT },
+        project: { select: { name: true, publishedName: true } }
       }
     });
 
@@ -310,7 +311,11 @@ export class ProjectCommentService {
       });
     }
 
-    return this.mapComment(updated);
+    // A moderator gets the staff shape back, so the response to a hide/restore
+    // carries the field that changed. The author gets the public shape.
+    return actor.isModerator
+      ? this.mapModeratedComment(updated)
+      : this.mapComment(updated);
   }
 
   async findOneForModeration(

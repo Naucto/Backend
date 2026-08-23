@@ -38,6 +38,7 @@ import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
 import { AccountWriteGuard } from "@auth/guards/account-write.guard";
 import { RolesGuard } from "@auth/guards/roles.guard";
 import { Actor, CurrentActor } from "@auth/actor";
+import { ModerationService } from "src/moderation/moderation.service";
 import { Roles } from "@auth/decorators/roles.decorator";
 import { Prisma } from "@prisma/client";
 import { UserResponseDto } from "./dto/user-response.dto";
@@ -71,6 +72,7 @@ export class UserController {
 
   constructor(
     private readonly userService: UserService,
+    private readonly moderationService: ModerationService,
     private readonly s3Service: S3Service,
     private readonly cloudfrontService: CloudfrontService
   ) {}
@@ -450,10 +452,15 @@ export class UserController {
   @UseGuards(JwtAuthGuard, AccountWriteGuard, RolesGuard)
   @Roles("Admin")
   async remove(
-    @Param("id", ParseIntPipe) id: number
+    @Param("id", ParseIntPipe) id: number,
+    @CurrentActor() actor: Actor
   ): Promise<{ statusCode: number; message: string }> {
     this.logger.debug(`Deleting user with ID: ${id}`);
-    await this.userService.remove(id);
+
+    // Through ModerationService rather than straight to Prisma: deleting an
+    // account is a moderation action, and this route was bypassing the rank
+    // rule, the last-admin protection and the audit entry that path enforces.
+    await this.moderationService.hardDeleteUser(id, actor.id);
 
     return {
       statusCode: HttpStatus.OK,

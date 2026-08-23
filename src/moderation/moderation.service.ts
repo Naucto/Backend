@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException
 } from "@nestjs/common";
@@ -72,7 +73,7 @@ export class ModerationService {
     status: ReportStatus;
     createdAt: Date;
   }> {
-    await this.assertTargetExists(dto.targetType, dto.targetId);
+    await this.assertTargetExists(dto.targetType, dto.targetId, reporterId);
 
     return this.prisma.report.create({
       data: {
@@ -119,6 +120,94 @@ export class ModerationService {
 
   // ─── Users ────────────────────────────────────────────────────────────────
 
+  /**
+   * Refuses a staff action aimed at a peer or a superior.
+   *
+   * Without it a moderator can ban another moderator -- or every admin -- and
+   * lock the platform's own staff out. Rank is strict: a moderator may act on
+   * ordinary users only; an admin may act on anyone but themselves.
+   */
+  private async assertMayModerateAccount(
+    targetId: number,
+    actorId: number | null
+  ): Promise<void> {
+    if (actorId === null) {
+      return;
+    }
+
+    if (targetId === actorId) {
+      throw new BadRequestException(
+        "You cannot apply a moderation action to your own account"
+      );
+    }
+
+    const [actor, target] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: actorId },
+        select: { roles: { select: { name: true } } }
+      }),
+      this.prisma.user.findUnique({
+        where: { id: targetId },
+        select: { roles: { select: { name: true } } }
+      })
+    ]);
+
+    if (!actor || !target) {
+      return;
+    }
+
+    const rank = (roles: { name: string }[]): number =>
+      roles.some((role) => role.name === "Admin")
+        ? 2
+        : roles.some((role) => role.name === "Moderator")
+          ? 1
+          : 0;
+
+    const actorRank = rank(actor.roles);
+    const targetRank = rank(target.roles);
+
+    if (targetRank === 0) {
+      return;
+    }
+
+    if (actorRank <= targetRank) {
+      throw new ForbiddenException(
+        actorRank === 1
+          ? "Moderators cannot moderate other staff accounts"
+          : "You cannot moderate an account of equal or higher rank"
+      );
+    }
+  }
+
+  /**
+   * Refuses anything that would leave the platform with no usable admin.
+   *
+   * `assertNotLastAdmin` covers role removal; banning or suspending the last
+   * admin locks everyone out just as effectively.
+   */
+  private async assertAdminsRemainReachable(
+    targetId: number,
+    nextStatus: AccountStatus
+  ): Promise<void> {
+    if (nextStatus === AccountStatus.ACTIVE) {
+      return;
+    }
+
+    const remaining = await this.prisma.user.count({
+      where: {
+        id: { not: targetId },
+        accountStatus: AccountStatus.ACTIVE,
+        roles: { some: { name: "Admin" } }
+      }
+    });
+
+    if (remaining === 0) {
+      throw new BadRequestException(
+        "This would leave no active admin; promote someone else first"
+      );
+    }
+  }
+
   async setUserStatus(
     targetId: number,
     actorId: number | null,
@@ -138,6 +227,9 @@ export class ModerationService {
     if (!before) {
       throw new NotFoundException(`User with ID ${targetId} not found`);
     }
+
+    await this.assertMayModerateAccount(targetId, actorId);
+    await this.assertAdminsRemainReachable(targetId, accountStatus);
 
     const after = await this.prisma.user.update({
       where: { id: targetId },
@@ -276,6 +368,9 @@ export class ModerationService {
       throw new NotFoundException(`User with ID ${targetId} not found`);
     }
 
+    // Resetting a peer's password hands you their account.
+    await this.assertMayModerateAccount(targetId, actorId);
+
     await this.prisma.user.update({
       where: { id: targetId },
       data: { password: hashedPassword }
@@ -303,6 +398,8 @@ export class ModerationService {
     if (!before) {
       throw new NotFoundException(`User with ID ${targetId} not found`);
     }
+
+    await this.assertMayModerateAccount(targetId, actorId);
 
     await this.assertNotLastAdmin(
       targetId,
@@ -510,7 +607,8 @@ export class ModerationService {
 
   private async assertTargetExists(
     targetType: ReportTargetType,
-    targetId: number
+    targetId: number,
+    reporterId: number
   ): Promise<void> {
     if (targetId < 1) {
       throw new BadRequestException("Invalid report target");
@@ -522,22 +620,36 @@ export class ModerationService {
         select: { id: true }
       });
       if (!exists) throw new NotFoundException("Reported user not found");
+      this.refuseSelfReport(exists.id === reporterId);
       return;
     }
 
     if (targetType === "PROJECT") {
       const exists = await this.prisma.project.findUnique({
         where: { id: targetId },
-        select: { id: true }
+        select: { id: true, userId: true }
       });
       if (!exists) throw new NotFoundException("Reported project not found");
+      this.refuseSelfReport(exists.userId === reporterId);
       return;
     }
 
     const exists = await this.prisma.comment.findUnique({
       where: { id: targetId },
-      select: { id: true }
+      select: { id: true, authorId: true }
     });
     if (!exists) throw new NotFoundException("Reported comment not found");
+    this.refuseSelfReport(exists.authorId === reporterId);
+  }
+
+  /**
+   * Reporting your own content only ever adds noise to the moderation queue --
+   * an author who wants their comment gone can delete it, and an owner who
+   * wants their project down can unpublish it.
+   */
+  private refuseSelfReport(isOwnContent: boolean): void {
+    if (isOwnContent) {
+      throw new BadRequestException("You cannot report your own content");
+    }
   }
 }

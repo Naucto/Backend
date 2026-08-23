@@ -117,6 +117,18 @@ export class ProjectService {
    */
   static readonly CONTENT_MIME_TYPE = "application/octet-stream";
 
+  /**
+   * What "publicly visible" means, in one place.
+   *
+   * Published is not enough: a moderator can hide a published project, and
+   * every listing that forgot the second half kept showing it. Spread this
+   * instead of writing `status: "COMPLETED"` by hand.
+   */
+  static readonly PUBLICLY_VISIBLE = {
+    status: ProjectStatus.COMPLETED,
+    hidden: false
+  } as const;
+
   private visibilityHook?: ProjectVisibilityHook;
 
   // The relations every "playable project" response carries. Shared so the
@@ -1136,7 +1148,7 @@ export class ProjectService {
   ): Promise<ReleaseProject[]> {
     return this.fetchPublishedGamesByUserWhere(
       {
-        status: "COMPLETED",
+        ...ProjectService.PUBLICLY_VISIBLE,
         OR: [
           { userId },
           {
@@ -1158,7 +1170,7 @@ export class ProjectService {
   ): Promise<ReleaseProject[]> {
     return this.fetchPublishedGamesByUserWhere(
       {
-        status: "COMPLETED",
+        ...ProjectService.PUBLICLY_VISIBLE,
         userLikes: {
           some: { userId }
         }
