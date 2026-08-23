@@ -1,11 +1,20 @@
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
 model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  username  String   @unique
-  nickname  String?
-  description String?
-  password  String?
-  createdAt DateTime @default(now())
+  id               Int           @id @default(autoincrement())
+  email            String        @unique
+  username         String        @unique
+  nickname         String?
+  description      String?
+  password         String?
+  createdAt        DateTime      @default(now())
+  // Only the status lives here: who changed it, when and why come from
+  // ModerationAction, so those facts are recorded once instead of per entity.
+  accountStatus    AccountStatus @default(ACTIVE)
 
   roles Role[] @relation("UserRoles")
 
@@ -27,6 +36,9 @@ model User {
   hostingGameSessions GameSession[] @relation("UserHostedGameSessions")
 
   refreshTokens RefreshToken[]
+  reports       Report[]           @relation("ReportReporter")
+  auditActions  ModerationAction[] @relation("ModerationActor")
+  analyticsEvents AnalyticsEvent[] @relation("AnalyticsActor")
   notifications Notification[]
 }
 

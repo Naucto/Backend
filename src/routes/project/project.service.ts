@@ -4,7 +4,8 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
-  NotFoundException
+  NotFoundException,
+  Optional
 } from "@nestjs/common";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { CreateProjectDto } from "./dto/create-project.dto";
@@ -14,10 +15,29 @@ import {
   RemoveCollaboratorDto
 } from "./dto/collaborator-project.dto";
 import { S3Service } from "@s3/s3.service";
-import { Prisma, Project, User } from "@prisma/client";
+import { Actor } from "@auth/actor";
+import { AuditService, projectRef } from "src/moderation/audit";
+
+/**
+ * Side effects a project going dark must trigger outside this module (ending
+ * live multiplayer sessions). Registered instead of injected: multiplayer
+ * already depends on this service, so injecting it back would be circular.
+ */
+export interface ProjectVisibilityHook {
+  onProjectHidden(projectId: number): Promise<unknown>;
+}
+import {
+  AnalyticsEventType,
+  ModerationActionType,
+  Prisma,
+  Project,
+  ProjectStatus,
+  User
+} from "@prisma/client";
 import { ConfigService } from "@nestjs/config";
 import { DownloadedFile } from "@s3/s3.interface";
 import { Readable } from "stream";
+import { AnalyticsService } from "src/analytics/analytics.service";
 
 export const CREATOR_SELECT = {
   id: true,
@@ -90,6 +110,41 @@ const RELEASE_WINDOW_DAYS: Record<Exclude<ReleaseWindow, "all">, number> = {
 
 @Injectable()
 export class ProjectService {
+  /**
+   * Project content is an opaque Yjs update blob that clients decode themselves.
+   * Storing and serving it under a fixed binary type keeps a client-declared
+   * `text/html` from ever being rendered off our origin or the CDN.
+   */
+  static readonly CONTENT_MIME_TYPE = "application/octet-stream";
+
+  /**
+   * What "publicly visible" means, in one place.
+   *
+   * Published is not enough: a moderator can hide a published project, and
+   * every listing that forgot the second half kept showing it. Spread this
+   * instead of writing `status: "COMPLETED"` by hand.
+   */
+  static readonly PUBLICLY_VISIBLE = {
+    status: ProjectStatus.COMPLETED,
+    hidden: false
+  } as const;
+
+  private visibilityHook?: ProjectVisibilityHook;
+
+  // The relations every "playable project" response carries. Shared so the
+  // public release, the published listing, and the staff preview cannot drift
+  // on which collaborators or which comments they count.
+  static readonly RELEASE_INCLUDE = {
+    collaborators: { select: COLLABORATOR_SELECT },
+    creator: { select: CREATOR_SELECT },
+    _count: {
+      select: {
+        forks: true,
+        comments: { where: { deleted: false, hidden: false } }
+      }
+    }
+  };
+
   static COLLABORATOR_SELECT = COLLABORATOR_SELECT;
   static CREATOR_SELECT = CREATOR_SELECT;
 
@@ -100,7 +155,9 @@ export class ProjectService {
   constructor(
     @Inject(ConfigService) configService: ConfigService,
     private prisma: PrismaService,
-    private readonly s3Service: S3Service
+    private readonly s3Service: S3Service,
+    private readonly auditService: AuditService,
+    @Optional() private readonly analyticsService?: AnalyticsService
   ) {
     this.max_history_version =
       configService.get<number>("S3_MAX_AUTO_HISTORY_VERSION") ?? 10;
@@ -198,7 +255,8 @@ export class ProjectService {
     filters: PublishedProjectFilters = {}
   ): Prisma.ProjectWhereInput {
     const where: Prisma.ProjectWhereInput = {
-      status: "COMPLETED"
+      status: "COMPLETED",
+      hidden: false
     };
     const andClauses: Prisma.ProjectWhereInput[] = [];
     const normalizedSearch = filters.search?.trim();
@@ -326,12 +384,17 @@ export class ProjectService {
   async findAll(
     userId: number,
     page?: number,
-    limit?: number
+    limit?: number,
+    options: { scope?: "mine" | "all"; hidden?: boolean } = {}
   ): Promise<PaginatedProjectsResult<ProjectEx>> {
     const safePage = this.normalizePage(page);
     const safeLimit = this.normalizeLimit(limit);
     const skip = (safePage - 1) * safeLimit;
-    const where = this.buildUserProjectsWhere(userId);
+    // A moderator listing "all" is the same query without the ownership clause;
+    // hidden projects only surface for them, which is why the flag is a column.
+    const where = options.scope === "all"
+      ? (options.hidden !== undefined ? { hidden: options.hidden } : {})
+      : this.buildUserProjectsWhere(userId);
 
     const [total, projects] = await this.prisma.$transaction([
       this.prisma.project.count({
@@ -394,7 +457,7 @@ export class ProjectService {
     }
 
     try {
-      return await this.prisma.project.create({
+      const project = await this.prisma.project.create({
         data: {
           ...createProjectDto,
           tags: this.normalizeTags(createProjectDto.tags),
@@ -412,6 +475,13 @@ export class ProjectService {
           }
         }
       });
+
+      await this.analyticsService?.record(AnalyticsEventType.PROJECT_CREATED, {
+        userId,
+        projectId: project.id
+      });
+
+      return project;
     } catch (error) {
       throw new InternalServerErrorException("Failed to create project", {
         cause: error
@@ -419,21 +489,96 @@ export class ProjectService {
     }
   }
 
+  /**
+   * Updates a project through the ordinary route.
+   *
+   * A collaborator edits their own project; a moderator edits anyone's, and may
+   * additionally set the staff-only moderation fields. Both go through here so
+   * there is one endpoint per resource rather than a parallel admin copy -- the
+   * difference is who the actor is, and that is recorded in the audit log.
+   */
   async update(
     id: number,
-    updateProjectDto: UpdateProjectDto
+    updateProjectDto: UpdateProjectDto,
+    actor: Actor
   ): Promise<Project> {
-    await this.findOne(id);
+    const before = await this.findOne(id);
 
-    return this.prisma.project.update({
+    const { hidden, moderationReason, ...patch } = updateProjectDto;
+    const isModerationChange = hidden !== undefined;
+
+    if (isModerationChange && !actor.isModerator) {
+      throw new ForbiddenException(
+        "Only a moderator can change a project's visibility"
+      );
+    }
+
+    const moderationData = isModerationChange
+      ? {
+        // Only the flag is stored: who hid it, when and why come from the audit
+        // entry written below, so those three facts live in exactly one place.
+        hidden,
+        // Hiding archives the project; restoring hands it back as a draft for
+        // its owner to republish deliberately.
+        status: hidden ? ProjectStatus.ARCHIVED : ProjectStatus.IN_PROGRESS
+      }
+      : {};
+
+    const updated = await this.prisma.project.update({
       where: { id },
       data: {
-        ...updateProjectDto,
-        ...(updateProjectDto.tags
-          ? { tags: this.normalizeTags(updateProjectDto.tags) }
-          : {})
+        ...patch,
+        ...(patch.tags ? { tags: this.normalizeTags(patch.tags) } : {}),
+        ...moderationData
       }
     });
+
+    if (isModerationChange) {
+      // Taking a project down must also pull the published build and end live
+      // sessions; both live behind this hook so the ordinary route is enough.
+      await this.onVisibilityChanged(before, updated);
+    }
+
+    if (isModerationChange || actor.actsAsModeratorOn(before)) {
+      await this.auditService.record({
+        ref: projectRef(id),
+        actor,
+        action: isModerationChange
+          ? hidden
+            ? ModerationActionType.HIDE_PROJECT
+            : ModerationActionType.RESTORE_PROJECT
+          : ModerationActionType.EDIT_PROJECT,
+        reason: moderationReason ?? null,
+        before,
+        after: updated
+      });
+    }
+
+    return updated;
+  }
+
+  /** Registered by the moderation layer; see `ProjectModerationHooks`. */
+  private async onVisibilityChanged(
+    before: Project,
+    after: Project
+  ): Promise<void> {
+    if (!after.hidden) {
+      return;
+    }
+
+    if (before.status === ProjectStatus.COMPLETED) {
+      await this.removeReleaseArtifact(after.id);
+    }
+
+    await this.visibilityHook?.onProjectHidden(after.id);
+  }
+
+  /**
+   * Set by `ModerationModule` at startup. Kept as a hook rather than a direct
+   * dependency because multiplayer already depends on this service.
+   */
+  registerVisibilityHook(hook: ProjectVisibilityHook): void {
+    this.visibilityHook = hook;
   }
 
   async remove(id: number): Promise<void> {
@@ -645,7 +790,8 @@ export class ProjectService {
     await this.updateLastTimeUpdate(projectId);
     await this.s3Service.uploadFile({
       file,
-      keyName: `save/${projectId}/${actual_time}`
+      keyName: `save/${projectId}/${actual_time}`,
+      contentType: ProjectService.CONTENT_MIME_TYPE
     });
   }
 
@@ -661,7 +807,8 @@ export class ProjectService {
 
     await this.s3Service.uploadFile({
       file: file,
-      keyName: `checkpoint/${projectId}/${name}`
+      keyName: `checkpoint/${projectId}/${name}`,
+      contentType: ProjectService.CONTENT_MIME_TYPE
     });
   }
 
@@ -702,9 +849,25 @@ export class ProjectService {
     const releaseKey = `release/${projectId}`;
     await this.s3Service.uploadFile({
       file: file,
-      keyName: releaseKey
+      keyName: releaseKey,
+      contentType: ProjectService.CONTENT_MIME_TYPE
     });
     await this.s3Service.setObjectPublicRead(releaseKey);
+    await this.analyticsService?.record(AnalyticsEventType.PROJECT_PUBLISHED, {
+      projectId
+    });
+  }
+
+  /**
+   * Takes the published build off S3. Anything that stops a project from being
+   * publicly playable must call this -- the release object is set public-read on
+   * publish, so leaving it behind keeps the game reachable by CDN URL.
+   *
+   * S3 deletes are idempotent, so this is safe on a project that was never
+   * published.
+   */
+  async removeReleaseArtifact(projectId: number): Promise<void> {
+    await this.s3Service.deleteFile({ key: `release/${projectId}` });
   }
 
   async unpublish(projectId: number): Promise<void> {
@@ -715,7 +878,10 @@ export class ProjectService {
       }
     });
 
-    await this.s3Service.deleteFile({ key: `release/${projectId}` });
+    await this.removeReleaseArtifact(projectId);
+    await this.analyticsService?.record(AnalyticsEventType.PROJECT_UNPUBLISHED, {
+      projectId
+    });
   }
 
   async updateRelease(projectId: number): Promise<void> {
@@ -740,7 +906,8 @@ export class ProjectService {
     const releaseKey = `release/${projectId}`;
     await this.s3Service.uploadFile({
       file: file,
-      keyName: releaseKey
+      keyName: releaseKey,
+      contentType: ProjectService.CONTENT_MIME_TYPE
     });
     await this.s3Service.setObjectPublicRead(releaseKey);
 
@@ -802,24 +969,11 @@ export class ProjectService {
   async fetchRelease(projectId: number): Promise<ReleaseProject> {
     const project = await this.prisma.project.findFirst({
       where: {
-        id: projectId
+        id: projectId,
+        status: "COMPLETED",
+        hidden: false
       },
-      include: {
-        collaborators: {
-          select: ProjectService.COLLABORATOR_SELECT
-        },
-        creator: {
-          select: ProjectService.CREATOR_SELECT
-        },
-        _count: {
-          select: {
-            forks: true,
-            comments: {
-              where: { deleted: false }
-            }
-          }
-        }
-      }
+      include: ProjectService.RELEASE_INCLUDE
     });
 
     if (!project) {
@@ -831,14 +985,75 @@ export class ProjectService {
     );
   }
 
+  /**
+   * Metadata for the staff preview: the same shape the public release endpoint
+   * returns, but without the published/visible filter, so a moderator can look
+   * at a project before it goes live or after it has been hidden.
+   */
+  async fetchProjectPreview(projectId: number): Promise<ReleaseProject> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: ProjectService.RELEASE_INCLUDE
+    });
+
+    if (!project) {
+      throw new NotFoundException(`Project with ID ${projectId} not found`);
+    }
+
+    const mapped = this.withCommentCount(project as ProjectWithCounts);
+
+    // An unpublished project has no published snapshot to overlay, so preview
+    // shows its working fields; a published one shows what players actually see.
+    return project.status === ProjectStatus.COMPLETED
+      ? this.applyPublishedSnapshot(mapped)
+      : mapped;
+  }
+
+  /**
+   * The playable bytes for the staff preview: the published release when there
+   * is one, otherwise the latest working save. Previewing a published project
+   * therefore exercises the exact artifact players load.
+   */
+  async fetchPreviewContent(projectId: number): Promise<DownloadedFile> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true, status: true }
+    });
+
+    if (!project) {
+      throw new NotFoundException(`Project with ID ${projectId} not found`);
+    }
+
+    if (project.status === ProjectStatus.COMPLETED) {
+      const releaseKey = `release/${projectId}`;
+      if (await this.s3Service.fileExists(releaseKey)) {
+        return this.s3Service.downloadFile({ key: releaseKey });
+      }
+    }
+
+    return this.fetchLastVersion(projectId);
+  }
+
   async fetchReleaseContent(projectId: number): Promise<DownloadedFile> {
+    const project = await this.prisma.project.findFirst({
+      where: { id: projectId, status: "COMPLETED", hidden: false },
+      select: { id: true }
+    });
+
+    if (!project) {
+      throw new NotFoundException(
+        `Published project with ID ${projectId} not found`
+      );
+    }
+
     return this.s3Service.downloadFile({ key: `release/${projectId}` });
   }
 
   async fetchPublishedGames(): Promise<ReleaseProject[]> {
     const projects = await this.prisma.project.findMany({
       where: {
-        status: "COMPLETED"
+        status: "COMPLETED",
+        hidden: false
       },
       include: {
         collaborators: {
@@ -850,7 +1065,7 @@ export class ProjectService {
         _count: {
           select: {
             forks: true,
-            comments: { where: { deleted: false } }
+            comments: { where: { deleted: false, hidden: false } }
           }
         }
       }
@@ -887,7 +1102,7 @@ export class ProjectService {
           _count: {
             select: {
               forks: true,
-              comments: { where: { deleted: false } }
+              comments: { where: { deleted: false, hidden: false } }
             }
           }
         },
@@ -933,7 +1148,7 @@ export class ProjectService {
   ): Promise<ReleaseProject[]> {
     return this.fetchPublishedGamesByUserWhere(
       {
-        status: "COMPLETED",
+        ...ProjectService.PUBLICLY_VISIBLE,
         OR: [
           { userId },
           {
@@ -955,7 +1170,7 @@ export class ProjectService {
   ): Promise<ReleaseProject[]> {
     return this.fetchPublishedGamesByUserWhere(
       {
-        status: "COMPLETED",
+        ...ProjectService.PUBLICLY_VISIBLE,
         userLikes: {
           some: { userId }
         }
@@ -1009,7 +1224,8 @@ export class ProjectService {
     const project = await this.prisma.project.findFirst({
       where: {
         id: projectId,
-        status: "COMPLETED"
+        status: "COMPLETED",
+        hidden: false
       },
       select: { id: true }
     });
@@ -1024,6 +1240,10 @@ export class ProjectService {
       where: { id: projectId },
       data: { viewCount: { increment: 1 } },
       select: { viewCount: true }
+    });
+
+    await this.analyticsService?.record(AnalyticsEventType.GAME_VIEWED, {
+      projectId
     });
 
     return { viewCount: updated.viewCount };
@@ -1087,6 +1307,10 @@ export class ProjectService {
     await this.prisma.like.deleteMany({ where: { userId, projectId } });
 
     const likes = await this.syncLikeCount(projectId);
+    await this.analyticsService?.record(AnalyticsEventType.LIKE_REMOVED, {
+      userId,
+      projectId
+    });
     return { likes, liked: false };
   }
 
@@ -1094,8 +1318,8 @@ export class ProjectService {
     projectId: number,
     userId: number
   ): Promise<{ likes: number; liked: boolean }> {
-    const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
+    const project = await this.prisma.project.findFirst({
+      where: { id: projectId, status: "COMPLETED", hidden: false },
       select: { likes: true }
     });
 
@@ -1113,8 +1337,8 @@ export class ProjectService {
   }
 
   async fork(sourceProjectId: number, userId: number): Promise<ProjectEx> {
-    const sourceProject = await this.prisma.project.findUnique({
-      where: { id: sourceProjectId }
+    const sourceProject = await this.prisma.project.findFirst({
+      where: { id: sourceProjectId, hidden: false }
     });
 
     if (!sourceProject) {
@@ -1153,6 +1377,12 @@ export class ProjectService {
         }
       }
     }) as ProjectEx;
+
+    await this.analyticsService?.record(AnalyticsEventType.PROJECT_CREATED, {
+      userId,
+      projectId: newProject.id,
+      metadata: { forkedFromId: sourceProjectId }
+    });
 
     const releaseContent = await this.s3Service.downloadFile({
       key: `release/${sourceProjectId}`

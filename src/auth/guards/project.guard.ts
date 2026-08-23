@@ -6,6 +6,7 @@ import {
   NotFoundException
 } from "@nestjs/common";
 import { PrismaService } from "@ourPrisma/prisma.service";
+import { Actor } from "@auth/actor";
 
 @Injectable()
 export class ProjectCreatorGuard implements CanActivate {
@@ -37,6 +38,15 @@ export class ProjectCreatorGuard implements CanActivate {
   }
 }
 
+/**
+ * Grants access to a project's own routes.
+ *
+ * Collaborators pass because it is their project; moderators pass because
+ * acting on content that is not theirs is the point of the role. Routing
+ * moderators through the ordinary endpoints keeps one set of routes per
+ * resource instead of a parallel admin copy -- the audit log records who
+ * actually acted.
+ */
 @Injectable()
 export class ProjectCollaboratorGuard implements CanActivate {
   constructor(private readonly prisma: PrismaService) {}
@@ -59,8 +69,10 @@ export class ProjectCollaboratorGuard implements CanActivate {
       throw new NotFoundException("Project not found");
     }
 
-    const isCollaborator = project.collaborators.some((c) => c.id === user.id);
-    if (!isCollaborator) {
+    const actor = Actor.from(user);
+    const isCollaborator = project.collaborators.some((c) => c.id === actor.id);
+
+    if (!isCollaborator && !actor.isModerator) {
       throw new ForbiddenException("No access to this project");
     }
 

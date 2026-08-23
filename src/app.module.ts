@@ -14,6 +14,11 @@ import { MultiplayerModule } from "@multiplayer/multiplayer.module";
 import { ProjectCommentModule } from "@project-comment/project-comment.module";
 import { NotificationsModule } from "src/notifications/notifications.module";
 import { AppConfig } from "src/app.config";
+import { AnalyticsModule } from "src/analytics/analytics.module";
+import { ModerationModule } from "src/moderation/moderation.module";
+import { AuditModule } from "src/moderation/audit";
+import { AdminModule } from "src/admin/admin.module";
+
 import {
   GracefulShutdownModule,
   IGracefulShutdownConfigOptions
@@ -35,6 +40,9 @@ import {
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
     PrismaModule,
+    AnalyticsModule,
+    AuditModule,
+    ModerationModule,
     AuthModule,
     S3Module,
     UserModule,
@@ -44,6 +52,7 @@ import {
     WebRTCModule,
     MultiplayerModule,
     ProjectCommentModule,
+    AdminModule,
     NotificationsModule
   ],
   providers: [AppConfig],

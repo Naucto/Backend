@@ -1,5 +1,6 @@
 import {
   Body,
+  ForbiddenException,
   Controller,
   Delete,
   Get,
@@ -37,6 +38,7 @@ import type {
 import { CreateProjectDto } from "@project/dto/create-project.dto";
 import { UpdateProjectDto } from "@project/dto/update-project.dto";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
+import { AccountWriteGuard } from "@auth/guards/account-write.guard";
 import {
   ProjectCollaboratorGuard,
   ProjectCreatorGuard
@@ -66,12 +68,17 @@ import {
   ProjectsCountResponseDto,
   SignedUrlResponseDto
 } from "./dto/project-response.dto";
+import { Roles } from "@auth/decorators/roles.decorator";
+import { RolesGuard } from "@auth/guards/roles.guard";
+import { Actor, CurrentActor } from "@auth/actor";
 import { S3DownloadException } from "@s3/s3.error";
 import { S3Service } from "@s3/s3.service";
+import { DownloadedFile } from "@s3/s3.interface";
 import { CloudfrontService } from "src/routes/s3/edge.service";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { Public } from "@auth/decorators/public.decorator";
 import { ImageUrlResponseDto } from "src/routes/common/dto/image-url-response.dto";
+import { OptionalJwtAuthGuard } from "@auth/guards/optional-jwt-auth.guard";
 import { LikeResponseDto } from "./dto/like-response.dto";
 import { ViewResponseDto } from "./dto/view-response.dto";
 
@@ -81,7 +88,7 @@ interface RequestWithUser extends Request {
 
 @ApiTags("projects")
 @Controller("projects")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, AccountWriteGuard)
 @ApiBearerAuth("JWT-auth")
 export class ProjectController {
   constructor(
@@ -148,6 +155,60 @@ export class ProjectController {
   }
 
   @Public()
+  /**
+   * Streams a stored project blob to the client. Every download endpoint goes
+   * through this so they cannot drift on headers or on how a missing object is
+   * reported.
+   *
+   * The stored `Content-Type` is deliberately NOT echoed. It originates from the
+   * client's multipart upload, so serving it back would let someone upload
+   * `text/html` and get script execution on this origin -- where a same-origin
+   * script can read the readable admin CSRF cookie and issue credentialed
+   * `/admin/*` calls. These endpoints all return opaque blobs the client decodes
+   * itself, so a fixed binary type plus `attachment` is both correct and inert.
+   */
+  private streamDownload(
+    res: Response,
+    file: DownloadedFile,
+    options: {
+      filename?: string;
+      extraHeaders?: Record<string, string | undefined>;
+    } = {}
+  ): void {
+    res.set({
+      "Content-Type": ProjectService.CONTENT_MIME_TYPE,
+      "Content-Length": String(file.contentLength ?? 0),
+      "X-Content-Type-Options": "nosniff",
+      ...(options.extraHeaders ?? {})
+    });
+
+    // `res.attachment` encodes the filename properly; interpolating a
+    // user-chosen checkpoint name into the header by hand would not.
+    res.attachment(options.filename ?? "project-content.bin");
+
+    file.body.pipe(res);
+  }
+
+  private failDownload(res: Response, error: unknown, context: string): void {
+    if (error instanceof S3DownloadException) {
+      this.logger.warn(`${context}: not found on storage (key: ${error.key})`);
+      if (!res.headersSent) {
+        res.status(404).json({ message: "File not found" });
+      }
+      return;
+    }
+
+    if (error instanceof Error) {
+      this.logger.error(`${context}: ${error.message}`, error.stack);
+    } else {
+      this.logger.error(`${context}: ${JSON.stringify(error)}`);
+    }
+
+    if (!res.headersSent) {
+      res.status(500).json({ message: "Internal server error" });
+    }
+  }
+
   @Get("releases")
   @ApiOperation({ summary: "Get all released projects" })
   @ApiResponse({
@@ -247,30 +308,9 @@ export class ProjectController {
   ): Promise<void> {
     try {
       const file = await this.projectService.fetchReleaseContent(Number(id));
-      res.set({
-        "Content-Type": file.contentType,
-        "Content-Length": file.contentLength
-      });
-
-      file.body.pipe(res);
+      this.streamDownload(res, file);
     } catch (error) {
-      if (error instanceof Error) {
-        this.logger.error(
-          `Failed to fetch content for project ${id}: ${error.message}`,
-          error.stack
-        );
-      } else {
-        this.logger.error(
-          `Failed to fetch content for project ${id}: ${JSON.stringify(error)}`
-        );
-      }
-
-      if (error instanceof S3DownloadException) {
-        res.status(404).json({ message: "File not found" });
-        return;
-      }
-      res.status(500).json({ message: "Internal server error" });
-      return;
+      this.failDownload(res, error, `Release content for project ${id}`);
     }
   }
 
@@ -300,6 +340,18 @@ export class ProjectController {
   @ApiOperation({ summary: "Retrieve the paginated list of projects" })
   @ApiQuery({ name: "page", type: "number", required: false })
   @ApiQuery({ name: "limit", type: "number", required: false })
+  @ApiQuery({
+    name: "scope",
+    enum: ["mine", "all"],
+    required: false,
+    description: "\"all\" lists every project. Moderators only."
+  })
+  @ApiQuery({
+    name: "hidden",
+    type: "boolean",
+    required: false,
+    description: "Filter on moderation visibility. Moderators only."
+  })
   @ApiResponse({
     status: 200,
     description:
@@ -308,15 +360,28 @@ export class ProjectController {
   })
   @ApiResponse({ status: 500, description: "Internal server error" })
   async findAll(
-    @Req() request: RequestWithUser,
+    @CurrentActor() actor: Actor,
     @Query("page") page?: string,
-    @Query("limit") limit?: string
+    @Query("limit") limit?: string,
+    @Query("scope") scope?: string,
+    @Query("hidden") hidden?: string
   ): Promise<PaginatedProjectsResponseDto> {
-    const user = request.user;
+    // `scope=all` is the moderation listing: same resource, no ownership
+    // clause. Refused to anyone else rather than served by a separate route.
+    if ((scope === "all" || hidden !== undefined) && !actor.isModerator) {
+      throw new ForbiddenException(
+        "Listing every project requires a moderator"
+      );
+    }
+
     return this.projectService.findAll(
-      user.id,
+      actor.id,
       this.parseOptionalInt(page),
-      this.parseOptionalInt(limit)
+      this.parseOptionalInt(limit),
+      {
+        ...(scope === "all" ? { scope: "all" as const } : {}),
+        ...(hidden !== undefined ? { hidden: hidden === "true" } : {})
+      }
     );
   }
 
@@ -432,9 +497,10 @@ export class ProjectController {
   @ApiResponse({ status: 500, description: "Error updating project" })
   async update(
     @Param("id", ParseIntPipe) id: number,
-    @Body() updateProjectDto: UpdateProjectDto
+    @Body() updateProjectDto: UpdateProjectDto,
+    @CurrentActor() actor: Actor
   ): Promise<ProjectResponseDto> {
-    return this.projectService.update(id, updateProjectDto);
+    return this.projectService.update(id, updateProjectDto, actor);
   }
 
   @UseGuards(ProjectCreatorGuard)
@@ -601,6 +667,16 @@ export class ProjectController {
         .addMaxSizeValidator({
           maxSize: 100 * 1024 * 1024
         })
+        // The editor always sends the Yjs blob as octet-stream. Rejecting
+        // anything else keeps a renderable type from reaching S3 in the first
+        // place -- the release object is public-read and served off the CDN,
+        // outside this app's response headers.
+        .addFileTypeValidator({
+          fileType: /^application\/octet-stream$/,
+          // Check the declared type only: a Yjs update has no magic number, so
+          // content sniffing would reject every legitimate save.
+          skipMagicNumbersValidation: true
+        })
         .build({
           errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY
         })
@@ -712,7 +788,7 @@ export class ProjectController {
     @Param("id", ParseIntPipe) id: number
   ): Promise<ImageUrlResponseDto> {
     const project = await this.prismaService.project.findFirst({
-      where: { id, status: "COMPLETED" },
+      where: { id, status: "COMPLETED", hidden: false },
       select: { id: true }
     });
 
@@ -729,6 +805,60 @@ export class ProjectController {
     const version = head.ETag?.replace(/"/g, "") ?? Date.now().toString();
     const url = `${this.cloudfrontService.getCDNUrl(key)}?v=${version}`;
     return { url };
+  }
+
+  // Staff preview. Moderators need to actually run a game to judge a report, and
+  // a project under review is usually either not published yet or already
+  // hidden -- both invisible to the public release endpoints above.
+  @Get(":id/preview")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("Admin", "Moderator")
+  @ApiOperation({
+    summary: "Get any project's metadata for staff preview, published or not"
+  })
+  @ApiParam({ name: "id", type: "string" })
+  @ApiResponse({
+    status: 200,
+    description: "Project metadata",
+    type: ProjectExResponseDto
+  })
+  @ApiResponse({ status: 403, description: "Staff access required" })
+  @ApiResponse({ status: 404, description: "Project not found" })
+  async getProjectPreview(
+    @Param("id") id: string
+  ): Promise<ProjectExResponseDto> {
+    return this.projectService.fetchProjectPreview(Number(id));
+  }
+
+  @Get(":id/preview/content")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("Admin", "Moderator")
+  @ApiOperation({
+    summary:
+      "Get any project's playable content for staff preview: the published release when there is one, otherwise the latest save"
+  })
+  @ApiParam({ name: "id", type: "string" })
+  @ApiResponse({
+    status: 200,
+    description: "Playable project content",
+    content: {
+      "application/octet-stream": {
+        schema: { type: "string", format: "binary" }
+      }
+    }
+  })
+  @ApiResponse({ status: 403, description: "Staff access required" })
+  @ApiResponse({ status: 404, description: "Project or content not found" })
+  async getProjectPreviewContent(
+    @Param("id") id: string,
+    @Res() res: Response
+  ): Promise<void> {
+    try {
+      const file = await this.projectService.fetchPreviewContent(Number(id));
+      this.streamDownload(res, file);
+    } catch (error) {
+      this.failDownload(res, error, `Preview content for project ${id}`);
+    }
   }
 
   @Get(":id/fetchContent")
@@ -752,31 +882,9 @@ export class ProjectController {
   ): Promise<void> {
     try {
       const file = await this.projectService.fetchLastVersion(id);
-
-      res.set({
-        "Content-Type": file.contentType,
-        "Content-Length": file.contentLength
-      });
-
-      file.body.pipe(res);
+      this.streamDownload(res, file);
     } catch (error) {
-      if (error instanceof Error) {
-        this.logger.error(
-          `Failed to fetch content for project ${id}: ${error.message}`,
-          error.stack
-        );
-      } else {
-        this.logger.error(
-          `Failed to fetch content for project ${id}: ${JSON.stringify(error)}`
-        );
-      }
-
-      if (error instanceof S3DownloadException) {
-        res.status(404).json({ message: "File not found" });
-        return;
-      }
-      res.status(500).json({ message: "Internal server error" });
-      return;
+      this.failDownload(res, error, `Content for project ${id}`);
     }
   }
 
@@ -918,31 +1026,9 @@ export class ProjectController {
         Number(id),
         version
       );
-
-      res.set({
-        "Content-Type": file.contentType,
-        "Content-Length": file.contentLength
-      });
-
-      file.body.pipe(res);
+      this.streamDownload(res, file);
     } catch (error) {
-      if (error instanceof Error) {
-        this.logger.error(
-          `Failed to fetch content for project ${id}: ${error.message}`,
-          error.stack
-        );
-      } else {
-        this.logger.error(
-          `Failed to fetch content for project ${id}: ${JSON.stringify(error)}`
-        );
-      }
-
-      if (error instanceof S3DownloadException) {
-        res.status(404).json({ message: "File not found" });
-        return;
-      }
-      res.status(500).json({ message: "Internal server error" });
-      return;
+      this.failDownload(res, error, `Version ${version} of project ${id}`);
     }
   }
 
@@ -973,42 +1059,24 @@ export class ProjectController {
       );
       const project = await this.projectService.findOne(id);
 
-      res.set({
-        "Content-Type": file.contentType,
-        "Content-Length": (file.contentLength ?? 0).toString(),
-        "Content-Disposition": `attachment; filename="${checkpoint}"`,
-        "Cache-Control": "no-cache, no-store, must-revalidate",
-        Pragma: "no-cache",
-        Expires: "0",
-        ETag: project.contentUploadedAt
-          ? `W/"${project.contentUploadedAt.getTime()}"`
-          : undefined
+      this.streamDownload(res, file, {
+        filename: checkpoint,
+        extraHeaders: {
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          Pragma: "no-cache",
+          Expires: "0",
+          ETag: project.contentUploadedAt
+            ? `W/"${project.contentUploadedAt.getTime()}"`
+            : undefined
+        }
       });
-
-      file.body.pipe(res);
     } catch (error) {
-      if (error instanceof S3DownloadException) {
-        this.logger.warn(
-          `S3 File not found for project ${id} (Key: ${error.key})`
-        );
-        res.status(404).json({ message: "File not found on storage server" });
-        return;
-      }
-      if (error instanceof Error) {
-        this.logger.error(`Download failed: ${error.message}`, error.stack);
-      } else {
-        this.logger.error("Download failed: Unknown error");
-      }
-
-      if (!res.headersSent) {
-        res
-          .status(500)
-          .json({ message: "Internal server error during download" });
-      }
+      this.failDownload(res, error, `Checkpoint ${checkpoint} of project ${id}`);
     }
   }
 
   @Post("releases/:id/like")
+  @UseGuards(OptionalJwtAuthGuard, AccountWriteGuard)
   @ApiOperation({
     summary: "Like a published project (idempotent, authenticated users only)"
   })

@@ -30,6 +30,7 @@ import {
   UseGuards
 } from "@nestjs/common";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
+import { AccountWriteGuard } from "@auth/guards/account-write.guard";
 import { RequestWithUser } from "@auth/auth.types";
 import { ProjectNotFoundError } from "@project/project.error";
 import { getExcerrMessage } from "@util/errors";
@@ -56,7 +57,7 @@ import {
 @ApiTags("game-sessions")
 @ApiBearerAuth("JWT-auth")
 @Controller("game-sessions")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, AccountWriteGuard)
 export class MultiplayerController {
   private readonly _logger = new Logger(MultiplayerController.name);
 

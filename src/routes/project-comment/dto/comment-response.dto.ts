@@ -1,4 +1,4 @@
-import { ApiProperty } from "@nestjs/swagger";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 
 export class CommentAuthorDto {
   @ApiProperty({ example: 1 })
@@ -55,4 +55,46 @@ export class PaginatedCommentsResponseDto {
 
   @ApiProperty({ example: 20 })
   limit!: number;
+}
+
+export class CommentListMetaDto {
+  @ApiProperty()
+  page!: number;
+
+  @ApiProperty()
+  limit!: number;
+
+  @ApiProperty()
+  total!: number;
+
+  @ApiProperty()
+    totalPages!: number;
+}
+
+/**
+ * Moderation-only fields on the comment response.
+ *
+ * Present when a moderator reads through `/comments`; absent for the public
+ * per-project listing, which must not leak who authored a hidden comment.
+ */
+export class ModeratedCommentFieldsDto {
+  @ApiPropertyOptional()
+  hidden?: boolean;
+
+  @ApiPropertyOptional({ nullable: true })
+  authorId?: number | null;
+
+  @ApiPropertyOptional()
+  authorUsername?: string;
+
+  @ApiPropertyOptional()
+  projectName?: string;
+}
+
+export class CommentListResponseDto {
+  @ApiProperty({ type: [CommentResponseDto] })
+    data!: CommentResponseDto[];
+
+  @ApiProperty({ type: CommentListMetaDto })
+    meta!: CommentListMetaDto;
 }

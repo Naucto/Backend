@@ -25,7 +25,26 @@ const configServiceValue = {
   })
 };
 
-function makeRefreshTokenMock(overrides: Record<string, jest.Mock> = {}) {
+type RefreshTokenMock = {
+  create: jest.Mock;
+  deleteMany: jest.Mock;
+  findMany: jest.Mock;
+  findUnique: jest.Mock;
+  delete: jest.Mock;
+};
+
+type TransactionClientMock = {
+  refreshToken: Pick<RefreshTokenMock, "create" | "deleteMany" | "delete">;
+};
+
+type PrismaServiceMock = {
+  $transaction: jest.Mock;
+  refreshToken: RefreshTokenMock;
+};
+
+function makeRefreshTokenMock(
+  overrides: Record<string, jest.Mock> = {}
+): RefreshTokenMock {
   return {
     create: jest.fn().mockResolvedValue({
       id: 1,
@@ -41,9 +60,11 @@ function makeRefreshTokenMock(overrides: Record<string, jest.Mock> = {}) {
   };
 }
 
-function makePrisma(refreshTokenOverrides: Record<string, jest.Mock> = {}) {
+function makePrisma(
+  refreshTokenOverrides: Record<string, jest.Mock> = {}
+): PrismaServiceMock {
   return {
-    $transaction: jest.fn((cb: any) =>
+    $transaction: jest.fn((cb: (tx: TransactionClientMock) => unknown) =>
       cb({
         refreshToken: {
           create: jest.fn().mockResolvedValue({
@@ -64,6 +85,16 @@ function makePrisma(refreshTokenOverrides: Record<string, jest.Mock> = {}) {
 describe("AuthService", () => {
   let authService: AuthService;
 
+  const userRecord = <T extends object>(user: T): T & Pick<
+    User,
+    | "description"
+    | "accountStatus"
+              > => ({
+      description: null,
+      accountStatus: "ACTIVE",
+      ...user
+    });
+
   const userService: jest.Mocked<
     Pick<UserService, "findByEmail" | "findAll" | "create" | "createOAuthUser">
   > = {
@@ -83,7 +114,10 @@ describe("AuthService", () => {
 
   const prismaService = makePrisma();
 
-  async function buildModule(prisma = prismaService, googleAuth = {}) {
+  async function buildModule(
+    prisma: PrismaServiceMock = prismaService,
+    googleAuth: unknown = {}
+  ): Promise<AuthService> {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
@@ -129,7 +163,7 @@ describe("AuthService", () => {
     });
 
     it("should throw UnauthorizedException if password is invalid", async () => {
-      userService.findByEmail.mockResolvedValue({
+      userService.findByEmail.mockResolvedValue(userRecord({
         id: 1,
         email: "test@example.com",
         username: "testuser",
@@ -137,7 +171,8 @@ describe("AuthService", () => {
         description: null,
         password: "hashedPass",
         createdAt: new Date()
-      });
+      }));
+
       (bcrypt.compare as jest.Mock).mockResolvedValueOnce(false);
       await expect(
         authService.validateUser("test@example.com", "wrongpass")
@@ -145,7 +180,7 @@ describe("AuthService", () => {
     });
 
     it("should return user if email and password are valid", async () => {
-      const mockUser = {
+      const mockUser = userRecord({
         id: 1,
         email: "test@example.com",
         password: "hashedPass",
@@ -153,7 +188,7 @@ describe("AuthService", () => {
         nickname: null,
         description: null,
         createdAt: new Date()
-      };
+      });
       userService.findByEmail.mockResolvedValue(mockUser);
       const result = await authService.validateUser(
         "test@example.com",
@@ -165,7 +200,7 @@ describe("AuthService", () => {
 
   describe("login", () => {
     it("should return access token if credentials are valid", async () => {
-      const mockUser = {
+      const mockUser = userRecord({
         id: 1,
         email: "test@example.com",
         password: "hashedPass",
@@ -173,7 +208,8 @@ describe("AuthService", () => {
         nickname: null,
         description: null,
         createdAt: new Date()
-      };
+      });
+
       jest.spyOn(authService, "validateUser").mockResolvedValue(mockUser);
 
       const result = await authService.login("test@example.com", "password");
@@ -182,7 +218,7 @@ describe("AuthService", () => {
         refresh_token: "token123"
       });
       expect(jwtService.sign).toHaveBeenCalledWith(
-        { sub: mockUser.id, email: mockUser.email },
+        { sub: mockUser.id, email: mockUser.email, scope: "user" },
         expect.any(Object)
       );
     });
@@ -204,7 +240,7 @@ describe("AuthService", () => {
           }
           if (emailFilter === "exists@example.com") {
             return [
-              {
+              userRecord({
                 id: 1,
                 email: emailFilter,
                 username: "user",
@@ -212,7 +248,7 @@ describe("AuthService", () => {
                 description: null,
                 password: "hashedPass",
                 createdAt: new Date()
-              }
+              })
             ];
           }
           return [];
@@ -245,7 +281,7 @@ describe("AuthService", () => {
           }
           if (usernameFilter === "existsUser") {
             return [
-              {
+              userRecord({
                 id: 2,
                 email: "user@example.com",
                 username: usernameFilter,
@@ -253,7 +289,7 @@ describe("AuthService", () => {
                 description: null,
                 password: "hashedPass",
                 createdAt: new Date()
-              }
+              })
             ];
           }
           return [];
@@ -272,7 +308,7 @@ describe("AuthService", () => {
 
     it("should create user and return access token", async () => {
       userService.findAll.mockResolvedValue([]);
-      userService.create.mockResolvedValue({
+      userService.create.mockResolvedValue(userRecord({
         id: 1,
         email: "new@example.com",
         username: "newUser",
@@ -280,7 +316,7 @@ describe("AuthService", () => {
         description: null,
         password: "hashedPassword",
         createdAt: new Date()
-      });
+      }));
 
       const result = await authService.register({
         email: "new@example.com",
@@ -290,9 +326,93 @@ describe("AuthService", () => {
       });
 
       expect(userService.create).toHaveBeenCalled();
+      expect(result).toEqual({ access_token: "token123", refresh_token: "token123" });
+    });
+  });
+
+  describe("loginWithGoogleCode", () => {
+    it("should create new user and return tokens for new Google user", async () => {
+      const googleUser = {
+        email: "google@example.com",
+        name: "Google User"
+      };
+
+      const googleAuthService = {
+        getUserFromCode: jest.fn().mockResolvedValue(googleUser)
+      };
+
+      userService.findByEmail.mockResolvedValue(undefined);
+      userService.findAll.mockResolvedValue([]);
+
+      const newUser = userRecord({
+        id: 5,
+        email: googleUser.email,
+        username: "Google_User",
+        nickname: null,
+        password: null,
+        createdAt: new Date()
+      });
+      userService.createOAuthUser.mockResolvedValue(newUser);
+      jwtService.sign.mockReturnValue("google-token-abc");
+
+      const testAuthService = await buildModule(prismaService, googleAuthService);
+
+      const result = await testAuthService.loginWithGoogleCode(
+        "google-code",
+        "google-verifier"
+      );
+
+      expect(googleAuthService.getUserFromCode).toHaveBeenCalledWith(
+        "google-code",
+        "google-verifier"
+      );
+      expect(userService.createOAuthUser).toHaveBeenCalledWith(
+        googleUser.email,
+        "Google_User"
+      );
       expect(result).toEqual({
-        access_token: "token123",
-        refresh_token: "token123"
+        access_token: "google-token-abc",
+        refresh_token: "google-token-abc"
+      });
+    });
+
+    it("should return tokens for existing Google user", async () => {
+      const googleUser = {
+        email: "existing@example.com",
+        name: "Existing User"
+      };
+
+      const existingUser = userRecord({
+        id: 6,
+        email: googleUser.email,
+        username: "existing_user",
+        nickname: null,
+        password: "somepass",
+        createdAt: new Date()
+      });
+
+      const googleAuthService = {
+        getUserFromCode: jest.fn().mockResolvedValue(googleUser)
+      };
+
+      userService.findByEmail.mockResolvedValue(existingUser);
+      jwtService.sign.mockReturnValue("existing-token-xyz");
+
+      const testAuthService = await buildModule(prismaService, googleAuthService);
+
+      const result = await testAuthService.loginWithGoogleCode(
+        "google-code",
+        "google-verifier"
+      );
+
+      expect(googleAuthService.getUserFromCode).toHaveBeenCalledWith(
+        "google-code",
+        "google-verifier"
+      );
+      expect(userService.create).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        access_token: "existing-token-xyz",
+        refresh_token: "existing-token-xyz"
       });
     });
   });
@@ -386,6 +506,161 @@ describe("AuthService", () => {
     });
   });
 
+  describe("token scope", () => {
+    // Admin cookies and API bearer tokens are signed with the same secret, so
+    // the scope claim is the only thing keeping them from being interchangeable.
+
+    it("stamps scope \"user\" on regular tokens", async () => {
+      (jwtService.sign as jest.Mock).mockReturnValue("signed");
+      const svc = await buildModule();
+
+      await svc.generateTokens({ sub: 7, email: "a@b.c" }, 7);
+
+      expect(jwtService.sign).toHaveBeenCalledWith(
+        { sub: 7, email: "a@b.c", scope: "user" },
+        expect.any(Object)
+      );
+    });
+
+    it("stamps scope \"admin\" on admin tokens", async () => {
+      (jwtService.sign as jest.Mock).mockReturnValue("signed");
+      const svc = await buildModule();
+
+      await svc.generateAdminTokens({ sub: 7, email: "a@b.c" }, 7);
+
+      expect(jwtService.sign).toHaveBeenCalledWith(
+        { sub: 7, email: "a@b.c", scope: "admin" },
+        expect.any(Object)
+      );
+    });
+
+    it("hashes the admin refresh token before storing it", async () => {
+      (jwtService.sign as jest.Mock).mockReturnValue("admin-refresh");
+      (bcrypt.hash as jest.Mock).mockResolvedValue("hashed_value");
+      const prisma = makePrisma();
+      const svc = await buildModule(prisma);
+
+      await svc.generateAdminTokens({ sub: 7, email: "a@b.c" }, 7);
+
+      // Stored plaintext would never match the bcrypt.compare in rotation,
+      // which silently broke every admin refresh.
+      expect(bcrypt.hash).toHaveBeenCalledWith("admin-refresh", 10);
+      expect(prisma.refreshToken.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ token: "hashed_value", userId: 7 })
+      });
+    });
+
+    it("returns cookie max-ages that match the admin token TTLs", async () => {
+      (jwtService.sign as jest.Mock).mockReturnValue("signed");
+      const svc = await buildModule();
+
+      const tokens = await svc.generateAdminTokens(
+        { sub: 7, email: "a@b.c" },
+        7
+      );
+
+      expect(tokens.access_token_max_age_ms).toBe(30 * 60 * 1000);
+      expect(tokens.refresh_token_max_age_ms).toBe(8 * 60 * 60 * 1000);
+    });
+  });
+
+  describe("refreshAdminTokens", () => {
+    const storedToken = (): Record<string, unknown> => ({
+      id: 1,
+      token: "hashed-valid",
+      userId: 1,
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      user: {
+        id: 1,
+        email: "staff@example.com",
+        username: "staff",
+        nickname: null,
+        password: "pass",
+        createdAt: new Date()
+      }
+    });
+
+    it("rejects an API refresh token presented to the admin flow", async () => {
+      (jwtService.verify as jest.Mock).mockReturnValue({
+        sub: 1,
+        email: "staff@example.com",
+        scope: "user"
+      });
+      const prisma = makePrisma({
+        findMany: jest.fn().mockResolvedValue([storedToken()])
+      });
+      const svc = await buildModule(prisma);
+
+      await expect(svc.refreshAdminTokens("user-token")).rejects.toThrow(
+        UnauthorizedException
+      );
+      // Rejected on the claim alone -- the DB is never consulted.
+      expect(prisma.refreshToken.findMany).not.toHaveBeenCalled();
+    });
+
+    it("rejects an admin refresh token presented to the API flow", async () => {
+      (jwtService.verify as jest.Mock).mockReturnValue({
+        sub: 1,
+        email: "staff@example.com",
+        scope: "admin"
+      });
+      const svc = await buildModule();
+
+      await expect(svc.refreshToken("admin-token")).rejects.toThrow(
+        UnauthorizedException
+      );
+    });
+
+    it("treats a token minted before the scope claim existed as a user token", async () => {
+      (jwtService.verify as jest.Mock).mockReturnValue({
+        sub: 1,
+        email: "staff@example.com"
+      });
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      (jwtService.sign as jest.Mock).mockReturnValue("new-token");
+      const prisma = makePrisma({
+        findMany: jest.fn().mockResolvedValue([storedToken()])
+      });
+      const svc = await buildModule(prisma);
+
+      await expect(svc.refreshToken("legacy-token")).resolves.toEqual({
+        access_token: "new-token",
+        refresh_token: "new-token"
+      });
+      await expect(svc.refreshAdminTokens("legacy-token")).rejects.toThrow(
+        UnauthorizedException
+      );
+    });
+
+    it("rotates and returns the user id so the controller need not decode the JWT", async () => {
+      (jwtService.verify as jest.Mock).mockReturnValue({
+        sub: 1,
+        email: "staff@example.com",
+        scope: "admin"
+      });
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      (jwtService.sign as jest.Mock).mockReturnValue("rotated");
+      const prisma = makePrisma({
+        findMany: jest.fn().mockResolvedValue([storedToken()])
+      });
+      const svc = await buildModule(prisma);
+
+      const result = await svc.refreshAdminTokens("admin-refresh");
+
+      expect(result).toEqual({
+        access_token: "rotated",
+        refresh_token: "rotated",
+        access_token_max_age_ms: 30 * 60 * 1000,
+        refresh_token_max_age_ms: 8 * 60 * 60 * 1000,
+        userId: 1
+      });
+      expect(jwtService.sign).toHaveBeenCalledWith(
+        { sub: 1, email: "staff@example.com", scope: "admin" },
+        expect.any(Object)
+      );
+    });
+  });
+
   describe("revokeRefreshToken", () => {
     it("should delete refresh token", async () => {
       const tokenRecord = { id: 1, token: "hashed-token", userId: 1 };
@@ -411,14 +686,15 @@ describe("AuthService", () => {
 
   describe("validateUser edge cases", () => {
     it("should throw UnauthorizedException if user has no password", async () => {
-      userService.findByEmail.mockResolvedValue({
+      const mockUser = userRecord({
         id: 1,
         email: "google@example.com",
         username: "googleuser",
         nickname: null,
         password: null,
         createdAt: new Date()
-      } as any);
+      });
+      userService.findByEmail.mockResolvedValue(mockUser);
 
       await expect(
         authService.validateUser("google@example.com", "password")

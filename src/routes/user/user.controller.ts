@@ -1,5 +1,6 @@
 import {
   Controller,
+  ForbiddenException,
   Get,
   Post,
   Body,
@@ -34,7 +35,10 @@ import {
 } from "@nestjs/swagger";
 import { Request } from "@nestjs/common";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
+import { AccountWriteGuard } from "@auth/guards/account-write.guard";
 import { RolesGuard } from "@auth/guards/roles.guard";
+import { Actor, CurrentActor } from "@auth/actor";
+import { ModerationService } from "src/moderation/moderation.service";
 import { Roles } from "@auth/decorators/roles.decorator";
 import { Prisma } from "@prisma/client";
 import { UserResponseDto } from "./dto/user-response.dto";
@@ -68,6 +72,7 @@ export class UserController {
 
   constructor(
     private readonly userService: UserService,
+    private readonly moderationService: ModerationService,
     private readonly s3Service: S3Service,
     private readonly cloudfrontService: CloudfrontService
   ) {}
@@ -90,7 +95,7 @@ export class UserController {
     type: UserProfileResponseDto
   })
   @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, AccountWriteGuard)
   getProfile(@Request() req: RequestWithUser): UserDto {
     return req.user;
   }
@@ -280,13 +285,34 @@ export class UserController {
   })
   @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
   @UseGuards(JwtAuthGuard)
-  async findAll(@Query() filterDto: UserFilterDto): Promise<{
+  async findAll(
+    @Query() filterDto: UserFilterDto,
+    @CurrentActor() actor: Actor
+  ): Promise<{
     statusCode: number;
     message: string;
     data: UserDto[];
     meta: { page: number; limit: number; total: number; totalPages: number };
   }> {
-    const { page = 1, limit = 10, nickname, email, sortBy, order } = filterDto;
+    const {
+      page = 1,
+      limit = 10,
+      nickname,
+      email,
+      username,
+      accountStatus,
+      role,
+      sortBy,
+      order
+    } = filterDto;
+
+    // Moderation filters answer "who is banned?", which is staff business.
+    // Refusing them here is what lets one route serve both audiences.
+    if ((accountStatus || role) && !actor.isModerator) {
+      throw new ForbiddenException(
+        "Filtering by account status or role requires a moderator"
+      );
+    }
 
     const pageNumber = Number(page) || 1;
     const limitNumber = Number(limit) || 10;
@@ -299,7 +325,10 @@ export class UserController {
     const filter: Prisma.UserWhereInput = {};
 
     if (nickname) filter.nickname = { contains: nickname };
-    if (email) filter.email = { contains: email };
+    if (email) filter.email = { contains: email, mode: "insensitive" };
+    if (username) filter.username = { contains: username, mode: "insensitive" };
+    if (accountStatus) filter.accountStatus = accountStatus;
+    if (role) filter.roles = { some: { name: role } };
 
     const orderBy: Prisma.UserOrderByWithRelationInput & {
       [id: string]: string;
@@ -315,7 +344,10 @@ export class UserController {
         skip,
         take: limitNumber,
         where: Object.keys(filter).length ? filter : {},
-        orderBy
+        orderBy,
+        // Staff listings render roles and moderation state; ordinary callers
+        // get neither, so the extra join is only paid when it is used.
+        ...(actor.isModerator ? { include: { roles: true } } : {})
       }),
       this.userService.count(filter)
     ]);
@@ -349,10 +381,13 @@ export class UserController {
   @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
   @UseGuards(JwtAuthGuard)
   async findOne(
-    @Param("id", ParseIntPipe) id: number
+    @Param("id", ParseIntPipe) id: number,
+    @CurrentActor() actor: Actor
   ): Promise<{ statusCode: number; message: string; data: UserDto }> {
     this.logger.debug(`Fetching user with ID: ${id}`);
-    const user = await this.userService.findOne(id);
+    const user = actor.isModerator
+      ? await this.userService.findOneForModeration(id)
+      : await this.userService.findOne(id);
 
     return {
       statusCode: HttpStatus.OK,
@@ -377,7 +412,7 @@ export class UserController {
     status: HttpStatus.FORBIDDEN,
     description: "Insufficient permissions"
   })
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, AccountWriteGuard, RolesGuard)
   @Roles("Admin")
   async update(
     @Param("id", ParseIntPipe) id: number,
@@ -414,13 +449,18 @@ export class UserController {
     status: HttpStatus.FORBIDDEN,
     description: "Insufficient permissions"
   })
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, AccountWriteGuard, RolesGuard)
   @Roles("Admin")
   async remove(
-    @Param("id", ParseIntPipe) id: number
+    @Param("id", ParseIntPipe) id: number,
+    @CurrentActor() actor: Actor
   ): Promise<{ statusCode: number; message: string }> {
     this.logger.debug(`Deleting user with ID: ${id}`);
-    await this.userService.remove(id);
+
+    // Through ModerationService rather than straight to Prisma: deleting an
+    // account is a moderation action, and this route was bypassing the rank
+    // rule, the last-admin protection and the audit entry that path enforces.
+    await this.moderationService.hardDeleteUser(id, actor.id);
 
     return {
       statusCode: HttpStatus.OK,

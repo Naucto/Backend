@@ -1,7 +1,8 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { JwtService } from "@nestjs/jwt";
 import {
+  AnalyticsEventType,
   GameSession,
   GameSessionVisibility,
   Prisma,
@@ -11,6 +12,7 @@ import {
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { ProjectService } from "@project/project.service";
 import { WebRTCService } from "@webrtc/webrtc.service";
+import { AnalyticsService } from "src/analytics/analytics.service";
 import {
   SyncedGameTableRole,
   SyncedGameTableTicket,
@@ -75,7 +77,8 @@ export class MultiplayerService {
     private readonly _webrtcService: WebRTCService,
     private readonly _projectService: ProjectService,
     private readonly _prismaService: PrismaService,
-    private readonly _jwtService: JwtService
+    private readonly _jwtService: JwtService,
+    @Optional() private readonly _analyticsService?: AnalyticsService
   ) {
     this._syncServer = new SyncedGameTableWebRTCServer(
       _webrtcService,
@@ -131,6 +134,12 @@ export class MultiplayerService {
         : await this._prismaService.gameSession.create({
           data: { ...baseData, joinCode: null }
         });
+
+    await this._analyticsService?.record(AnalyticsEventType.GAME_SESSION_STARTED, {
+      userId,
+      projectId: dto.projectId,
+      metadata: { sessionId: created.sessionId, visibility: dto.visibility }
+    });
 
     return this._buildConnection(created, userId, "host");
   }
@@ -251,6 +260,33 @@ export class MultiplayerService {
     }
   }
 
+  /**
+   * Ends every live session for a project and tears down its rooms.
+   *
+   * Moderation uses this when a project comes down: flipping the project row
+   * alone leaves players connected to a running room, still playing the game
+   * that was just hidden or unpublished.
+   */
+  async endSessionsForProject(projectId: number): Promise<number> {
+    const live = await this._prismaService.gameSession.findMany({
+      where: { projectId, endedAt: null },
+      select: { sessionId: true }
+    });
+
+    for (const session of live) {
+      await this.endSession(session.sessionId);
+      this._syncServer.closeRoom(session.sessionId);
+    }
+
+    if (live.length > 0) {
+      this._logger.log(
+        `Ended ${live.length} live session(s) for project ${projectId}`
+      );
+    }
+
+    return live.length;
+  }
+
   // Backstop sweep: ends sessions left active past the max lifetime, which
   // normally only happens if the process died before its disconnect hooks ran.
   @Cron(CronExpression.EVERY_30_MINUTES)
@@ -288,9 +324,26 @@ export class MultiplayerService {
   }
 
   private async _softEnd(sessionId: string): Promise<void> {
-    await this._prismaService.gameSession.updateMany({
+    const session = await this._prismaService.gameSession.findFirst({
+      where: { sessionId, endedAt: null },
+      select: { hostId: true, projectId: true }
+    });
+
+    const { count } = await this._prismaService.gameSession.updateMany({
       where: { sessionId, endedAt: null },
       data: { endedAt: new Date() }
+    });
+
+    // Soft-end is idempotent (REST delete and the host-disconnect hook both call
+    // it), so only the call that actually ended the session records the event.
+    if (count === 0 || !session) {
+      return;
+    }
+
+    await this._analyticsService?.record(AnalyticsEventType.GAME_SESSION_ENDED, {
+      userId: session.hostId,
+      projectId: session.projectId,
+      metadata: { sessionId }
     });
   }
 
@@ -381,6 +434,12 @@ export class MultiplayerService {
       "Exhausted transaction retries"
     );
 
+    await this._analyticsService?.record(AnalyticsEventType.GAME_SESSION_STARTED, {
+      userId,
+      projectId: session.projectId,
+      metadata: { sessionId: session.sessionId, joined: true }
+    });
+
     return this._buildConnection(session, userId, "slave");
   }
 
@@ -430,6 +489,11 @@ export class MultiplayerService {
     await this._prismaService.gameSession.update({
       where: { sessionId },
       data: { otherUsers: { disconnect: { id: userId } } }
+    });
+    await this._analyticsService?.record(AnalyticsEventType.GAME_SESSION_ENDED, {
+      userId,
+      projectId: session.projectId,
+      metadata: { sessionId: session.sessionId, left: true }
     });
   }
 
