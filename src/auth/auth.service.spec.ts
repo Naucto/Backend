@@ -89,15 +89,9 @@ describe("AuthService", () => {
     User,
     | "description"
     | "accountStatus"
-    | "moderationReason"
-    | "moderatedAt"
-    | "moderatedById"
-  > => ({
+              > => ({
       description: null,
       accountStatus: "ACTIVE",
-      moderationReason: null,
-      moderatedAt: null,
-      moderatedById: null,
       ...user
     });
 

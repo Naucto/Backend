@@ -1,5 +1,6 @@
 import {
   Body,
+  ForbiddenException,
   Controller,
   Delete,
   Get,
@@ -69,6 +70,7 @@ import {
 } from "./dto/project-response.dto";
 import { Roles } from "@auth/decorators/roles.decorator";
 import { RolesGuard } from "@auth/guards/roles.guard";
+import { Actor, CurrentActor } from "@auth/actor";
 import { S3DownloadException } from "@s3/s3.error";
 import { S3Service } from "@s3/s3.service";
 import { DownloadedFile } from "@s3/s3.interface";
@@ -338,6 +340,18 @@ export class ProjectController {
   @ApiOperation({ summary: "Retrieve the paginated list of projects" })
   @ApiQuery({ name: "page", type: "number", required: false })
   @ApiQuery({ name: "limit", type: "number", required: false })
+  @ApiQuery({
+    name: "scope",
+    enum: ["mine", "all"],
+    required: false,
+    description: "\"all\" lists every project. Moderators only."
+  })
+  @ApiQuery({
+    name: "hidden",
+    type: "boolean",
+    required: false,
+    description: "Filter on moderation visibility. Moderators only."
+  })
   @ApiResponse({
     status: 200,
     description:
@@ -346,15 +360,28 @@ export class ProjectController {
   })
   @ApiResponse({ status: 500, description: "Internal server error" })
   async findAll(
-    @Req() request: RequestWithUser,
+    @CurrentActor() actor: Actor,
     @Query("page") page?: string,
-    @Query("limit") limit?: string
+    @Query("limit") limit?: string,
+    @Query("scope") scope?: string,
+    @Query("hidden") hidden?: string
   ): Promise<PaginatedProjectsResponseDto> {
-    const user = request.user;
+    // `scope=all` is the moderation listing: same resource, no ownership
+    // clause. Refused to anyone else rather than served by a separate route.
+    if ((scope === "all" || hidden !== undefined) && !actor.isModerator) {
+      throw new ForbiddenException(
+        "Listing every project requires a moderator"
+      );
+    }
+
     return this.projectService.findAll(
-      user.id,
+      actor.id,
       this.parseOptionalInt(page),
-      this.parseOptionalInt(limit)
+      this.parseOptionalInt(limit),
+      {
+        ...(scope === "all" ? { scope: "all" as const } : {}),
+        ...(hidden !== undefined ? { hidden: hidden === "true" } : {})
+      }
     );
   }
 
@@ -470,9 +497,10 @@ export class ProjectController {
   @ApiResponse({ status: 500, description: "Error updating project" })
   async update(
     @Param("id", ParseIntPipe) id: number,
-    @Body() updateProjectDto: UpdateProjectDto
+    @Body() updateProjectDto: UpdateProjectDto,
+    @CurrentActor() actor: Actor
   ): Promise<ProjectResponseDto> {
-    return this.projectService.update(id, updateProjectDto);
+    return this.projectService.update(id, updateProjectDto, actor);
   }
 
   @UseGuards(ProjectCreatorGuard)

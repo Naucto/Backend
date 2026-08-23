@@ -1,6 +1,7 @@
-import { ApiProperty } from "@nestjs/swagger";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import {
   IsArray,
+  IsBoolean,
   IsString,
   IsOptional,
   IsNumber,
@@ -96,4 +97,24 @@ export class UpdateProjectDto {
   @Min(0)
   @IsOptional()
   price?: number;
+
+  @ApiPropertyOptional({
+    description:
+      "Take the project off the site, or put it back. Moderators only; a non-staff caller sending this is rejected.",
+    example: true
+  })
+  @IsBoolean()
+  @IsOptional()
+    hidden?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      "Why the moderation change was made. Recorded on the audit entry, so it is only meaningful alongside a staff-only field.",
+    example: "Breaks the content guidelines",
+    maxLength: 500
+  })
+  @IsString()
+  @MaxLength(500)
+  @IsOptional()
+    moderationReason?: string;
 }

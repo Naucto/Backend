@@ -12,10 +12,9 @@ model User {
   description      String?
   password         String?
   createdAt        DateTime      @default(now())
+  // Only the status lives here: who changed it, when and why come from
+  // ModerationAction, so those facts are recorded once instead of per entity.
   accountStatus    AccountStatus @default(ACTIVE)
-  moderationReason String?
-  moderatedAt      DateTime?
-  moderatedById    Int?          @map("moderated_by_id")
 
   roles Role[] @relation("UserRoles")
 

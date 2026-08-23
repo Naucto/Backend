@@ -56,3 +56,25 @@ export class PaginatedCommentsResponseDto {
   @ApiProperty({ example: 20 })
   limit!: number;
 }
+
+export class CommentListMetaDto {
+  @ApiProperty()
+  page!: number;
+
+  @ApiProperty()
+  limit!: number;
+
+  @ApiProperty()
+  total!: number;
+
+  @ApiProperty()
+    totalPages!: number;
+}
+
+export class CommentListResponseDto {
+  @ApiProperty({ type: [CommentResponseDto] })
+    data!: CommentResponseDto[];
+
+  @ApiProperty({ type: CommentListMetaDto })
+    meta!: CommentListMetaDto;
+}

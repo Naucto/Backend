@@ -26,9 +26,11 @@ import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
 import { AccountWriteGuard } from "@auth/guards/account-write.guard";
 import { Public } from "@auth/decorators/public.decorator";
 import { UserDto } from "@auth/dto/user.dto";
+import { Actor, CurrentActor } from "@auth/actor";
 import { Request } from "express";
 import { ProjectCommentService } from "./project-comment.service";
 import { CreateCommentDto } from "./dto/create-comment.dto";
+import { UpdateCommentDto } from "./dto/update-comment.dto";
 import {
   CommentResponseDto,
   PaginatedCommentsResponseDto
@@ -128,7 +130,7 @@ export class ProjectCommentController {
   @ApiOperation({ summary: "Edit a comment" })
   @ApiParam({ name: "projectId", type: "number" })
   @ApiParam({ name: "commentId", type: "number" })
-  @ApiBody({ type: CreateCommentDto })
+  @ApiBody({ type: UpdateCommentDto })
   @ApiResponse({
     status: 200,
     description: "Comment updated",
@@ -136,14 +138,10 @@ export class ProjectCommentController {
   })
   async updateComment(
     @Param("commentId", ParseIntPipe) commentId: number,
-    @Body() createCommentDto: CreateCommentDto,
-    @Req() req: RequestWithUser
+    @Body() dto: UpdateCommentDto,
+    @CurrentActor() actor: Actor
   ): Promise<CommentResponseDto> {
-    return this.projectCommentService.updateComment(
-      commentId,
-      req.user.id,
-      createCommentDto.content
-    );
+    return this.projectCommentService.updateComment(commentId, actor, dto);
   }
 
   @Delete(":commentId")
@@ -156,12 +154,12 @@ export class ProjectCommentController {
   async deleteComment(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("commentId", ParseIntPipe) commentId: number,
-    @Req() req: RequestWithUser
+    @CurrentActor() actor: Actor
   ): Promise<void> {
     return this.projectCommentService.deleteComment(
       projectId,
       commentId,
-      req.user.id
+      actor
     );
   }
 }

@@ -1,6 +1,7 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { ProjectController } from "./project.controller";
 import { ProjectService } from "./project.service";
+import { AuditService } from "src/moderation/audit";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { ConfigService } from "@nestjs/config";
 import { S3Service } from "@s3/s3.service";
@@ -13,6 +14,7 @@ describe("ProjectController", () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ProjectController],
       providers: [
+        { provide: AuditService, useValue: { record: jest.fn() } },
         ProjectService,
         {
           provide: PrismaService,

@@ -1,11 +1,10 @@
 import { Test, TestingModule } from "@nestjs/testing";
-import { BadRequestException, NotFoundException } from "@nestjs/common";
+import { BadRequestException } from "@nestjs/common";
 import * as bcrypt from "bcryptjs";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { UserService } from "@user/user.service";
 import { ModerationService } from "src/moderation/moderation.service";
 import { AdminUserService } from "./admin-user.service";
-import { AdminUserFilterDto } from "./dto/users/admin-user-filter.dto";
 
 jest.mock("bcryptjs", () => ({ hash: jest.fn() }));
 
@@ -30,10 +29,6 @@ type PrismaMock = {
   moderationAction: { count: jest.Mock };
   role: { upsert: jest.Mock };
 };
-
-function filter(overrides: Partial<AdminUserFilterDto> = {}): AdminUserFilterDto {
-  return { ...overrides } as AdminUserFilterDto;
-}
 
 describe("AdminUserService", () => {
   let service: AdminUserService;
@@ -76,57 +71,6 @@ describe("AdminUserService", () => {
     }).compile();
 
     service = module.get<AdminUserService>(AdminUserService);
-  });
-
-  describe("list", () => {
-    it("paginates with the shared defaults", async () => {
-      const result = await service.list(filter());
-
-      expect(prisma.user.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ skip: 0, take: 25 })
-      );
-      expect(result.meta.totalPages).toBe(1);
-    });
-
-    it("filters by role through the relation", async () => {
-      await service.list(filter({ role: "Moderator" }));
-
-      expect(prisma.user.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { roles: { some: { name: "Moderator" } } }
-        })
-      );
-    });
-
-    it("rejects a sort field outside the allowlist", async () => {
-      // `password` is a real column; without the allowlist it would order by it.
-      await expect(service.list(filter({ sortBy: "password" }))).rejects.toThrow(
-        BadRequestException
-      );
-    });
-
-    it("never exposes the password hash", async () => {
-      const result = await service.list(filter());
-
-      expect(result.data[0]).not.toHaveProperty("password");
-    });
-  });
-
-  describe("findOne", () => {
-    it("throws NotFoundException for an unknown user", async () => {
-      prisma.user.findUnique.mockResolvedValue(null);
-
-      await expect(service.findOne(404)).rejects.toThrow(NotFoundException);
-    });
-
-    it("attaches the activity counts the detail page shows", async () => {
-      await expect(service.findOne(5)).resolves.toMatchObject({
-        projectsCreatedCount: 2,
-        commentsCount: 3,
-        reportsFiledCount: 0,
-        moderationActionsTakenCount: 0
-      });
-    });
   });
 
   describe("moderation actions", () => {
@@ -267,29 +211,4 @@ describe("AdminUserService", () => {
     });
   });
 
-  describe("update", () => {
-    it("only touches roles that actually changed", async () => {
-      await service.update(5, { roles: ["User", "Moderator"] }, 1);
-
-      expect(moderation["updateUserRoles"]).toHaveBeenCalledWith(
-        5,
-        1,
-        ["Moderator"],
-        [],
-        undefined
-      );
-    });
-
-    it("skips the role update when the set is unchanged", async () => {
-      await service.update(5, { roles: ["User"] }, 1);
-
-      expect(moderation["updateUserRoles"]).not.toHaveBeenCalled();
-    });
-
-    it("skips the profile edit when no profile field was sent", async () => {
-      await service.update(5, { roles: ["User"] }, 1);
-
-      expect(moderation["editUser"]).not.toHaveBeenCalled();
-    });
-  });
 });

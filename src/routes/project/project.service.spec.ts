@@ -1,6 +1,8 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { ProjectService } from "./project.service";
 import { S3Service } from "@s3/s3.service";
+import { Actor } from "@auth/actor";
+import { AuditService } from "src/moderation/audit";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { ConfigService } from "@nestjs/config";
 import {
@@ -52,9 +54,6 @@ const mockProjects: ProjectWithCreatorAndCollaborators[] = [
     contentUploadedAt: new Date(),
     forkedFromId: null,
     hidden: false,
-    hiddenReason: null,
-    hiddenAt: null,
-    hiddenById: null,
     creator: {
       id: 42,
       email: "creator@example.com",
@@ -95,9 +94,6 @@ const mockProjects: ProjectWithCreatorAndCollaborators[] = [
     contentUploadedAt: new Date(),
     forkedFromId: null,
     hidden: false,
-    hiddenReason: null,
-    hiddenAt: null,
-    hiddenById: null,
     creator: {
       id: 42,
       email: "creator@example.com",
@@ -142,6 +138,15 @@ describe("ProjectService", () => {
     )
   };
 
+  const auditServiceMock = {
+    record: jest.fn().mockResolvedValue(undefined),
+    historyOf: jest.fn().mockResolvedValue([]),
+    lastActionOn: jest.fn().mockResolvedValue(null)
+  };
+
+  // A plain collaborator: no moderator powers, owns nothing special.
+  const ownerActor = new Actor(1, []);
+
   const s3ServiceMock = {
     deleteFile: jest.fn(),
     listObjects: jest.fn(),
@@ -176,6 +181,10 @@ describe("ProjectService", () => {
         {
           provide: ConfigService,
           useValue: configServiceMock
+        },
+        {
+          provide: AuditService,
+          useValue: auditServiceMock
         }
       ]
     }).compile();
@@ -445,7 +454,7 @@ describe("ProjectService", () => {
         ...updateDto
       });
 
-      const result = await service.update(projectId, updateDto);
+      const result = await service.update(projectId, updateDto, ownerActor);
 
       expect(prismaMock.project.findUnique).toHaveBeenCalledWith({
         where: { id: projectId },
@@ -480,7 +489,7 @@ describe("ProjectService", () => {
         shortDesc: "Updated short desc"
       };
 
-      await expect(service.update(999, updateDto)).rejects.toThrow(
+      await expect(service.update(999, updateDto, ownerActor)).rejects.toThrow(
         NotFoundException
       );
     });

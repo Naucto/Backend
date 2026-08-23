@@ -3,14 +3,11 @@ import {
   Body,
   Controller,
   Delete,
-  Get,
   HttpCode,
   HttpStatus,
   Param,
   ParseIntPipe,
-  Patch,
   Post,
-  Query,
   UseGuards
 } from "@nestjs/common";
 import {
@@ -26,14 +23,10 @@ import { AdminCookieJwtGuard } from "./guards/admin-cookie-jwt.guard";
 import { AdminActor } from "./decorators/admin-actor.decorator";
 import { isStaffRole, STAFF_ROLES, StaffRole } from "./admin-roles";
 import { AdminUserService } from "./admin-user.service";
-import { AdminUserFilterDto } from "./dto/users/admin-user-filter.dto";
 import { CreateAdminUserDto } from "./dto/users/create-admin-user.dto";
-import { UpdateAdminUserDto } from "./dto/users/update-admin-user.dto";
 import { ResetPasswordDto } from "./dto/users/reset-password.dto";
 import { ModerationReasonDto } from "./dto/moderation-reason.dto";
 import {
-  AdminUserDetailDto,
-  AdminUserListResponseDto,
   AdminUserResponseDto
 } from "./dto/users/admin-user-response.dto";
 
@@ -45,20 +38,6 @@ import {
 export class AdminUserController {
   constructor(private readonly adminUserService: AdminUserService) {}
 
-  @Get()
-  @ApiOperation({ summary: "List users with pagination and filters" })
-  async list(@Query() filter: AdminUserFilterDto): Promise<AdminUserListResponseDto> {
-    return this.adminUserService.list(filter);
-  }
-
-  @Get(":id")
-  @ApiOperation({ summary: "Get a single user with moderation metadata" })
-  async get(
-    @Param("id", ParseIntPipe) id: number
-  ): Promise<AdminUserDetailDto> {
-    return this.adminUserService.findOne(id);
-  }
-
   @Post()
   @Roles("Admin")
   @ApiOperation({ summary: "Create a new staff account" })
@@ -67,29 +46,6 @@ export class AdminUserController {
     @AdminActor() actorId: number
   ): Promise<AdminUserResponseDto> {
     return this.adminUserService.createStaff(dto, actorId);
-  }
-
-  @Patch(":id")
-  @Roles("Admin")
-  @ApiOperation({ summary: "Update user fields and/or role membership" })
-  async update(
-    @Param("id", ParseIntPipe) id: number,
-    @Body() dto: UpdateAdminUserDto,
-    @AdminActor() actorId: number
-  ): Promise<AdminUserResponseDto> {
-    return this.adminUserService.update(id, dto, actorId);
-  }
-
-  @Delete(":id")
-  @Roles("Admin")
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Hard delete a user account" })
-  async remove(
-    @Param("id", ParseIntPipe) id: number,
-    @Body() body: ModerationReasonDto,
-    @AdminActor() actorId: number
-  ): Promise<{ success: true }> {
-    return this.adminUserService.hardDelete(id, actorId, body.reason);
   }
 
   @Post(":id/suspend")

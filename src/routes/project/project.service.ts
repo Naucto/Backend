@@ -15,8 +15,20 @@ import {
   RemoveCollaboratorDto
 } from "./dto/collaborator-project.dto";
 import { S3Service } from "@s3/s3.service";
+import { Actor } from "@auth/actor";
+import { AuditService, projectRef } from "src/moderation/audit";
+
+/**
+ * Side effects a project going dark must trigger outside this module (ending
+ * live multiplayer sessions). Registered instead of injected: multiplayer
+ * already depends on this service, so injecting it back would be circular.
+ */
+export interface ProjectVisibilityHook {
+  onProjectHidden(projectId: number): Promise<unknown>;
+}
 import {
   AnalyticsEventType,
+  ModerationActionType,
   Prisma,
   Project,
   ProjectStatus,
@@ -105,6 +117,8 @@ export class ProjectService {
    */
   static readonly CONTENT_MIME_TYPE = "application/octet-stream";
 
+  private visibilityHook?: ProjectVisibilityHook;
+
   // The relations every "playable project" response carries. Shared so the
   // public release, the published listing, and the staff preview cannot drift
   // on which collaborators or which comments they count.
@@ -130,6 +144,7 @@ export class ProjectService {
     @Inject(ConfigService) configService: ConfigService,
     private prisma: PrismaService,
     private readonly s3Service: S3Service,
+    private readonly auditService: AuditService,
     @Optional() private readonly analyticsService?: AnalyticsService
   ) {
     this.max_history_version =
@@ -357,12 +372,17 @@ export class ProjectService {
   async findAll(
     userId: number,
     page?: number,
-    limit?: number
+    limit?: number,
+    options: { scope?: "mine" | "all"; hidden?: boolean } = {}
   ): Promise<PaginatedProjectsResult<ProjectEx>> {
     const safePage = this.normalizePage(page);
     const safeLimit = this.normalizeLimit(limit);
     const skip = (safePage - 1) * safeLimit;
-    const where = this.buildUserProjectsWhere(userId);
+    // A moderator listing "all" is the same query without the ownership clause;
+    // hidden projects only surface for them, which is why the flag is a column.
+    const where = options.scope === "all"
+      ? (options.hidden !== undefined ? { hidden: options.hidden } : {})
+      : this.buildUserProjectsWhere(userId);
 
     const [total, projects] = await this.prisma.$transaction([
       this.prisma.project.count({
@@ -457,21 +477,96 @@ export class ProjectService {
     }
   }
 
+  /**
+   * Updates a project through the ordinary route.
+   *
+   * A collaborator edits their own project; a moderator edits anyone's, and may
+   * additionally set the staff-only moderation fields. Both go through here so
+   * there is one endpoint per resource rather than a parallel admin copy -- the
+   * difference is who the actor is, and that is recorded in the audit log.
+   */
   async update(
     id: number,
-    updateProjectDto: UpdateProjectDto
+    updateProjectDto: UpdateProjectDto,
+    actor: Actor
   ): Promise<Project> {
-    await this.findOne(id);
+    const before = await this.findOne(id);
 
-    return this.prisma.project.update({
+    const { hidden, moderationReason, ...patch } = updateProjectDto;
+    const isModerationChange = hidden !== undefined;
+
+    if (isModerationChange && !actor.isModerator) {
+      throw new ForbiddenException(
+        "Only a moderator can change a project's visibility"
+      );
+    }
+
+    const moderationData = isModerationChange
+      ? {
+        // Only the flag is stored: who hid it, when and why come from the audit
+        // entry written below, so those three facts live in exactly one place.
+        hidden,
+        // Hiding archives the project; restoring hands it back as a draft for
+        // its owner to republish deliberately.
+        status: hidden ? ProjectStatus.ARCHIVED : ProjectStatus.IN_PROGRESS
+      }
+      : {};
+
+    const updated = await this.prisma.project.update({
       where: { id },
       data: {
-        ...updateProjectDto,
-        ...(updateProjectDto.tags
-          ? { tags: this.normalizeTags(updateProjectDto.tags) }
-          : {})
+        ...patch,
+        ...(patch.tags ? { tags: this.normalizeTags(patch.tags) } : {}),
+        ...moderationData
       }
     });
+
+    if (isModerationChange) {
+      // Taking a project down must also pull the published build and end live
+      // sessions; both live behind this hook so the ordinary route is enough.
+      await this.onVisibilityChanged(before, updated);
+    }
+
+    if (isModerationChange || actor.actsAsModeratorOn(before)) {
+      await this.auditService.record({
+        ref: projectRef(id),
+        actor,
+        action: isModerationChange
+          ? hidden
+            ? ModerationActionType.HIDE_PROJECT
+            : ModerationActionType.RESTORE_PROJECT
+          : ModerationActionType.EDIT_PROJECT,
+        reason: moderationReason ?? null,
+        before,
+        after: updated
+      });
+    }
+
+    return updated;
+  }
+
+  /** Registered by the moderation layer; see `ProjectModerationHooks`. */
+  private async onVisibilityChanged(
+    before: Project,
+    after: Project
+  ): Promise<void> {
+    if (!after.hidden) {
+      return;
+    }
+
+    if (before.status === ProjectStatus.COMPLETED) {
+      await this.removeReleaseArtifact(after.id);
+    }
+
+    await this.visibilityHook?.onProjectHidden(after.id);
+  }
+
+  /**
+   * Set by `ModerationModule` at startup. Kept as a hook rather than a direct
+   * dependency because multiplayer already depends on this service.
+   */
+  registerVisibilityHook(hook: ProjectVisibilityHook): void {
+    this.visibilityHook = hook;
   }
 
   async remove(id: number): Promise<void> {

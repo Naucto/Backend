@@ -7,14 +7,13 @@
 
 import { ProjectController } from "@project/project.controller";
 import { ProjectCommentController } from "@project-comment/project-comment.controller";
+import { CommentController } from "@project-comment/comment.controller";
 import { MultiplayerController } from "src/routes/multiplayer/multiplayer.controller";
 import { ReportController } from "src/moderation/report.controller";
 
 import { AdminAuthController } from "src/admin/admin-auth.controller";
 import { AdminInsightsController } from "src/admin/admin-insights.controller";
 import { AdminUserController } from "src/admin/admin-user.controller";
-import { AdminProjectController } from "src/admin/admin-project.controller";
-import { AdminCommentController } from "src/admin/admin-comment.controller";
 import { AdminReportController } from "src/admin/admin-report.controller";
 import { AdminModerationLogController } from "src/admin/admin-moderation-log.controller";
 import { AdminRoleController } from "src/admin/admin-role.controller";
@@ -28,10 +27,9 @@ import { S3Client } from "@aws-sdk/client-s3";
 import { MultiplayerService } from "src/routes/multiplayer/multiplayer.service";
 import { ProjectCommentService } from "@project-comment/project-comment.service";
 import { ModerationService } from "src/moderation/moderation.service";
+import { AuditModule } from "src/moderation/audit";
 import { AdminInsightsService } from "src/admin/admin-insights.service";
 import { AdminUserService } from "src/admin/admin-user.service";
-import { AdminProjectService } from "src/admin/admin-project.service";
-import { AdminCommentService } from "src/admin/admin-comment.service";
 import { AdminReportService } from "src/admin/admin-report.service";
 import { AdminRoleService } from "src/admin/admin-role.service";
 import { TargetLinkService } from "src/admin/services/target-link.service";
@@ -61,6 +59,7 @@ const nullProvider = (token: InjectionToken): Provider => ({
 
 @Module({
   imports: [
+    AuditModule,
     GracefulShutdownModule.forRootAsync({
       imports: [WebRTCModule],
       inject: [WebRTCService],
@@ -84,12 +83,11 @@ const nullProvider = (token: InjectionToken): Provider => ({
     ProjectController,
     MultiplayerController,
     ProjectCommentController,
+    CommentController,
     ReportController,
     AdminAuthController,
     AdminInsightsController,
     AdminUserController,
-    AdminProjectController,
-    AdminCommentController,
     AdminReportController,
     AdminModerationLogController,
     AdminRoleController,
@@ -106,8 +104,6 @@ const nullProvider = (token: InjectionToken): Provider => ({
     nullProvider(ModerationService),
     nullProvider(AdminInsightsService),
     nullProvider(AdminUserService),
-    nullProvider(AdminProjectService),
-    nullProvider(AdminCommentService),
     nullProvider(AdminReportService),
     nullProvider(AdminRoleService),
     nullProvider(TargetLinkService),

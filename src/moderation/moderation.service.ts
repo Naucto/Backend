@@ -8,14 +8,12 @@ import {
   ModerationActionType,
   ModerationTargetType,
   Prisma,
-  ProjectStatus,
   ReportStatus,
   ReportTargetType
 } from "@prisma/client";
 import { PrismaService } from "@ourPrisma/prisma.service";
-import { ProjectService } from "@project/project.service";
-import { MultiplayerService } from "@multiplayer/multiplayer.service";
 import { CreateReportDto } from "./dto/create-report.dto";
+import { AuditService } from "./audit";
 
 type AuditInput = {
   actorId?: number | null;
@@ -28,26 +26,10 @@ type AuditInput = {
   reportId?: number | null;
 };
 
-type ProjectEditableFields = {
-  name?: string;
-  shortDesc?: string;
-  longDesc?: string | null;
-  publishedName?: string | null;
-  publishedShortDesc?: string | null;
-  publishedLongDesc?: string | null;
-  tags?: string[];
-  publishedTags?: string[];
-  iconUrl?: string | null;
-  monetization?: "NONE" | "ADS" | "PAID";
-  price?: number | null;
-  hiddenReason?: string | null;
-};
-
 type UserEditableFields = {
   email?: string;
   username?: string;
   nickname?: string | null;
-  moderationReason?: string | null;
 };
 
 const TERMINAL_REPORT_STATUSES = new Set<ReportStatus>([
@@ -74,8 +56,7 @@ const ALLOWED_REPORT_TRANSITIONS: Record<ReportStatus, ReportStatus[]> = {
 export class ModerationService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly projectService: ProjectService,
-    private readonly multiplayerService: MultiplayerService
+    private readonly auditService: AuditService
   ) {}
 
   async createReport(
@@ -114,18 +95,21 @@ export class ModerationService {
     });
   }
 
+  /**
+   * Records a moderation action.
+   *
+   * Delegates to {@link AuditService} rather than writing the row itself: two
+   * write paths into the same table is how the shapes drift apart.
+   */
   async audit(input: AuditInput): Promise<void> {
-    await this.prisma.moderationAction.create({
-      data: {
-        actorId: input.actorId ?? null,
-        targetType: input.targetType,
-        targetId: input.targetId,
-        action: input.action,
-        reason: input.reason ?? null,
-        before: input.before ?? Prisma.JsonNull,
-        after: input.after ?? Prisma.JsonNull,
-        reportId: input.reportId ?? null
-      }
+    await this.auditService.record({
+      ref: { type: input.targetType, id: input.targetId },
+      actor: input.actorId ?? null,
+      action: input.action,
+      reason: input.reason ?? null,
+      before: input.before,
+      after: input.after,
+      reportId: input.reportId ?? null
     });
   }
 
@@ -145,11 +129,9 @@ export class ModerationService {
     const before = await this.prisma.user.findUnique({
       where: { id: targetId },
       select: {
+        // Who suspended them, when and why is the audit entry's job now.
         id: true,
-        accountStatus: true,
-        moderationReason: true,
-        moderatedAt: true,
-        moderatedById: true
+        accountStatus: true
       }
     });
 
@@ -160,17 +142,11 @@ export class ModerationService {
     const after = await this.prisma.user.update({
       where: { id: targetId },
       data: {
-        accountStatus,
-        moderationReason: reason ?? null,
-        moderatedAt: new Date(),
-        moderatedById: actorId
+        accountStatus
       },
       select: {
         id: true,
-        accountStatus: true,
-        moderationReason: true,
-        moderatedAt: true,
-        moderatedById: true
+        accountStatus: true
       }
     });
 
@@ -257,7 +233,6 @@ export class ModerationService {
         email: true,
         username: true,
         nickname: true,
-        moderationReason: true
       }
     });
 
@@ -273,7 +248,6 @@ export class ModerationService {
         email: true,
         username: true,
         nickname: true,
-        moderationReason: true
       }
     });
 
@@ -366,258 +340,7 @@ export class ModerationService {
 
   // ─── Projects ─────────────────────────────────────────────────────────────
 
-  async hideProject(
-    targetId: number,
-    actorId: number | null,
-    reason?: string | null,
-    reportId?: number | null
-  ): Promise<void> {
-    const before = await this.prisma.project.findUnique({
-      where: { id: targetId }
-    });
-
-    if (!before) {
-      throw new NotFoundException(`Project with ID ${targetId} not found`);
-    }
-
-    const after = await this.prisma.project.update({
-      where: { id: targetId },
-      data: {
-        hidden: true,
-        hiddenReason: reason ?? null,
-        hiddenAt: new Date(),
-        hiddenById: actorId,
-        status: ProjectStatus.ARCHIVED
-      }
-    });
-
-    // Hiding archives the project, so the published build has to come down too:
-    // the release object is public-read and would otherwise stay playable by URL.
-    if (before.status === ProjectStatus.COMPLETED) {
-      await this.projectService.removeReleaseArtifact(targetId);
-    }
-
-    // Players already in a live session keep playing the hidden game until the
-    // room is torn down, so end them rather than only flipping the project row.
-    await this.multiplayerService.endSessionsForProject(targetId);
-
-    await this.audit({
-      actorId,
-      targetType: ModerationTargetType.PROJECT,
-      targetId,
-      action: ModerationActionType.HIDE_PROJECT,
-      reason: reason ?? null,
-      before: this.toJson(before),
-      after: this.toJson(after),
-      reportId: reportId ?? null
-    });
-  }
-
-  async restoreProject(
-    targetId: number,
-    actorId: number | null,
-    reason?: string | null,
-    reportId?: number | null
-  ): Promise<void> {
-    const before = await this.prisma.project.findUnique({
-      where: { id: targetId }
-    });
-
-    if (!before) {
-      throw new NotFoundException(`Project with ID ${targetId} not found`);
-    }
-
-    const after = await this.prisma.project.update({
-      where: { id: targetId },
-      data: {
-        hidden: false,
-        hiddenReason: null,
-        hiddenAt: null,
-        hiddenById: null
-      }
-    });
-
-    await this.audit({
-      actorId,
-      targetType: ModerationTargetType.PROJECT,
-      targetId,
-      action: ModerationActionType.RESTORE_PROJECT,
-      reason: reason ?? null,
-      before: this.toJson(before),
-      after: this.toJson(after),
-      reportId: reportId ?? null
-    });
-  }
-
-  async unpublishProject(
-    targetId: number,
-    actorId: number | null,
-    reason?: string | null,
-    reportId?: number | null
-  ): Promise<void> {
-    const before = await this.prisma.project.findUnique({
-      where: { id: targetId }
-    });
-
-    if (!before) {
-      throw new NotFoundException(`Project with ID ${targetId} not found`);
-    }
-
-    // Delegate to the owning service rather than re-implementing the state
-    // change: it also tears down the public release object on S3 and records the
-    // analytics event, which a parallel prisma.update here would silently skip.
-    await this.projectService.unpublish(targetId);
-    await this.multiplayerService.endSessionsForProject(targetId);
-
-    const after = await this.prisma.project.findUnique({
-      where: { id: targetId }
-    });
-
-    await this.audit({
-      actorId,
-      targetType: ModerationTargetType.PROJECT,
-      targetId,
-      action: ModerationActionType.UNPUBLISH_PROJECT,
-      reason: reason ?? null,
-      before: this.toJson(before),
-      after: this.toJson(after),
-      reportId: reportId ?? null
-    });
-  }
-
-  async editProject(
-    targetId: number,
-    actorId: number | null,
-    patch: ProjectEditableFields,
-    reason?: string | null
-  ): Promise<void> {
-    const before = await this.prisma.project.findUnique({
-      where: { id: targetId }
-    });
-
-    if (!before) {
-      throw new NotFoundException(`Project with ID ${targetId} not found`);
-    }
-
-    const after = await this.prisma.project.update({
-      where: { id: targetId },
-      data: patch
-    });
-
-    await this.audit({
-      actorId,
-      targetType: ModerationTargetType.PROJECT,
-      targetId,
-      action: ModerationActionType.EDIT_PROJECT,
-      reason: reason ?? null,
-      before: this.toJson(before),
-      after: this.toJson(after)
-    });
-  }
-
   // ─── Comments ─────────────────────────────────────────────────────────────
-
-  async hideComment(
-    targetId: number,
-    actorId: number | null,
-    reason?: string | null,
-    reportId?: number | null
-  ): Promise<void> {
-    const before = await this.prisma.comment.findUnique({
-      where: { id: targetId }
-    });
-
-    if (!before) {
-      throw new NotFoundException(`Comment with ID ${targetId} not found`);
-    }
-
-    const after = await this.prisma.comment.update({
-      where: { id: targetId },
-      data: {
-        hidden: true,
-        hiddenReason: reason ?? null,
-        hiddenAt: new Date(),
-        hiddenById: actorId
-      }
-    });
-
-    await this.audit({
-      actorId,
-      targetType: ModerationTargetType.COMMENT,
-      targetId,
-      action: ModerationActionType.HIDE_COMMENT,
-      reason: reason ?? null,
-      before: this.toJson(before),
-      after: this.toJson(after),
-      reportId: reportId ?? null
-    });
-  }
-
-  async restoreComment(
-    targetId: number,
-    actorId: number | null,
-    reason?: string | null,
-    reportId?: number | null
-  ): Promise<void> {
-    const before = await this.prisma.comment.findUnique({
-      where: { id: targetId }
-    });
-
-    if (!before) {
-      throw new NotFoundException(`Comment with ID ${targetId} not found`);
-    }
-
-    const after = await this.prisma.comment.update({
-      where: { id: targetId },
-      data: {
-        hidden: false,
-        hiddenReason: null,
-        hiddenAt: null,
-        hiddenById: null
-      }
-    });
-
-    await this.audit({
-      actorId,
-      targetType: ModerationTargetType.COMMENT,
-      targetId,
-      action: ModerationActionType.RESTORE_COMMENT,
-      reason: reason ?? null,
-      before: this.toJson(before),
-      after: this.toJson(after),
-      reportId: reportId ?? null
-    });
-  }
-
-  async editComment(
-    targetId: number,
-    actorId: number | null,
-    newContent: string,
-    reason?: string | null
-  ): Promise<void> {
-    const before = await this.prisma.comment.findUnique({
-      where: { id: targetId }
-    });
-
-    if (!before) {
-      throw new NotFoundException(`Comment with ID ${targetId} not found`);
-    }
-
-    const after = await this.prisma.comment.update({
-      where: { id: targetId },
-      data: { content: newContent }
-    });
-
-    await this.audit({
-      actorId,
-      targetType: ModerationTargetType.COMMENT,
-      targetId,
-      action: ModerationActionType.EDIT_COMMENT,
-      reason: reason ?? null,
-      before: this.toJson(before),
-      after: this.toJson(after)
-    });
-  }
 
   // ─── Reports ──────────────────────────────────────────────────────────────
 

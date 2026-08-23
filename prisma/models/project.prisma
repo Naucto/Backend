@@ -39,6 +39,7 @@ enum ModerationActionType {
   UNPUBLISH_PROJECT
   HIDE_COMMENT
   RESTORE_COMMENT
+  DELETE_COMMENT
   REVIEW_REPORT
   RESOLVE_REPORT
   DISMISS_REPORT
@@ -48,6 +49,7 @@ enum ModerationActionType {
   UPDATE_ROLES
   EDIT_USER
   EDIT_PROJECT
+  DELETE_PROJECT
   EDIT_COMMENT
   UPDATE_REPORT
   RESET_PASSWORD
@@ -98,10 +100,9 @@ model Project {
   contentUploadedAt DateTime? @map("content_uploaded_at")
 
   forkedFromId Int?      @map("forked_from_id")
+  // Only the flag lives here: the reason, the moment and the moderator come
+  // from ModerationAction, so they are recorded once instead of per entity.
   hidden       Boolean   @default(false)
-  hiddenReason String?
-  hiddenAt     DateTime?
-  hiddenById   Int?      @map("hidden_by_id")
 
   // Relations
   forkedFrom    Project?      @relation("ProjectForks", fields: [forkedFromId], references: [id], onDelete: SetNull)
@@ -132,9 +133,6 @@ model Comment {
   content   String
   deleted   Boolean   @default(false)
   hidden    Boolean   @default(false)
-  hiddenReason String?
-  hiddenAt DateTime?
-  hiddenById Int?     @map("hidden_by_id")
   createdAt DateTime  @default(now())
 
   @@index([projectId])

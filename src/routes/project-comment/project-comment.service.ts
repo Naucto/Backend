@@ -4,7 +4,11 @@ import {
   NotFoundException,
   Optional
 } from "@nestjs/common";
-import { AnalyticsEventType, Prisma } from "@prisma/client";
+import {
+  AnalyticsEventType,
+  ModerationActionType,
+  Prisma
+} from "@prisma/client";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import {
   CommentNotFoundException,
@@ -16,6 +20,16 @@ import {
   PaginatedCommentsResponseDto
 } from "./dto/comment-response.dto";
 import { AnalyticsService } from "src/analytics/analytics.service";
+import { Actor } from "@auth/actor";
+import { CommentFilterDto } from "./dto/comment-filter.dto";
+
+export type CommentListMeta = {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+};
+import { AuditService, commentRef } from "src/moderation/audit";
 
 const AUTHOR_SELECT = {
   id: true,
@@ -50,6 +64,7 @@ type CommentRecord = CommentReplyRecord & {
 export class ProjectCommentService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
     @Optional() private readonly analyticsService?: AnalyticsService
   ) {}
 
@@ -219,42 +234,158 @@ export class ProjectCommentService {
     return this.mapComment(reply);
   }
 
+  /**
+   * Edits a comment.
+   *
+   * A moderator may edit one they did not write -- that is the only difference
+   * between the two cases, so it is handled here rather than in a parallel
+   * admin route. Acting on someone else's comment is written to the audit log.
+   */
   async updateComment(
     commentId: number,
-    userId: number,
-    content: string
+    actor: Actor,
+    patch: { content?: string; hidden?: boolean; moderationReason?: string }
   ): Promise<CommentResponseDto> {
+    const { content, hidden, moderationReason: reason } = patch;
+
+    if (hidden !== undefined && !actor.isModerator) {
+      throw new ForbiddenException(
+        "Only a moderator can change a comment's visibility"
+      );
+    }
+
     const comment = await this.prisma.comment.findUnique({
       where: { id: commentId },
-      select: { id: true, authorId: true, hidden: true }
+      select: { id: true, authorId: true, hidden: true, content: true }
     });
 
     if (!comment) {
       throw new CommentNotFoundException(commentId);
     }
 
-    if (comment.authorId !== userId) {
+    if (!actor.canActOn(comment)) {
       throw new ForbiddenException("You can only edit your own comments");
     }
-    if (comment.hidden) {
+    // A hidden comment is under moderation: its author cannot rewrite it, but a
+    // moderator still can (that is how an offending line gets redacted).
+    if (comment.hidden && !actor.isModerator) {
       throw new ForbiddenException("Cannot edit a hidden comment");
     }
 
     const updated = await this.prisma.comment.update({
       where: { id: commentId },
-      data: { content },
+      data: {
+        ...(content !== undefined ? { content } : {}),
+        ...(hidden !== undefined
+          // Only the flag: the reason, the moment and the actor are the audit
+          // entry's job, recorded just below.
+          ? { hidden }
+          : {})
+      },
       include: {
         author: { select: AUTHOR_SELECT }
       }
     });
 
+    if (hidden !== undefined) {
+      await this.auditService.record({
+        ref: commentRef(commentId),
+        actor,
+        action: hidden
+          ? ModerationActionType.HIDE_COMMENT
+          : ModerationActionType.RESTORE_COMMENT,
+        reason: reason ?? null,
+        before: { hidden: comment.hidden },
+        after: { hidden }
+      });
+    } else if (actor.actsAsModeratorOn(comment)) {
+      await this.auditService.record({
+        ref: commentRef(commentId),
+        actor,
+        action: ModerationActionType.EDIT_COMMENT,
+        reason: reason ?? null,
+        before: { content: comment.content },
+        after: { content }
+      });
+    }
+
     return this.mapComment(updated);
   }
 
+  async findOneForModeration(
+    id: number,
+    actor: Actor
+  ): Promise<CommentResponseDto> {
+    if (!actor.isModerator) {
+      throw new ForbiddenException("Staff access required");
+    }
+
+    const comment = await this.prisma.comment.findUnique({
+      where: { id },
+      include: { author: { select: AUTHOR_SELECT } }
+    });
+
+    if (!comment) {
+      throw new CommentNotFoundException(id);
+    }
+
+    return this.mapComment(comment);
+  }
+
+  /**
+   * Cross-project comment query for moderation.
+   *
+   * A query capability on the comment resource, not a second comment API: the
+   * moderation-only filters are simply refused for a non-moderator.
+   */
+  async findAllForModeration(
+    filter: CommentFilterDto,
+    actor: Actor
+  ): Promise<{ data: CommentResponseDto[]; meta: CommentListMeta }> {
+    if (!actor.isModerator) {
+      throw new ForbiddenException("Staff access required");
+    }
+
+    const page = filter.page ?? 1;
+    const limit = filter.limit ?? 25;
+
+    const where: Prisma.CommentWhereInput = {};
+    if (filter.projectId !== undefined) where.projectId = filter.projectId;
+    if (filter.authorId !== undefined) where.authorId = filter.authorId;
+    if (filter.hidden !== undefined) where.hidden = filter.hidden;
+    if (filter.deleted !== undefined) where.deleted = filter.deleted;
+
+    const [comments, total] = await Promise.all([
+      this.prisma.comment.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { [filter.sortBy ?? "createdAt"]: filter.order ?? "desc" },
+        include: { author: { select: AUTHOR_SELECT } }
+      }),
+      this.prisma.comment.count({ where })
+    ]);
+
+    return {
+      data: comments.map((comment) => this.mapComment(comment)),
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit))
+      }
+    };
+  }
+
+  /**
+   * Soft-deletes a comment. The author, the project creator and any moderator
+   * may do it; only the moderator case is audited.
+   */
   async deleteComment(
     projectId: number,
     commentId: number,
-    userId: number
+    actor: Actor,
+    reason?: string
   ): Promise<void> {
     const [comment, project] = await Promise.all([
       this.prisma.comment.findUnique({
@@ -280,9 +411,9 @@ export class ProjectCommentService {
       throw new NotFoundException("Comment does not belong to this project");
     }
 
-    const isProjectCreator = project?.userId === userId;
+    const isProjectCreator = project?.userId === actor.id;
 
-    if (comment.authorId !== userId && !isProjectCreator) {
+    if (!actor.canActOn(comment) && !isProjectCreator) {
       throw new ForbiddenException("You can only delete your own comments");
     }
 
@@ -290,6 +421,17 @@ export class ProjectCommentService {
       where: { id: commentId },
       data: { deleted: true }
     });
+
+    if (actor.actsAsModeratorOn(comment) && !isProjectCreator) {
+      await this.auditService.record({
+        ref: commentRef(commentId),
+        actor,
+        action: ModerationActionType.DELETE_COMMENT,
+        reason: reason ?? null,
+        before: { deleted: false },
+        after: { deleted: true }
+      });
+    }
   }
 
   private mapComment(comment: CommentRecord): CommentResponseDto {

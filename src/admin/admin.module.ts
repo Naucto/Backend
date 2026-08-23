@@ -16,10 +16,6 @@ import { AdminInsightsController } from "./admin-insights.controller";
 import { AdminInsightsService } from "./admin-insights.service";
 import { AdminUserController } from "./admin-user.controller";
 import { AdminUserService } from "./admin-user.service";
-import { AdminProjectController } from "./admin-project.controller";
-import { AdminProjectService } from "./admin-project.service";
-import { AdminCommentController } from "./admin-comment.controller";
-import { AdminCommentService } from "./admin-comment.service";
 import { AdminReportController } from "./admin-report.controller";
 import { AdminReportService } from "./admin-report.service";
 import { AdminModerationLogController } from "./admin-moderation-log.controller";
@@ -40,8 +36,6 @@ import { TargetLinkService } from "./services/target-link.service";
     AdminAuthController,
     AdminInsightsController,
     AdminUserController,
-    AdminProjectController,
-    AdminCommentController,
     AdminReportController,
     AdminModerationLogController,
     AdminRoleController
@@ -49,8 +43,6 @@ import { TargetLinkService } from "./services/target-link.service";
   providers: [
     AdminInsightsService,
     AdminUserService,
-    AdminProjectService,
-    AdminCommentService,
     AdminReportService,
     AdminRoleService,
     TargetLinkService

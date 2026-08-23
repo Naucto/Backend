@@ -16,6 +16,7 @@ import { NotificationsModule } from "src/notifications/notifications.module";
 import { AppConfig } from "src/app.config";
 import { AnalyticsModule } from "src/analytics/analytics.module";
 import { ModerationModule } from "src/moderation/moderation.module";
+import { AuditModule } from "src/moderation/audit";
 import { AdminModule } from "src/admin/admin.module";
 
 import {
@@ -40,6 +41,7 @@ import {
     ScheduleModule.forRoot(),
     PrismaModule,
     AnalyticsModule,
+    AuditModule,
     ModerationModule,
     AuthModule,
     S3Module,

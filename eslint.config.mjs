@@ -24,7 +24,15 @@ export default defineConfig([
     },
     extends: ["js/recommended"],
     rules: {
-      indent: ["error", 2],
+      // The base `indent` rule counts a decorator as a continuation line and
+      // demands an extra level on whatever follows it. With --fix that reindents
+      // every DTO property and every @UploadedFile parameter in the repo, which
+      // buries real changes in whitespace churn. Leave decorated nodes alone.
+      indent: [
+        "error",
+        2,
+        { ignoredNodes: ["PropertyDefinition", "Identifier[decorators.length > 0]"] }
+      ],
       quotes: ["error", "double"],
       "linebreak-style": ["error", "unix"],
       "@typescript-eslint/no-unused-vars": "warn",
@@ -54,7 +62,15 @@ export default defineConfig([
     },
     extends: ["js/recommended"],
     rules: {
-      indent: ["error", 2],
+      // The base `indent` rule counts a decorator as a continuation line and
+      // demands an extra level on whatever follows it. With --fix that reindents
+      // every DTO property and every @UploadedFile parameter in the repo, which
+      // buries real changes in whitespace churn. Leave decorated nodes alone.
+      indent: [
+        "error",
+        2,
+        { ignoredNodes: ["PropertyDefinition", "Identifier[decorators.length > 0]"] }
+      ],
       quotes: ["error", "double"],
       "linebreak-style": ["error", "unix"],
       "no-console": "warn",

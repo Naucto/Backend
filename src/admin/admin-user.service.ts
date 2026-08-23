@@ -3,23 +3,13 @@ import {
   Injectable,
   NotFoundException
 } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { UserService } from "@user/user.service";
 import { ModerationService } from "src/moderation/moderation.service";
-import {
-  buildOrderBy,
-  paginated,
-  resolvePage
-} from "./admin-pagination.util";
 import { StaffRole } from "./admin-roles";
-import { AdminUserFilterDto } from "./dto/users/admin-user-filter.dto";
 import { CreateAdminUserDto } from "./dto/users/create-admin-user.dto";
-import { UpdateAdminUserDto } from "./dto/users/update-admin-user.dto";
 import {
-  AdminUserDetailDto,
-  AdminUserListResponseDto,
   AdminUserResponseDto
 } from "./dto/users/admin-user-response.dto";
 
@@ -27,78 +17,11 @@ const BCRYPT_SALT_ROUNDS = 10;
 
 @Injectable()
 export class AdminUserService {
-  private static readonly SORTABLE_FIELDS = [
-    "id",
-    "email",
-    "username",
-    "nickname",
-    "accountStatus",
-    "createdAt"
-  ] as const;
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly userService: UserService,
     private readonly moderationService: ModerationService
   ) {}
-
-  async list(filter: AdminUserFilterDto): Promise<AdminUserListResponseDto> {
-    const page = resolvePage(filter);
-
-    const where: Prisma.UserWhereInput = {};
-    if (filter.email)
-      where.email = { contains: filter.email, mode: "insensitive" };
-    if (filter.username)
-      where.username = { contains: filter.username, mode: "insensitive" };
-    if (filter.nickname)
-      where.nickname = { contains: filter.nickname, mode: "insensitive" };
-    if (filter.accountStatus) where.accountStatus = filter.accountStatus;
-    if (filter.role) where.roles = { some: { name: filter.role } };
-
-    const orderBy = buildOrderBy<Prisma.UserOrderByWithRelationInput>(
-      filter,
-      AdminUserService.SORTABLE_FIELDS,
-      "createdAt"
-    );
-
-    const [users, total] = await Promise.all([
-      this.prisma.user.findMany({
-        where,
-        skip: page.skip,
-        take: page.take,
-        orderBy,
-        include: { roles: true }
-      }),
-      this.prisma.user.count({ where })
-    ]);
-
-    return paginated(users, total, page, (user) => this.toResponse(user));
-  }
-
-  async findOne(id: number): Promise<AdminUserDetailDto> {
-    const user = await this.prisma.user.findUnique({
-      where: { id },
-      include: { roles: true }
-    });
-    if (!user) throw new NotFoundException(`User with ID ${id} not found`);
-
-    const [projectsCreated, commentsCount, reportsFiled, moderationTaken] =
-      await Promise.all([
-        this.prisma.project.count({ where: { userId: id } }),
-        this.prisma.comment.count({ where: { authorId: id } }),
-        this.prisma.report.count({ where: { reporterId: id } }),
-        this.prisma.moderationAction.count({ where: { actorId: id } })
-      ]);
-
-    const base = this.toResponse(user);
-    return {
-      ...base,
-      projectsCreatedCount: projectsCreated,
-      commentsCount,
-      reportsFiledCount: reportsFiled,
-      moderationActionsTakenCount: moderationTaken
-    };
-  }
 
   async createStaff(
     dto: CreateAdminUserDto,
@@ -136,51 +59,6 @@ export class AdminUserService {
     );
 
     return this.toResponse(withRoles!);
-  }
-
-  async update(
-    id: number,
-    dto: UpdateAdminUserDto,
-    actorId: number
-  ): Promise<AdminUserResponseDto> {
-    const before = await this.prisma.user.findUnique({
-      where: { id },
-      include: { roles: true }
-    });
-    if (!before) throw new NotFoundException(`User with ID ${id} not found`);
-
-    if (dto.roles) {
-      const currentRoleNames = before.roles.map((role) => role.name);
-      const toConnect = dto.roles.filter(
-        (name) => !currentRoleNames.includes(name)
-      );
-      const toDisconnect = currentRoleNames.filter(
-        (name) => !dto.roles!.includes(name)
-      );
-      if (toConnect.length || toDisconnect.length) {
-        await this.moderationService.updateUserRoles(
-          id,
-          actorId,
-          toConnect,
-          toDisconnect,
-          dto.reason
-        );
-      }
-    }
-
-    const patch: {
-      email?: string;
-      username?: string;
-      nickname?: string | null;
-    } = {};
-    if (dto.email !== undefined) patch.email = dto.email;
-    if (dto.username !== undefined) patch.username = dto.username;
-    if (dto.nickname !== undefined) patch.nickname = dto.nickname;
-    if (Object.keys(patch).length) {
-      await this.moderationService.editUser(id, actorId, patch, dto.reason);
-    }
-
-    return this.findOne(id);
   }
 
   async setStatus(
@@ -258,6 +136,25 @@ export class AdminUserService {
     return this.findOne(id);
   }
 
+  /**
+   * The user as the panel renders it after a moderation verb.
+   *
+   * Listing and detail reads live on `/users` now; this is only the echo the
+   * suspend/ban/role endpoints return, so it stays private.
+   */
+  private async findOne(id: number): Promise<AdminUserResponseDto> {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      include: { roles: true }
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    return this.toResponse(user);
+  }
+
   private async getRoleNames(id: number): Promise<string[]> {
     const user = await this.prisma.user.findUnique({
       where: { id },
@@ -315,9 +212,6 @@ export class AdminUserService {
       nickname: string | null;
       accountStatus: "ACTIVE" | "SUSPENDED" | "BANNED";
       createdAt: Date;
-      moderationReason: string | null;
-      moderatedAt: Date | null;
-      moderatedById: number | null;
     } & { roles: { name: string }[] }
   ): AdminUserResponseDto {
     return {
@@ -328,9 +222,6 @@ export class AdminUserService {
       accountStatus: user.accountStatus,
       roles: user.roles.map((role) => role.name),
       createdAt: user.createdAt.toISOString(),
-      moderationReason: user.moderationReason,
-      moderatedAt: user.moderatedAt?.toISOString() ?? null,
-      moderatedById: user.moderatedById
     };
   }
 }

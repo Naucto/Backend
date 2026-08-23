@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { IsOptional, IsString, IsEnum, IsInt, Min } from "class-validator";
 import { Type } from "class-transformer";
+import { AccountStatus } from "@prisma/client";
 
 export class UserFilterDto {
   @ApiPropertyOptional({ description: "Page number", example: 1 })
@@ -26,6 +27,27 @@ export class UserFilterDto {
   @IsOptional()
   @IsString()
   email?: string;
+
+  @ApiPropertyOptional({ description: "Filter by username" })
+  @IsOptional()
+  @IsString()
+  username?: string;
+
+  @ApiPropertyOptional({
+    enum: AccountStatus,
+    description: "Filter by account status. Moderators only."
+  })
+  @IsOptional()
+  @IsEnum(AccountStatus)
+  accountStatus?: AccountStatus;
+
+  @ApiPropertyOptional({
+    description: "Only users holding this role. Moderators only.",
+    example: "Moderator"
+  })
+  @IsOptional()
+  @IsString()
+  role?: string;
 
   @ApiPropertyOptional({
     enum: ["id", "username", "email", "createdAt"],

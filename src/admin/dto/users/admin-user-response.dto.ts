@@ -10,9 +10,6 @@ export class AdminUserResponseDto {
   @ApiProperty({ enum: AccountStatus }) accountStatus!: AccountStatus;
   @ApiProperty({ type: [String] }) roles!: string[];
   @ApiProperty() createdAt!: string;
-  @ApiPropertyOptional({ nullable: true }) moderationReason?: string | null;
-  @ApiPropertyOptional({ nullable: true }) moderatedAt?: string | null;
-  @ApiPropertyOptional({ nullable: true }) moderatedById?: number | null;
 }
 
 export class AdminUserListResponseDto {
