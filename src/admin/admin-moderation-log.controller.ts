@@ -8,13 +8,12 @@ import {
   UseGuards
 } from "@nestjs/common";
 import { ApiCookieAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import { Prisma } from "@prisma/client";
 import { Roles } from "@auth/decorators/roles.decorator";
 import { RolesGuard } from "@auth/guards/roles.guard";
-import { PrismaService } from "@ourPrisma/prisma.service";
 import { AdminCookieJwtGuard } from "./guards/admin-cookie-jwt.guard";
 import { buildMeta, resolvePage } from "./admin-pagination.util";
 import { TargetLinkService } from "./services/target-link.service";
+import { AuditEntry, AuditService } from "src/moderation/audit";
 import { ModerationLogFilterDto } from "./dto/moderation-log/moderation-log-filter.dto";
 import {
   ModerationLogDetailDto,
@@ -29,9 +28,29 @@ import {
 @Controller("admin/moderation-log")
 export class AdminModerationLogController {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
     private readonly targetLinks: TargetLinkService
   ) {}
+
+  private toLogEntry(
+    entry: AuditEntry,
+    labels: Map<string, { label: string }>
+  ): ModerationLogResponseDto {
+    return {
+      id: entry.id,
+      actorId: entry.actorId,
+      actorLabel: entry.actor?.username ? `@${entry.actor.username}` : null,
+      targetType: entry.targetType,
+      targetId: entry.targetId,
+      targetLabel:
+        labels.get(`${entry.targetType}:${entry.targetId}`)?.label ??
+        `${entry.targetType} #${entry.targetId}`,
+      action: entry.action,
+      reason: entry.reason,
+      reportId: entry.reportId,
+      createdAt: entry.createdAt.toISOString()
+    };
+  }
 
   @Get()
   @ApiOperation({ summary: "List moderation actions" })
@@ -40,63 +59,19 @@ export class AdminModerationLogController {
   ): Promise<ModerationLogListResponseDto> {
     const page = resolvePage(filter);
 
-    const where: Prisma.ModerationActionWhereInput = {};
-    if (filter.actorId !== undefined) where.actorId = filter.actorId;
-    if (filter.targetType) where.targetType = filter.targetType;
-    if (filter.targetId !== undefined) where.targetId = filter.targetId;
-    if (filter.action) where.action = filter.action;
-    if (filter.createdAfter || filter.createdBefore) {
-      const createdAtFilter: Prisma.DateTimeFilter = {};
-      if (filter.createdAfter) {
-        createdAtFilter.gte = new Date(filter.createdAfter);
-      }
-      if (filter.createdBefore) {
-        createdAtFilter.lte = new Date(filter.createdBefore);
-      }
-      where.createdAt = createdAtFilter;
-    }
-
-    const orderBy: Prisma.ModerationActionOrderByWithRelationInput = {
-      createdAt: filter.order ?? "desc"
-    };
-
-    const [actions, total] = await Promise.all([
-      this.prisma.moderationAction.findMany({
-        where,
-        skip: page.skip,
-        take: page.take,
-        orderBy,
-        include: {
-          actor: { select: { id: true, username: true } }
-        }
-      }),
-      this.prisma.moderationAction.count({ where })
-    ]);
+    // Reads go through AuditService like every other moderation read, so the
+    // feed and a single target's history cannot drift apart.
+    const { entries, total } = await this.auditService.search(filter, {
+      skip: page.skip,
+      take: page.take
+    });
 
     const labels = await this.targetLinks.resolve(
-      actions.map((action) => ({
-        id: action.targetId,
-        type: action.targetType
-      }))
+      entries.map((entry) => ({ id: entry.targetId, type: entry.targetType }))
     );
 
     return {
-      data: actions.map((action) => ({
-        id: action.id,
-        actorId: action.actorId,
-        actorLabel: action.actor?.username
-          ? `@${action.actor.username}`
-          : null,
-        targetType: action.targetType,
-        targetId: action.targetId,
-        targetLabel:
-          labels.get(`${action.targetType}:${action.targetId}`)?.label ??
-          `${action.targetType} #${action.targetId}`,
-        action: action.action,
-        reason: action.reason,
-        reportId: action.reportId,
-        createdAt: action.createdAt.toISOString()
-      })),
+      data: entries.map((entry) => this.toLogEntry(entry, labels)),
       meta: buildMeta(total, page)
     };
   }
@@ -106,10 +81,7 @@ export class AdminModerationLogController {
   async get(
     @Param("id", ParseIntPipe) id: number
   ): Promise<ModerationLogDetailDto> {
-    const action = await this.prisma.moderationAction.findUnique({
-      where: { id },
-      include: { actor: { select: { id: true, username: true } } }
-    });
+    const action = await this.auditService.findEntry(id);
     if (!action) {
       throw new NotFoundException(`Moderation action with ID ${id} not found`);
     }

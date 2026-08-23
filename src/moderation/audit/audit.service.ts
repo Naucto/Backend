@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import {
   ModerationAction,
   ModerationActionType,
+  ModerationTargetType,
   Prisma
 } from "@prisma/client";
 import { PrismaService } from "@ourPrisma/prisma.service";
@@ -29,6 +30,18 @@ export type ModerationState = {
   at: Date;
   byId: number | null;
   byLabel: string | null;
+};
+
+/** Filters the moderation feed accepts. */
+export type AuditSearchFilter = {
+  actorId?: number;
+  targetType?: ModerationTargetType;
+  targetId?: number;
+  action?: ModerationActionType;
+  reportId?: number;
+  createdAfter?: string;
+  createdBefore?: string;
+  order?: "asc" | "desc";
 };
 
 /** Only the newest entry matters for current state. */
@@ -73,6 +86,66 @@ export class AuditService {
       ...(options.take !== undefined ? { take: options.take } : {}),
       include: { actor: { select: { id: true, username: true } } }
     });
+  }
+
+  /**
+   * Filtered feed across every target, for the moderation log view.
+   *
+   * The per-target reads above and this one share the same query builder, so
+   * the feed and a target's history can never disagree about what happened.
+   */
+  async search(
+    filter: AuditSearchFilter,
+    options: { skip?: number; take?: number } = {}
+  ): Promise<{ entries: AuditEntry[]; total: number }> {
+    const where = this.buildWhere(filter);
+
+    const [entries, total] = await Promise.all([
+      this.prisma.moderationAction.findMany({
+        where,
+        orderBy: { createdAt: filter.order ?? "desc" },
+        ...(options.skip !== undefined ? { skip: options.skip } : {}),
+        ...(options.take !== undefined ? { take: options.take } : {}),
+        include: { actor: { select: { id: true, username: true } } }
+      }),
+      this.prisma.moderationAction.count({ where })
+    ]);
+
+    return { entries, total };
+  }
+
+  /** One entry with its before/after snapshots. */
+  async findEntry(id: number): Promise<AuditEntry | null> {
+    return this.prisma.moderationAction.findUnique({
+      where: { id },
+      include: { actor: { select: { id: true, username: true } } }
+    });
+  }
+
+  private buildWhere(
+    filter: AuditSearchFilter
+  ): Prisma.ModerationActionWhereInput {
+    const where: Prisma.ModerationActionWhereInput = {};
+
+    if (filter.actorId !== undefined) where.actorId = filter.actorId;
+    if (filter.targetType) where.targetType = filter.targetType;
+    if (filter.targetId !== undefined) where.targetId = filter.targetId;
+    if (filter.action) where.action = filter.action;
+    if (filter.reportId !== undefined) where.reportId = filter.reportId;
+
+    if (filter.createdAfter || filter.createdBefore) {
+      const createdAt: Prisma.DateTimeFilter = {};
+      if (filter.createdAfter) createdAt.gte = new Date(filter.createdAfter);
+      if (filter.createdBefore) createdAt.lte = new Date(filter.createdBefore);
+      where.createdAt = createdAt;
+    }
+
+    return where;
+  }
+
+  /** How many moderation actions a staff member has taken. */
+  async countByActor(actorId: number): Promise<number> {
+    return this.prisma.moderationAction.count({ where: { actorId } });
   }
 
   async countFor(ref: ModeratableRef): Promise<number> {

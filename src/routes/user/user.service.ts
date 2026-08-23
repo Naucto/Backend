@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "@ourPrisma/prisma.service";
+import { AuditService } from "src/moderation/audit";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
 import { User, Prisma } from "@prisma/client";
@@ -9,7 +10,10 @@ import { Role } from "@prisma/client";
 
 @Injectable()
 export class UserService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService
+  ) {}
   private static readonly BCRYPT_SALT_ROUNDS = 10;
 
   async findPublicProfile(id: number): Promise<{
@@ -134,7 +138,7 @@ export class UserService {
         this.prisma.project.count({ where: { userId: id } }),
         this.prisma.comment.count({ where: { authorId: id } }),
         this.prisma.report.count({ where: { reporterId: id } }),
-        this.prisma.moderationAction.count({ where: { actorId: id } })
+        this.auditService.countByActor(id)
       ]);
 
     return {

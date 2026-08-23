@@ -17,7 +17,8 @@ import { Actor, CurrentActor } from "@auth/actor";
 import { CommentFilterDto } from "./dto/comment-filter.dto";
 import {
   CommentListResponseDto,
-  CommentResponseDto
+  CommentResponseDto,
+  ModeratedCommentFieldsDto
 } from "./dto/comment-response.dto";
 import { ProjectCommentService } from "./project-comment.service";
 
@@ -42,7 +43,7 @@ export class CommentController {
   async findOne(
     @Param("id", ParseIntPipe) id: number,
     @CurrentActor() actor: Actor
-  ): Promise<CommentResponseDto> {
+  ): Promise<CommentResponseDto & ModeratedCommentFieldsDto> {
     return this.projectCommentService.findOneForModeration(id, actor);
   }
 

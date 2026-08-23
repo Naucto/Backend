@@ -1,6 +1,7 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { UserController } from "./user.controller";
 import { UserService } from "./user.service";
+import { AuditService } from "src/moderation/audit";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { S3Service } from "@s3/s3.service";
 import { CloudfrontService } from "src/routes/s3/edge.service";
@@ -15,6 +16,10 @@ describe("UserController", () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [UserController],
       providers: [
+        {
+          provide: AuditService,
+          useValue: { countByActor: jest.fn().mockResolvedValue(0) }
+        },
         UserService,
         {
           provide: PrismaService,

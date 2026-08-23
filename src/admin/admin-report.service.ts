@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma, ReportStatus } from "@prisma/client";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { ModerationService } from "src/moderation/moderation.service";
+import { AuditService } from "src/moderation/audit";
 import { TargetLinkService } from "./services/target-link.service";
 import {
   buildMeta,
@@ -32,7 +33,8 @@ export class AdminReportService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly moderationService: ModerationService,
-    private readonly targetLinks: TargetLinkService
+    private readonly targetLinks: TargetLinkService,
+    private readonly auditService: AuditService
   ) {}
 
   async list(filter: AdminReportFilterDto): Promise<AdminReportListResponseDto> {
@@ -89,13 +91,12 @@ export class AdminReportService {
       throw new NotFoundException(`Report with ID ${id} not found`);
     }
 
-    const [moderationActions, link] = await Promise.all([
-      this.prisma.moderationAction.findMany({
-        where: { reportId: id },
-        orderBy: { createdAt: "desc" }
-      }),
+    // "What was done about this report?" is an audit query like any other.
+    const [actions, link] = await Promise.all([
+      this.auditService.search({ reportId: id, order: "desc" }),
       this.targetLinks.resolveSingle(report.targetType, report.targetId)
     ]);
+    const moderationActions = actions.entries;
 
     const base = this.toResponse(
       report,

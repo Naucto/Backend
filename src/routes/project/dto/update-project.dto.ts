@@ -18,6 +18,11 @@ import {
   PROJECT_LONG_DESC_MAX_LENGTH
 } from "./project-field-limits";
 
+/**
+ * Every field is optional: this is a patch. A moderator hiding a project sends
+ * only `hidden` + `moderationReason`, and the owner's editor sends only what it
+ * changed -- requiring `name`/`shortDesc` here rejected both.
+ */
 export class UpdateProjectDto {
   @ApiProperty({
     description: "The name of the project",
@@ -27,7 +32,8 @@ export class UpdateProjectDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(PROJECT_NAME_MAX_LENGTH)
-  name!: string;
+  @IsOptional()
+  name?: string;
 
   @ApiProperty({
     description: "A short description of the project",
@@ -36,7 +42,8 @@ export class UpdateProjectDto {
   })
   @IsString()
   @MaxLength(PROJECT_SHORT_DESC_MAX_LENGTH)
-  shortDesc!: string;
+  @IsOptional()
+  shortDesc?: string;
 
   @ApiProperty({
     description: "A detailed description of the project",
@@ -46,6 +53,7 @@ export class UpdateProjectDto {
   })
   @IsString()
   @MaxLength(PROJECT_LONG_DESC_MAX_LENGTH)
+  @IsOptional()
   longDesc?: string | null;
 
   @ApiProperty({

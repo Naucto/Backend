@@ -22,6 +22,7 @@ import {
 import { AnalyticsService } from "src/analytics/analytics.service";
 import { Actor } from "@auth/actor";
 import { CommentFilterDto } from "./dto/comment-filter.dto";
+import { ModeratedCommentFieldsDto } from "./dto/comment-response.dto";
 
 export type CommentListMeta = {
   page: number;
@@ -315,21 +316,24 @@ export class ProjectCommentService {
   async findOneForModeration(
     id: number,
     actor: Actor
-  ): Promise<CommentResponseDto> {
+  ): Promise<CommentResponseDto & ModeratedCommentFieldsDto> {
     if (!actor.isModerator) {
       throw new ForbiddenException("Staff access required");
     }
 
     const comment = await this.prisma.comment.findUnique({
       where: { id },
-      include: { author: { select: AUTHOR_SELECT } }
+      include: {
+        author: { select: AUTHOR_SELECT },
+        project: { select: { name: true, publishedName: true } }
+      }
     });
 
     if (!comment) {
       throw new CommentNotFoundException(id);
     }
 
-    return this.mapComment(comment);
+    return this.mapModeratedComment(comment);
   }
 
   /**
@@ -341,7 +345,10 @@ export class ProjectCommentService {
   async findAllForModeration(
     filter: CommentFilterDto,
     actor: Actor
-  ): Promise<{ data: CommentResponseDto[]; meta: CommentListMeta }> {
+  ): Promise<{
+    data: Array<CommentResponseDto & ModeratedCommentFieldsDto>;
+    meta: CommentListMeta;
+  }> {
     if (!actor.isModerator) {
       throw new ForbiddenException("Staff access required");
     }
@@ -361,13 +368,16 @@ export class ProjectCommentService {
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { [filter.sortBy ?? "createdAt"]: filter.order ?? "desc" },
-        include: { author: { select: AUTHOR_SELECT } }
+        include: {
+          author: { select: AUTHOR_SELECT },
+          project: { select: { name: true, publishedName: true } }
+        }
       }),
       this.prisma.comment.count({ where })
     ]);
 
     return {
-      data: comments.map((comment) => this.mapComment(comment)),
+      data: comments.map((comment) => this.mapModeratedComment(comment)),
       meta: {
         page,
         limit,
@@ -432,6 +442,34 @@ export class ProjectCommentService {
         after: { deleted: true }
       });
     }
+  }
+
+  /**
+   * The staff view of a comment: the public shape plus the fields a moderation
+   * queue needs -- whether it is hidden, and who wrote it, which the public
+   * mapper deliberately omits.
+   */
+  private mapModeratedComment(
+    comment: CommentRecord & {
+      hidden?: boolean;
+      authorId?: number | null;
+      project?: { name: string; publishedName: string | null } | null;
+    }
+  ): CommentResponseDto & ModeratedCommentFieldsDto {
+    return {
+      ...this.mapComment(comment),
+      // The moderation queue shows the content of hidden comments: judging one
+      // is the whole point, so it is not blanked the way the public view does.
+      content: comment.content,
+      hidden: comment.hidden ?? false,
+      authorId: comment.authorId ?? null,
+      ...(comment.author?.username
+        ? { authorUsername: comment.author.username }
+        : {}),
+      ...(comment.project
+        ? { projectName: comment.project.publishedName ?? comment.project.name }
+        : {})
+    };
   }
 
   private mapComment(comment: CommentRecord): CommentResponseDto {
