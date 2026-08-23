@@ -10,6 +10,7 @@ export type NotificationPayload = {
   type: NotificationType;
   read: boolean;
   createdAt: string;
+  metadata?: Record<string, unknown>;
 };
 
 export type CreateNotificationInput = {
@@ -17,4 +18,5 @@ export type CreateNotificationInput = {
   title: string;
   message: string;
   type: NotificationType;
+  metadata?: Record<string, unknown>;
 };

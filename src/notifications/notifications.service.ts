@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
+import { Prisma } from "@prisma/client";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { WebRTCOfferDto } from "@webrtc/webrtc.dto";
 import { WebRTCService } from "@webrtc/webrtc.service";
@@ -47,6 +48,7 @@ export class NotificationsService {
           title: input.title,
           message: input.message,
           type: input.type,
+          ...(input.metadata !== undefined && { metadata: input.metadata as Prisma.InputJsonValue }),
         },
       });
 
@@ -132,6 +134,7 @@ export class NotificationsService {
     type: NotificationType;
     read: boolean;
     createdAt: Date;
+    metadata?: unknown;
   }): NotificationPayload {
     return {
       id: notification.id.toString(),
@@ -141,6 +144,9 @@ export class NotificationsService {
       type: notification.type,
       read: notification.read,
       createdAt: notification.createdAt.toISOString(),
+      ...(notification.metadata !== null && notification.metadata !== undefined && {
+        metadata: notification.metadata as Record<string, unknown>,
+      }),
     };
   }
 }

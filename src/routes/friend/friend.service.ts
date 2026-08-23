@@ -104,6 +104,7 @@ export class FriendService {
       title: "New friend request",
       message: `${request.from.username} sent you a friend request.`,
       type: "INFO",
+      metadata: { requestId: request.id },
     });
 
     return this.enrichRequest(request);
