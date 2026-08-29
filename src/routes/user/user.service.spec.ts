@@ -51,7 +51,8 @@ describe("UserService", () => {
         id: 1,
         username: "alice",
         nickname: "Ali",
-        description: "Hello"
+        description: "Hello",
+        createdAt: new Date("2025-03-14T09:00:00.000Z")
       };
 
       prisma.user.findUnique.mockResolvedValue(publicProfile);
@@ -63,7 +64,8 @@ describe("UserService", () => {
           id: true,
           username: true,
           nickname: true,
-          description: true
+          description: true,
+          createdAt: true
         }
       });
     });
@@ -95,7 +97,8 @@ describe("UserService", () => {
           id: true,
           username: true,
           nickname: true,
-          description: true
+          description: true,
+          createdAt: true
         }
       });
     });

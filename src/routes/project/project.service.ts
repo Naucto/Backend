@@ -1062,23 +1062,81 @@ export class ProjectService {
   async fetchPublishedGamesByUser(
     userId: number,
     page: number = DEFAULT_PAGE,
+    limit: number = DEFAULT_LIMIT,
+    ownedOnly = false
+  ): Promise<ReleaseProject[]> {
+    return this.fetchPublishedGamesByUserWhere(
+      ownedOnly
+        ? { status: "COMPLETED", userId }
+        : {
+          status: "COMPLETED",
+          OR: [
+            { userId },
+            {
+              collaborators: {
+                some: { id: userId }
+              }
+            }
+          ]
+        },
+      page,
+      limit
+    );
+  }
+
+  /**
+   * Games this person helped build but does not own. The profile draws GAMES and COLLABS as two
+   * shelves, so the split has to happen in the query — `fetchPublishedGamesByUser` returns the
+   * union of both and would put every collaboration on the owner's shelf too.
+   */
+  async fetchCollaborationsByUser(
+    userId: number,
+    page: number = DEFAULT_PAGE,
     limit: number = DEFAULT_LIMIT
   ): Promise<ReleaseProject[]> {
     return this.fetchPublishedGamesByUserWhere(
       {
         status: "COMPLETED",
-        OR: [
-          { userId },
-          {
-            collaborators: {
-              some: { id: userId }
-            }
-          }
-        ]
+        userId: { not: userId },
+        collaborators: { some: { id: userId } }
       },
       page,
       limit
     );
+  }
+
+  /** Published games other people forked from one of this person's. */
+  async fetchRemixesOfUser(
+    userId: number,
+    page: number = DEFAULT_PAGE,
+    limit: number = DEFAULT_LIMIT
+  ): Promise<ReleaseProject[]> {
+    return this.fetchPublishedGamesByUserWhere(
+      {
+        status: "COMPLETED",
+        userId: { not: userId },
+        forkedFrom: { userId }
+      },
+      page,
+      limit
+    );
+  }
+
+  /** Totals for the profile header, counted rather than summed over one page of games. */
+  async fetchUserTotals(
+    userId: number
+  ): Promise<{ gameCount: number; totalPlays: number; totalLikes: number }> {
+    const where: Prisma.ProjectWhereInput = { status: "COMPLETED", userId };
+    const [gameCount, sums] = await this.prisma.$transaction([
+      this.prisma.project.count({ where }),
+      this.prisma.project.aggregate({ where, _sum: { viewCount: true, likes: true } })
+    ]);
+
+    return {
+      gameCount,
+      totalPlays: sums._sum.viewCount ?? 0,
+      totalLikes: sums._sum.likes ?? 0
+    };
   }
 
   async fetchLikedPublishedGamesByUser(

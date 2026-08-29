@@ -38,4 +38,25 @@ export class PublicUserProfileDto {
     nullable: true
   })
     backgroundImageUrl?: string | null;
+
+  @ApiProperty({
+    description: "When the account was created — the profile header shows the year",
+    example: "2025-03-14T09:00:00.000Z"
+  })
+    createdAt!: Date;
+
+  @ApiPropertyOptional({ description: "Published games this person owns", example: 7 })
+    gameCount?: number;
+
+  @ApiPropertyOptional({
+    description: "Total plays across their published games",
+    example: 12400
+  })
+    totalPlays?: number;
+
+  @ApiPropertyOptional({
+    description: "Total likes across their published games",
+    example: 318
+  })
+    totalLikes?: number;
 }
