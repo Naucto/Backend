@@ -12,6 +12,10 @@ import {
 
 import { CREATOR_SELECT, COLLABORATOR_SELECT } from "./project.service";
 import { ProjectStatus, MonetizationType, Prisma } from "@prisma/client";
+import * as Y from "yjs";
+import { Readable } from "stream";
+import { GAME_KEYS, PROJECT_CONTENT_MAX_BYTES } from "./content-size";
+import { ProjectTooLargeException } from "./project.error";
 
 type ProjectWithCreatorAndCollaborators = Prisma.ProjectGetPayload<{
   include: {
@@ -51,6 +55,8 @@ const mockProjects: ProjectWithCreatorAndCollaborators[] = [
     contentExtension: ".zip",
     contentUploadedAt: new Date(),
     forkedFromId: null,
+    contentSize: null,
+    contentSizeTotal: null,
     creator: {
       id: 42,
       email: "creator@example.com",
@@ -90,6 +96,8 @@ const mockProjects: ProjectWithCreatorAndCollaborators[] = [
     contentExtension: ".zip",
     contentUploadedAt: new Date(),
     forkedFromId: null,
+    contentSize: null,
+    contentSizeTotal: null,
     creator: {
       id: 42,
       email: "creator@example.com",
@@ -137,7 +145,10 @@ describe("ProjectService", () => {
   const s3ServiceMock = {
     deleteFile: jest.fn(),
     listObjects: jest.fn(),
-    deleteFiles: jest.fn()
+    deleteFiles: jest.fn(),
+    downloadFile: jest.fn(),
+    uploadFile: jest.fn(),
+    setObjectPublicRead: jest.fn()
   };
 
   const configServiceMock = {
@@ -835,6 +846,155 @@ describe("ProjectService", () => {
       );
       expect(result.page).toBe(1);
       expect(result.limit).toBe(100);
+    });
+  });
+  describe("content size budget", () => {
+    const encodeGame = (codeLength: number): Buffer => {
+      const doc = new Y.Doc();
+      doc.getMap<unknown>(GAME_KEYS.meta).set("schemaVersion", 1);
+      const file = new Y.Map<unknown>();
+      const text = new Y.Text();
+      doc.getMap<unknown>(GAME_KEYS.codeFiles).set("main", file);
+      file.set("text", text);
+      text.insert(0, "x".repeat(codeLength));
+      return Buffer.from(Y.encodeStateAsUpdate(doc));
+    };
+
+    const mockLastVersion = (blob: Buffer): void => {
+      s3ServiceMock.listObjects.mockResolvedValue([
+        { Key: "save/1/100", LastModified: new Date(100) }
+      ]);
+      s3ServiceMock.downloadFile.mockResolvedValue({
+        body: Readable.from(blob),
+        contentType: "application/octet-stream",
+        contentLength: blob.byteLength
+      });
+    };
+
+    it("exposes the limits", () => {
+      expect(service.getLimits()).toEqual({
+        maxContentBytes: PROJECT_CONTENT_MAX_BYTES,
+        maxBlobBytes: 16 * 1024 * 1024
+      });
+    });
+
+    it("stores the breakdown when saving", async () => {
+      s3ServiceMock.listObjects.mockResolvedValue([]);
+      prismaMock.workSession.findMany.mockResolvedValue([]);
+      s3ServiceMock.uploadFile.mockResolvedValue(undefined);
+      prismaMock.project.update.mockResolvedValue({});
+
+      await service.save(1, {
+        buffer: encodeGame(10)
+      } as unknown as Express.Multer.File);
+
+      expect(prismaMock.project.update).toHaveBeenCalledWith({
+        where: { id: 1 },
+        data: {
+          contentSize: expect.objectContaining({ code: 10, schemaVersion: 1 }),
+          contentSizeTotal: 10
+        }
+      });
+    });
+
+    it("returns the stored breakdown without touching S3", async () => {
+      const contentSize = {
+        code: 5,
+        sprites: 0,
+        flags: 0,
+        map: 0,
+        sound: 0,
+        palette: 0,
+        total: 5,
+        schemaVersion: 1
+      };
+      prismaMock.project.findUnique.mockResolvedValue({ contentSize });
+
+      const result = await service.getContentSize(1);
+
+      expect(result).toEqual({
+        projectId: 1,
+        contentSize,
+        maxContentBytes: PROJECT_CONTENT_MAX_BYTES,
+        withinBudget: true
+      });
+      expect(s3ServiceMock.downloadFile).not.toHaveBeenCalled();
+    });
+
+    it("computes and persists the breakdown when it is missing", async () => {
+      prismaMock.project.findUnique.mockResolvedValue({ contentSize: null });
+      prismaMock.project.update.mockResolvedValue({});
+      mockLastVersion(encodeGame(7));
+
+      const result = await service.getContentSize(1);
+
+      expect(result.contentSize.code).toBe(7);
+      expect(prismaMock.project.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ contentSizeTotal: 7 })
+        })
+      );
+    });
+
+    it("rejects publishing a project above the budget with a 413", async () => {
+      prismaMock.project.findUnique.mockResolvedValue({
+        name: "Big",
+        shortDesc: "",
+        longDesc: null,
+        tags: []
+      });
+      prismaMock.project.update.mockResolvedValue({});
+      mockLastVersion(encodeGame(PROJECT_CONTENT_MAX_BYTES + 1));
+
+      await expect(service.publish(1)).rejects.toBeInstanceOf(
+        ProjectTooLargeException
+      );
+
+      const calls = prismaMock.project.update.mock.calls as Array<
+        [{ data: Record<string, unknown> }]
+      >;
+      expect(calls.some((call) => call[0].data["status"] === "COMPLETED")).toBe(
+        false
+      );
+      expect(s3ServiceMock.uploadFile).not.toHaveBeenCalled();
+    });
+
+    it("publishes a project within the budget", async () => {
+      prismaMock.project.findUnique.mockResolvedValue({
+        name: "Small",
+        shortDesc: "",
+        longDesc: null,
+        tags: []
+      });
+      prismaMock.project.update.mockResolvedValue({});
+      s3ServiceMock.uploadFile.mockResolvedValue(undefined);
+      s3ServiceMock.setObjectPublicRead.mockResolvedValue(undefined);
+      mockLastVersion(encodeGame(3));
+
+      await service.publish(1);
+
+      expect(prismaMock.project.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: "COMPLETED" })
+        })
+      );
+      expect(s3ServiceMock.uploadFile).toHaveBeenCalledWith(
+        expect.objectContaining({ keyName: "release/1" })
+      );
+    });
+
+    it("lists projects without a breakdown", async () => {
+      prismaMock.project.findMany.mockResolvedValue([{ id: 3 }, { id: 4 }]);
+
+      await expect(service.findProjectsWithoutContentSize(2)).resolves.toEqual([
+        3, 4
+      ]);
+      expect(prismaMock.project.findMany).toHaveBeenCalledWith({
+        where: { contentSizeTotal: null },
+        select: { id: true },
+        orderBy: { id: "asc" },
+        take: 2
+      });
     });
   });
 });

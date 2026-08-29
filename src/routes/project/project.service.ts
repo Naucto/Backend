@@ -18,6 +18,15 @@ import { Prisma, Project, User } from "@prisma/client";
 import { ConfigService } from "@nestjs/config";
 import { DownloadedFile } from "@s3/s3.interface";
 import { Readable } from "stream";
+import { streamToBuffer } from "@util/stream.util";
+import {
+  ContentSizeBreakdown,
+  PROJECT_BLOB_MAX_BYTES,
+  PROJECT_CONTENT_MAX_BYTES,
+  computeContentSize,
+  isContentSizeBreakdown
+} from "./content-size";
+import { ProjectTooLargeException } from "./project.error";
 
 export const CREATOR_SELECT = {
   id: true,
@@ -51,6 +60,18 @@ type ProjectWithCounts = ProjectEx & {
 type ReleaseProject = ProjectEx & {
   commentCount: number;
   forkCount: number;
+};
+
+export type ProjectLimits = {
+  maxContentBytes: number;
+  maxBlobBytes: number;
+};
+
+export type ProjectSize = {
+  projectId: number;
+  contentSize: ContentSizeBreakdown;
+  maxContentBytes: number;
+  withinBudget: boolean;
 };
 
 export type PaginatedProjectsResult<T> = {
@@ -647,6 +668,99 @@ export class ProjectService {
       file,
       keyName: `save/${projectId}/${actual_time}`
     });
+
+    if (file.buffer) {
+      await this.storeContentSize(projectId, computeContentSize(file.buffer));
+    }
+  }
+
+  // ─── Content size budget ────────────────────────────────────────────
+
+  getLimits(): ProjectLimits {
+    return {
+      maxContentBytes: PROJECT_CONTENT_MAX_BYTES,
+      maxBlobBytes: PROJECT_BLOB_MAX_BYTES
+    };
+  }
+
+  private async storeContentSize(
+    projectId: number,
+    contentSize: ContentSizeBreakdown
+  ): Promise<void> {
+    await this.prisma.project.update({
+      where: { id: projectId },
+      data: {
+        contentSize: contentSize as unknown as Prisma.InputJsonObject,
+        contentSizeTotal: contentSize.total
+      }
+    });
+  }
+
+  /** Decodes the latest save and persists its size breakdown. */
+  async recomputeContentSize(projectId: number): Promise<ContentSizeBreakdown> {
+    const file = await this.fetchLastVersion(projectId);
+    const contentSize = computeContentSize(await streamToBuffer(file.body));
+    await this.storeContentSize(projectId, contentSize);
+    return contentSize;
+  }
+
+  /** Returns the stored breakdown, computing it from the latest save if missing. */
+  async getContentSize(projectId: number): Promise<ProjectSize> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { contentSize: true }
+    });
+
+    if (!project) {
+      throw new NotFoundException(`Project with ID ${projectId} not found`);
+    }
+
+    const contentSize = isContentSizeBreakdown(project.contentSize)
+      ? project.contentSize
+      : await this.recomputeContentSize(projectId);
+
+    return {
+      projectId,
+      contentSize,
+      maxContentBytes: PROJECT_CONTENT_MAX_BYTES,
+      withinBudget: contentSize.total <= PROJECT_CONTENT_MAX_BYTES
+    };
+  }
+
+  /**
+   * Recomputes the size of the latest save and rejects it with a 413 when it
+   * exceeds the budget. Returns the release file so callers upload the exact
+   * bytes that were measured.
+   */
+  private async assertWithinBudget(projectId: number): Promise<DownloadedFile> {
+    const file = await this.fetchLastVersion(projectId);
+    const buffer = await streamToBuffer(file.body);
+    const contentSize = computeContentSize(buffer);
+    await this.storeContentSize(projectId, contentSize);
+
+    if (contentSize.total > PROJECT_CONTENT_MAX_BYTES) {
+      throw new ProjectTooLargeException(
+        contentSize,
+        PROJECT_CONTENT_MAX_BYTES
+      );
+    }
+
+    return {
+      body: Readable.from(buffer),
+      contentType: file.contentType ?? "application/octet-stream",
+      contentLength: buffer.byteLength
+    };
+  }
+
+  /** Projects whose size breakdown has never been computed (oldest first). */
+  async findProjectsWithoutContentSize(limit: number): Promise<number[]> {
+    const projects = await this.prisma.project.findMany({
+      where: { contentSizeTotal: null },
+      select: { id: true },
+      orderBy: { id: "asc" },
+      take: limit
+    });
+    return projects.map((project) => project.id);
   }
 
   async checkpoint(projectId: number, name: string): Promise<void> {
@@ -686,6 +800,8 @@ export class ProjectService {
       throw new NotFoundException(`Project with ID ${projectId} not found`);
     }
 
+    const file = await this.assertWithinBudget(projectId);
+
     await this.prisma.project.update({
       where: { id: projectId },
       data: {
@@ -698,7 +814,6 @@ export class ProjectService {
       }
     });
 
-    const file = await this.fetchLastVersion(projectId);
     const releaseKey = `release/${projectId}`;
     await this.s3Service.uploadFile({
       file: file,
@@ -736,7 +851,7 @@ export class ProjectService {
       );
     }
 
-    const file = await this.fetchLastVersion(projectId);
+    const file = await this.assertWithinBudget(projectId);
     const releaseKey = `release/${projectId}`;
     await this.s3Service.uploadFile({
       file: file,
