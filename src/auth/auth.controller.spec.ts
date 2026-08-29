@@ -6,6 +6,7 @@ import { ConfigService } from "@nestjs/config";
 import { UnauthorizedException } from "@nestjs/common";
 
 import { Response, Request } from "express";
+import { RequestWithUser } from "./auth.types";
 import {
   encryptRefreshToken,
   decryptRefreshToken
@@ -27,6 +28,7 @@ describe("AuthController", () => {
           useValue: {
             login: jest.fn(),
             register: jest.fn(),
+            revokeAllRefreshTokens: jest.fn().mockResolvedValue(undefined),
             getRefreshTokenMaxAgeMs: jest.fn().mockReturnValue(7 * 24 * 60 * 60 * 1000)
           }
         },
@@ -174,11 +176,10 @@ describe("AuthController", () => {
     ).rejects.toThrow(UnauthorizedException);
   });
 
-  it("should logout and clear refresh_token cookie", async () => {
-    const refreshToken = "token-to-revoke";
+  it("should revoke every session for the user and clear the refresh cookie", async () => {
     const authServiceWithRevoke = {
       ...authService,
-      revokeRefreshToken: jest.fn().mockResolvedValue(undefined)
+      revokeAllRefreshTokens: jest.fn().mockResolvedValue(undefined)
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -200,17 +201,13 @@ describe("AuthController", () => {
     }).compile();
 
     const testController = module.get<AuthController>(AuthController);
-    const mockReq = {
-      cookies: { refresh_token: encryptRefreshToken(refreshToken) }
-    } as unknown as Request;
+    const mockReq = { user: { id: 7 } } as unknown as RequestWithUser;
     const mockRes: Partial<Response> = {
       clearCookie: jest.fn()
     };
     const result = await testController.logout(mockReq, mockRes as Response);
 
-    expect(authServiceWithRevoke.revokeRefreshToken).toHaveBeenCalledWith(
-      refreshToken
-    );
+    expect(authServiceWithRevoke.revokeAllRefreshTokens).toHaveBeenCalledWith(7);
     expect(mockRes.clearCookie).toHaveBeenCalledWith(
       "refresh_token",
       expect.objectContaining({
@@ -221,16 +218,22 @@ describe("AuthController", () => {
     expect(result).toEqual({ success: true });
   });
 
-  it("should logout successfully even without refresh_token cookie", async () => {
-    const mockReq = {
-      cookies: {}
-    } as unknown as Request;
+  /**
+   * The regression this route was fixed for: the cookie is scoped to the refresh path, so it never
+   * arrives here. Clearing it has to happen anyway — gating on a cookie that cannot be present is
+   * what left the session alive across a reload.
+   */
+  it("should clear the cookie even though the request never carries it", async () => {
+    const mockReq = { user: { id: 7 }, cookies: {} } as unknown as RequestWithUser;
     const mockRes: Partial<Response> = {
       clearCookie: jest.fn()
     };
     const result = await controller.logout(mockReq, mockRes as Response);
 
     expect(result).toEqual({ success: true });
-    expect(mockRes.clearCookie).not.toHaveBeenCalled();
+    expect(mockRes.clearCookie).toHaveBeenCalledWith(
+      "refresh_token",
+      expect.objectContaining({ path: "/auth/refresh" })
+    );
   });
 });

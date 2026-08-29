@@ -3175,7 +3175,12 @@
             }
           }
         },
-        "summary": "Remove refresh token cookie",
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "End the session and clear the refresh token cookie",
         "tags": [
           "auth"
         ]
