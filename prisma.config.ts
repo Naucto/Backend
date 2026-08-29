@@ -10,7 +10,7 @@ export default defineConfig({
   },
   datasource: { 
     // ?? "" -> so that we can launch Prsima without necessarily setting up the DATABASE_URL connx.
-    url: process.env.DATABASE_URL ?? ""
+    url: process.env["DATABASE_URL"] ?? ""
   }
 });
 

@@ -2,16 +2,15 @@ import { defineConfig } from "eslint/config";
 import js from "@eslint/js";
 import globals from "globals";
 import tseslint from "typescript-eslint";
-import pluginReact from "eslint-plugin-react";
 
 export default defineConfig([
   {
-    ignores: ["dist/**"],
+    ignores: ["dist/**", "generated_client/**", "client/**", "coverage/**"],
   },
   {
-    files: ["**/*.{ts,tsx}"],
+    files: ["**/*.ts"],
     languageOptions: {
-      globals: globals.browser,
+      globals: globals.node,
       parser: tseslint.parser,
       parserOptions: {
         project: "./tsconfig.eslint.json"
@@ -19,7 +18,6 @@ export default defineConfig([
     },
     plugins: {
       js,
-      react: pluginReact,
       "@typescript-eslint": tseslint.plugin,
     },
     extends: ["js/recommended"],
@@ -29,8 +27,6 @@ export default defineConfig([
       "linebreak-style": ["error", "unix"],
       "@typescript-eslint/no-unused-vars": "warn",
       "no-console": "warn",
-      "react/react-in-jsx-scope": "off",
-      "react/self-closing-comp": "error",
       "no-var": "error",
       "prefer-const": "error",
       "object-curly-spacing": ["error", "always"],
@@ -44,13 +40,12 @@ export default defineConfig([
     }
   },
   {
-    files: ["**/*.{js,mjs,cjs,jsx}"],
+    files: ["**/*.{js,mjs,cjs}"],
     languageOptions: {
-      globals: globals.browser
+      globals: globals.node
     },
     plugins: {
-      js,
-      react: pluginReact
+      js
     },
     extends: ["js/recommended"],
     rules: {
@@ -58,8 +53,6 @@ export default defineConfig([
       quotes: ["error", "double"],
       "linebreak-style": ["error", "unix"],
       "no-console": "warn",
-      "react/react-in-jsx-scope": "off",
-      "react/self-closing-comp": "error",
       "no-var": "error",
       "prefer-const": "error",
       "object-curly-spacing": ["error", "always"],
@@ -68,6 +61,21 @@ export default defineConfig([
       "no-multiple-empty-lines": ["error", { "max": 1 }]
     }
   },
-  tseslint.configs.recommended
+  tseslint.configs.recommended,
+  {
+    files: ["**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-unused-vars": ["error", {
+        argsIgnorePattern: "^_",
+        varsIgnorePattern: "^_",
+        caughtErrorsIgnorePattern: "^_"
+      }]
+    }
+  },
+  {
+    files: ["**/*.spec.ts"],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off"
+    }
+  }
 ]);
-

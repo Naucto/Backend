@@ -274,6 +274,7 @@ export class AuthController {
           decryptRefreshToken(refresh_cookie)
         );
       } catch {
+        // A corrupt cookie is still cleared below.
       }
       res.clearCookie("refresh_token", this.getRefreshCookieOptions());
     }

@@ -8,7 +8,7 @@ export class LoginDto {
   })
   @IsEmail({}, { message: "Email must be a valid email address" })
   @IsNotEmpty({ message: "Email is required" })
-  email!: string;
+    email!: string;
 
   @ApiProperty({
     description: "User password",
@@ -18,19 +18,19 @@ export class LoginDto {
   @IsString()
   @MinLength(6, { message: "Password must be at least 6 characters" })
   @IsNotEmpty({ message: "Password is required" })
-  password!: string;
+    password!: string;
 }
 
 export class GoogleCodeDto {
   @ApiProperty({ description: "Google authorization code" })
   @IsString()
   @IsNotEmpty()
-  code!: string;
+    code!: string;
 
   @ApiProperty({ description: "PKCE code verifier" })
   @IsString()
   @IsNotEmpty()
-  codeVerifier!: string;
+    codeVerifier!: string;
 }
 
 export class GithubLoginDto {
@@ -40,7 +40,7 @@ export class GithubLoginDto {
   })
   @IsString()
   @IsNotEmpty()
-  code!: string;
+    code!: string;
 }
 
 export class MicrosoftLoginDto {
@@ -50,5 +50,5 @@ export class MicrosoftLoginDto {
   })
   @IsString()
   @IsNotEmpty()
-  token!: string;
+    token!: string;
 }
