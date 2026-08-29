@@ -17,6 +17,14 @@ export class UserFilterDto {
   @Min(1)
     limit?: number;
 
+  @ApiPropertyOptional({
+    description:
+      "Free-text search over username and nickname — what a person types into the search box, where they do not know which of the two they are looking at"
+  })
+  @IsOptional()
+  @IsString()
+    q?: string;
+
   @ApiPropertyOptional({ description: "Filter by nickname" })
   @IsOptional()
   @IsString()

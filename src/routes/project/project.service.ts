@@ -84,6 +84,22 @@ export type PaginatedProjectsResult<T> = {
 export const RELEASE_WINDOWS = ["all", "365d", "30d", "7d"] as const;
 export type ReleaseWindow = (typeof RELEASE_WINDOWS)[number];
 
+/**
+ * How the hub's shelves are ordered. Sorting has to happen in the query: the client only ever
+ * holds one page, so ordering there means "the freshest of the 48 we happen to have", which is
+ * not what the shelf claims.
+ */
+export const RELEASE_SORTS = ["fresh", "popular", "liked", "discussed", "name"] as const;
+export type ReleaseSort = (typeof RELEASE_SORTS)[number];
+
+const RELEASE_ORDER_BY: Record<ReleaseSort, Prisma.ProjectOrderByWithRelationInput[]> = {
+  fresh: [{ publishedAt: "desc" }, { createdAt: "desc" }],
+  popular: [{ viewCount: "desc" }, { publishedAt: "desc" }],
+  liked: [{ likes: "desc" }, { publishedAt: "desc" }],
+  discussed: [{ comments: { _count: "desc" } }, { publishedAt: "desc" }],
+  name: [{ publishedName: "asc" }, { name: "asc" }]
+};
+
 export const USER_PROJECT_STATUSES = ["all", "drafts", "published"] as const;
 export type UserProjectStatus = (typeof USER_PROJECT_STATUSES)[number];
 
@@ -979,12 +995,14 @@ export class ProjectService {
 
   async fetchPublishedGamesPaginated(
     page?: number,
-    limit?: number
+    limit?: number,
+    filters: PublishedProjectFilters = {},
+    sort: ReleaseSort = "fresh"
   ): Promise<PaginatedProjectsResult<ReleaseProject>> {
     const safePage = this.normalizePage(page);
     const safeLimit = this.normalizeLimit(limit);
     const skip = (safePage - 1) * safeLimit;
-    const where = this.buildPublishedGamesWhere();
+    const where = this.buildPublishedGamesWhere(filters);
 
     const [total, projects] = await this.prisma.$transaction([
       this.prisma.project.count({
@@ -1006,7 +1024,7 @@ export class ProjectService {
             }
           }
         },
-        orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
+        orderBy: RELEASE_ORDER_BY[sort],
         skip,
         take: safeLimit
       })
