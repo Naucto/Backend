@@ -879,6 +879,37 @@ describe("ProjectService", () => {
     });
   });
 
+  describe("deleteVersion", () => {
+    it("should delete an existing autosave", async () => {
+      s3ServiceMock.listObjects.mockResolvedValue([
+        { Key: "save/1/1742901234567", LastModified: new Date() }
+      ]);
+      s3ServiceMock.deleteFile.mockResolvedValue(undefined);
+
+      await service.deleteVersion(1, "1742901234567");
+
+      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({
+        key: "save/1/1742901234567"
+      });
+    });
+
+    it("should refuse a name that could climb out of the project prefix", async () => {
+      await expect(service.deleteVersion(1, "../release/2")).rejects.toThrow(
+        BadRequestException
+      );
+      expect(s3ServiceMock.deleteFile).not.toHaveBeenCalled();
+    });
+
+    it("should 404 rather than delete a key that is not one of this project's saves", async () => {
+      s3ServiceMock.listObjects.mockResolvedValue([]);
+
+      await expect(service.deleteVersion(1, "1742901234567")).rejects.toThrow(
+        NotFoundException
+      );
+      expect(s3ServiceMock.deleteFile).not.toHaveBeenCalled();
+    });
+  });
+
   describe("profile shelves", () => {
     it("should exclude games the person owns from their collaborations", async () => {
       prismaMock.project.findMany.mockResolvedValue([]);

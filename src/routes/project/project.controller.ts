@@ -36,6 +36,10 @@ import type {
   UserProjectStatus,
   UserProjectFilters
 } from "@project/project.service";
+import {
+  ProjectCheckpointsResponseDto,
+  ProjectVersionsResponseDto
+} from "@project/dto/project-saves.dto";
 import { CreateProjectDto } from "@project/dto/create-project.dto";
 import { UpdateProjectDto } from "@project/dto/update-project.dto";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
@@ -936,7 +940,8 @@ export class ProjectController {
   @ApiParam({ name: "id", type: "string" })
   @ApiResponse({
     status: 200,
-    description: "Project versions retrieved successfully"
+    description: "Project versions retrieved successfully",
+    type: ProjectVersionsResponseDto
   })
   @ApiResponse({ status: 403, description: "Forbidden" })
   async getVersions(
@@ -953,7 +958,8 @@ export class ProjectController {
   @ApiParam({ name: "id", type: "string" })
   @ApiResponse({
     status: 200,
-    description: "Project checkpoints retrieved successfully"
+    description: "Project checkpoints retrieved successfully",
+    type: ProjectCheckpointsResponseDto
   })
   @ApiResponse({ status: 403, description: "Forbidden" })
   async getCheckpoints(
@@ -962,6 +968,23 @@ export class ProjectController {
     const checkpoints = await this.projectService.listCheckpoints(Number(id));
 
     return { checkpoints };
+  }
+
+  @Delete(":id/versions/:version")
+  @UseGuards(ProjectCollaboratorGuard)
+  @ApiOperation({ summary: "Delete a project autosave" })
+  @ApiParam({ name: "id", type: "string" })
+  @ApiParam({ name: "version", type: "string" })
+  @ApiResponse({ status: 200, description: "Version deleted successfully" })
+  @ApiResponse({ status: 403, description: "Forbidden" })
+  @ApiResponse({ status: 404, description: "No such version" })
+  async deleteVersion(
+    @Param("id") id: string,
+    @Param("version") version: string
+  ): Promise<{ message: string; name: string }> {
+    await this.projectService.deleteVersion(Number(id), version);
+
+    return { message: "Version deleted successfully", name: version };
   }
 
   @Get(":id/versions/:version")
