@@ -1844,6 +1844,81 @@
         ]
       }
     },
+    "/game-sessions/{sessionId}/players": {
+      "get": {
+        "operationId": "MultiplayerController_players",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionRosterResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Who is in a game session",
+        "tags": [
+          "game-sessions"
+        ]
+      }
+    },
+    "/game-sessions/{sessionId}/invite": {
+      "post": {
+        "operationId": "MultiplayerController_invite",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteToSessionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Invite someone to a session (host only)",
+        "tags": [
+          "game-sessions"
+        ]
+      }
+    },
     "/game-sessions/{sessionId}/join": {
       "post": {
         "operationId": "MultiplayerController_join",
@@ -5370,6 +5445,69 @@
         },
         "required": [
           "sessions"
+        ]
+      },
+      "SessionPlayerDto": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "number",
+            "description": "User ID",
+            "example": 42
+          },
+          "username": {
+            "type": "string",
+            "description": "Username",
+            "example": "alice"
+          },
+          "nickname": {
+            "type": "string",
+            "description": "Display nickname, if set",
+            "nullable": true
+          },
+          "host": {
+            "type": "boolean",
+            "description": "Whether this player is hosting",
+            "example": false
+          }
+        },
+        "required": [
+          "userId",
+          "username",
+          "host"
+        ]
+      },
+      "SessionRosterResponseDto": {
+        "type": "object",
+        "properties": {
+          "players": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionPlayerDto"
+            }
+          },
+          "maxPlayers": {
+            "type": "number",
+            "description": "Slots the session was opened with",
+            "example": 4
+          }
+        },
+        "required": [
+          "players",
+          "maxPlayers"
+        ]
+      },
+      "InviteToSessionDto": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "number",
+            "description": "Who to invite",
+            "example": 42
+          }
+        },
+        "required": [
+          "userId"
         ]
       },
       "UpdateGameSessionDto": {

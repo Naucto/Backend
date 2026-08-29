@@ -9,6 +9,7 @@ import {
   SessionJoinPolicy,
   User
 } from "@prisma/client";
+import { NotificationsService } from "src/notifications/notifications.service";
 import { FriendsService } from "@friends/friends.service";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { ProjectService } from "@project/project.service";
@@ -88,7 +89,8 @@ export class MultiplayerService {
     private readonly _projectService: ProjectService,
     private readonly _prismaService: PrismaService,
     private readonly _jwtService: JwtService,
-    private readonly _friendsService: FriendsService
+    private readonly _friendsService: FriendsService,
+    private readonly _notifications: NotificationsService
   ) {
     this._syncServer = new SyncedGameTableWebRTCServer(
       _webrtcService,
@@ -204,6 +206,74 @@ export class MultiplayerService {
     }
 
     return session;
+  }
+
+  /**
+   * Who is in the session, host first. Reuses `get`, so the same visibility rule applies: a
+   * non-member of a non-discoverable session gets a 404, not a roster.
+   */
+  async roster(
+    sessionId: string,
+    userId: number
+  ): Promise<{
+    players: {
+      userId: number;
+      username: string;
+      nickname: string | null;
+      host: boolean;
+    }[];
+    maxPlayers: number;
+  }> {
+    const session = await this.get(sessionId, userId);
+
+    return {
+      players: [
+        {
+          userId: session.host.id,
+          username: session.host.username,
+          nickname: session.host.nickname,
+          host: true
+        },
+        ...session.otherUsers.map((u) => ({
+          userId: u.id,
+          username: u.username,
+          nickname: u.nickname,
+          host: false
+        }))
+      ],
+      maxPlayers: session.maxPlayers
+    };
+  }
+
+  /**
+   * Notifies someone that they have been invited. The design's INVITE button had nothing behind
+   * it, so a join code could only travel by being read out loud.
+   */
+  async invite(
+    sessionId: string,
+    hostId: number,
+    inviteeId: number
+  ): Promise<void> {
+    const session = await this._findSessionOrThrow(sessionId);
+
+    this._assertHost(session, hostId);
+
+    if (inviteeId === hostId) return;
+
+    await this._notifications.createNotification({
+      userId: inviteeId,
+      title: session.title,
+      message: `${session.host.nickname ?? session.host.username} invited you to play ${session.project.name}`,
+      type: "INFO",
+      kind: "GENERIC",
+      // The code is what turns the notification into a way in; without it the invitee can see
+      // there is a session and still not reach it.
+      data: {
+        sessionId: session.sessionId,
+        joinCode: session.joinCode ?? undefined,
+        projectId: session.projectId
+      }
+    });
   }
 
   async update(
