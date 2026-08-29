@@ -8,7 +8,7 @@
     "scripts": {
         "build": "nest build",
         "generate:swagger": "ts-node -r tsconfig-paths/register tool/generate-swagger.ts",
-        "generate:client": "npx @hey-api/openapi-ts",
+        "generate:client": "openapi-ts",
         "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
         "start": "npm run build && node dist/main",
         "start:dev": "nest start --watch",
@@ -24,7 +24,8 @@
         "prepare": "husky || true",
         "lint:check": "eslint \"{src,apps,libs,test}/**/*.ts\" \"*.{ts,mjs}\"",
         "typecheck": "tsc --noEmit -p tsconfig.eslint.json",
-        "swagger:check": "npm run generate:swagger && git diff --exit-code -- swagger.json"
+        "swagger:check": "npm run generate:swagger && git diff --exit-code -- swagger.json",
+        "client:build": "npm run generate:client && npm --prefix client install --no-audit --no-fund && npm --prefix client run build"
     },
     "dependencies": {
         "@aws-sdk/client-s3": "^3.975.0",

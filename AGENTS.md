@@ -14,7 +14,8 @@ auth (`passport-jwt`) with encrypted refresh-token cookies and Google/GitHub/Mic
 AWS S3 + CloudFront for game/asset storage and signed delivery, and a `ws` + Yjs (CRDT) server
 for real-time multiplayer editing. The HTTP API is documented with `@nestjs/swagger`, and its
 OpenAPI spec is the **contract the Frontend's generated client consumes**. The dev server runs
-on `http://localhost:3000`; the frontend runs on `http://localhost:3001`.
+on `http://localhost:3000`; the frontend runs on `http://localhost:3001`. The typed client is
+published as `@naucto/api-client` on GitHub Packages from `client/` (see `client/README.md`).
 
 ## How to work in this repo
 
@@ -35,7 +36,7 @@ on `http://localhost:3000`; the frontend runs on `http://localhost:3001`.
 4. **Ask the user when a decision is non-obvious** — especially architectural ones (new
    dependencies, schema/migration changes, cross-cutting structure). Prefer asking over assuming.
 5. **Never hand-edit generated code** — `swagger.json` (committed, regenerated with
-   `npm run generate:swagger`), `generated_client/`, `client/src`, and `prisma/migrations/` are
+   `npm run generate:swagger`), `client/src` + `client/dist`, and `prisma/migrations/` are
    generated (see Gotchas).
 
 ## Commands
@@ -54,7 +55,8 @@ on `http://localhost:3000`; the frontend runs on `http://localhost:3001`.
 | `npm run test:cov` | Unit tests with coverage |
 | `npm run test:e2e` | e2e tests (`test/jest-e2e.json`) |
 | `npm run generate:swagger` | Boot the app and emit `swagger.json` from the Swagger decorators |
-| `npm run generate:client` | Generate the typed API client into `generated_client/` |
+| `npm run generate:client` | Generate the typed API client sources into `client/src` |
+| `npm run client:build` | Generate + compile `@naucto/api-client` into `client/dist` (what the publish workflow runs) |
 | `npx prisma migrate dev --name <desc>` | Create + apply a dev migration from the schema |
 | `npx prisma generate` | Regenerate the Prisma client |
 
@@ -74,7 +76,7 @@ on `http://localhost:3000`; the frontend runs on `http://localhost:3001`.
 | `src/util/` | Framework-agnostic helpers |
 | `src/swagger.ts`, `tool/generate-swagger.ts` | OpenAPI document build + emit |
 | `prisma/` | `schema.prisma` + split `models/*.prisma` + `migrations/` |
-| `generated_client/` | **Generated** typed API client — gitignored, do not edit |
+| `client/` | `@naucto/api-client` package: `package.json`/`tsconfig.json`/`README.md` committed, `src/`+`dist/` **generated** (gitignored) |
 | `config/`, `test/` | WebRTC runtime config; e2e Jest config |
 
 **Module pattern:** every feature is a NestJS `@Module` declaring `controllers`, `providers`,
@@ -174,13 +176,15 @@ See `SECURITY.md` for the disclosure policy. Rules for agents and contributors:
 
 ## Gotchas
 
-- **`swagger.json` is generated and committed; `generated_client/` is generated and gitignored — never
-  hand-edit them.** Regenerate with `npm run generate:swagger` (boots the app to read `@nestjs/swagger`
-  decorators) and commit the result with the endpoint change (CI fails on drift via
-  `npm run swagger:check`); `npm run generate:client` (`@hey-api/openapi-ts`) builds the client. The API contract is defined by
-  controllers + DTOs + Swagger decorators; the frontend copies `generated_client/` into its
-  `src/api`. **Annotate new/changed endpoints** (`@ApiTags`, `@ApiOperation`, `@ApiResponse`,
-  typed DTOs) or the generated client will be wrong.
+- **`swagger.json` is generated and committed; `client/src` + `client/dist` are generated and
+  gitignored — never hand-edit them.** Regenerate with `npm run generate:swagger` (boots the app to
+  read `@nestjs/swagger` decorators) and commit the result with the endpoint change (CI fails on
+  drift via `npm run swagger:check`); `npm run client:build` (`@hey-api/openapi-ts` + `tsc`) builds
+  the client that `.github/workflows/api-client.yml` publishes to GitHub Packages (tags
+  `api-client/vX.Y.Z` → `latest`, `main` → `next`, PRs → `pr-N`). Bump `client/package.json`
+  `version` when the contract changes. The API contract is defined by controllers + DTOs + Swagger
+  decorators; the frontend consumes `@naucto/api-client`. **Annotate new/changed endpoints**
+  (`@ApiTags`, `@ApiOperation`, `@ApiResponse`, typed DTOs) or the generated client will be wrong.
 - Swagger generation runs with a **stubbed env** (`tool/generate-swagger.ts`) so it works without
   real secrets. If generation breaks after adding a module that reads new env at construction
   time, add a stub there.
