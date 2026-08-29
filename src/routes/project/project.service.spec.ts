@@ -118,6 +118,7 @@ describe("ProjectService", () => {
 
   const prismaMock = {
     project: {
+      aggregate: jest.fn(),
       count: jest.fn(),
       create: jest.fn(),
       findMany: jest.fn(),
@@ -846,6 +847,95 @@ describe("ProjectService", () => {
       );
       expect(result.page).toBe(1);
       expect(result.limit).toBe(100);
+    });
+
+    it("should order by the requested shelf sort", async () => {
+      prismaMock.project.count.mockResolvedValue(1);
+      prismaMock.project.findMany.mockResolvedValue([publishedProject]);
+
+      await service.fetchPublishedGamesPaginated(1, 10, {}, "popular");
+
+      expect(prismaMock.project.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: [{ viewCount: "desc" }, { publishedAt: "desc" }]
+        })
+      );
+    });
+
+    it("should apply the search filter to both the page and its total", async () => {
+      prismaMock.project.count.mockResolvedValue(0);
+      prismaMock.project.findMany.mockResolvedValue([]);
+
+      await service.fetchPublishedGamesPaginated(1, 10, { search: "snake" });
+
+      const where = prismaMock.project.count.mock.calls[0]![0]!.where;
+      expect(where).toEqual(
+        expect.objectContaining({ status: "COMPLETED", AND: expect.any(Array) })
+      );
+      // The same filter has to reach findMany, or page 1 of a search shows unfiltered games.
+      expect(prismaMock.project.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where })
+      );
+    });
+  });
+
+  describe("profile shelves", () => {
+    it("should exclude games the person owns from their collaborations", async () => {
+      prismaMock.project.findMany.mockResolvedValue([]);
+
+      await service.fetchCollaborationsByUser(7);
+
+      expect(prismaMock.project.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            status: "COMPLETED",
+            userId: { not: 7 },
+            collaborators: { some: { id: 7 } }
+          }
+        })
+      );
+    });
+
+    it("should list remixes by the owner of what they were forked from", async () => {
+      prismaMock.project.findMany.mockResolvedValue([]);
+
+      await service.fetchRemixesOfUser(7);
+
+      expect(prismaMock.project.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            status: "COMPLETED",
+            userId: { not: 7 },
+            forkedFrom: { userId: 7 }
+          }
+        })
+      );
+    });
+
+    it("should sum plays and likes over owned published games", async () => {
+      prismaMock.project.count.mockResolvedValue(3);
+      prismaMock.project.aggregate.mockResolvedValue({
+        _sum: { viewCount: 1240, likes: 318 }
+      });
+
+      await expect(service.fetchUserTotals(7)).resolves.toEqual({
+        gameCount: 3,
+        totalPlays: 1240,
+        totalLikes: 318
+      });
+    });
+
+    it("should report zeroes when a person has published nothing", async () => {
+      prismaMock.project.count.mockResolvedValue(0);
+      prismaMock.project.aggregate.mockResolvedValue({
+        _sum: { viewCount: null, likes: null }
+      });
+
+      await expect(service.fetchUserTotals(7)).resolves.toEqual({
+        gameCount: 0,
+        totalPlays: 0,
+        totalLikes: 0
+      });
     });
   });
   describe("content size budget", () => {

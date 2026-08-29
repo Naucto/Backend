@@ -3801,6 +3801,14 @@
             "schema": {
               "type": "number"
             }
+          },
+          {
+            "name": "ownedOnly",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -3819,6 +3827,108 @@
           }
         },
         "summary": "Get a user's published games",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/public/{id}/collaborations": {
+      "get": {
+        "operationId": "UserPublicController_getCollaborations",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "User ID",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Games the user helped build but does not own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectExResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get published games the user collaborated on",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/public/{id}/remixes": {
+      "get": {
+        "operationId": "UserPublicController_getRemixes",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "User ID",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Games other people forked from one of this user's",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectExResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get published games remixed from this user's",
         "tags": [
           "users"
         ]
@@ -6088,11 +6198,33 @@
             "description": "Public CDN URL of the profile background image (if any)",
             "example": "https://cdn.example.com/users/1/background?v=abc123",
             "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "When the account was created — the profile header shows the year",
+            "example": "2025-03-14T09:00:00.000Z"
+          },
+          "gameCount": {
+            "type": "number",
+            "description": "Published games this person owns",
+            "example": 7
+          },
+          "totalPlays": {
+            "type": "number",
+            "description": "Total plays across their published games",
+            "example": 12400
+          },
+          "totalLikes": {
+            "type": "number",
+            "description": "Total likes across their published games",
+            "example": 318
           }
         },
         "required": [
           "id",
-          "username"
+          "username",
+          "createdAt"
         ]
       },
       "PublicUserProfileResponseDto": {

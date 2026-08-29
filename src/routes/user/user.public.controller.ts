@@ -47,12 +47,15 @@ export class UserPublicController {
     const profile = await this.userService.findPublicProfile(id);
     const profileImageUrl = await this.getPublicAssetUrl(`users/${id}/profile`);
     const backgroundImageUrl = await this.getPublicAssetUrl(`users/${id}/background`);
+    // Counted here rather than summed by the client over one page of games.
+    const totals = await this.projectService.fetchUserTotals(id);
 
     return {
       statusCode: HttpStatus.OK,
       message: "Public user profile retrieved successfully",
       data: {
         ...profile,
+        ...totals,
         profileImageUrl,
         backgroundImageUrl
       }
@@ -79,12 +82,14 @@ export class UserPublicController {
     const backgroundImageUrl = await this.getPublicAssetUrl(
       `users/${profile.id}/background`
     );
+    const totals = await this.projectService.fetchUserTotals(profile.id);
 
     return {
       statusCode: HttpStatus.OK,
       message: "Public user profile retrieved successfully",
       data: {
         ...profile,
+        ...totals,
         profileImageUrl,
         backgroundImageUrl
       }
@@ -144,9 +149,57 @@ export class UserPublicController {
   async getPublishedGames(
     @Param("id", ParseIntPipe) id: number,
     @Query("page") page?: string,
-    @Query("limit") limit?: string
+    @Query("limit") limit?: string,
+    @Query("ownedOnly") ownedOnly?: string
   ): Promise<ProjectExResponseDto[]> {
     return this.projectService.fetchPublishedGamesByUser(
+      id,
+      page ? parseInt(page, 10) : DEFAULT_GAMES_PAGE,
+      limit ? parseInt(limit, 10) : DEFAULT_GAMES_LIMIT,
+      ownedOnly === "true"
+    );
+  }
+
+  @Public()
+  @Get(":id/collaborations")
+  @ApiOperation({ summary: "Get published games the user collaborated on" })
+  @ApiParam({ name: "id", description: "User ID" })
+  @ApiQuery({ name: "page", type: "number", required: false })
+  @ApiQuery({ name: "limit", type: "number", required: false })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Games the user helped build but does not own",
+    type: [ProjectExResponseDto]
+  })
+  async getCollaborations(
+    @Param("id", ParseIntPipe) id: number,
+    @Query("page") page?: string,
+    @Query("limit") limit?: string
+  ): Promise<ProjectExResponseDto[]> {
+    return this.projectService.fetchCollaborationsByUser(
+      id,
+      page ? parseInt(page, 10) : DEFAULT_GAMES_PAGE,
+      limit ? parseInt(limit, 10) : DEFAULT_GAMES_LIMIT
+    );
+  }
+
+  @Public()
+  @Get(":id/remixes")
+  @ApiOperation({ summary: "Get published games remixed from this user's" })
+  @ApiParam({ name: "id", description: "User ID" })
+  @ApiQuery({ name: "page", type: "number", required: false })
+  @ApiQuery({ name: "limit", type: "number", required: false })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Games other people forked from one of this user's",
+    type: [ProjectExResponseDto]
+  })
+  async getRemixes(
+    @Param("id", ParseIntPipe) id: number,
+    @Query("page") page?: string,
+    @Query("limit") limit?: string
+  ): Promise<ProjectExResponseDto[]> {
+    return this.projectService.fetchRemixesOfUser(
       id,
       page ? parseInt(page, 10) : DEFAULT_GAMES_PAGE,
       limit ? parseInt(limit, 10) : DEFAULT_GAMES_LIMIT

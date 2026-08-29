@@ -7,6 +7,26 @@ import * as bcrypt from "bcryptjs";
 import { MeDto } from "./dto/me.dto";
 import { generateFriendCode, normalizeFriendCode } from "./friend-code.util";
 
+/**
+ * What anyone may see of a person. `createdAt` is here because the profile header shows the year
+ * they joined — a fact about a public profile, not an account detail.
+ */
+const PUBLIC_PROFILE_SELECT = {
+  id: true,
+  username: true,
+  nickname: true,
+  description: true,
+  createdAt: true
+} as const;
+
+export type PublicProfile = {
+  id: number;
+  username: string;
+  nickname: string | null;
+  description: string | null;
+  createdAt: Date;
+};
+
 @Injectable()
 export class UserService {
   constructor(private readonly prisma: PrismaService) {}
@@ -106,20 +126,10 @@ export class UserService {
 
   // --------------------------------------------------------------------------
 
-  async findPublicProfile(id: number): Promise<{
-    id: number;
-    username: string;
-    nickname: string | null;
-    description: string | null;
-  }> {
+  async findPublicProfile(id: number): Promise<PublicProfile> {
     const user = await this.prisma.user.findUnique({
       where: { id },
-      select: {
-        id: true,
-        username: true,
-        nickname: true,
-        description: true
-      }
+      select: PUBLIC_PROFILE_SELECT
     });
 
     if (!user) {
@@ -129,20 +139,10 @@ export class UserService {
     return user;
   }
 
-  async findPublicProfileByUsername(username: string): Promise<{
-    id: number;
-    username: string;
-    nickname: string | null;
-    description: string | null;
-  }> {
+  async findPublicProfileByUsername(username: string): Promise<PublicProfile> {
     const user = await this.prisma.user.findUnique({
       where: { username },
-      select: {
-        id: true,
-        username: true,
-        nickname: true,
-        description: true
-      }
+      select: PUBLIC_PROFILE_SELECT
     });
 
     if (!user) {
@@ -155,11 +155,7 @@ export class UserService {
   async updateMyProfile(
     id: number,
     data: { description?: string | null }
-  ): Promise<{
-    id: number;
-    username: string;
-    description: string | null;
-  }> {
+  ): Promise<PublicProfile> {
     const nextProfileText = data.description;
 
     const updatedUser = await this.prisma.user.update({
@@ -172,9 +168,7 @@ export class UserService {
           : {})
       },
       select: {
-        id: true,
-        username: true,
-        description: true
+        ...PUBLIC_PROFILE_SELECT
       }
     });
 
