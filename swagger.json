@@ -2056,6 +2056,26 @@
         ]
       }
     },
+    "/notifications/read-all": {
+      "patch": {
+        "operationId": "NotificationsController_markAllAsRead",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Number of notifications marked as read"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Mark every unread notification of the current user as read",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
     "/notifications/{id}/read": {
       "patch": {
         "operationId": "NotificationsController_markAsRead",
@@ -2357,6 +2377,76 @@
           }
         ],
         "summary": "Friendship status between the caller and a user",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/presence/friends": {
+      "get": {
+        "operationId": "PresenceController_friends",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PresenceDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Presence of the caller's online friends",
+        "tags": [
+          "presence"
+        ]
+      }
+    },
+    "/users/{id}/presence": {
+      "get": {
+        "operationId": "UserPresenceController_presence",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "User ID",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresenceDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User is offline"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Presence of a user (404 when offline)",
         "tags": [
           "users"
         ]
@@ -4887,6 +4977,90 @@
         },
         "required": [
           "status"
+        ]
+      },
+      "PresenceKind": {
+        "type": "string",
+        "enum": [
+          "IDLE",
+          "PLAYING",
+          "BUILDING",
+          "HOSTING"
+        ]
+      },
+      "PresenceDto": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "number",
+            "example": 1
+          },
+          "username": {
+            "type": "string",
+            "example": "louis",
+            "description": "Who it is, so a row can name them without a second call"
+          },
+          "nickname": {
+            "type": "object",
+            "nullable": true,
+            "example": "Louis"
+          },
+          "kind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PresenceKind"
+              }
+            ]
+          },
+          "releaseId": {
+            "type": "object",
+            "nullable": true,
+            "description": "Released project being played (PLAYING)"
+          },
+          "projectId": {
+            "type": "object",
+            "nullable": true,
+            "description": "Project being edited (BUILDING) or hosted (HOSTING)"
+          },
+          "sessionId": {
+            "type": "object",
+            "nullable": true,
+            "description": "Game session UUID (HOSTING)"
+          },
+          "title": {
+            "type": "object",
+            "nullable": true,
+            "description": "Game session title or project name"
+          },
+          "coverUrl": {
+            "type": "object",
+            "nullable": true,
+            "description": "Cover of the game being played, built or hosted"
+          },
+          "players": {
+            "type": "object",
+            "nullable": true,
+            "description": "Players in the hosted session, host included"
+          },
+          "maxPlayers": {
+            "type": "object",
+            "nullable": true
+          },
+          "joinable": {
+            "type": "boolean",
+            "description": "Whether the caller may join the hosted session"
+          },
+          "since": {
+            "type": "string",
+            "description": "When this activity started (ISO 8601)",
+            "example": "2026-06-07T09:00:00.000Z"
+          }
+        },
+        "required": [
+          "userId",
+          "username",
+          "kind",
+          "since"
         ]
       },
       "LoginDto": {

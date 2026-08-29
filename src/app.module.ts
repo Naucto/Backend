@@ -14,6 +14,7 @@ import { MultiplayerModule } from "@multiplayer/multiplayer.module";
 import { ProjectCommentModule } from "@project-comment/project-comment.module";
 import { NotificationsModule } from "src/notifications/notifications.module";
 import { FriendsModule } from "@friends/friends.module";
+import { PresenceModule } from "src/presence/presence.module";
 import { AppConfig } from "src/app.config";
 import {
   GracefulShutdownModule,
@@ -46,7 +47,8 @@ import {
     MultiplayerModule,
     ProjectCommentModule,
     NotificationsModule,
-    FriendsModule
+    FriendsModule,
+    PresenceModule
   ],
   providers: [AppConfig],
   exports: [AppConfig]

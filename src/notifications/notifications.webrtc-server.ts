@@ -12,7 +12,13 @@ import {
 import { WebRTCService } from "@webrtc/webrtc.service";
 import { RawData } from "ws";
 import { plainToInstance } from "class-transformer";
-import { IsEnum, IsString, validateSync } from "class-validator";
+import { IsEnum, IsInt, IsOptional, IsString, validateSync } from "class-validator";
+import {
+  PRESENCE_KINDS,
+  PresenceKind,
+  PresenceServerMessage,
+  PresenceSocketHandler
+} from "src/presence/presence.types";
 import { NotificationPayload } from "./notifications.types";
 import type { NotificationsService } from "./notifications.service";
 
@@ -33,7 +39,8 @@ type NotificationServerSocket = WebRTCServerSocket<{
 
 enum NotificationClientMessageType {
   AUTH = "auth",
-  PING = "ping"
+  PING = "ping",
+  PRESENCE_SET = "presence:set"
 }
 
 class NotificationClientMessage {
@@ -46,16 +53,36 @@ class NotificationClientAuthMessage extends NotificationClientMessage {
     token!: string;
 }
 
+class NotificationClientPresenceSetMessage extends NotificationClientMessage {
+  @IsEnum(PRESENCE_KINDS)
+    kind!: PresenceKind;
+
+  @IsOptional()
+  @IsInt()
+    releaseId?: number | null;
+
+  @IsOptional()
+  @IsInt()
+    projectId?: number | null;
+
+  @IsOptional()
+  @IsString()
+    sessionId?: string | null;
+}
+
 type NotificationServerMessage =
   | { type: "notification"; payload: NotificationPayload }
   | { type: "notifications:init"; payload: NotificationPayload[] }
-  | { type: "pong" };
+  | { type: "pong" }
+  | PresenceServerMessage;
 
 export class NotificationWebRTCServerOptions extends WebRTCServerOptions {
   pingTimeout: number = 30000;
 }
 
 export class NotificationWebRTCServer extends WebRTCServer<NotificationWebRTCServerOptions> {
+  private presenceHandler: PresenceSocketHandler | null = null;
+
   constructor(
     webrtcService: WebRTCService,
     whatFor: string,
@@ -129,10 +156,25 @@ export class NotificationWebRTCServer extends WebRTCServer<NotificationWebRTCSer
     case NotificationClientMessageType.PING:
       this.send(socket, { type: "pong" });
       break;
+
+    case NotificationClientMessageType.PRESENCE_SET:
+      this.handlePresenceSet(socket, rawBody);
+      break;
     }
   }
 
+  public setPresenceHandler(handler: PresenceSocketHandler): void {
+    this.presenceHandler = handler;
+  }
+
   public sendToUser(userId: number | string, payload: NotificationPayload): void {
+    this.sendMessageToUser(userId, { type: "notification", payload });
+  }
+
+  public sendMessageToUser(
+    userId: number | string,
+    message: NotificationServerMessage
+  ): void {
     const numericUserId = Number(userId);
     if (!Number.isInteger(numericUserId)) {
       return;
@@ -143,7 +185,27 @@ export class NotificationWebRTCServer extends WebRTCServer<NotificationWebRTCSer
       return;
     }
 
-    this.sendToClients(clients, { type: "notification", payload });
+    this.sendToClients(clients, message);
+  }
+
+  private handlePresenceSet(socket: NotificationClientSocket, rawBody: unknown): void {
+    if (socket.userId === null || !this.presenceHandler) {
+      return;
+    }
+
+    const message = plainToInstance(NotificationClientPresenceSetMessage, rawBody);
+    if (!this.validateMessage(socket, message)) {
+      return;
+    }
+
+    this.presenceHandler
+      .onSet(socket.userId, {
+        kind: message.kind,
+        releaseId: message.releaseId ?? null,
+        projectId: message.projectId ?? null,
+        sessionId: message.sessionId ?? null
+      })
+      .catch((error) => this.logger.warn(`presence:set failed: ${error}`));
   }
 
   public sendToPublic(payload: NotificationPayload): void {
@@ -211,6 +273,23 @@ export class NotificationWebRTCServer extends WebRTCServer<NotificationWebRTCSer
 
     this.registerClient(socket, userId);
     void this.sendInitialNotifications(socket, userId);
+    void this.sendPresenceSnapshot(socket, userId);
+  }
+
+  private async sendPresenceSnapshot(
+    socket: NotificationClientSocket,
+    userId: number
+  ): Promise<void> {
+    if (!this.presenceHandler) {
+      return;
+    }
+
+    try {
+      const snapshot = await this.presenceHandler.onSocketOpen(userId);
+      this.send(socket, { type: "presence:snapshot", payload: snapshot });
+    } catch (error) {
+      this.logger.warn(`presence snapshot failed for user ${userId}: ${error}`);
+    }
   }
 
   private registerClient(socket: NotificationClientSocket, userId: number): void {
@@ -244,7 +323,12 @@ export class NotificationWebRTCServer extends WebRTCServer<NotificationWebRTCSer
       serverSocket.privateClients.delete(socket.userId);
     }
 
+    const userId = socket.userId;
     socket.userId = null;
+
+    this.presenceHandler
+      ?.onSocketClose(userId)
+      .catch((error) => this.logger.warn(`presence close failed: ${error}`));
   }
 
   private async sendInitialNotifications(
