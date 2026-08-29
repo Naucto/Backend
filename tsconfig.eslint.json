@@ -2,6 +2,7 @@
   "extends": "./tsconfig.json",
   "include": [
     "*.ts",
+    "prisma/**/*.ts",
     "src/**/*.ts",
     "src/**/*.tsx",
     "test/**/*.ts",

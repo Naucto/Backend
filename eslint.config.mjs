@@ -77,5 +77,12 @@ export default defineConfig([
     rules: {
       "@typescript-eslint/no-explicit-any": "off"
     }
+  },
+  {
+    // Seeds and tooling are command-line scripts: printing what they did is the whole interface.
+    files: ["prisma/**/*.ts", "tool/**/*.ts"],
+    rules: {
+      "no-console": "off"
+    }
   }
 ]);
