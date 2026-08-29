@@ -73,6 +73,12 @@ import { PrismaService } from "@ourPrisma/prisma.service";
 import { Public } from "@auth/decorators/public.decorator";
 import { ImageUrlResponseDto } from "src/routes/common/dto/image-url-response.dto";
 import { LikeResponseDto } from "./dto/like-response.dto";
+import {
+  ProjectLimitsDto,
+  ProjectSizeDto,
+  ProjectTooLargeDto
+} from "./dto/project-size.dto";
+import { PROJECT_BLOB_MAX_BYTES } from "./content-size";
 import { ViewResponseDto } from "./dto/view-response.dto";
 
 interface RequestWithUser extends Request {
@@ -296,6 +302,18 @@ export class ProjectController {
     return { signedUrl };
   }
 
+  @Public()
+  @Get("limits")
+  @ApiOperation({ summary: "Get the project size limits" })
+  @ApiResponse({
+    status: 200,
+    description: "Content budget and blob size limits",
+    type: ProjectLimitsDto
+  })
+  getLimits(): ProjectLimitsDto {
+    return this.projectService.getLimits();
+  }
+
   @Get()
   @ApiOperation({ summary: "Retrieve the paginated list of projects" })
   @ApiQuery({ name: "page", type: "number", required: false })
@@ -373,6 +391,26 @@ export class ProjectController {
     @Param("id", ParseIntPipe) id: number
   ): Promise<ProjectResponseDto> {
     return this.projectService.findOne(id);
+  }
+
+  @Get(":id/size")
+  @UseGuards(ProjectCollaboratorGuard)
+  @ApiOperation({
+    summary: "Get the size breakdown of the project's latest save",
+    description:
+      "Logical content size per category (code, sprites, flags, map, sound, palette) " +
+      "computed from the decoded game document, compared against the publishing budget."
+  })
+  @ApiParam({ name: "id", type: "number" })
+  @ApiResponse({
+    status: 200,
+    description: "Size breakdown",
+    type: ProjectSizeDto
+  })
+  @ApiResponse({ status: 403, description: "Forbidden" })
+  @ApiResponse({ status: 404, description: "Project not found" })
+  async getSize(@Param("id", ParseIntPipe) id: number): Promise<ProjectSizeDto> {
+    return this.projectService.getContentSize(id);
   }
 
   @Post()
@@ -598,9 +636,7 @@ export class ProjectController {
     @Param("id", ParseIntPipe) id: number,
     @UploadedFile(
       new ParseFilePipeBuilder()
-        .addMaxSizeValidator({
-          maxSize: 100 * 1024 * 1024
-        })
+        .addMaxSizeValidator({ maxSize: PROJECT_BLOB_MAX_BYTES })
         .build({
           errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY
         })
@@ -800,11 +836,19 @@ export class ProjectController {
   @ApiParam({ name: "name", type: "string" })
   @ApiResponse({ status: 201, description: "File uploaded successfully" })
   @ApiResponse({ status: 403, description: "Forbidden" })
+  @ApiResponse({ status: 422, description: "File validation failed" })
   @HttpCode(HttpStatus.CREATED)
   async saveCheckpoint(
     @Param("id") id: string,
     @Param("name") name: string,
-    @UploadedFile() file: Express.Multer.File
+    @UploadedFile(
+      new ParseFilePipeBuilder()
+        .addMaxSizeValidator({ maxSize: PROJECT_BLOB_MAX_BYTES })
+        .build({
+          errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY
+        })
+    )
+      file: Express.Multer.File
   ): Promise<{ message: string; id: string }> {
     await this.projectService.save(Number(id), file);
     await this.projectService.checkpoint(Number(id), name);
@@ -835,6 +879,11 @@ export class ProjectController {
   @ApiParam({ name: "id", type: "string" })
   @ApiResponse({ status: 201, description: "Project published successfully" })
   @ApiResponse({ status: 403, description: "Forbidden" })
+  @ApiResponse({
+    status: 413,
+    description: "Project content exceeds the publishing budget",
+    type: ProjectTooLargeDto
+  })
   @HttpCode(HttpStatus.CREATED)
   async publish(
     @Param("id") id: string
@@ -1084,6 +1133,11 @@ export class ProjectController {
   @ApiResponse({ status: 200, description: "Release updated successfully" })
   @ApiResponse({ status: 400, description: "Project is not published" })
   @ApiResponse({ status: 403, description: "Forbidden" })
+  @ApiResponse({
+    status: 413,
+    description: "Project content exceeds the publishing budget",
+    type: ProjectTooLargeDto
+  })
   @HttpCode(HttpStatus.OK)
   async updateRelease(
     @Param("id") id: string

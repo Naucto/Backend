@@ -33,6 +33,10 @@ model Project {
   contentExtension  String?   @map("content_extension")
   contentUploadedAt DateTime? @map("content_uploaded_at")
 
+  // Logical size breakdown of the last saved content (see src/routes/project/content-size.ts)
+  contentSize      Json? @map("content_size")
+  contentSizeTotal Int?  @map("content_size_total")
+
   forkedFromId Int?      @map("forked_from_id")
 
   // Relations

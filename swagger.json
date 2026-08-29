@@ -243,6 +243,33 @@
         ]
       }
     },
+    "/projects/limits": {
+      "get": {
+        "operationId": "ProjectController_getLimits",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Content budget and blob size limits",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectLimitsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get the project size limits",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
     "/projects": {
       "get": {
         "operationId": "ProjectController_findAll",
@@ -512,6 +539,49 @@
           }
         ],
         "summary": "Delete a project",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/{id}/size": {
+      "get": {
+        "description": "Logical content size per category (code, sprites, flags, map, sound, palette) computed from the decoded game document, compared against the publishing budget.",
+        "operationId": "ProjectController_getSize",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Size breakdown",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectSizeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Project not found"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get the size breakdown of the project's latest save",
         "tags": [
           "projects"
         ]
@@ -987,6 +1057,9 @@
           },
           "403": {
             "description": "Forbidden"
+          },
+          "422": {
+            "description": "File validation failed"
           }
         },
         "security": [
@@ -1059,6 +1132,16 @@
           },
           "403": {
             "description": "Forbidden"
+          },
+          "413": {
+            "description": "Project content exceeds the publishing budget",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectTooLargeDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1428,6 +1511,16 @@
           },
           "403": {
             "description": "Forbidden"
+          },
+          "413": {
+            "description": "Project content exceeds the publishing budget",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectTooLargeDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3965,6 +4058,25 @@
           "signedUrl"
         ]
       },
+      "ProjectLimitsDto": {
+        "type": "object",
+        "properties": {
+          "maxContentBytes": {
+            "type": "number",
+            "example": 1048576,
+            "description": "Maximum logical content size (bytes) a game can be published at"
+          },
+          "maxBlobBytes": {
+            "type": "number",
+            "example": 16777216,
+            "description": "Maximum size (bytes) of an uploaded project blob"
+          }
+        },
+        "required": [
+          "maxContentBytes",
+          "maxBlobBytes"
+        ]
+      },
       "ProjectResponseDto": {
         "type": "object",
         "properties": {
@@ -4113,6 +4225,90 @@
           "uniquePlayers",
           "activePlayers",
           "likes"
+        ]
+      },
+      "ContentSizeBreakdownDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "number",
+            "example": 2048,
+            "description": "UTF-8 bytes of Lua source"
+          },
+          "sprites": {
+            "type": "number",
+            "example": 512,
+            "description": "Painted sprite-sheet pixels"
+          },
+          "flags": {
+            "type": "number",
+            "example": 4,
+            "description": "Sprites with at least one flag set"
+          },
+          "map": {
+            "type": "number",
+            "example": 300,
+            "description": "Map tiles set"
+          },
+          "sound": {
+            "type": "number",
+            "example": 1024,
+            "description": "UTF-8 bytes of instruments, patterns, songs, sfx and samples"
+          },
+          "palette": {
+            "type": "number",
+            "example": 112,
+            "description": "Bytes of the colour palette"
+          },
+          "total": {
+            "type": "number",
+            "example": 4000,
+            "description": "Sum of every category"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "example": 1,
+            "description": "Game document schema version (0 = legacy document)"
+          }
+        },
+        "required": [
+          "code",
+          "sprites",
+          "flags",
+          "map",
+          "sound",
+          "palette",
+          "total",
+          "schemaVersion"
+        ]
+      },
+      "ProjectSizeDto": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "number",
+            "example": 1,
+            "description": "Project ID"
+          },
+          "contentSize": {
+            "$ref": "#/components/schemas/ContentSizeBreakdownDto"
+          },
+          "maxContentBytes": {
+            "type": "number",
+            "example": 1048576,
+            "description": "Maximum logical content size (bytes) a game can be published at"
+          },
+          "withinBudget": {
+            "type": "boolean",
+            "example": true,
+            "description": "Whether the project fits within the publishing budget"
+          }
+        },
+        "required": [
+          "projectId",
+          "contentSize",
+          "maxContentBytes",
+          "withinBudget"
         ]
       },
       "CreateProjectDto": {
@@ -4438,6 +4634,42 @@
         },
         "required": [
           "url"
+        ]
+      },
+      "ProjectTooLargeDto": {
+        "type": "object",
+        "properties": {
+          "statusCode": {
+            "type": "number",
+            "example": 413
+          },
+          "error": {
+            "type": "string",
+            "example": "Payload Too Large"
+          },
+          "code": {
+            "type": "string",
+            "example": "PROJECT_TOO_LARGE"
+          },
+          "message": {
+            "type": "string",
+            "example": "Project content is 1200000 bytes, above the 1048576 bytes limit"
+          },
+          "contentSize": {
+            "$ref": "#/components/schemas/ContentSizeBreakdownDto"
+          },
+          "maxContentBytes": {
+            "type": "number",
+            "example": 1048576
+          }
+        },
+        "required": [
+          "statusCode",
+          "error",
+          "code",
+          "message",
+          "contentSize",
+          "maxContentBytes"
         ]
       },
       "LikeResponseDto": {
