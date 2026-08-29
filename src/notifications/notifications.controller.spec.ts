@@ -24,6 +24,8 @@ describe("NotificationsController", () => {
     title: "Build complete",
     message: "Your build is ready.",
     type: "INFO" as const,
+    kind: "GENERIC" as const,
+    data: null,
     read: false,
     createdAt: "2026-06-07T09:00:00.000Z"
   };

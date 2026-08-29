@@ -63,24 +63,28 @@ model RefreshToken {
 
 model FriendRequest {
   id        Int      @id @default(autoincrement())
-  from      User     @relation("SentFriendRequests", fields: [fromId], references: [id])
+  from      User     @relation("SentFriendRequests", fields: [fromId], references: [id], onDelete: Cascade)
   fromId    Int
-  to        User     @relation("ReceivedFriendRequests", fields: [toId], references: [id])
+  to        User     @relation("ReceivedFriendRequests", fields: [toId], references: [id], onDelete: Cascade)
   toId      Int
   createdAt DateTime @default(now())
 
   @@unique([fromId, toId])
+  @@index([toId])
 }
 
+// Canonical pair order: userAId < userBId (enforced by FriendsService), so a
+// friendship is stored exactly once and looked up without an OR.
 model Friendship {
   id        Int      @id @default(autoincrement())
-  userA     User     @relation("UserAFriends", fields: [userAId], references: [id])
+  userA     User     @relation("UserAFriends", fields: [userAId], references: [id], onDelete: Cascade)
   userAId   Int
-  userB     User     @relation("UserBFriends", fields: [userBId], references: [id])
+  userB     User     @relation("UserBFriends", fields: [userBId], references: [id], onDelete: Cascade)
   userBId   Int
   createdAt DateTime @default(now())
 
   @@unique([userAId, userBId])
+  @@index([userBId])
 }
 
 model Subscription {
