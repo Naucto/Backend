@@ -33,6 +33,11 @@ published as `@naucto/api-client` on GitHub Packages from `client/` (see `client
    typecheck, build, Jest against a real Postgres, and the swagger contract drift check on every
    push/PR to `main` and must pass. A husky pre-commit hook runs `eslint --fix` on staged files and
    `commit-msg` enforces the `[PART] [TYPE] Message` format.
+3. **Run the feedback loop before finishing:** `npm run lint`, `npm run build`, and
+   `npm run test`. CI (`.github/workflows/jest.yml`) runs the build + tests against a real
+   Postgres on every push/PR to `main` and must pass. `.github/workflows/docker.yml` builds the
+   production image on PRs and publishes it to `ghcr.io/naucto/backend:{main,sha-<sha>,<tag>}`
+   on `main` / `v*` tags (consumed by the Frontend's full e2e run).
 4. **Ask the user when a decision is non-obvious** — especially architectural ones (new
    dependencies, schema/migration changes, cross-cutting structure). Prefer asking over assuming.
 5. **Never hand-edit generated code** — `swagger.json` (committed, regenerated with
@@ -59,6 +64,19 @@ published as `@naucto/api-client` on GitHub Packages from `client/` (see `client
 | `npm run client:build` | Generate + compile `@naucto/api-client` into `client/dist` (what the publish workflow runs) |
 | `npx prisma migrate dev --name <desc>` | Create + apply a dev migration from the schema |
 | `npx prisma generate` | Regenerate the Prisma client |
+| `docker compose -f docker-compose.yml -f docker-compose.dev.yml up --watch backend` | Dev stack: Postgres, MinIO, and the API with hot reload |
+
+**The dev container and a host build share `dist/`.** The repo is bind-mounted into the container,
+which runs `nest start --watch` as root, so `dist/` on the host ends up root-owned and a subsequent
+`npm run build` fails with `EACCES ... unlink dist/...`. Stop the backend service before building or
+testing on the host (`docker compose ... stop backend`). Mounting a volume over `dist/` does not
+help: `nest build` removes the whole directory first and cannot remove a mountpoint.
+
+The dev stack includes **MinIO** (`:9000`, console `:9001`), because release content is fetched by
+the *browser* straight from `EDGE_ENDPOINT` — point that at a bucket the browser cannot reach and
+`/play/:id` renders a black screen with "Failed to fetch". `docker-compose.dev.yml` creates the
+bucket named by `S3_BUCKET_NAME` and makes it anonymously readable; set the five `S3_*` values and
+`EDGE_ENDPOINT` as `.env.example` shows and a published game plays on localhost.
 
 ## Architecture map
 
