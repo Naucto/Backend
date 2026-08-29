@@ -9,6 +9,7 @@ import { WebRTCService } from "@webrtc/webrtc.service";
 
 import { MultiplayerService } from "./multiplayer.service";
 import { FriendsService } from "@friends/friends.service";
+import { NotificationsService } from "src/notifications/notifications.service";
 import { SyncedGameTableWebRTCServer } from "@webrtc/server/webrtc.server.synced-game-table";
 import {
   MultiplayerForbiddenError,
@@ -60,6 +61,7 @@ describe("MultiplayerService", () => {
   const $transaction = jest.fn();
 
   const user = { findUnique: jest.fn() };
+  const notificationsService = { createNotification: jest.fn() };
   const friendsService = { areFriends: jest.fn() };
   const projectService = { findOne: jest.fn() };
   const webrtcService = { buildOffer: jest.fn() };
@@ -87,7 +89,8 @@ describe("MultiplayerService", () => {
         { provide: WebRTCService, useValue: webrtcService },
         { provide: PrismaService, useValue: { gameSession, user, $transaction } },
         { provide: JwtService, useValue: jwtService },
-        { provide: FriendsService, useValue: friendsService }
+        { provide: FriendsService, useValue: friendsService },
+        { provide: NotificationsService, useValue: notificationsService }
       ]
     }).compile();
 
@@ -483,6 +486,80 @@ describe("MultiplayerService", () => {
       const session = await service.get("session-uuid", 99);
 
       expect(session.sessionId).toBe("session-uuid");
+    });
+  });
+
+  describe("roster", () => {
+    it("names the host first, then everyone who joined", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(
+        makeSession({
+          hostId: 1,
+          host: { id: 1, username: "alice", nickname: "Ali" },
+          otherUsers: [
+            { id: 2, username: "bob", nickname: null } as User,
+            { id: 3, username: "cleo", nickname: "Cle" } as User
+          ]
+        } as Partial<GameSessionEx>)
+      );
+
+      await expect(service.roster("session-uuid", 2)).resolves.toEqual({
+        players: [
+          { userId: 1, username: "alice", nickname: "Ali", host: true },
+          { userId: 2, username: "bob", nickname: null, host: false },
+          { userId: 3, username: "cleo", nickname: "Cle", host: false }
+        ],
+        maxPlayers: 4
+      });
+    });
+
+    it("does not leak the roster of a session the caller cannot discover", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(
+        makeSession({
+          hostId: 1,
+          visibility: GameSessionVisibility.INVITE_CODE,
+          joinCode: "ABCDEFGH"
+        })
+      );
+
+      await expect(service.roster("session-uuid", 99)).rejects.toBeInstanceOf(
+        MultiplayerGameSessionNotFoundError
+      );
+    });
+  });
+
+  describe("invite", () => {
+    it("notifies the invitee with the code that gets them in", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(
+        makeSession({
+          hostId: 1,
+          host: { id: 1, username: "alice", nickname: null },
+          project: { id: 9, name: "Snake" },
+          projectId: 9,
+          visibility: GameSessionVisibility.INVITE_CODE,
+          joinCode: "ABCDEFGH"
+        } as Partial<GameSessionEx>)
+      );
+
+      await service.invite("session-uuid", 1, 42);
+
+      expect(notificationsService.createNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 42,
+          data: expect.objectContaining({
+            sessionId: "session-uuid",
+            joinCode: "ABCDEFGH"
+          })
+        })
+      );
+    });
+
+    it("refuses an invite from anyone but the host", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(makeSession({ hostId: 1 }));
+
+      await expect(service.invite("session-uuid", 99, 42)).rejects.toBeInstanceOf(
+        MultiplayerForbiddenError
+      );
+      expect(notificationsService.createNotification).not.toHaveBeenCalled();
     });
   });
 
