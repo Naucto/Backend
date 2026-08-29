@@ -7,7 +7,6 @@
 *.d.ts
 *.d.ts.map
 swagger.js
-swagger.json
 main.js
 
 # Logs
@@ -76,4 +75,6 @@ yarn.lock
 config.json
 config/webrtc.json
 generated_client
-swagger.json
+# Generated API client package sources (see client/README.md)
+client/src
+client/dist

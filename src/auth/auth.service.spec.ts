@@ -25,7 +25,7 @@ const configServiceValue = {
   })
 };
 
-function makeRefreshTokenMock(overrides: Record<string, jest.Mock> = {}) {
+function makeRefreshTokenMock(overrides: Record<string, jest.Mock> = {}): Record<string, jest.Mock> {
   return {
     create: jest.fn().mockResolvedValue({
       id: 1,
@@ -41,7 +41,7 @@ function makeRefreshTokenMock(overrides: Record<string, jest.Mock> = {}) {
   };
 }
 
-function makePrisma(refreshTokenOverrides: Record<string, jest.Mock> = {}) {
+function makePrisma(refreshTokenOverrides: Record<string, jest.Mock> = {}): Record<string, any> {
   return {
     $transaction: jest.fn((cb: any) =>
       cb({
@@ -83,7 +83,7 @@ describe("AuthService", () => {
 
   const prismaService = makePrisma();
 
-  async function buildModule(prisma = prismaService, googleAuth = {}) {
+  async function buildModule(prisma = prismaService, googleAuth = {}): Promise<AuthService> {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,

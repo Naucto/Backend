@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 10
+    groups:
+      nestjs: { patterns: ['@nestjs/*'] }
+      prisma: { patterns: ['prisma', '@prisma/*'] }
+      aws: { patterns: ['@aws-sdk/*'] }
+      tooling: { dependency-type: development }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }

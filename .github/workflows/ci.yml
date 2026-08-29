@@ -1,0 +1,41 @@
+name: CI
+on:
+  push: { branches: [main] }
+  pull_request:
+permissions: { contents: read }
+concurrency: { group: 'ci-${{ github.ref }}', cancel-in-progress: true }
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: testdb
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/testdb
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v5
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v5
+        with: { node-version-file: .nvmrc, cache: npm }
+      - run: npm ci
+      - run: npx commitlint --from origin/${{ github.base_ref }} --to HEAD
+        if: github.event_name == 'pull_request'
+      - run: npx prisma generate
+      - run: npm run lint:check
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npx prisma migrate deploy
+      - run: npm test -- --runInBand
+      - name: Contract drift (swagger.json must be committed up to date)
+        run: npm run swagger:check

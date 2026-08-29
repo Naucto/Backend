@@ -5,7 +5,7 @@ export class SignedCdnResourceDto {
     example: "https://cdn.example.com/projects/42/image",
     description: "The CDN URL for the resource (requires signed cookies)"
   })
-  resourceUrl!: string;
+    resourceUrl!: string;
 
   @ApiProperty({
     description: "Signed Edge cookies (also set as HTTP-only cookies)",
@@ -16,5 +16,5 @@ export class SignedCdnResourceDto {
       "CloudFront-Policy": "base64-policy"
     }
   })
-  cookies!: Record<string, string>;
+    cookies!: Record<string, string>;
 }

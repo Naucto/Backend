@@ -201,7 +201,7 @@ export class AuthService {
       payload = this.jwtService.verify(oldToken, {
         secret: jwtSecret
       });
-    } catch (e) {
+    } catch {
       throw new UnauthorizedException("Invalid or expired refresh token");
     }
 

@@ -161,7 +161,7 @@ export class UserController {
         .addFileTypeValidator({ fileType: ALLOWED_IMAGE_TYPES })
         .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY })
     )
-    file: Express.Multer.File,
+      file: Express.Multer.File,
     @Request() req: RequestWithUser
   ): Promise<{ message: string; id: number }> {
     if (req.user.id !== id) {

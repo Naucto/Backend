@@ -27,13 +27,16 @@ on `http://localhost:3000`; the frontend runs on `http://localhost:3001`.
    - `tsconfig.json` — (very) strict TypeScript settings and path aliases.
    - `.prettierrc` — Prettier formatting.
    - `package.json` — available scripts and dependencies.
-3. **Run the feedback loop before finishing:** `npm run lint`, `npm run build`, and
-   `npm run test`. CI (`.github/workflows/jest.yml`) runs the build + tests against a real
-   Postgres on every push/PR to `main` and must pass.
+3. **Run the feedback loop before finishing:** `npm run lint`, `npm run typecheck`, `npm run build`,
+   `npm run test`, and `npm run swagger:check`. CI (`.github/workflows/ci.yml`) runs lint (check-only),
+   typecheck, build, Jest against a real Postgres, and the swagger contract drift check on every
+   push/PR to `main` and must pass. A husky pre-commit hook runs `eslint --fix` on staged files and
+   `commit-msg` enforces the `[PART] [TYPE] Message` format.
 4. **Ask the user when a decision is non-obvious** — especially architectural ones (new
    dependencies, schema/migration changes, cross-cutting structure). Prefer asking over assuming.
-5. **Never hand-edit generated code** — `swagger.json`, `generated_client/`, and
-   `prisma/migrations/` are generated (see Gotchas).
+5. **Never hand-edit generated code** — `swagger.json` (committed, regenerated with
+   `npm run generate:swagger`), `generated_client/`, `client/src`, and `prisma/migrations/` are
+   generated (see Gotchas).
 
 ## Commands
 
@@ -43,6 +46,9 @@ on `http://localhost:3000`; the frontend runs on `http://localhost:3001`.
 | `npm run build` | Compile with `nest build` (strict `tsc`) |
 | `npm run start:prod` | Run the compiled server (`node dist/main`) |
 | `npm run lint` | ESLint over `src/`, `test/` — **note: runs with `--fix` (mutates files)** |
+| `npm run lint:check` | ESLint, check-only (what CI runs) |
+| `npm run typecheck` | `tsc --noEmit` over the whole project (specs and tooling included) |
+| `npm run swagger:check` | Regenerate `swagger.json` and fail if it differs from the committed one |
 | `npm run format` | Prettier-format `src/` and `test/` |
 | `npm run test` | Unit tests (Jest, co-located `*.spec.ts`) |
 | `npm run test:cov` | Unit tests with coverage |
@@ -168,9 +174,10 @@ See `SECURITY.md` for the disclosure policy. Rules for agents and contributors:
 
 ## Gotchas
 
-- **`swagger.json` and `generated_client/` are generated and gitignored — never hand-edit them.**
-  Regenerate with `npm run generate:swagger` (boots the app to read `@nestjs/swagger` decorators)
-  then `npm run generate:client` (`@hey-api/openapi-ts`). The API contract is defined by
+- **`swagger.json` is generated and committed; `generated_client/` is generated and gitignored — never
+  hand-edit them.** Regenerate with `npm run generate:swagger` (boots the app to read `@nestjs/swagger`
+  decorators) and commit the result with the endpoint change (CI fails on drift via
+  `npm run swagger:check`); `npm run generate:client` (`@hey-api/openapi-ts`) builds the client. The API contract is defined by
   controllers + DTOs + Swagger decorators; the frontend copies `generated_client/` into its
   `src/api`. **Annotate new/changed endpoints** (`@ApiTags`, `@ApiOperation`, `@ApiResponse`,
   typed DTOs) or the generated client will be wrong.
@@ -179,20 +186,16 @@ See `SECURITY.md` for the disclosure policy. Rules for agents and contributors:
   time, add a stub there.
 - The Prisma schema is **split** across `prisma/schema.prisma` + `prisma/models/*.prisma`. Edit
   the model files; let Prisma generate the migrations.
-- `npm run lint` runs ESLint with `--fix` (it **modifies files**). There is **no pre-commit hook**
-  in this repo — run lint / build / test yourself before pushing.
+- `npm run lint` runs ESLint with `--fix` (it **modifies files**); the pre-commit hook only lints
+  staged files — still run typecheck / build / test yourself before pushing.
 
 ## Known incoherencies (being addressed in later phases — don't "fix" ad-hoc)
 
 These are tracked cleanups; avoid partial migrations that make them worse.
 
-- **Tooling:** `eslint.config.mjs` is configured for a browser/React app (`globals.browser`,
-  `eslint-plugin-react`) — it should target Node and drop the React plugin. There's no
-  import-ordering rule (`simple-import-sort`) and no ban on `../` / raw `src/...` imports
-  (~19 `src/...` and ~7 `../` imports remain) — these should migrate to `@`-aliases and the
-  redundant `src/*` path mapping be dropped. No `husky`/`lint-staged`/`commitlint`, and CI runs
-  build + test but **not** lint/format — add a check-only `lint` (no `--fix`) and a `typecheck`
-  step.
+- **Tooling:** there's no import-ordering rule (`simple-import-sort`) and no ban on `../` / raw
+  `src/...` imports (~19 `src/...` and ~7 `../` imports remain) — these should migrate to
+  `@`-aliases and the redundant `src/*` path mapping be dropped.
 - **Docs:** `README.md` is stale — its env block predates `.env.example` (lists `AWS_*` instead
   of `S3_*`/OAuth vars), references non-existent `src/routes/aws` & `src/aws`, and has a
   `npm start:dev` (missing `run`) typo.
