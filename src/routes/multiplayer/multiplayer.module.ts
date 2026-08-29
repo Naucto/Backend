@@ -5,9 +5,10 @@ import { Module } from "@nestjs/common";
 import { PrismaModule } from "@ourPrisma/prisma.module";
 import { ProjectModule } from "@project/project.module";
 import { WebRTCModule } from "@webrtc/webrtc.module";
+import { FriendsModule } from "@friends/friends.module";
 
 @Module({
-  imports: [ProjectModule, PrismaModule, WebRTCModule, AuthModule],
+  imports: [ProjectModule, PrismaModule, WebRTCModule, AuthModule, FriendsModule],
   controllers: [MultiplayerController],
   providers: [MultiplayerService],
   exports: [MultiplayerService]

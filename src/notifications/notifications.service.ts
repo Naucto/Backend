@@ -3,7 +3,14 @@ import { JwtService } from "@nestjs/jwt";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { WebRTCOfferDto } from "@webrtc/webrtc.dto";
 import { WebRTCService } from "@webrtc/webrtc.service";
-import { CreateNotificationInput, NotificationPayload, NotificationType } from "./notifications.types";
+import { Prisma } from "@prisma/client";
+import {
+  CreateNotificationInput,
+  NotificationData,
+  NotificationKind,
+  NotificationPayload,
+  NotificationType
+} from "./notifications.types";
 import { NotificationWebRTCServer } from "./notifications.webrtc-server";
 
 const MAX_NOTIFICATIONS_PER_USER = 50;
@@ -47,6 +54,10 @@ export class NotificationsService {
           title: input.title,
           message: input.message,
           type: input.type,
+          kind: input.kind ?? "GENERIC",
+          ...(input.data !== undefined
+            ? { data: input.data as Prisma.InputJsonObject }
+            : {})
         },
       });
 
@@ -124,12 +135,20 @@ export class NotificationsService {
     return result.count;
   }
 
+  private toData(value: Prisma.JsonValue): NotificationData | null {
+    return value !== null && typeof value === "object" && !Array.isArray(value)
+      ? (value as NotificationData)
+      : null;
+  }
+
   private toPayload(notification: {
     id: number;
     userId: number;
     title: string;
     message: string;
     type: NotificationType;
+    kind: NotificationKind;
+    data: Prisma.JsonValue;
     read: boolean;
     createdAt: Date;
   }): NotificationPayload {
@@ -139,6 +158,8 @@ export class NotificationsService {
       title: notification.title,
       message: notification.message,
       type: notification.type,
+      kind: notification.kind,
+      data: this.toData(notification.data),
       read: notification.read,
       createdAt: notification.createdAt.toISOString(),
     };
