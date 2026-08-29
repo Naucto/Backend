@@ -51,6 +51,9 @@ import { SignedCdnResourceDto } from "@common/dto/signed-cdn-resource.dto";
 import { UpdateUserProfileDto } from "./dto/update-user-profile.dto";
 import { PublicUserProfileResponseDto } from "./dto/public-user-profile-response.dto";
 import { MeDto, UpdateMeDto } from "./dto/me.dto";
+import { DeleteAccountDto } from "./dto/delete-account.dto";
+import { AccountDeletionService } from "./account-deletion.service";
+import { REFRESH_COOKIE_NAME, refreshCookieOptions } from "@auth/auth.utils";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = /^image\/(jpeg|png|gif|webp)$/;
@@ -70,7 +73,8 @@ export class UserController {
   constructor(
     private readonly userService: UserService,
     private readonly s3Service: S3Service,
-    private readonly cloudfrontService: CloudfrontService
+    private readonly cloudfrontService: CloudfrontService,
+    private readonly accountDeletionService: AccountDeletionService
   ) {}
 
   private async getPublicAssetUrl(key: string): Promise<string | null> {
@@ -159,6 +163,34 @@ export class UserController {
     }
 
     return this.userService.updateMe(req.user.id, update);
+  }
+
+  @Delete("me")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary:
+      "Delete the current account (soft-delete + anonymise; purges sessions, tokens, friends, notifications, unpublished games)"
+  })
+  @ApiBody({ type: DeleteAccountDto })
+  @ApiResponse({ status: HttpStatus.NO_CONTENT, description: "Account deleted, refresh cookie cleared" })
+  @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: "Missing DELETE confirmation" })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized or wrong password" })
+  @UseGuards(JwtAuthGuard)
+  async deleteMe(
+    @Request() req: RequestWithUser,
+    @Body(ValidationPipe) dto: DeleteAccountDto,
+    @Res({ passthrough: true }) res: Response
+  ): Promise<void> {
+    const options: { removePublishedGames?: boolean; password?: string } = {};
+    if (dto.removePublishedGames !== undefined) {
+      options.removePublishedGames = dto.removePublishedGames;
+    }
+    if (dto.password !== undefined) {
+      options.password = dto.password;
+    }
+
+    await this.accountDeletionService.deleteAccount(req.user.id, options);
+    res.clearCookie(REFRESH_COOKIE_NAME, refreshCookieOptions());
   }
 
   @Post("me/friend-code/regenerate")
