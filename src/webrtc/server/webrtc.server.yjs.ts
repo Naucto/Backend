@@ -2,7 +2,9 @@ import {
   WebRTCClientEvent,
   WebRTCClientSocket,
   WebRTCServerEvent,
-  WebRTCServerSocket
+  WebRTCServerSocket,
+  WebRTCServerName,
+  WEBRTC_SERVER_NAMES
 } from "@webrtc/server/webrtc.server";
 import {
   EventBasedMessage,
@@ -66,6 +68,7 @@ class YjsMessagePing extends YjsMessage {}
 // ----------------------------------------------------------------------------
 
 export class YjsWebRTCServerOptions extends EventBasedWebRTCServerOptions {
+  override name: WebRTCServerName = WEBRTC_SERVER_NAMES.collab;
   pingTimeout: number = 30000;
 }
 

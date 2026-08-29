@@ -7,7 +7,9 @@ import {
   WebRTCServer,
   WebRTCServerEvent,
   WebRTCServerOptions,
-  WebRTCServerSocket
+  WebRTCServerSocket,
+  WebRTCServerName,
+  WEBRTC_SERVER_NAMES
 } from "@webrtc/server/webrtc.server";
 import { WebRTCService } from "@webrtc/webrtc.service";
 import { RawData } from "ws";
@@ -77,6 +79,7 @@ type NotificationServerMessage =
   | PresenceServerMessage;
 
 export class NotificationWebRTCServerOptions extends WebRTCServerOptions {
+  override name: WebRTCServerName = WEBRTC_SERVER_NAMES.user;
   pingTimeout: number = 30000;
 }
 

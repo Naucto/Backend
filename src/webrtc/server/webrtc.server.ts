@@ -167,8 +167,24 @@ export function WebRTCServerAuthEvent(): MethodDecorator {
   return decoratorWrapper;
 }
 
+/**
+ * Stable public names of the WebSocket servers. In production each name maps
+ * to its own subdomain through BACKEND_WEBRTC_PUBLIC_URL_TEMPLATE (see
+ * WebRTCService.buildSignalingUrl): collab = Yjs collaboration, game =
+ * multiplayer game table, user = per-user notifications/presence.
+ */
+export const WEBRTC_SERVER_NAMES = {
+  collab: "collab",
+  game: "game",
+  user: "user"
+} as const;
+export type WebRTCServerName =
+  (typeof WEBRTC_SERVER_NAMES)[keyof typeof WEBRTC_SERVER_NAMES];
+
 export class WebRTCServerOptions {
   port?: number;
+  /** Public name substituted for `{name}` in the signaling URL template. */
+  name?: WebRTCServerName;
   compressed: boolean = true;
   compressionThreshold: number = 256;
 }
@@ -181,6 +197,7 @@ export class WebRTCServer<
   private readonly _logger: Logger;
 
   private readonly _port: number;
+  private readonly _name: WebRTCServerName | undefined;
   private readonly _httpServer: HTTPServer;
   private readonly _wsServer: WebSocketServer;
   private readonly _extraOpts: OptsT;
@@ -203,6 +220,8 @@ export class WebRTCServer<
     }
 
     extraOpts.port = this._port;
+
+    this._name = extraOpts.name;
 
     this._logger = new Logger(`${this.constructor.name} (${whatFor})`);
 
@@ -249,6 +268,11 @@ export class WebRTCServer<
 
   public get port(): number {
     return this._port;
+  }
+
+  /** Public name used by the signaling URL template; unset for ad-hoc servers. */
+  public get name(): WebRTCServerName | undefined {
+    return this._name;
   }
 
   public get logger(): Logger {
