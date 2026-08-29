@@ -23,6 +23,11 @@ import { MultiplayerService } from "src/routes/multiplayer/multiplayer.service";
 import { ProjectCommentService } from "@project-comment/project-comment.service";
 import { NotificationsService } from "src/notifications/notifications.service";
 import { FriendsService } from "@friends/friends.service";
+import {
+  PresenceController,
+  UserPresenceController
+} from "src/presence/presence.controller";
+import { PresenceService } from "src/presence/presence.service";
 
 import { UserModule } from "@user/user.module";
 import { WorkSessionModule } from "@work-session/work-session.module";
@@ -73,7 +78,9 @@ const nullProvider = (token: InjectionToken): Provider => ({
     ProjectCommentController,
     NotificationsController,
     FriendsController,
-    UserFriendshipController
+    UserFriendshipController,
+    PresenceController,
+    UserPresenceController
   ],
   providers: [
     nullProvider(PrismaService),
@@ -84,7 +91,8 @@ const nullProvider = (token: InjectionToken): Provider => ({
     nullProvider(MultiplayerService),
     nullProvider(ProjectCommentService),
     nullProvider(NotificationsService),
-    nullProvider(FriendsService)
+    nullProvider(FriendsService),
+    nullProvider(PresenceService)
   ]
 })
 export class SwaggerAppModule {}

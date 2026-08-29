@@ -12,6 +12,7 @@ import {
   NotificationType
 } from "./notifications.types";
 import { NotificationWebRTCServer } from "./notifications.webrtc-server";
+import { PresenceServerMessage, PresenceSocketHandler } from "src/presence/presence.types";
 
 const MAX_NOTIFICATIONS_PER_USER = 50;
 
@@ -30,6 +31,14 @@ export class NotificationsService {
       jwtService,
       this
     );
+  }
+
+  attachPresence(handler: PresenceSocketHandler): void {
+    this.notificationServer.setPresenceHandler(handler);
+  }
+
+  sendRawToUser(userId: number, message: PresenceServerMessage): void {
+    this.notificationServer.sendMessageToUser(userId, message);
   }
 
   getWebRTCOffer(): WebRTCOfferDto {

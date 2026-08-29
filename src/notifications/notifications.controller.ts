@@ -59,6 +59,22 @@ export class NotificationsController {
     };
   }
 
+  @ApiOperation({ summary: "Mark every unread notification of the current user as read" })
+  @ApiResponse({ status: HttpStatus.OK, description: "Number of notifications marked as read" })
+  @Patch("read-all")
+  @HttpCode(HttpStatus.OK)
+  async markAllAsRead(
+    @Request() req: RequestWithUser,
+  ): Promise<{ statusCode: number; message: string; data: { count: number } }> {
+    const count = await this.notificationsService.markAllAsRead(req.user.id);
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: "Notifications marked as read",
+      data: { count },
+    };
+  }
+
   @ApiOperation({ summary: "set one notification as read" })
   @ApiResponse({ status: HttpStatus.OK, description: "Notification marked as read" })
   @Patch(":id/read")

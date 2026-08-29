@@ -10,6 +10,7 @@ describe("NotificationsController", () => {
     createNotification: jest.Mock;
     getWebRTCOffer: jest.Mock;
     markAsRead: jest.Mock;
+    markAllAsRead: jest.Mock;
   };
 
   const request = {
@@ -34,7 +35,8 @@ describe("NotificationsController", () => {
     notificationsService = {
       createNotification: jest.fn(),
       getWebRTCOffer: jest.fn(),
-      markAsRead: jest.fn()
+      markAsRead: jest.fn(),
+      markAllAsRead: jest.fn()
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -108,5 +110,16 @@ describe("NotificationsController", () => {
     });
 
     expect(notificationsService.markAsRead).toHaveBeenCalledWith(42, "7");
+  });
+
+  it("should mark all notifications as read for the current user", async () => {
+    notificationsService.markAllAsRead.mockResolvedValue(3);
+
+    await expect(controller.markAllAsRead(request)).resolves.toEqual({
+      statusCode: HttpStatus.OK,
+      message: "Notifications marked as read",
+      data: { count: 3 }
+    });
+    expect(notificationsService.markAllAsRead).toHaveBeenCalledWith(42);
   });
 });
