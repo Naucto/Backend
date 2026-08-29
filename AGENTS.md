@@ -64,8 +64,9 @@ published as `@naucto/api-client` on GitHub Packages from `client/` (see `client
 | `npm run client:build` | Generate + compile `@naucto/api-client` into `client/dist` (what the publish workflow runs) |
 | `npx prisma migrate dev --name <desc>` | Create + apply a dev migration from the schema |
 | `npx prisma generate` | Regenerate the Prisma client |
-| `npm run seed:dev` | Seed a local database with people, friendships and pending requests (refuses non-local hosts) |
+| `npm run seed:dev` | Seed a local database with people, friendships, pending requests and shared game sessions (refuses non-local hosts) |
 | `docker compose -f docker-compose.yml -f docker-compose.dev.yml up --watch backend` | Dev stack: Postgres, MinIO, and the API with hot reload |
+| `./dev.sh` | The line above with a `build` first — the shorthand, and the usual way in |
 
 **The dev container and a host build share `dist/`.** The repo is bind-mounted into the container,
 which runs `nest start --watch` as root, so `dist/` on the host ends up root-owned and a subsequent

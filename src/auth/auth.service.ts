@@ -243,6 +243,15 @@ export class AuthService {
     });
   }
 
+  /**
+   * Ends every session for a user. Logout cannot revoke by presented token — the refresh cookie is
+   * scoped to the refresh route and never reaches it — so it revokes by user id, which also signs
+   * the account out of any other tab or device holding a refresh token.
+   */
+  async revokeAllRefreshTokens(userId: number): Promise<void> {
+    await this.prisma.refreshToken.deleteMany({ where: { userId } });
+  }
+
   async revokeRefreshToken(token: string): Promise<void> {
     try {
       const decoded = this.jwtService.decode(token) as JwtPayload;

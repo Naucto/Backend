@@ -722,6 +722,14 @@ export class ProjectController {
     });
     await this.s3Service.setObjectPublicRead(key);
 
+    // Record where it landed. Presence reads `iconUrl` to put a friend's game behind their name
+    // on the friends page, and nothing ever wrote it, so that art could never appear: the column
+    // was dead the moment the upload started going to S3 instead.
+    await this.prismaService.project.update({
+      where: { id },
+      data: { iconUrl: this.cloudfrontService.getCDNUrl(key) }
+    });
+
     return { message: "Project image uploaded successfully", id };
   }
 
