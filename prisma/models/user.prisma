@@ -1,3 +1,9 @@
+enum SessionJoinPolicy {
+  ANYONE
+  FRIENDS
+  CODE_ONLY
+}
+
 model User {
   id        Int      @id @default(autoincrement())
   email     String   @unique
@@ -6,6 +12,13 @@ model User {
   description String?
   password  String?
   createdAt DateTime @default(now())
+
+  // Crockford base32 code (8 chars) shared to add friends; generated lazily on
+  // first read so existing rows stay NULL until requested.
+  friendCode        String?           @unique
+  sessionJoinPolicy SessionJoinPolicy @default(ANYONE)
+  // Soft-delete marker: set by account deletion, rejected by the JWT strategy.
+  deletedAt         DateTime?
 
   roles Role[] @relation("UserRoles")
 

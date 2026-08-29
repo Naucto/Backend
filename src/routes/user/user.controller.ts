@@ -36,7 +36,7 @@ import { Request } from "@nestjs/common";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
 import { RolesGuard } from "@auth/guards/roles.guard";
 import { Roles } from "@auth/decorators/roles.decorator";
-import { Prisma } from "@prisma/client";
+import { Prisma, SessionJoinPolicy } from "@prisma/client";
 import { UserResponseDto } from "./dto/user-response.dto";
 import { UserListResponseDto } from "./dto/user-list-response.dto";
 import { UserSingleResponseDto } from "./dto/user-single-response.dto";
@@ -50,6 +50,7 @@ import { CloudfrontService } from "src/routes/s3/edge.service";
 import { SignedCdnResourceDto } from "@common/dto/signed-cdn-resource.dto";
 import { UpdateUserProfileDto } from "./dto/update-user-profile.dto";
 import { PublicUserProfileResponseDto } from "./dto/public-user-profile-response.dto";
+import { MeDto, UpdateMeDto } from "./dto/me.dto";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = /^image\/(jpeg|png|gif|webp)$/;
@@ -130,6 +131,44 @@ export class UserController {
         backgroundImageUrl
       }
     };
+  }
+
+  // Declared before the ":id" routes so "me" is never parsed as a user id.
+  @Get("me")
+  @ApiOperation({ summary: "Get the current user's account settings" })
+  @ApiResponse({ status: HttpStatus.OK, type: MeDto })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
+  @UseGuards(JwtAuthGuard)
+  async getMe(@Request() req: RequestWithUser): Promise<MeDto> {
+    return this.userService.getMe(req.user.id);
+  }
+
+  @Patch("me")
+  @ApiOperation({ summary: "Update the current user's account settings" })
+  @ApiBody({ type: UpdateMeDto })
+  @ApiResponse({ status: HttpStatus.OK, type: MeDto })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
+  @UseGuards(JwtAuthGuard)
+  async updateMe(
+    @Request() req: RequestWithUser,
+    @Body(ValidationPipe) dto: UpdateMeDto
+  ): Promise<MeDto> {
+    const update: { sessionJoinPolicy?: SessionJoinPolicy } = {};
+    if (dto.sessionJoinPolicy !== undefined) {
+      update.sessionJoinPolicy = dto.sessionJoinPolicy;
+    }
+
+    return this.userService.updateMe(req.user.id, update);
+  }
+
+  @Post("me/friend-code/regenerate")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Replace the current user's friend code" })
+  @ApiResponse({ status: HttpStatus.OK, type: MeDto })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
+  @UseGuards(JwtAuthGuard)
+  async regenerateFriendCode(@Request() req: RequestWithUser): Promise<MeDto> {
+    return this.userService.regenerateFriendCode(req.user.id);
   }
 
   @Post(":id/profile-picture")

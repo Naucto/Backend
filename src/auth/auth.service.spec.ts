@@ -136,7 +136,10 @@ describe("AuthService", () => {
         nickname: null,
         description: null,
         password: "hashedPass",
-        createdAt: new Date()
+        createdAt: new Date(),
+        friendCode: null,
+        sessionJoinPolicy: "ANYONE" as const,
+        deletedAt: null
       });
       (bcrypt.compare as jest.Mock).mockResolvedValueOnce(false);
       await expect(
@@ -152,7 +155,10 @@ describe("AuthService", () => {
         username: "testuser",
         nickname: null,
         description: null,
-        createdAt: new Date()
+        createdAt: new Date(),
+        friendCode: null,
+        sessionJoinPolicy: "ANYONE" as const,
+        deletedAt: null
       };
       userService.findByEmail.mockResolvedValue(mockUser);
       const result = await authService.validateUser(
@@ -172,7 +178,10 @@ describe("AuthService", () => {
         username: "testuser",
         nickname: null,
         description: null,
-        createdAt: new Date()
+        createdAt: new Date(),
+        friendCode: null,
+        sessionJoinPolicy: "ANYONE" as const,
+        deletedAt: null
       };
       jest.spyOn(authService, "validateUser").mockResolvedValue(mockUser);
 
@@ -211,7 +220,10 @@ describe("AuthService", () => {
                 nickname: null,
                 description: null,
                 password: "hashedPass",
-                createdAt: new Date()
+                createdAt: new Date(),
+                friendCode: null,
+                sessionJoinPolicy: "ANYONE" as const,
+                deletedAt: null
               }
             ];
           }
@@ -252,7 +264,10 @@ describe("AuthService", () => {
                 nickname: null,
                 description: null,
                 password: "hashedPass",
-                createdAt: new Date()
+                createdAt: new Date(),
+                friendCode: null,
+                sessionJoinPolicy: "ANYONE" as const,
+                deletedAt: null
               }
             ];
           }
@@ -279,7 +294,10 @@ describe("AuthService", () => {
         nickname: null,
         description: null,
         password: "hashedPassword",
-        createdAt: new Date()
+        createdAt: new Date(),
+        friendCode: null,
+        sessionJoinPolicy: "ANYONE" as const,
+        deletedAt: null
       });
 
       const result = await authService.register({
@@ -326,7 +344,10 @@ describe("AuthService", () => {
           username: "user",
           nickname: null,
           password: "pass",
-          createdAt: new Date()
+          createdAt: new Date(),
+          friendCode: null,
+          sessionJoinPolicy: "ANYONE" as const,
+          deletedAt: null
         }
       };
 
@@ -362,7 +383,10 @@ describe("AuthService", () => {
           username: "user",
           nickname: null,
           password: "pass",
-          createdAt: new Date()
+          createdAt: new Date(),
+          friendCode: null,
+          sessionJoinPolicy: "ANYONE" as const,
+          deletedAt: null
         }
       };
 
@@ -417,7 +441,10 @@ describe("AuthService", () => {
         username: "googleuser",
         nickname: null,
         password: null,
-        createdAt: new Date()
+        createdAt: new Date(),
+        friendCode: null,
+        sessionJoinPolicy: "ANYONE" as const,
+        deletedAt: null
       } as any);
 
       await expect(

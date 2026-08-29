@@ -2476,6 +2476,104 @@
         ]
       }
     },
+    "/users/me": {
+      "get": {
+        "operationId": "UserController_getMe",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get the current user's account settings",
+        "tags": [
+          "users"
+        ]
+      },
+      "patch": {
+        "operationId": "UserController_updateMe",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Update the current user's account settings",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/me/friend-code/regenerate": {
+      "post": {
+        "operationId": "UserController_regenerateFriendCode",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Replace the current user's friend code",
+        "tags": [
+          "users"
+        ]
+      }
+    },
     "/users/{id}/profile-picture": {
       "post": {
         "operationId": "UserController_uploadProfilePicture",
@@ -4777,6 +4875,49 @@
             "description": "Public profile description displayed on the profile",
             "example": "I love making games",
             "maxLength": 160
+          }
+        }
+      },
+      "SessionJoinPolicy": {
+        "type": "string",
+        "enum": [
+          "ANYONE",
+          "FRIENDS",
+          "CODE_ONLY"
+        ],
+        "description": "Who may join the game sessions this user hosts"
+      },
+      "MeDto": {
+        "type": "object",
+        "properties": {
+          "friendCode": {
+            "type": "string",
+            "description": "Code other users enter to send a friend request",
+            "example": "7K3QW9ZB"
+          },
+          "sessionJoinPolicy": {
+            "description": "Who may join the game sessions this user hosts",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SessionJoinPolicy"
+              }
+            ]
+          }
+        },
+        "required": [
+          "friendCode",
+          "sessionJoinPolicy"
+        ]
+      },
+      "UpdateMeDto": {
+        "type": "object",
+        "properties": {
+          "sessionJoinPolicy": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SessionJoinPolicy"
+              }
+            ]
           }
         }
       },

@@ -9,6 +9,7 @@ import { HttpException, HttpStatus } from "@nestjs/common";
 
 describe("UserController", () => {
   let controller: UserController;
+  let userService: UserService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -57,6 +58,7 @@ describe("UserController", () => {
     }).compile();
 
     controller = module.get<UserController>(UserController);
+    userService = module.get<UserService>(UserService);
   });
 
   it("should be defined", () => {
@@ -76,6 +78,50 @@ describe("UserController", () => {
         expect(err).toBeInstanceOf(HttpException);
         expect((err as HttpException).getStatus()).toBe(HttpStatus.FORBIDDEN);
       }
+    });
+  });
+
+  describe("/users/me", () => {
+    const req = { user: { id: 7 } } as any;
+
+    it("returns the account settings", async () => {
+      userService.getMe = jest.fn().mockResolvedValue({
+        friendCode: "7K3QW9ZB",
+        sessionJoinPolicy: "ANYONE"
+      });
+
+      await expect(controller.getMe(req)).resolves.toEqual({
+        friendCode: "7K3QW9ZB",
+        sessionJoinPolicy: "ANYONE"
+      });
+      expect(userService.getMe).toHaveBeenCalledWith(7);
+    });
+
+    it("forwards only the provided fields on update", async () => {
+      userService.updateMe = jest.fn().mockResolvedValue({
+        friendCode: "7K3QW9ZB",
+        sessionJoinPolicy: "FRIENDS"
+      });
+
+      await controller.updateMe(req, { sessionJoinPolicy: "FRIENDS" });
+      expect(userService.updateMe).toHaveBeenCalledWith(7, {
+        sessionJoinPolicy: "FRIENDS"
+      });
+
+      await controller.updateMe(req, {});
+      expect(userService.updateMe).toHaveBeenLastCalledWith(7, {});
+    });
+
+    it("regenerates the friend code", async () => {
+      userService.regenerateFriendCode = jest.fn().mockResolvedValue({
+        friendCode: "NEWCODE1",
+        sessionJoinPolicy: "ANYONE"
+      });
+
+      await expect(controller.regenerateFriendCode(req)).resolves.toEqual({
+        friendCode: "NEWCODE1",
+        sessionJoinPolicy: "ANYONE"
+      });
     });
   });
 });

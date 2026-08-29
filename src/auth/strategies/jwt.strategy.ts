@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, UnauthorizedException } from "@nestjs/common";
 import { PassportStrategy } from "@nestjs/passport";
 import { ExtractJwt, Strategy, StrategyOptions } from "passport-jwt";
 import { ConfigService } from "@nestjs/config";
@@ -20,7 +20,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super(options);
   }
 
-  async validate(payload: JwtPayload): Promise<User | undefined> {
-    return this.userService.findOne(payload.sub);
+  async validate(payload: JwtPayload): Promise<User> {
+    const user = await this.userService.findOne(payload.sub);
+
+    // A soft-deleted account keeps its row but must not authenticate anymore,
+    // even with a still-valid access token.
+    if (user.deletedAt) {
+      throw new UnauthorizedException("Account deleted");
+    }
+
+    return user;
   }
 }
