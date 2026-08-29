@@ -2909,6 +2909,40 @@
         "tags": [
           "users"
         ]
+      },
+      "delete": {
+        "operationId": "UserController_deleteMe",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteAccountDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Account deleted, refresh cookie cleared"
+          },
+          "400": {
+            "description": "Missing DELETE confirmation"
+          },
+          "401": {
+            "description": "Unauthorized or wrong password"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Delete the current account (soft-delete + anonymise; purges sessions, tokens, friends, notifications, unpublished games)",
+        "tags": [
+          "users"
+        ]
       }
     },
     "/users/me/friend-code/regenerate": {
@@ -5529,6 +5563,31 @@
             ]
           }
         }
+      },
+      "DeleteAccountDto": {
+        "type": "object",
+        "properties": {
+          "confirmation": {
+            "type": "string",
+            "description": "Must be the literal string DELETE",
+            "example": "DELETE",
+            "enum": [
+              "DELETE"
+            ]
+          },
+          "removePublishedGames": {
+            "type": "boolean",
+            "description": "Also remove the user's published games (default: keep them, attributed to Deleted user)",
+            "default": false
+          },
+          "password": {
+            "type": "string",
+            "description": "Current password; verified when provided on a password account"
+          }
+        },
+        "required": [
+          "confirmation"
+        ]
       },
       "SignedCdnResourceDto": {
         "type": "object",

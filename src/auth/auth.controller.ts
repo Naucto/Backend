@@ -31,21 +31,15 @@ import {
   encryptRefreshToken,
   decryptRefreshToken
 } from "./refresh-cookie.crypto";
+import { refreshCookieOptions } from "./auth.utils";
 
 @ApiTags("auth")
 @Controller("auth")
 export class AuthController {
-  private readonly isProd = process.env["NODE_ENV"] === "production";
-
   constructor(private readonly authService: AuthService) {}
 
   private getRefreshCookieOptions(): CookieOptions {
-    return {
-      httpOnly: true,
-      secure: this.isProd,
-      sameSite: this.isProd ? "none" : "lax",
-      path: "/auth/refresh"
-    };
+    return refreshCookieOptions();
   }
 
   private setRefreshCookie(res: Response, token: string): void {
