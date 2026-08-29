@@ -2545,6 +2545,142 @@
         ]
       }
     },
+    "/releases/featured": {
+      "get": {
+        "operationId": "FeaturedReleaseController_getFeatured",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "The featured release, or null when none is set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeaturedReleaseResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get the current featured release (game of the week)",
+        "tags": [
+          "releases"
+        ]
+      }
+    },
+    "/admin/featured-release": {
+      "put": {
+        "operationId": "AdminFeaturedReleaseController_setFeatured",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetFeaturedReleaseDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The new featured release",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeaturedReleaseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Project is not published"
+          },
+          "403": {
+            "description": "Admin role required"
+          },
+          "404": {
+            "description": "Project not found"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Feature a published project (replaces the current pick)",
+        "tags": [
+          "admin"
+        ]
+      },
+      "delete": {
+        "operationId": "AdminFeaturedReleaseController_clearFeatured",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": "No featured release remains"
+          },
+          "403": {
+            "description": "Admin role required"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Clear the current featured release",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/featured-release/history": {
+      "get": {
+        "operationId": "AdminFeaturedReleaseController_getHistory",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Featured releases, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeaturedReleaseHistoryDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin role required"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "List past and current featured releases",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/auth/login": {
       "post": {
         "operationId": "AuthController_login",
@@ -5327,6 +5463,201 @@
           "username",
           "kind",
           "since"
+        ]
+      },
+      "FeaturedCuratorDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 1
+          },
+          "username": {
+            "type": "string",
+            "example": "admin"
+          }
+        },
+        "required": [
+          "id",
+          "username"
+        ]
+      },
+      "FeaturedReleaseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 7,
+            "description": "Featured entry ID"
+          },
+          "projectId": {
+            "type": "number",
+            "example": 42,
+            "description": "Featured project ID"
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "startsAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-08-17T09:00:00Z"
+          },
+          "endsAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "featuredBy": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FeaturedCuratorDto"
+              }
+            ]
+          },
+          "project": {
+            "description": "Release metadata of the featured project",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProjectExResponseDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "startsAt",
+          "project"
+        ]
+      },
+      "FeaturedReleaseResponseDto": {
+        "type": "object",
+        "properties": {
+          "featured": {
+            "nullable": true,
+            "description": "The current featured release, or null when none is set",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FeaturedReleaseDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "featured"
+        ]
+      },
+      "SetFeaturedReleaseDto": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "number",
+            "example": 42,
+            "description": "ID of the published project"
+          },
+          "note": {
+            "type": "string",
+            "example": "Editor's pick: a tight one-button platformer",
+            "description": "Optional curator note shown next to the featured game",
+            "maxLength": 280
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "FeaturedProjectSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 42
+          },
+          "name": {
+            "type": "string",
+            "example": "Moon Lander"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "FeaturedReleaseHistoryEntryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 7
+          },
+          "projectId": {
+            "type": "number",
+            "example": 42
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "startsAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-08-10T09:00:00Z"
+          },
+          "endsAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "featuredBy": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FeaturedCuratorDto"
+              }
+            ]
+          },
+          "project": {
+            "$ref": "#/components/schemas/FeaturedProjectSummaryDto"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "startsAt",
+          "project"
+        ]
+      },
+      "FeaturedReleaseHistoryDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FeaturedReleaseHistoryEntryDto"
+            }
+          },
+          "total": {
+            "type": "number",
+            "example": 12
+          },
+          "page": {
+            "type": "number",
+            "example": 1
+          },
+          "limit": {
+            "type": "number",
+            "example": 20
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "limit"
         ]
       },
       "LoginDto": {

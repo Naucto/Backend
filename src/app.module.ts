@@ -15,6 +15,7 @@ import { ProjectCommentModule } from "@project-comment/project-comment.module";
 import { NotificationsModule } from "src/notifications/notifications.module";
 import { FriendsModule } from "@friends/friends.module";
 import { PresenceModule } from "src/presence/presence.module";
+import { CurationModule } from "@curation/curation.module";
 import { AppConfig } from "src/app.config";
 import {
   GracefulShutdownModule,
@@ -48,7 +49,8 @@ import {
     ProjectCommentModule,
     NotificationsModule,
     FriendsModule,
-    PresenceModule
+    PresenceModule,
+    CurationModule
   ],
   providers: [AppConfig],
   exports: [AppConfig]

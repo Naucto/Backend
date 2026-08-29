@@ -13,6 +13,8 @@ import {
   FriendsController,
   UserFriendshipController
 } from "@friends/friends.controller";
+import { FeaturedReleaseController } from "@curation/featured-release.controller";
+import { AdminFeaturedReleaseController } from "@curation/admin-featured-release.controller";
 
 import { ProjectService } from "@project/project.service";
 import { S3Service } from "@s3/s3.service";
@@ -28,6 +30,7 @@ import {
   UserPresenceController
 } from "src/presence/presence.controller";
 import { PresenceService } from "src/presence/presence.service";
+import { CurationService } from "@curation/curation.service";
 
 import { UserModule } from "@user/user.module";
 import { WorkSessionModule } from "@work-session/work-session.module";
@@ -80,7 +83,9 @@ const nullProvider = (token: InjectionToken): Provider => ({
     FriendsController,
     UserFriendshipController,
     PresenceController,
-    UserPresenceController
+    UserPresenceController,
+    FeaturedReleaseController,
+    AdminFeaturedReleaseController
   ],
   providers: [
     nullProvider(PrismaService),
@@ -92,7 +97,8 @@ const nullProvider = (token: InjectionToken): Provider => ({
     nullProvider(ProjectCommentService),
     nullProvider(NotificationsService),
     nullProvider(FriendsService),
-    nullProvider(PresenceService)
+    nullProvider(PresenceService),
+    nullProvider(CurationService)
   ]
 })
 export class SwaggerAppModule {}

@@ -48,6 +48,7 @@ model Project {
   gameSessions  GameSession[]
   workSession   WorkSession?
   userLikes     Like[]
+  featuredReleases FeaturedRelease[]
 
   // Aggregate statistics
   viewCount     Int @default(0)

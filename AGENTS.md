@@ -68,7 +68,7 @@ published as `@naucto/api-client` on GitHub Packages from `client/` (see `client
 | `src/app.module.ts` | Root module wiring every feature module |
 | `src/auth/` | JWT auth, passport strategy, guards, `@Public()`/`@Roles()` decorators, OAuth providers (Google/GitHub/Microsoft), refresh-token crypto |
 | `src/routes/<feature>/` | One folder per HTTP feature: `*.controller.ts`, `*.service.ts`, `*.module.ts`, `*.error.ts`, `dto/`, `entities/`, co-located `*.spec.ts` |
-| `src/routes/{user,project,project-comment,work-session,multiplayer,s3}/` | The feature areas |
+| `src/routes/{user,project,curation,project-comment,work-session,multiplayer,s3}/` | The feature areas (`curation` = featured release / game of the week, admin-only writes via `@AdminOnly()`) |
 | `src/webrtc/` | `ws` + Yjs real-time multiplayer server (`server/`) |
 | `src/tasks/` | Scheduled jobs (`@nestjs/schedule` cron) |
 | `src/prisma/` | `PrismaService` + module (the `@ourPrisma` alias) |
@@ -90,7 +90,8 @@ rejects unexpected ones** — so every accepted field needs a validator decorato
 
 **Auth/guards:** protect routes with `@UseGuards(JwtAuthGuard)` + `@ApiBearerAuth("JWT-auth")`;
 opt a route out with `@Public()`; ownership/role checks use the project/roles guards
-(`ProjectCollaboratorGuard`, `ProjectCreatorGuard`, `RolesGuard`). Reuse these — don't re-implement.
+(`ProjectCollaboratorGuard`, `ProjectCreatorGuard`, `RolesGuard`); `@AdminOnly()` bundles JWT +
+`RolesGuard` + `Roles("Admin")` (the `Admin` role is seeded by migration). Reuse these — don't re-implement.
 
 **Errors:** from services, prefer Nest's built-in `HttpException` subclasses
 (`NotFoundException`, `ForbiddenException`, `BadRequestException`, …) — they map to status codes
@@ -103,8 +104,8 @@ These complement the lint/TS rules (which you should read from the config files,
 
 **Imports — alias policy**
 - Use a project `@`-alias for **any cross-directory import**. The project aliases are:
-  `@auth`, `@user`, `@project`, `@multiplayer`, `@project-comment`, `@work-session`, `@s3`,
-  `@common`, `@webrtc`, `@util`, `@ourPrisma` (see `tsconfig.json` `paths`).
+  `@auth`, `@user`, `@project`, `@curation`, `@multiplayer`, `@project-comment`, `@work-session`,
+  `@s3`, `@common`, `@webrtc`, `@util`, `@ourPrisma` (see `tsconfig.json` `paths`).
 - **Same-directory `./x` imports are fine** (preferred for siblings within a folder).
 - **Don't** use `../` parent-relative imports — use an alias.
 - **Don't** import via raw `src/...` paths — use the matching `@`-alias (it's a redundant

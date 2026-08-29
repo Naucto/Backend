@@ -36,6 +36,7 @@
         "@ourPrisma/*": ["prisma/*"],
         "@auth/*": ["auth/*"],
         "@project/*": ["routes/project/*"],
+        "@curation/*": ["routes/curation/*"],
         "@multiplayer/*": ["routes/multiplayer/*"],
         "@friends/*": ["routes/friends/*"],
         "@project-comment/*": ["routes/project-comment/*"],
