@@ -33,6 +33,7 @@ export class WebRTCService implements OnModuleInit {
   private static DEV_HOSTNAME = "localhost";
 
   private readonly _logger = new Logger(WebRTCService.name);
+  private _started = false;
 
   private readonly _hookedServers = new Set<WebRTCServer>();
 
@@ -60,10 +61,19 @@ export class WebRTCService implements OnModuleInit {
       this.fetchPublicAddress(),
       this.loadConfig(),
     ]);
+
+    // Servers bind here rather than in their own constructors, so resolving the DI graph never
+    // takes a port. Anything registered later binds on registration instead.
+    for (const server of this._hookedServers) {
+      server.listen();
+    }
+    this._started = true;
   }
 
   public registerServer(server: WebRTCServer): void {
     this._hookedServers.add(server);
+    // Registered after start-up (a server built lazily): bind it straight away.
+    if (this._started) server.listen();
   }
 
   public allocatePort(): number {

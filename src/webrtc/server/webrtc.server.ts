@@ -207,6 +207,7 @@ export class WebRTCServer<
   private readonly _clientEventHandlers: WebRTCEventHandlerMap = new Map();
 
   private _isShuttingDown = false;
+  private _listening = false;
 
   constructor(
     webrtcService: WebRTCService,
@@ -259,12 +260,22 @@ export class WebRTCServer<
       this._internal_base_onUpgrade(request, socket, head);
     });
 
-    this._httpServer.listen(this._port);
-
     webrtcService.registerServer(this);
   }
 
   // --------------------------------------------------------------------------
+
+  /**
+   * Binds the socket. Deliberately not done in the constructor: a provider that opens a listener
+   * while Nest is still wiring the graph cannot be resolved without taking a real port, which
+   * makes the application graph untestable and collides with any second process (jest, the
+   * swagger generator) that constructs it. `WebRTCService` calls this once the module is up.
+   */
+  public listen(): void {
+    if (this._listening) return;
+    this._listening = true;
+    this._httpServer.listen(this._port);
+  }
 
   public get port(): number {
     return this._port;
