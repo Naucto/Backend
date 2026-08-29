@@ -50,6 +50,53 @@
             "schema": {
               "type": "number"
             }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tags",
+            "required": false,
+            "in": "query",
+            "description": "Comma-separated tag list",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "releaseWindow",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "all",
+                "365d",
+                "30d",
+                "7d"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Shelf ordering; defaults to newest first",
+            "schema": {
+              "enum": [
+                "fresh",
+                "popular",
+                "liked",
+                "discussed",
+                "name"
+              ],
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -3364,6 +3411,15 @@
             "schema": {
               "example": 10,
               "type": "number"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Free-text search over username and nickname — what a person types into the search box, where they do not know which of the two they are looking at",
+            "schema": {
+              "type": "string"
             }
           },
           {

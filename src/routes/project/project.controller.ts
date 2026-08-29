@@ -24,12 +24,14 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
 import {
   ProjectService,
+  RELEASE_SORTS,
   RELEASE_WINDOWS,
   USER_PROJECT_STATUSES
 } from "@project/project.service";
 import type {
   ProjectSave,
   PublishedProjectFilters,
+  ReleaseSort,
   ReleaseWindow,
   UserProjectStatus,
   UserProjectFilters
@@ -171,6 +173,20 @@ export class ProjectController {
   @ApiOperation({ summary: "Get released projects with pagination" })
   @ApiQuery({ name: "page", type: "number", required: false })
   @ApiQuery({ name: "limit", type: "number", required: false })
+  @ApiQuery({ name: "search", type: "string", required: false })
+  @ApiQuery({
+    name: "tags",
+    type: "string",
+    required: false,
+    description: "Comma-separated tag list"
+  })
+  @ApiQuery({ name: "releaseWindow", enum: RELEASE_WINDOWS, required: false })
+  @ApiQuery({
+    name: "sort",
+    enum: RELEASE_SORTS,
+    required: false,
+    description: "Shelf ordering; defaults to newest first"
+  })
   @ApiResponse({
     status: 200,
     description: "A paginated list of released projects",
@@ -178,11 +194,17 @@ export class ProjectController {
   })
   async getPaginatedReleases(
     @Query("page") page?: string,
-    @Query("limit") limit?: string
+    @Query("limit") limit?: string,
+    @Query("search") search?: string,
+    @Query("tags") tags?: string,
+    @Query("releaseWindow") releaseWindow?: ReleaseWindow,
+    @Query("sort") sort?: ReleaseSort
   ): Promise<PaginatedProjectsResponseDto> {
     return this.projectService.fetchPublishedGamesPaginated(
       this.parseOptionalInt(page),
-      this.parseOptionalInt(limit)
+      this.parseOptionalInt(limit),
+      this.buildPublishedProjectFilters(search, tags, releaseWindow),
+      RELEASE_SORTS.includes(sort as ReleaseSort) ? (sort as ReleaseSort) : "fresh"
     );
   }
 

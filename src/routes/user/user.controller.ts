@@ -357,7 +357,7 @@ export class UserController {
     data: UserDto[];
     meta: { page: number; limit: number; total: number; totalPages: number };
   }> {
-    const { page = 1, limit = 10, nickname, email, sortBy, order } = filterDto;
+    const { page = 1, limit = 10, q, nickname, email, sortBy, order } = filterDto;
 
     const pageNumber = Number(page) || 1;
     const limitNumber = Number(limit) || 10;
@@ -369,6 +369,12 @@ export class UserController {
     const skip = (pageNumber - 1) * limitNumber;
     const filter: Prisma.UserWhereInput = {};
 
+    if (q) {
+      filter.OR = [
+        { username: { contains: q, mode: "insensitive" } },
+        { nickname: { contains: q, mode: "insensitive" } }
+      ];
+    }
     if (nickname) filter.nickname = { contains: nickname };
     if (email) filter.email = { contains: email };
 
