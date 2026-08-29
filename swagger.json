@@ -1249,7 +1249,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Project versions retrieved successfully"
+            "description": "Project versions retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectVersionsResponseDto"
+                }
+              }
+            }
           },
           "403": {
             "description": "Forbidden"
@@ -1281,7 +1288,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Project checkpoints retrieved successfully"
+            "description": "Project checkpoints retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectCheckpointsResponseDto"
+                }
+              }
+            }
           },
           "403": {
             "description": "Forbidden"
@@ -1299,6 +1313,47 @@
       }
     },
     "/projects/{id}/versions/{version}": {
+      "delete": {
+        "operationId": "ProjectController_deleteVersion",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Version deleted successfully"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "No such version"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Delete a project autosave",
+        "tags": [
+          "projects"
+        ]
+      },
       "get": {
         "operationId": "ProjectController_getVersion",
         "parameters": [
@@ -4109,6 +4164,28 @@
       }
     },
     "schemas": {
+      "ForkedFromDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 42
+          },
+          "name": {
+            "type": "string",
+            "example": "Snake 8-bit"
+          },
+          "ownerUsername": {
+            "type": "string",
+            "example": "alice"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "ownerUsername"
+        ]
+      },
       "UserBasicInfoDto": {
         "type": "object",
         "properties": {
@@ -4262,6 +4339,16 @@
             "example": 42,
             "description": "The ID of the project this was forked from, if any",
             "nullable": true
+          },
+          "forkedFrom": {
+            "description": "The project this was forked from, by name — lineage renders a title and an author rather than an id",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ForkedFromDto"
+              }
+            ]
           },
           "collaborators": {
             "description": "The users collaborating on this project",
@@ -4507,6 +4594,16 @@
             "example": 42,
             "description": "The ID of the project this was forked from, if any",
             "nullable": true
+          },
+          "forkedFrom": {
+            "description": "The project this was forked from, by name — lineage renders a title and an author rather than an id",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ForkedFromDto"
+              }
+            ]
           }
         },
         "required": [
@@ -4779,6 +4876,16 @@
             "description": "The ID of the project this was forked from, if any",
             "nullable": true
           },
+          "forkedFrom": {
+            "description": "The project this was forked from, by name — lineage renders a title and an author rather than an id",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ForkedFromDto"
+              }
+            ]
+          },
           "collaborators": {
             "description": "The users collaborating on this project",
             "type": "array",
@@ -4972,6 +5079,56 @@
           "message",
           "contentSize",
           "maxContentBytes"
+        ]
+      },
+      "ProjectSaveDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Object name inside the project's save prefix",
+            "example": "1742901234567"
+          },
+          "date": {
+            "format": "date-time",
+            "type": "string",
+            "description": "When the blob was written",
+            "example": "2025-03-25T11:20:34.000Z"
+          }
+        },
+        "required": [
+          "name",
+          "date"
+        ]
+      },
+      "ProjectVersionsResponseDto": {
+        "type": "object",
+        "properties": {
+          "versions": {
+            "description": "Autosaves, newest last",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProjectSaveDto"
+            }
+          }
+        },
+        "required": [
+          "versions"
+        ]
+      },
+      "ProjectCheckpointsResponseDto": {
+        "type": "object",
+        "properties": {
+          "checkpoints": {
+            "description": "Named checkpoints",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProjectSaveDto"
+            }
+          }
+        },
+        "required": [
+          "checkpoints"
         ]
       },
       "LikeResponseDto": {

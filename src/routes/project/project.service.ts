@@ -57,9 +57,17 @@ type ProjectWithCounts = ProjectEx & {
   };
 };
 
+/** Just enough of the parent to render "remixed from Snake by alice" instead of "#42". */
+export type ForkedFromSummary = {
+  id: number;
+  name: string;
+  ownerUsername: string;
+};
+
 type ReleaseProject = ProjectEx & {
   commentCount: number;
   forkCount: number;
+  forkedFrom?: ForkedFromSummary | null;
 };
 
 export type ProjectLimits = {
@@ -899,6 +907,30 @@ export class ProjectService {
     ).map((o) => ({ name: o.Key!.split("/").pop()!, date: o.LastModified! }));
   }
 
+  /**
+   * Removes one autosave. The editor lets an author prune its history; only autosaves are
+   * removable — a checkpoint is a deliberate marker, and a release is not a save at all.
+   */
+  async deleteVersion(projectId: number, version: string): Promise<void> {
+    const name = version.trim();
+
+    // The name lands in an S3 key, so anything that could climb out of the prefix is refused
+    // rather than escaped.
+    if (!name || name.includes("/") || name.includes("..")) {
+      throw new BadRequestException(`Invalid version name: ${version}`);
+    }
+
+    const existing = await this.listVersions(projectId);
+
+    if (!existing.some((v) => v.name === name)) {
+      throw new NotFoundException(
+        `Version ${name} not found for project ${projectId}`
+      );
+    }
+
+    await this.s3Service.deleteFile({ key: `save/${projectId}/${name}` });
+  }
+
   async fetchSavedVersion(
     projectId: number,
     version: string
@@ -942,6 +974,16 @@ export class ProjectService {
         creator: {
           select: ProjectService.CREATOR_SELECT
         },
+        // The parent by name, so lineage reads without a second request that 404s whenever the
+        // original was never published.
+        forkedFrom: {
+          select: {
+            id: true,
+            name: true,
+            publishedName: true,
+            creator: { select: { username: true } }
+          }
+        },
         _count: {
           select: {
             forks: true,
@@ -957,9 +999,29 @@ export class ProjectService {
       throw new NotFoundException(`Project with ID ${projectId} not found`);
     }
 
-    return this.applyPublishedSnapshot(
-      this.withCommentCount(project as ProjectWithCounts)
-    );
+    const parent = (
+      project as unknown as {
+        forkedFrom?: {
+          id: number;
+          name: string;
+          publishedName: string | null;
+          creator: { username: string };
+        } | null;
+      }
+    ).forkedFrom;
+
+    return {
+      ...this.applyPublishedSnapshot(
+        this.withCommentCount(project as unknown as ProjectWithCounts)
+      ),
+      forkedFrom: parent
+        ? {
+          id: parent.id,
+          name: parent.publishedName ?? parent.name,
+          ownerUsername: parent.creator.username
+        }
+        : null
+    };
   }
 
   async fetchReleaseContent(projectId: number): Promise<DownloadedFile> {

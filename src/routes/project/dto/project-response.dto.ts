@@ -1,4 +1,4 @@
-import { ApiProperty } from "@nestjs/swagger";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { ProjectStatus, MonetizationType } from "@prisma/client";
 
 export class UserBasicInfoDto {
@@ -160,6 +160,25 @@ export class ProjectResponseDto {
     required: false
   })
     forkedFromId?: number | null;
+
+  @ApiPropertyOptional({
+    description:
+      "The project this was forked from, by name — lineage renders a title and an author rather than an id",
+    type: () => ForkedFromDto,
+    nullable: true
+  })
+    forkedFrom?: ForkedFromDto | null;
+}
+
+export class ForkedFromDto {
+  @ApiProperty({ example: 42 })
+    id!: number;
+
+  @ApiProperty({ example: "Snake 8-bit" })
+    name!: string;
+
+  @ApiProperty({ example: "alice" })
+    ownerUsername!: string;
 }
 
 export class ProjectExResponseDto extends ProjectResponseDto {
