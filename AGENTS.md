@@ -87,7 +87,7 @@ bucket named by `S3_BUCKET_NAME` and makes it anonymously readable; set the five
 | `src/auth/` | JWT auth, passport strategy, guards, `@Public()`/`@Roles()` decorators, OAuth providers (Google/GitHub/Microsoft), refresh-token crypto |
 | `src/routes/<feature>/` | One folder per HTTP feature: `*.controller.ts`, `*.service.ts`, `*.module.ts`, `*.error.ts`, `dto/`, `entities/`, co-located `*.spec.ts` |
 | `src/routes/{user,project,curation,project-comment,work-session,multiplayer,s3}/` | The feature areas (`curation` = featured release / game of the week, admin-only writes via `@AdminOnly()`) |
-| `src/webrtc/` | `ws` + Yjs real-time multiplayer server (`server/`) |
+| `src/webrtc/` | `ws` + Yjs real-time multiplayer server (`server/`); `WebRTCService` allocates one port per server and advertises its public URL (see *WebSocket servers* below) |
 | `src/tasks/` | Scheduled jobs (`@nestjs/schedule` cron) |
 | `src/prisma/` | `PrismaService` + module (the `@ourPrisma` alias) |
 | `src/common/` | Cross-feature DTOs + decorators (pagination, signed-CDN, `@AtLeastOne`) |
@@ -110,6 +110,20 @@ rejects unexpected ones** — so every accepted field needs a validator decorato
 opt a route out with `@Public()`; ownership/role checks use the project/roles guards
 (`ProjectCollaboratorGuard`, `ProjectCreatorGuard`, `RolesGuard`); `@AdminOnly()` bundles JWT +
 `RolesGuard` + `Roles("Admin")` (the `Admin` role is seeded by migration). Reuse these — don't re-implement.
+
+**WebSocket servers:** three `WebRTCServer`s run next to the HTTP API, each on its own port
+(sequential from `BACKEND_WEBRTC_PORT_BASE`, default 10000) and with a stable public name
+(`WEBRTC_SERVER_NAMES`): `collab` (Yjs collaboration, `WorkSessionService`), `game` (multiplayer
+game table, `MultiplayerService`), `user` (per-user notifications, `NotificationsService`).
+Clients never guess the address — they fetch an offer whose signaling URL comes from
+`WebRTCService.buildSignalingUrl`:
+- **Local dev** (`BACKEND_WEBRTC_PUBLIC_URL_TEMPLATE` unset): `ws://{BACKEND_WEBRTC_HOSTNAME}:{port}`
+  (`wss://` when the hostname isn't `localhost`), so the compose files publish the port range.
+- **Production**: set `BACKEND_WEBRTC_PUBLIC_URL_TEMPLATE=wss://{name}.ws.beta.naucto.net` and map one
+  domain per server in Production-Environment/Willy (`collab.ws.beta.naucto.net → backend:10000`,
+  `game.ws… → :10001`, `user.ws… → :10002`; Willy issues the certificates). `{port}` is also
+  substituted if a template needs it. Adding a server = adding a name to `WEBRTC_SERVER_NAMES`,
+  defaulting it in the server's options class, and mapping one more domain.
 
 **Errors:** from services, prefer Nest's built-in `HttpException` subclasses
 (`NotFoundException`, `ForbiddenException`, `BadRequestException`, …) — they map to status codes

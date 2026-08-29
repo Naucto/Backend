@@ -4,7 +4,9 @@ import {
   WebRTCClientSocket,
   WebRTCServerAuthEvent,
   WebRTCServerEvent,
-  WebRTCServerSocket
+  WebRTCServerSocket,
+  WebRTCServerName,
+  WEBRTC_SERVER_NAMES
 } from "@webrtc/server/webrtc.server";
 import {
   EventBasedMessage,
@@ -74,7 +76,9 @@ type SyncedGameTableServerSocket = WebRTCServerSocket<{
   rooms: Map<string, SyncedGameTableRoom>;
 }>;
 
-export class SyncedGameTableWebRTCServerOptions extends EventBasedWebRTCServerOptions {}
+export class SyncedGameTableWebRTCServerOptions extends EventBasedWebRTCServerOptions {
+  override name: WebRTCServerName = WEBRTC_SERVER_NAMES.game;
+}
 
 // Host-authoritative relay for multiplayer game-table sync.
 export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGameTableWebRTCServerOptions> {

@@ -38,6 +38,7 @@ export class WebRTCService implements OnModuleInit {
 
   private _config?: WebRTCServiceConfig;
   private _nextPort?: number;
+  private _publicUrlTemplate?: string | undefined;
   public _publicAddress?: string | undefined;
 
   constructor(
@@ -51,6 +52,9 @@ export class WebRTCService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     this._publicAddress = this._configService.get<string>("BACKEND_WEBRTC_HOSTNAME");
+    this.loadPublicUrlTemplate(
+      this._configService.get<string>("BACKEND_WEBRTC_PUBLIC_URL_TEMPLATE")
+    );
 
     await Promise.all([
       this.fetchPublicAddress(),
@@ -119,8 +123,56 @@ export class WebRTCService implements OnModuleInit {
     }
   }
 
-  private buildSignalingUrl(targetServer: WebRTCServer | string): string {
-    if (targetServer instanceof WebRTCServer) {
+  /**
+   * Production advertises one subdomain per WebSocket server through
+   * BACKEND_WEBRTC_PUBLIC_URL_TEMPLATE (e.g. `wss://{name}.ws.beta.naucto.net`,
+   * `{name}` being the server's stable public name, `{port}` its bound port).
+   * Without a template the server is reached directly on its port at
+   * BACKEND_WEBRTC_HOSTNAME (local dev).
+   */
+  public loadPublicUrlTemplate(template: string | undefined): void {
+    const trimmed = template?.trim();
+
+    if (!trimmed) {
+      this._publicUrlTemplate = undefined;
+      return;
+    }
+
+    if (!/^wss?:\/\//.test(trimmed)) {
+      throw new WebRTCServerRuntimeError(
+        "BACKEND_WEBRTC_PUBLIC_URL_TEMPLATE must start with ws:// or wss://, " +
+        `got: ${trimmed}`
+      );
+    }
+
+    if (!trimmed.includes("{name}") && !trimmed.includes("{port}")) {
+      this._logger.warn(
+        "BACKEND_WEBRTC_PUBLIC_URL_TEMPLATE contains neither {name} nor {port}: " +
+        "every WebSocket server will be advertised at the same URL"
+      );
+    }
+
+    this._publicUrlTemplate = trimmed;
+    this._logger.log(`WebSocket public URL template: ${trimmed}`);
+  }
+
+  public buildSignalingUrl(
+    targetServer: Pick<WebRTCServer, "name" | "port"> | string
+  ): string {
+    if (typeof targetServer !== "string") {
+      if (this._publicUrlTemplate !== undefined) {
+        if (targetServer.name === undefined) {
+          throw new WebRTCServerRuntimeError(
+            "Cannot build a public URL for a WebSocket server without a name " +
+            `(port ${targetServer.port}); see WEBRTC_SERVER_NAMES`
+          );
+        }
+
+        return this._publicUrlTemplate
+          .replace(/\{name\}/g, targetServer.name)
+          .replace(/\{port\}/g, String(targetServer.port));
+      }
+
       const protocol = this.isLocalDevEnv ? "ws" : "wss";
       return `${protocol}://${this._publicAddress}:${targetServer.port}`;
     }
