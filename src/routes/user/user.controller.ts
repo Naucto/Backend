@@ -36,7 +36,7 @@ import { Request } from "@nestjs/common";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
 import { RolesGuard } from "@auth/guards/roles.guard";
 import { Roles } from "@auth/decorators/roles.decorator";
-import { Prisma } from "@prisma/client";
+import { Prisma, SessionJoinPolicy } from "@prisma/client";
 import { UserResponseDto } from "./dto/user-response.dto";
 import { UserListResponseDto } from "./dto/user-list-response.dto";
 import { UserSingleResponseDto } from "./dto/user-single-response.dto";
@@ -50,6 +50,10 @@ import { CloudfrontService } from "src/routes/s3/edge.service";
 import { SignedCdnResourceDto } from "@common/dto/signed-cdn-resource.dto";
 import { UpdateUserProfileDto } from "./dto/update-user-profile.dto";
 import { PublicUserProfileResponseDto } from "./dto/public-user-profile-response.dto";
+import { MeDto, UpdateMeDto } from "./dto/me.dto";
+import { DeleteAccountDto } from "./dto/delete-account.dto";
+import { AccountDeletionService } from "./account-deletion.service";
+import { REFRESH_COOKIE_NAME, refreshCookieOptions } from "@auth/auth.utils";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = /^image\/(jpeg|png|gif|webp)$/;
@@ -69,7 +73,8 @@ export class UserController {
   constructor(
     private readonly userService: UserService,
     private readonly s3Service: S3Service,
-    private readonly cloudfrontService: CloudfrontService
+    private readonly cloudfrontService: CloudfrontService,
+    private readonly accountDeletionService: AccountDeletionService
   ) {}
 
   private async getPublicAssetUrl(key: string): Promise<string | null> {
@@ -132,6 +137,72 @@ export class UserController {
     };
   }
 
+  // Declared before the ":id" routes so "me" is never parsed as a user id.
+  @Get("me")
+  @ApiOperation({ summary: "Get the current user's account settings" })
+  @ApiResponse({ status: HttpStatus.OK, type: MeDto })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
+  @UseGuards(JwtAuthGuard)
+  async getMe(@Request() req: RequestWithUser): Promise<MeDto> {
+    return this.userService.getMe(req.user.id);
+  }
+
+  @Patch("me")
+  @ApiOperation({ summary: "Update the current user's account settings" })
+  @ApiBody({ type: UpdateMeDto })
+  @ApiResponse({ status: HttpStatus.OK, type: MeDto })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
+  @UseGuards(JwtAuthGuard)
+  async updateMe(
+    @Request() req: RequestWithUser,
+    @Body(ValidationPipe) dto: UpdateMeDto
+  ): Promise<MeDto> {
+    const update: { sessionJoinPolicy?: SessionJoinPolicy } = {};
+    if (dto.sessionJoinPolicy !== undefined) {
+      update.sessionJoinPolicy = dto.sessionJoinPolicy;
+    }
+
+    return this.userService.updateMe(req.user.id, update);
+  }
+
+  @Delete("me")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary:
+      "Delete the current account (soft-delete + anonymise; purges sessions, tokens, friends, notifications, unpublished games)"
+  })
+  @ApiBody({ type: DeleteAccountDto })
+  @ApiResponse({ status: HttpStatus.NO_CONTENT, description: "Account deleted, refresh cookie cleared" })
+  @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: "Missing DELETE confirmation" })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized or wrong password" })
+  @UseGuards(JwtAuthGuard)
+  async deleteMe(
+    @Request() req: RequestWithUser,
+    @Body(ValidationPipe) dto: DeleteAccountDto,
+    @Res({ passthrough: true }) res: Response
+  ): Promise<void> {
+    const options: { removePublishedGames?: boolean; password?: string } = {};
+    if (dto.removePublishedGames !== undefined) {
+      options.removePublishedGames = dto.removePublishedGames;
+    }
+    if (dto.password !== undefined) {
+      options.password = dto.password;
+    }
+
+    await this.accountDeletionService.deleteAccount(req.user.id, options);
+    res.clearCookie(REFRESH_COOKIE_NAME, refreshCookieOptions());
+  }
+
+  @Post("me/friend-code/regenerate")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Replace the current user's friend code" })
+  @ApiResponse({ status: HttpStatus.OK, type: MeDto })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
+  @UseGuards(JwtAuthGuard)
+  async regenerateFriendCode(@Request() req: RequestWithUser): Promise<MeDto> {
+    return this.userService.regenerateFriendCode(req.user.id);
+  }
+
   @Post(":id/profile-picture")
   @ApiOperation({ summary: "Upload a user's profile picture" })
   @ApiParam({ name: "id", description: "User ID" })
@@ -161,7 +232,7 @@ export class UserController {
         .addFileTypeValidator({ fileType: ALLOWED_IMAGE_TYPES })
         .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY })
     )
-    file: Express.Multer.File,
+      file: Express.Multer.File,
     @Request() req: RequestWithUser
   ): Promise<{ message: string; id: number }> {
     if (req.user.id !== id) {
@@ -286,7 +357,7 @@ export class UserController {
     data: UserDto[];
     meta: { page: number; limit: number; total: number; totalPages: number };
   }> {
-    const { page = 1, limit = 10, nickname, email, sortBy, order } = filterDto;
+    const { page = 1, limit = 10, q, nickname, email, sortBy, order } = filterDto;
 
     const pageNumber = Number(page) || 1;
     const limitNumber = Number(limit) || 10;
@@ -298,6 +369,12 @@ export class UserController {
     const skip = (pageNumber - 1) * limitNumber;
     const filter: Prisma.UserWhereInput = {};
 
+    if (q) {
+      filter.OR = [
+        { username: { contains: q, mode: "insensitive" } },
+        { nickname: { contains: q, mode: "insensitive" } }
+      ];
+    }
     if (nickname) filter.nickname = { contains: nickname };
     if (email) filter.email = { contains: email };
 

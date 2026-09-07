@@ -18,6 +18,15 @@ import { Prisma, Project, User } from "@prisma/client";
 import { ConfigService } from "@nestjs/config";
 import { DownloadedFile } from "@s3/s3.interface";
 import { Readable } from "stream";
+import { streamToBuffer } from "@util/stream.util";
+import {
+  ContentSizeBreakdown,
+  PROJECT_BLOB_MAX_BYTES,
+  PROJECT_CONTENT_MAX_BYTES,
+  computeContentSize,
+  isContentSizeBreakdown
+} from "./content-size";
+import { ProjectTooLargeException } from "./project.error";
 
 export const CREATOR_SELECT = {
   id: true,
@@ -48,9 +57,29 @@ type ProjectWithCounts = ProjectEx & {
   };
 };
 
+/** Just enough of the parent to render "remixed from Snake by alice" instead of "#42". */
+export type ForkedFromSummary = {
+  id: number;
+  name: string;
+  ownerUsername: string;
+};
+
 type ReleaseProject = ProjectEx & {
   commentCount: number;
   forkCount: number;
+  forkedFrom?: ForkedFromSummary | null;
+};
+
+export type ProjectLimits = {
+  maxContentBytes: number;
+  maxBlobBytes: number;
+};
+
+export type ProjectSize = {
+  projectId: number;
+  contentSize: ContentSizeBreakdown;
+  maxContentBytes: number;
+  withinBudget: boolean;
 };
 
 export type PaginatedProjectsResult<T> = {
@@ -62,6 +91,22 @@ export type PaginatedProjectsResult<T> = {
 
 export const RELEASE_WINDOWS = ["all", "365d", "30d", "7d"] as const;
 export type ReleaseWindow = (typeof RELEASE_WINDOWS)[number];
+
+/**
+ * How the hub's shelves are ordered. Sorting has to happen in the query: the client only ever
+ * holds one page, so ordering there means "the freshest of the 48 we happen to have", which is
+ * not what the shelf claims.
+ */
+export const RELEASE_SORTS = ["fresh", "popular", "liked", "discussed", "name"] as const;
+export type ReleaseSort = (typeof RELEASE_SORTS)[number];
+
+const RELEASE_ORDER_BY: Record<ReleaseSort, Prisma.ProjectOrderByWithRelationInput[]> = {
+  fresh: [{ publishedAt: "desc" }, { createdAt: "desc" }],
+  popular: [{ viewCount: "desc" }, { publishedAt: "desc" }],
+  liked: [{ likes: "desc" }, { publishedAt: "desc" }],
+  discussed: [{ comments: { _count: "desc" } }, { publishedAt: "desc" }],
+  name: [{ publishedName: "asc" }, { name: "asc" }]
+};
 
 export const USER_PROJECT_STATUSES = ["all", "drafts", "published"] as const;
 export type UserProjectStatus = (typeof USER_PROJECT_STATUSES)[number];
@@ -647,6 +692,99 @@ export class ProjectService {
       file,
       keyName: `save/${projectId}/${actual_time}`
     });
+
+    if (file.buffer) {
+      await this.storeContentSize(projectId, computeContentSize(file.buffer));
+    }
+  }
+
+  // ─── Content size budget ────────────────────────────────────────────
+
+  getLimits(): ProjectLimits {
+    return {
+      maxContentBytes: PROJECT_CONTENT_MAX_BYTES,
+      maxBlobBytes: PROJECT_BLOB_MAX_BYTES
+    };
+  }
+
+  private async storeContentSize(
+    projectId: number,
+    contentSize: ContentSizeBreakdown
+  ): Promise<void> {
+    await this.prisma.project.update({
+      where: { id: projectId },
+      data: {
+        contentSize: contentSize as unknown as Prisma.InputJsonObject,
+        contentSizeTotal: contentSize.total
+      }
+    });
+  }
+
+  /** Decodes the latest save and persists its size breakdown. */
+  async recomputeContentSize(projectId: number): Promise<ContentSizeBreakdown> {
+    const file = await this.fetchLastVersion(projectId);
+    const contentSize = computeContentSize(await streamToBuffer(file.body));
+    await this.storeContentSize(projectId, contentSize);
+    return contentSize;
+  }
+
+  /** Returns the stored breakdown, computing it from the latest save if missing. */
+  async getContentSize(projectId: number): Promise<ProjectSize> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { contentSize: true }
+    });
+
+    if (!project) {
+      throw new NotFoundException(`Project with ID ${projectId} not found`);
+    }
+
+    const contentSize = isContentSizeBreakdown(project.contentSize)
+      ? project.contentSize
+      : await this.recomputeContentSize(projectId);
+
+    return {
+      projectId,
+      contentSize,
+      maxContentBytes: PROJECT_CONTENT_MAX_BYTES,
+      withinBudget: contentSize.total <= PROJECT_CONTENT_MAX_BYTES
+    };
+  }
+
+  /**
+   * Recomputes the size of the latest save and rejects it with a 413 when it
+   * exceeds the budget. Returns the release file so callers upload the exact
+   * bytes that were measured.
+   */
+  private async assertWithinBudget(projectId: number): Promise<DownloadedFile> {
+    const file = await this.fetchLastVersion(projectId);
+    const buffer = await streamToBuffer(file.body);
+    const contentSize = computeContentSize(buffer);
+    await this.storeContentSize(projectId, contentSize);
+
+    if (contentSize.total > PROJECT_CONTENT_MAX_BYTES) {
+      throw new ProjectTooLargeException(
+        contentSize,
+        PROJECT_CONTENT_MAX_BYTES
+      );
+    }
+
+    return {
+      body: Readable.from(buffer),
+      contentType: file.contentType ?? "application/octet-stream",
+      contentLength: buffer.byteLength
+    };
+  }
+
+  /** Projects whose size breakdown has never been computed (oldest first). */
+  async findProjectsWithoutContentSize(limit: number): Promise<number[]> {
+    const projects = await this.prisma.project.findMany({
+      where: { contentSizeTotal: null },
+      select: { id: true },
+      orderBy: { id: "asc" },
+      take: limit
+    });
+    return projects.map((project) => project.id);
   }
 
   async checkpoint(projectId: number, name: string): Promise<void> {
@@ -686,6 +824,8 @@ export class ProjectService {
       throw new NotFoundException(`Project with ID ${projectId} not found`);
     }
 
+    const file = await this.assertWithinBudget(projectId);
+
     await this.prisma.project.update({
       where: { id: projectId },
       data: {
@@ -698,7 +838,6 @@ export class ProjectService {
       }
     });
 
-    const file = await this.fetchLastVersion(projectId);
     const releaseKey = `release/${projectId}`;
     await this.s3Service.uploadFile({
       file: file,
@@ -736,7 +875,7 @@ export class ProjectService {
       );
     }
 
-    const file = await this.fetchLastVersion(projectId);
+    const file = await this.assertWithinBudget(projectId);
     const releaseKey = `release/${projectId}`;
     await this.s3Service.uploadFile({
       file: file,
@@ -766,6 +905,30 @@ export class ProjectService {
     return (
       await this.s3Service.listObjects({ prefix: `checkpoint/${projectId}/` })
     ).map((o) => ({ name: o.Key!.split("/").pop()!, date: o.LastModified! }));
+  }
+
+  /**
+   * Removes one autosave. The editor lets an author prune its history; only autosaves are
+   * removable — a checkpoint is a deliberate marker, and a release is not a save at all.
+   */
+  async deleteVersion(projectId: number, version: string): Promise<void> {
+    const name = version.trim();
+
+    // The name lands in an S3 key, so anything that could climb out of the prefix is refused
+    // rather than escaped.
+    if (!name || name.includes("/") || name.includes("..")) {
+      throw new BadRequestException(`Invalid version name: ${version}`);
+    }
+
+    const existing = await this.listVersions(projectId);
+
+    if (!existing.some((v) => v.name === name)) {
+      throw new NotFoundException(
+        `Version ${name} not found for project ${projectId}`
+      );
+    }
+
+    await this.s3Service.deleteFile({ key: `save/${projectId}/${name}` });
   }
 
   async fetchSavedVersion(
@@ -811,6 +974,16 @@ export class ProjectService {
         creator: {
           select: ProjectService.CREATOR_SELECT
         },
+        // The parent by name, so lineage reads without a second request that 404s whenever the
+        // original was never published.
+        forkedFrom: {
+          select: {
+            id: true,
+            name: true,
+            publishedName: true,
+            creator: { select: { username: true } }
+          }
+        },
         _count: {
           select: {
             forks: true,
@@ -826,9 +999,29 @@ export class ProjectService {
       throw new NotFoundException(`Project with ID ${projectId} not found`);
     }
 
-    return this.applyPublishedSnapshot(
-      this.withCommentCount(project as ProjectWithCounts)
-    );
+    const parent = (
+      project as unknown as {
+        forkedFrom?: {
+          id: number;
+          name: string;
+          publishedName: string | null;
+          creator: { username: string };
+        } | null;
+      }
+    ).forkedFrom;
+
+    return {
+      ...this.applyPublishedSnapshot(
+        this.withCommentCount(project as unknown as ProjectWithCounts)
+      ),
+      forkedFrom: parent
+        ? {
+          id: parent.id,
+          name: parent.publishedName ?? parent.name,
+          ownerUsername: parent.creator.username
+        }
+        : null
+    };
   }
 
   async fetchReleaseContent(projectId: number): Promise<DownloadedFile> {
@@ -864,12 +1057,14 @@ export class ProjectService {
 
   async fetchPublishedGamesPaginated(
     page?: number,
-    limit?: number
+    limit?: number,
+    filters: PublishedProjectFilters = {},
+    sort: ReleaseSort = "fresh"
   ): Promise<PaginatedProjectsResult<ReleaseProject>> {
     const safePage = this.normalizePage(page);
     const safeLimit = this.normalizeLimit(limit);
     const skip = (safePage - 1) * safeLimit;
-    const where = this.buildPublishedGamesWhere();
+    const where = this.buildPublishedGamesWhere(filters);
 
     const [total, projects] = await this.prisma.$transaction([
       this.prisma.project.count({
@@ -891,7 +1086,7 @@ export class ProjectService {
             }
           }
         },
-        orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
+        orderBy: RELEASE_ORDER_BY[sort],
         skip,
         take: safeLimit
       })
@@ -929,23 +1124,81 @@ export class ProjectService {
   async fetchPublishedGamesByUser(
     userId: number,
     page: number = DEFAULT_PAGE,
+    limit: number = DEFAULT_LIMIT,
+    ownedOnly = false
+  ): Promise<ReleaseProject[]> {
+    return this.fetchPublishedGamesByUserWhere(
+      ownedOnly
+        ? { status: "COMPLETED", userId }
+        : {
+          status: "COMPLETED",
+          OR: [
+            { userId },
+            {
+              collaborators: {
+                some: { id: userId }
+              }
+            }
+          ]
+        },
+      page,
+      limit
+    );
+  }
+
+  /**
+   * Games this person helped build but does not own. The profile draws GAMES and COLLABS as two
+   * shelves, so the split has to happen in the query — `fetchPublishedGamesByUser` returns the
+   * union of both and would put every collaboration on the owner's shelf too.
+   */
+  async fetchCollaborationsByUser(
+    userId: number,
+    page: number = DEFAULT_PAGE,
     limit: number = DEFAULT_LIMIT
   ): Promise<ReleaseProject[]> {
     return this.fetchPublishedGamesByUserWhere(
       {
         status: "COMPLETED",
-        OR: [
-          { userId },
-          {
-            collaborators: {
-              some: { id: userId }
-            }
-          }
-        ]
+        userId: { not: userId },
+        collaborators: { some: { id: userId } }
       },
       page,
       limit
     );
+  }
+
+  /** Published games other people forked from one of this person's. */
+  async fetchRemixesOfUser(
+    userId: number,
+    page: number = DEFAULT_PAGE,
+    limit: number = DEFAULT_LIMIT
+  ): Promise<ReleaseProject[]> {
+    return this.fetchPublishedGamesByUserWhere(
+      {
+        status: "COMPLETED",
+        userId: { not: userId },
+        forkedFrom: { userId }
+      },
+      page,
+      limit
+    );
+  }
+
+  /** Totals for the profile header, counted rather than summed over one page of games. */
+  async fetchUserTotals(
+    userId: number
+  ): Promise<{ gameCount: number; totalPlays: number; totalLikes: number }> {
+    const where: Prisma.ProjectWhereInput = { status: "COMPLETED", userId };
+    const [gameCount, sums] = await this.prisma.$transaction([
+      this.prisma.project.count({ where }),
+      this.prisma.project.aggregate({ where, _sum: { viewCount: true, likes: true } })
+    ]);
+
+    return {
+      gameCount,
+      totalPlays: sums._sum.viewCount ?? 0,
+      totalLikes: sums._sum.likes ?? 0
+    };
   }
 
   async fetchLikedPublishedGamesByUser(

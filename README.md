@@ -90,11 +90,12 @@ npm run test
 To generate the API client for the frontend, use the following command:
 
 ```bash
-npm run generate:swagger
-npm run generate:client
+npm run generate:swagger   # regenerate the committed swagger.json
+npm run client:build       # build @naucto/api-client into client/dist
 ```
 
-a folder named `generated_client` will be created in the root directory containing the generated API client, copy this folder to the frontend project in the `src/api` directory.
+The client is published to GitHub Packages as `@naucto/api-client` by `.github/workflows/api-client.yml`
+(see `client/README.md` for install and versioning).
 
 ### 🤝 Conventions & project structure
 

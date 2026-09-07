@@ -6,8 +6,11 @@ import {
   GameSessionVisibility,
   Prisma,
   Project,
+  SessionJoinPolicy,
   User
 } from "@prisma/client";
+import { NotificationsService } from "src/notifications/notifications.service";
+import { FriendsService } from "@friends/friends.service";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { ProjectService } from "@project/project.service";
 import { WebRTCService } from "@webrtc/webrtc.service";
@@ -63,6 +66,16 @@ export class MultiplayerService {
   private static readonly JOIN_CODE_ALPHABET =
     "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   private static readonly TICKET_TTL = "60s";
+  private static readonly VISIBILITY_RANK: Record<GameSessionVisibility, number> = {
+    [GameSessionVisibility.PUBLIC]: 0,
+    [GameSessionVisibility.FRIENDS_ONLY]: 1,
+    [GameSessionVisibility.INVITE_CODE]: 2
+  };
+  private static readonly POLICY_FLOOR: Record<SessionJoinPolicy, GameSessionVisibility> = {
+    [SessionJoinPolicy.ANYONE]: GameSessionVisibility.PUBLIC,
+    [SessionJoinPolicy.FRIENDS]: GameSessionVisibility.FRIENDS_ONLY,
+    [SessionJoinPolicy.CODE_ONLY]: GameSessionVisibility.INVITE_CODE
+  };
   private static readonly MAX_DB_RETRIES = 5;
   // Backstop for sessions orphaned by an ungraceful server shutdown (the
   // heartbeat + host-disconnect hook handle the normal cases live).
@@ -75,7 +88,9 @@ export class MultiplayerService {
     private readonly _webrtcService: WebRTCService,
     private readonly _projectService: ProjectService,
     private readonly _prismaService: PrismaService,
-    private readonly _jwtService: JwtService
+    private readonly _jwtService: JwtService,
+    private readonly _friendsService: FriendsService,
+    private readonly _notifications: NotificationsService
   ) {
     this._syncServer = new SyncedGameTableWebRTCServer(
       _webrtcService,
@@ -113,16 +128,18 @@ export class MultiplayerService {
       this._syncServer.closeRoom(existing.sessionId);
     }
 
+    const visibility = await this._applyHostPolicy(userId, dto.visibility);
+
     const baseData = {
       hostId: userId,
       projectId: dto.projectId,
       title: dto.title,
       maxPlayers: dto.maxPlayers,
-      visibility: dto.visibility
+      visibility
     };
 
     const created =
-      dto.visibility === GameSessionVisibility.INVITE_CODE
+      visibility === GameSessionVisibility.INVITE_CODE
         ? await this._withFreshJoinCode((joinCode) =>
           this._prismaService.gameSession.create({
             data: { ...baseData, joinCode }
@@ -143,24 +160,26 @@ export class MultiplayerService {
 
     const visible: GameSessionEx[] = [];
 
-    sessions.forEach((session) => {
+    for (const session of sessions) {
       switch (session.visibility) {
       case GameSessionVisibility.PUBLIC:
         visible.push(session);
         break;
 
       case GameSessionVisibility.FRIENDS_ONLY:
-        // FIXME: friends system not implemented yet; hide friends-only sessions
-        // from listings until areFriends() exists.
-        // visible.push(session) when isFriend(userId, session.hostId)
-        void userId;
+        if (
+          this._isMember(session, userId) ||
+          (await this._friendsService.areFriends(userId, session.hostId))
+        ) {
+          visible.push(session);
+        }
         break;
 
       case GameSessionVisibility.INVITE_CODE:
         // Not discoverable through listing — joinable by code only.
         break;
       }
-    });
+    }
 
     return visible;
   }
@@ -178,15 +197,83 @@ export class MultiplayerService {
 
     // Non-public sessions are not discoverable by non-members. We 404 rather
     // than 403 so a known UUID doesn't confirm a session exists or leak its
-    // title/host/player count. (FRIENDS_ONLY stays members-only until
-    // areFriends() exists; INVITE_CODE is reachable through join-by-code only.)
-    if (!isMember && session.visibility !== GameSessionVisibility.PUBLIC) {
+    // title/host/player count. (FRIENDS_ONLY is also visible to the host's
+    // friends; INVITE_CODE is reachable through join-by-code only.)
+    if (!isMember && !(await this._canDiscover(session, userId))) {
       throw new MultiplayerGameSessionNotFoundError(
         `No game session found for UUID ${sessionId}`
       );
     }
 
     return session;
+  }
+
+  /**
+   * Who is in the session, host first. Reuses `get`, so the same visibility rule applies: a
+   * non-member of a non-discoverable session gets a 404, not a roster.
+   */
+  async roster(
+    sessionId: string,
+    userId: number
+  ): Promise<{
+    players: {
+      userId: number;
+      username: string;
+      nickname: string | null;
+      host: boolean;
+    }[];
+    maxPlayers: number;
+  }> {
+    const session = await this.get(sessionId, userId);
+
+    return {
+      players: [
+        {
+          userId: session.host.id,
+          username: session.host.username,
+          nickname: session.host.nickname,
+          host: true
+        },
+        ...session.otherUsers.map((u) => ({
+          userId: u.id,
+          username: u.username,
+          nickname: u.nickname,
+          host: false
+        }))
+      ],
+      maxPlayers: session.maxPlayers
+    };
+  }
+
+  /**
+   * Notifies someone that they have been invited. The design's INVITE button had nothing behind
+   * it, so a join code could only travel by being read out loud.
+   */
+  async invite(
+    sessionId: string,
+    hostId: number,
+    inviteeId: number
+  ): Promise<void> {
+    const session = await this._findSessionOrThrow(sessionId);
+
+    this._assertHost(session, hostId);
+
+    if (inviteeId === hostId) return;
+
+    await this._notifications.createNotification({
+      userId: inviteeId,
+      title: session.title,
+      message: `${session.host.nickname ?? session.host.username} invited you to play ${session.project.name}`,
+      type: "INFO",
+      kind: "GENERIC",
+      // The code is what turns the notification into a way in; without it the invitee can see
+      // there is a session and still not reach it.
+      data: {
+        sessionId: session.sessionId,
+        joinCode: session.joinCode ?? undefined,
+        projectId: session.projectId
+      }
+    });
   }
 
   async update(
@@ -208,9 +295,10 @@ export class MultiplayerService {
       data.maxPlayers = dto.maxPlayers;
     }
     if (dto.visibility !== undefined) {
-      data.visibility = dto.visibility;
+      const visibility = await this._applyHostPolicy(userId, dto.visibility);
+      data.visibility = visibility;
 
-      if (dto.visibility === GameSessionVisibility.INVITE_CODE) {
+      if (visibility === GameSessionVisibility.INVITE_CODE) {
         needsFreshJoinCode = !session.joinCode;
       } else {
         data.joinCode = null;
@@ -334,10 +422,12 @@ export class MultiplayerService {
       break;
 
     case GameSessionVisibility.FRIENDS_ONLY:
-      // FIXME: friends system not implemented yet; deny until areFriends() exists.
-      throw new MultiplayerForbiddenError(
-        "Friends-only game sessions cannot be joined yet"
-      );
+      if (!(await this._friendsService.areFriends(userId, session.hostId))) {
+        throw new MultiplayerForbiddenError(
+          "Only the host's friends can join this game session"
+        );
+      }
+      break;
 
     case GameSessionVisibility.PUBLIC:
       break;
@@ -459,6 +549,43 @@ export class MultiplayerService {
   // and surfaces as net.id().
   private _syntheticSlaveId(): number {
     return (randomBytes(4).readUInt32BE(0) & 0x7fffffff) || 1;
+  }
+
+  private async _canDiscover(
+    session: GameSessionEx,
+    userId: number
+  ): Promise<boolean> {
+    switch (session.visibility) {
+    case GameSessionVisibility.PUBLIC:
+      return true;
+    case GameSessionVisibility.FRIENDS_ONLY:
+      return this._friendsService.areFriends(userId, session.hostId);
+    case GameSessionVisibility.INVITE_CODE:
+      return false;
+    }
+  }
+
+  // The host's account-level join policy is a floor on session visibility:
+  // FRIENDS forces at least FRIENDS_ONLY, CODE_ONLY forces INVITE_CODE (which
+  // mints a join code and hides the session from listings). A stricter
+  // per-session choice is kept.
+  private async _applyHostPolicy(
+    hostId: number,
+    requested: GameSessionVisibility
+  ): Promise<GameSessionVisibility> {
+    const host = await this._prismaService.user.findUnique({
+      where: { id: hostId },
+      select: { sessionJoinPolicy: true }
+    });
+
+    const floor = MultiplayerService.POLICY_FLOOR[
+      host?.sessionJoinPolicy ?? SessionJoinPolicy.ANYONE
+    ];
+
+    return MultiplayerService.VISIBILITY_RANK[requested] >=
+      MultiplayerService.VISIBILITY_RANK[floor]
+      ? requested
+      : floor;
   }
 
   private _isMember(session: GameSessionEx, userId: number): boolean {

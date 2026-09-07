@@ -17,7 +17,7 @@ export class AddCollaboratorDto {
   @IsOptional()
   @IsInt()
   @Validate(AtLeastOneConstraint, [["userId", "username", "email"]])
-  userId?: number;
+    userId?: number;
 
   @ApiProperty({
     description: "Username of the user to add as collaborator",
@@ -26,7 +26,7 @@ export class AddCollaboratorDto {
   })
   @IsOptional()
   @IsString()
-  username?: string;
+    username?: string;
 
   @ApiProperty({
     description: "Email of the user to add as collaborator",
@@ -35,7 +35,7 @@ export class AddCollaboratorDto {
   })
   @IsOptional()
   @IsEmail()
-  email?: string;
+    email?: string;
 }
 
 export class RemoveCollaboratorDto {
@@ -47,7 +47,7 @@ export class RemoveCollaboratorDto {
   @IsOptional()
   @IsInt()
   @Validate(AtLeastOneConstraint, [["userId", "username", "email"]])
-  userId?: number;
+    userId?: number;
 
   @ApiProperty({
     description: "Username of the user to remove as collaborator",
@@ -56,7 +56,7 @@ export class RemoveCollaboratorDto {
   })
   @IsOptional()
   @IsString()
-  username?: string;
+    username?: string;
 
   @ApiProperty({
     description: "Email of the user to remove as collaborator",
@@ -65,5 +65,5 @@ export class RemoveCollaboratorDto {
   })
   @IsOptional()
   @IsEmail()
-  email?: string;
+    email?: string;
 }

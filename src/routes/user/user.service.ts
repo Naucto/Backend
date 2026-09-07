@@ -1,31 +1,135 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
-import { User, Prisma } from "@prisma/client";
+import { Prisma, Role, SessionJoinPolicy, User } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
+import { MeDto } from "./dto/me.dto";
+import { generateFriendCode, normalizeFriendCode } from "./friend-code.util";
 
-import { Role } from "@prisma/client";
+/**
+ * What anyone may see of a person. `createdAt` is here because the profile header shows the year
+ * they joined — a fact about a public profile, not an account detail.
+ */
+const PUBLIC_PROFILE_SELECT = {
+  id: true,
+  username: true,
+  nickname: true,
+  description: true,
+  createdAt: true
+} as const;
+
+export type PublicProfile = {
+  id: number;
+  username: string;
+  nickname: string | null;
+  description: string | null;
+  createdAt: Date;
+};
 
 @Injectable()
 export class UserService {
   constructor(private readonly prisma: PrismaService) {}
   private static readonly BCRYPT_SALT_ROUNDS = 10;
+  private static readonly FRIEND_CODE_MAX_RETRIES = 5;
 
-  async findPublicProfile(id: number): Promise<{
-    id: number;
-    username: string;
-    nickname: string | null;
-    description: string | null;
-  }> {
+  // --------------------------------------------------------------------------
+  // Account settings (/users/me)
+  // --------------------------------------------------------------------------
+
+  async getMe(userId: number): Promise<MeDto> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { friendCode: true, sessionJoinPolicy: true }
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${userId} not found`);
+    }
+
+    // Lazily mint the code so pre-existing accounts get one on first read.
+    const friendCode =
+      user.friendCode ?? (await this.assignFreshFriendCode(userId));
+
+    return { friendCode, sessionJoinPolicy: user.sessionJoinPolicy };
+  }
+
+  async updateMe(
+    userId: number,
+    data: { sessionJoinPolicy?: SessionJoinPolicy }
+  ): Promise<MeDto> {
+    if (data.sessionJoinPolicy !== undefined) {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { sessionJoinPolicy: data.sessionJoinPolicy },
+        select: { id: true }
+      });
+    }
+
+    return this.getMe(userId);
+  }
+
+  async regenerateFriendCode(userId: number): Promise<MeDto> {
+    await this.assignFreshFriendCode(userId);
+    return this.getMe(userId);
+  }
+
+  // Resolve a user-typed friend code to a live (non-deleted) user id.
+  async findIdByFriendCode(rawCode: string): Promise<number | null> {
+    const friendCode = normalizeFriendCode(rawCode);
+    if (!friendCode) {
+      return null;
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { friendCode },
+      select: { id: true, deletedAt: true }
+    });
+
+    return user && !user.deletedAt ? user.id : null;
+  }
+
+  // Retries on a unique-constraint violation (P2002) so two users minting the
+  // same random code don't surface an error.
+  private async assignFreshFriendCode(userId: number): Promise<string> {
+    for (
+      let attempt = 0;
+      attempt < UserService.FRIEND_CODE_MAX_RETRIES;
+      attempt++
+    ) {
+      const friendCode = generateFriendCode();
+
+      try {
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: { friendCode },
+          select: { id: true }
+        });
+        return friendCode;
+      } catch (error: unknown) {
+        if (!this.isFriendCodeConflict(error)) {
+          throw error;
+        }
+      }
+    }
+
+    throw new ConflictException("Failed to generate a unique friend code");
+  }
+
+  private isFriendCodeConflict(error: unknown): boolean {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002" &&
+      JSON.stringify(error.meta?.["target"] ?? "").includes("friendCode")
+    );
+  }
+
+  // --------------------------------------------------------------------------
+
+  async findPublicProfile(id: number): Promise<PublicProfile> {
     const user = await this.prisma.user.findUnique({
       where: { id },
-      select: {
-        id: true,
-        username: true,
-        nickname: true,
-        description: true
-      }
+      select: PUBLIC_PROFILE_SELECT
     });
 
     if (!user) {
@@ -35,20 +139,10 @@ export class UserService {
     return user;
   }
 
-  async findPublicProfileByUsername(username: string): Promise<{
-    id: number;
-    username: string;
-    nickname: string | null;
-    description: string | null;
-  }> {
+  async findPublicProfileByUsername(username: string): Promise<PublicProfile> {
     const user = await this.prisma.user.findUnique({
       where: { username },
-      select: {
-        id: true,
-        username: true,
-        nickname: true,
-        description: true
-      }
+      select: PUBLIC_PROFILE_SELECT
     });
 
     if (!user) {
@@ -61,11 +155,7 @@ export class UserService {
   async updateMyProfile(
     id: number,
     data: { description?: string | null }
-  ): Promise<{
-    id: number;
-    username: string;
-    description: string | null;
-  }> {
+  ): Promise<PublicProfile> {
     const nextProfileText = data.description;
 
     const updatedUser = await this.prisma.user.update({
@@ -78,9 +168,7 @@ export class UserService {
           : {})
       },
       select: {
-        id: true,
-        username: true,
-        description: true
+        ...PUBLIC_PROFILE_SELECT
       }
     });
 

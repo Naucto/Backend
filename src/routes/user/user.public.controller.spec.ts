@@ -11,6 +11,7 @@ describe("UserPublicController", () => {
   let userService: { findPublicProfileByUsername: jest.Mock };
   let s3Service: { getFileMetadataOrNull: jest.Mock };
   let cloudfrontService: { getCDNUrl: jest.Mock };
+  let projectService: { fetchUserTotals: jest.Mock };
 
   beforeEach(async () => {
     userService = {
@@ -21,6 +22,13 @@ describe("UserPublicController", () => {
     };
     cloudfrontService = {
       getCDNUrl: jest.fn()
+    };
+    projectService = {
+      fetchUserTotals: jest.fn().mockResolvedValue({
+        gameCount: 7,
+        totalPlays: 1240,
+        totalLikes: 318
+      })
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -40,7 +48,7 @@ describe("UserPublicController", () => {
         },
         {
           provide: ProjectService,
-          useValue: {}
+          useValue: projectService
         }
       ]
     }).compile();
@@ -58,7 +66,8 @@ describe("UserPublicController", () => {
         id: 1,
         username: "Madeline",
         nickname: "Maddy",
-        description: "Hello"
+        description: "Hello",
+        createdAt: new Date("2025-03-14T09:00:00.000Z")
       };
 
       userService.findPublicProfileByUsername.mockResolvedValue(publicProfile);
@@ -72,6 +81,9 @@ describe("UserPublicController", () => {
         message: "Public user profile retrieved successfully",
         data: {
           ...publicProfile,
+          gameCount: 7,
+          totalPlays: 1240,
+          totalLikes: 318,
           profileImageUrl: "https://cdn.example.com/profile?v=profile-etag",
           backgroundImageUrl: null
         }

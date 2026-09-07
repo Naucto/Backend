@@ -8,24 +8,32 @@ export class UserFilterDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  page?: number;
+    page?: number;
 
   @ApiPropertyOptional({ description: "Items per page", example: 10 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  limit?: number;
+    limit?: number;
+
+  @ApiPropertyOptional({
+    description:
+      "Free-text search over username and nickname — what a person types into the search box, where they do not know which of the two they are looking at"
+  })
+  @IsOptional()
+  @IsString()
+    q?: string;
 
   @ApiPropertyOptional({ description: "Filter by nickname" })
   @IsOptional()
   @IsString()
-  nickname?: string;
+    nickname?: string;
 
   @ApiPropertyOptional({ description: "Filter by email" })
   @IsOptional()
   @IsString()
-  email?: string;
+    email?: string;
 
   @ApiPropertyOptional({
     enum: ["id", "username", "email", "createdAt"],
@@ -33,10 +41,10 @@ export class UserFilterDto {
   })
   @IsOptional()
   @IsEnum(["id", "username", "email", "createdAt"])
-  sortBy?: string;
+    sortBy?: string;
 
   @ApiPropertyOptional({ enum: ["asc", "desc"], description: "Sort order" })
   @IsOptional()
   @IsEnum(["asc", "desc"])
-  order?: "asc" | "desc";
+    order?: "asc" | "desc";
 }

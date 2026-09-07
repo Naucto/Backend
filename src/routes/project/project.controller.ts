@@ -24,16 +24,22 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
 import {
   ProjectService,
+  RELEASE_SORTS,
   RELEASE_WINDOWS,
   USER_PROJECT_STATUSES
 } from "@project/project.service";
 import type {
   ProjectSave,
   PublishedProjectFilters,
+  ReleaseSort,
   ReleaseWindow,
   UserProjectStatus,
   UserProjectFilters
 } from "@project/project.service";
+import {
+  ProjectCheckpointsResponseDto,
+  ProjectVersionsResponseDto
+} from "@project/dto/project-saves.dto";
 import { CreateProjectDto } from "@project/dto/create-project.dto";
 import { UpdateProjectDto } from "@project/dto/update-project.dto";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
@@ -73,6 +79,12 @@ import { PrismaService } from "@ourPrisma/prisma.service";
 import { Public } from "@auth/decorators/public.decorator";
 import { ImageUrlResponseDto } from "src/routes/common/dto/image-url-response.dto";
 import { LikeResponseDto } from "./dto/like-response.dto";
+import {
+  ProjectLimitsDto,
+  ProjectSizeDto,
+  ProjectTooLargeDto
+} from "./dto/project-size.dto";
+import { PROJECT_BLOB_MAX_BYTES } from "./content-size";
 import { ViewResponseDto } from "./dto/view-response.dto";
 
 interface RequestWithUser extends Request {
@@ -165,6 +177,20 @@ export class ProjectController {
   @ApiOperation({ summary: "Get released projects with pagination" })
   @ApiQuery({ name: "page", type: "number", required: false })
   @ApiQuery({ name: "limit", type: "number", required: false })
+  @ApiQuery({ name: "search", type: "string", required: false })
+  @ApiQuery({
+    name: "tags",
+    type: "string",
+    required: false,
+    description: "Comma-separated tag list"
+  })
+  @ApiQuery({ name: "releaseWindow", enum: RELEASE_WINDOWS, required: false })
+  @ApiQuery({
+    name: "sort",
+    enum: RELEASE_SORTS,
+    required: false,
+    description: "Shelf ordering; defaults to newest first"
+  })
   @ApiResponse({
     status: 200,
     description: "A paginated list of released projects",
@@ -172,11 +198,17 @@ export class ProjectController {
   })
   async getPaginatedReleases(
     @Query("page") page?: string,
-    @Query("limit") limit?: string
+    @Query("limit") limit?: string,
+    @Query("search") search?: string,
+    @Query("tags") tags?: string,
+    @Query("releaseWindow") releaseWindow?: ReleaseWindow,
+    @Query("sort") sort?: ReleaseSort
   ): Promise<PaginatedProjectsResponseDto> {
     return this.projectService.fetchPublishedGamesPaginated(
       this.parseOptionalInt(page),
-      this.parseOptionalInt(limit)
+      this.parseOptionalInt(limit),
+      this.buildPublishedProjectFilters(search, tags, releaseWindow),
+      RELEASE_SORTS.includes(sort as ReleaseSort) ? (sort as ReleaseSort) : "fresh"
     );
   }
 
@@ -296,6 +328,18 @@ export class ProjectController {
     return { signedUrl };
   }
 
+  @Public()
+  @Get("limits")
+  @ApiOperation({ summary: "Get the project size limits" })
+  @ApiResponse({
+    status: 200,
+    description: "Content budget and blob size limits",
+    type: ProjectLimitsDto
+  })
+  getLimits(): ProjectLimitsDto {
+    return this.projectService.getLimits();
+  }
+
   @Get()
   @ApiOperation({ summary: "Retrieve the paginated list of projects" })
   @ApiQuery({ name: "page", type: "number", required: false })
@@ -373,6 +417,26 @@ export class ProjectController {
     @Param("id", ParseIntPipe) id: number
   ): Promise<ProjectResponseDto> {
     return this.projectService.findOne(id);
+  }
+
+  @Get(":id/size")
+  @UseGuards(ProjectCollaboratorGuard)
+  @ApiOperation({
+    summary: "Get the size breakdown of the project's latest save",
+    description:
+      "Logical content size per category (code, sprites, flags, map, sound, palette) " +
+      "computed from the decoded game document, compared against the publishing budget."
+  })
+  @ApiParam({ name: "id", type: "number" })
+  @ApiResponse({
+    status: 200,
+    description: "Size breakdown",
+    type: ProjectSizeDto
+  })
+  @ApiResponse({ status: 403, description: "Forbidden" })
+  @ApiResponse({ status: 404, description: "Project not found" })
+  async getSize(@Param("id", ParseIntPipe) id: number): Promise<ProjectSizeDto> {
+    return this.projectService.getContentSize(id);
   }
 
   @Post()
@@ -598,14 +662,12 @@ export class ProjectController {
     @Param("id", ParseIntPipe) id: number,
     @UploadedFile(
       new ParseFilePipeBuilder()
-        .addMaxSizeValidator({
-          maxSize: 100 * 1024 * 1024
-        })
+        .addMaxSizeValidator({ maxSize: PROJECT_BLOB_MAX_BYTES })
         .build({
           errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY
         })
     )
-    file: Express.Multer.File
+      file: Express.Multer.File
   ): Promise<{ message: string; id: number }> {
     await this.projectService.save(id, file);
 
@@ -642,7 +704,7 @@ export class ProjectController {
         .addFileTypeValidator({ fileType: /^image\/(jpeg|png|gif|webp)$/ })
         .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY })
     )
-    file: Express.Multer.File,
+      file: Express.Multer.File,
     @Req() req: RequestWithUser
   ): Promise<{ message: string; id: number }> {
     await this.projectService.findOne(id);
@@ -659,6 +721,14 @@ export class ProjectController {
       cacheControl: "no-cache"
     });
     await this.s3Service.setObjectPublicRead(key);
+
+    // Record where it landed. Presence reads `iconUrl` to put a friend's game behind their name
+    // on the friends page, and nothing ever wrote it, so that art could never appear: the column
+    // was dead the moment the upload started going to S3 instead.
+    await this.prismaService.project.update({
+      where: { id },
+      data: { iconUrl: this.cloudfrontService.getCDNUrl(key) }
+    });
 
     return { message: "Project image uploaded successfully", id };
   }
@@ -800,11 +870,19 @@ export class ProjectController {
   @ApiParam({ name: "name", type: "string" })
   @ApiResponse({ status: 201, description: "File uploaded successfully" })
   @ApiResponse({ status: 403, description: "Forbidden" })
+  @ApiResponse({ status: 422, description: "File validation failed" })
   @HttpCode(HttpStatus.CREATED)
   async saveCheckpoint(
     @Param("id") id: string,
     @Param("name") name: string,
-    @UploadedFile() file: Express.Multer.File
+    @UploadedFile(
+      new ParseFilePipeBuilder()
+        .addMaxSizeValidator({ maxSize: PROJECT_BLOB_MAX_BYTES })
+        .build({
+          errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY
+        })
+    )
+      file: Express.Multer.File
   ): Promise<{ message: string; id: string }> {
     await this.projectService.save(Number(id), file);
     await this.projectService.checkpoint(Number(id), name);
@@ -835,6 +913,11 @@ export class ProjectController {
   @ApiParam({ name: "id", type: "string" })
   @ApiResponse({ status: 201, description: "Project published successfully" })
   @ApiResponse({ status: 403, description: "Forbidden" })
+  @ApiResponse({
+    status: 413,
+    description: "Project content exceeds the publishing budget",
+    type: ProjectTooLargeDto
+  })
   @HttpCode(HttpStatus.CREATED)
   async publish(
     @Param("id") id: string
@@ -865,7 +948,8 @@ export class ProjectController {
   @ApiParam({ name: "id", type: "string" })
   @ApiResponse({
     status: 200,
-    description: "Project versions retrieved successfully"
+    description: "Project versions retrieved successfully",
+    type: ProjectVersionsResponseDto
   })
   @ApiResponse({ status: 403, description: "Forbidden" })
   async getVersions(
@@ -882,7 +966,8 @@ export class ProjectController {
   @ApiParam({ name: "id", type: "string" })
   @ApiResponse({
     status: 200,
-    description: "Project checkpoints retrieved successfully"
+    description: "Project checkpoints retrieved successfully",
+    type: ProjectCheckpointsResponseDto
   })
   @ApiResponse({ status: 403, description: "Forbidden" })
   async getCheckpoints(
@@ -891,6 +976,23 @@ export class ProjectController {
     const checkpoints = await this.projectService.listCheckpoints(Number(id));
 
     return { checkpoints };
+  }
+
+  @Delete(":id/versions/:version")
+  @UseGuards(ProjectCollaboratorGuard)
+  @ApiOperation({ summary: "Delete a project autosave" })
+  @ApiParam({ name: "id", type: "string" })
+  @ApiParam({ name: "version", type: "string" })
+  @ApiResponse({ status: 200, description: "Version deleted successfully" })
+  @ApiResponse({ status: 403, description: "Forbidden" })
+  @ApiResponse({ status: 404, description: "No such version" })
+  async deleteVersion(
+    @Param("id") id: string,
+    @Param("version") version: string
+  ): Promise<{ message: string; name: string }> {
+    await this.projectService.deleteVersion(Number(id), version);
+
+    return { message: "Version deleted successfully", name: version };
   }
 
   @Get(":id/versions/:version")
@@ -1084,6 +1186,11 @@ export class ProjectController {
   @ApiResponse({ status: 200, description: "Release updated successfully" })
   @ApiResponse({ status: 400, description: "Project is not published" })
   @ApiResponse({ status: 403, description: "Forbidden" })
+  @ApiResponse({
+    status: 413,
+    description: "Project content exceeds the publishing budget",
+    type: ProjectTooLargeDto
+  })
   @HttpCode(HttpStatus.OK)
   async updateRelease(
     @Param("id") id: string
