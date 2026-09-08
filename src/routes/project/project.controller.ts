@@ -86,10 +86,14 @@ import {
 } from "./dto/project-size.dto";
 import { PROJECT_BLOB_MAX_BYTES } from "./content-size";
 import { ViewResponseDto } from "./dto/view-response.dto";
+import { ReleaseTagsResponseDto } from "./dto/release-tags-response.dto";
 
 interface RequestWithUser extends Request {
   user: UserDto;
 }
+
+/** A suggestion list shows a handful of tags; a catalogue is a different screen. */
+const MAX_TAG_LIMIT = 12;
 
 @ApiTags("projects")
 @Controller("projects")
@@ -210,6 +214,35 @@ export class ProjectController {
       this.buildPublishedProjectFilters(search, tags, releaseWindow),
       RELEASE_SORTS.includes(sort as ReleaseSort) ? (sort as ReleaseSort) : "fresh"
     );
+  }
+
+  @Public()
+  @Get("releases/tags")
+  @ApiOperation({ summary: "List the tags published games carry" })
+  @ApiQuery({
+    name: "q",
+    type: "string",
+    required: false,
+    description: "Narrow to tags holding this fragment"
+  })
+  @ApiQuery({ name: "limit", type: "number", required: false })
+  @ApiResponse({
+    status: 200,
+    description: "Tags, most used first",
+    type: ReleaseTagsResponseDto
+  })
+  async getReleaseTags(
+    @Query("q") q?: string,
+    @Query("limit") limit?: string
+  ): Promise<ReleaseTagsResponseDto> {
+    const take = Math.min(
+      Math.max(this.parseOptionalInt(limit) ?? MAX_TAG_LIMIT, 1),
+      MAX_TAG_LIMIT
+    );
+
+    return {
+      tags: await this.projectService.fetchPublishedTags(q?.trim() ?? "", take)
+    };
   }
 
   @Public()

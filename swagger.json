@@ -122,6 +122,51 @@
         ]
       }
     },
+    "/projects/releases/tags": {
+      "get": {
+        "operationId": "ProjectController_getReleaseTags",
+        "parameters": [
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Narrow to tags holding this fragment",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tags, most used first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseTagsResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "List the tags published games carry",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
     "/projects/releases/count": {
       "get": {
         "operationId": "ProjectController_countReleasedProjects",
@@ -4539,6 +4584,40 @@
           "total",
           "page",
           "limit"
+        ]
+      },
+      "ReleaseTagDto": {
+        "type": "object",
+        "properties": {
+          "tag": {
+            "type": "string",
+            "description": "The tag, written as the games carry it",
+            "example": "snake"
+          },
+          "count": {
+            "type": "number",
+            "description": "Published games carrying it",
+            "example": 14
+          }
+        },
+        "required": [
+          "tag",
+          "count"
+        ]
+      },
+      "ReleaseTagsResponseDto": {
+        "type": "object",
+        "properties": {
+          "tags": {
+            "description": "Tags, most used first",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReleaseTagDto"
+            }
+          }
+        },
+        "required": [
+          "tags"
         ]
       },
       "ProjectsCountResponseDto": {

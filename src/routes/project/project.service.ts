@@ -1191,6 +1191,37 @@ export class ProjectService {
     );
   }
 
+  /**
+   * The tags published games carry, most used first, optionally narrowed to those holding a
+   * fragment.
+   *
+   * Raw SQL because the tags are an array column: counting them means unnesting it, which the
+   * query builder has no shape for. A game that has never had its tags published falls back to
+   * its draft ones, the same way the shelf filter does.
+   */
+  async fetchPublishedTags(
+    fragment: string,
+    limit: number
+  ): Promise<{ tag: string; count: number }[]> {
+    return this.prisma.$queryRaw<{ tag: string; count: number }[]>`
+      SELECT tag, COUNT(*)::int AS count
+      FROM (
+        SELECT unnest(
+          CASE
+            WHEN cardinality("publishedTags") > 0 THEN "publishedTags"
+            ELSE "tags"
+          END
+        ) AS tag
+        FROM "Project"
+        WHERE "status" = 'COMPLETED'
+      ) tags
+      WHERE tag ILIKE ${`%${fragment}%`}
+      GROUP BY tag
+      ORDER BY count DESC, tag ASC
+      LIMIT ${limit}
+    `;
+  }
+
   /** Totals for the profile header, counted rather than summed over one page of games. */
   async fetchUserTotals(
     userId: number
