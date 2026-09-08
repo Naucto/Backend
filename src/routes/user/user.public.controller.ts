@@ -5,11 +5,14 @@ import { S3Service } from "@s3/s3.service";
 import { CloudfrontService } from "src/routes/s3/edge.service";
 import { UserService } from "./user.service";
 import { PublicUserProfileResponseDto } from "./dto/public-user-profile-response.dto";
+import { PublicUserSearchResponseDto } from "./dto/public-user-search.dto";
 import { ProjectService } from "@project/project.service";
 import { ProjectExResponseDto } from "@project/dto/project-response.dto";
 
 const DEFAULT_GAMES_PAGE = 1;
 const DEFAULT_GAMES_LIMIT = 20;
+/** A suggestion panel shows a handful of people; asking for more is asking for a results page. */
+const MAX_SEARCH_LIMIT = 10;
 
 @ApiTags("users")
 @Controller("users/public")
@@ -29,6 +32,42 @@ export class UserPublicController {
 
     const version = head.ETag?.replace(/"/g, "") ?? Date.now().toString();
     return `${this.cloudfrontService.getCDNUrl(key)}?v=${version}`;
+  }
+
+  @Public()
+  @Get("search")
+  @ApiOperation({ summary: "Find people by handle or display name" })
+  @ApiQuery({ name: "q", type: "string", description: "What was typed" })
+  @ApiQuery({ name: "limit", type: "number", required: false })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Matching people, exact handle first",
+    type: PublicUserSearchResponseDto
+  })
+  async search(
+    @Query("q") q?: string,
+    @Query("limit") limit?: string
+  ): Promise<PublicUserSearchResponseDto> {
+    const term = q?.trim() ?? "";
+    const take = Math.min(
+      Math.max(parseInt(limit ?? "", 10) || MAX_SEARCH_LIMIT, 1),
+      MAX_SEARCH_LIMIT
+    );
+
+    // An empty box has no answer, and returning the first ten accounts would look like one.
+    const hits = term ? await this.userService.searchPublic(term, take) : [];
+    const data = await Promise.all(
+      hits.map(async (hit) => ({
+        ...hit,
+        profileImageUrl: await this.getPublicAssetUrl(`users/${hit.id}/profile`)
+      }))
+    );
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: "Users retrieved successfully",
+      data
+    };
   }
 
   @Public()

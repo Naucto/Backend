@@ -19,6 +19,13 @@ const PUBLIC_PROFILE_SELECT = {
   createdAt: true
 } as const;
 
+/** A person as a search result names them: enough to recognise a face and click it. */
+export type PublicSearchHit = {
+  id: number;
+  username: string;
+  nickname: string | null;
+};
+
 export type PublicProfile = {
   id: number;
   username: string;
@@ -150,6 +157,33 @@ export class UserService {
     }
 
     return user;
+  }
+
+  /**
+   * People whose username or nickname holds the term, best first.
+   *
+   * An exact username outranks a partial one: someone typing a whole handle is naming a person,
+   * not browsing.
+   */
+  async searchPublic(term: string, limit: number): Promise<PublicSearchHit[]> {
+    const contains = { contains: term, mode: "insensitive" } as const;
+
+    const users = await this.prisma.user.findMany({
+      where: {
+        deletedAt: null,
+        OR: [{ username: contains }, { nickname: contains }]
+      },
+      select: { id: true, username: true, nickname: true },
+      orderBy: [{ username: "asc" }],
+      take: limit
+    });
+
+    const lowered = term.toLowerCase();
+    return users.sort(
+      (a, b) =>
+        Number(b.username.toLowerCase() === lowered) -
+        Number(a.username.toLowerCase() === lowered)
+    );
   }
 
   async updateMyProfile(

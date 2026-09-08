@@ -8,14 +8,18 @@ import { ProjectService } from "@project/project.service";
 
 describe("UserPublicController", () => {
   let controller: UserPublicController;
-  let userService: { findPublicProfileByUsername: jest.Mock };
+  let userService: {
+    findPublicProfileByUsername: jest.Mock;
+    searchPublic: jest.Mock;
+  };
   let s3Service: { getFileMetadataOrNull: jest.Mock };
   let cloudfrontService: { getCDNUrl: jest.Mock };
   let projectService: { fetchUserTotals: jest.Mock };
 
   beforeEach(async () => {
     userService = {
-      findPublicProfileByUsername: jest.fn()
+      findPublicProfileByUsername: jest.fn(),
+      searchPublic: jest.fn()
     };
     s3Service = {
       getFileMetadataOrNull: jest.fn()
@@ -54,6 +58,35 @@ describe("UserPublicController", () => {
     }).compile();
 
     controller = module.get<UserPublicController>(UserPublicController);
+  });
+
+  describe("search", () => {
+    it("should answer an empty box with nothing rather than the first ten accounts", async () => {
+      const result = await controller.search("   ");
+
+      expect(result.data).toEqual([]);
+      expect(userService.searchPublic).not.toHaveBeenCalled();
+    });
+
+    it("should carry each person's picture, so a face is recognisable in the list", async () => {
+      userService.searchPublic.mockResolvedValue([
+        { id: 12, username: "louis", nickname: "Louis" }
+      ]);
+      s3Service.getFileMetadataOrNull.mockResolvedValue({ ETag: "\"abc\"" });
+      cloudfrontService.getCDNUrl.mockReturnValue("https://cdn.example/users/12/profile");
+
+      const result = await controller.search("lou");
+
+      expect(userService.searchPublic).toHaveBeenCalledWith("lou", 10);
+      expect(result.data).toEqual([
+        {
+          id: 12,
+          username: "louis",
+          nickname: "Louis",
+          profileImageUrl: "https://cdn.example/users/12/profile?v=abc"
+        }
+      ]);
+    });
   });
 
   it("should be defined", () => {

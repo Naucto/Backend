@@ -3787,6 +3787,46 @@
         ]
       }
     },
+    "/users/public/search": {
+      "get": {
+        "operationId": "UserPublicController_search",
+        "parameters": [
+          {
+            "name": "q",
+            "required": true,
+            "in": "query",
+            "description": "What was typed",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching people, exact handle first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicUserSearchResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Find people by handle or display name",
+        "tags": [
+          "users"
+        ]
+      }
+    },
     "/users/public/{id}/profile": {
       "get": {
         "operationId": "UserPublicController_getPublicProfile",
@@ -6688,6 +6728,64 @@
             "example": "password123"
           }
         }
+      },
+      "PublicUserSearchHitDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "User ID",
+            "example": 12
+          },
+          "username": {
+            "type": "string",
+            "description": "Handle, unique across the platform",
+            "example": "louis"
+          },
+          "nickname": {
+            "type": "object",
+            "description": "Display name",
+            "example": "Louis",
+            "nullable": true
+          },
+          "profileImageUrl": {
+            "type": "object",
+            "description": "Profile picture, null when the person has not set one",
+            "example": "https://cdn.example/users/12/profile?v=abc",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "username"
+        ]
+      },
+      "PublicUserSearchResponseDto": {
+        "type": "object",
+        "properties": {
+          "statusCode": {
+            "type": "number",
+            "description": "HTTP status code",
+            "example": 200
+          },
+          "message": {
+            "type": "string",
+            "description": "Response message",
+            "example": "Users retrieved successfully"
+          },
+          "data": {
+            "description": "Matching people",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicUserSearchHitDto"
+            }
+          }
+        },
+        "required": [
+          "statusCode",
+          "message",
+          "data"
+        ]
       },
       "JoinWorkSessionDto": {
         "type": "object",

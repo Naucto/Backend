@@ -14,13 +14,16 @@ function uniqueViolation(target: string[]): Prisma.PrismaClientKnownRequestError
 
 describe("UserService", () => {
   let service: UserService;
-  let prisma: { user: { findUnique: jest.Mock; update: jest.Mock } };
+  let prisma: {
+    user: { findUnique: jest.Mock; update: jest.Mock; findMany: jest.Mock };
+  };
 
   beforeEach(async () => {
     prisma = {
       user: {
         findUnique: jest.fn(),
-        update: jest.fn()
+        update: jest.fn(),
+        findMany: jest.fn()
       }
     };
 
@@ -39,6 +42,34 @@ describe("UserService", () => {
     }).compile();
 
     service = module.get<UserService>(UserService);
+  });
+
+  describe("searchPublic", () => {
+    it("should put an exact handle first", async () => {
+      prisma.user.findMany.mockResolvedValue([
+        { id: 1, username: "louisette", nickname: null },
+        { id: 2, username: "louis", nickname: null }
+      ]);
+
+      // Typing a whole handle names a person; alphabetical order would bury them under a
+      // longer name that merely starts the same way.
+      const hits = await service.searchPublic("Louis", 10);
+
+      expect(hits.map((h) => h.username)).toEqual(["louis", "louisette"]);
+    });
+
+    it("should never offer a deleted account", async () => {
+      prisma.user.findMany.mockResolvedValue([]);
+
+      await service.searchPublic("lou", 5);
+
+      expect(prisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ deletedAt: null }),
+          take: 5
+        })
+      );
+    });
   });
 
   it("should be defined", () => {
