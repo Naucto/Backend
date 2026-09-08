@@ -97,8 +97,18 @@ export class UserController {
   })
   @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
   @UseGuards(JwtAuthGuard)
-  getProfile(@Request() req: RequestWithUser): UserDto {
-    return req.user;
+  async getProfile(
+    @Request() req: RequestWithUser
+  ): Promise<UserDto & { profileImageUrl: string | null; backgroundImageUrl: string | null }> {
+    // The guard hands back the row, which holds no picture: the two images live in object storage
+    // under a key derived from the id. Resolving them here is what lets anything showing the
+    // viewer — the account menu, their own comment row — show the face they set on their profile.
+    const [profileImageUrl, backgroundImageUrl] = await Promise.all([
+      this.getPublicAssetUrl(`users/${req.user.id}/profile`),
+      this.getPublicAssetUrl(`users/${req.user.id}/background`)
+    ]);
+
+    return { ...req.user, profileImageUrl, backgroundImageUrl };
   }
 
   @Patch("profile")

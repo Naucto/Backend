@@ -180,6 +180,12 @@ export class UserPublicController {
     type: "number",
     required: false
   })
+  @ApiQuery({
+    name: "ownedOnly",
+    type: "string",
+    required: false,
+    description: "Only the games this user owns, rather than every game they are credited on"
+  })
   @ApiResponse({
     status: HttpStatus.OK,
     description: "Returns the list of games published by the user",
