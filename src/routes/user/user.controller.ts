@@ -103,7 +103,11 @@ export class UserController {
 
   @Patch("profile")
   @ApiOperation({
-    summary: "Update the parts of your own profile you write: display name, description, accent"
+    summary: "Update the parts of your own profile you write: names, description, accent"
+  })
+  @ApiResponse({
+    status: HttpStatus.CONFLICT,
+    description: "The handle asked for belongs to someone else"
   })
   @ApiResponse({
     status: HttpStatus.OK,
@@ -116,13 +120,14 @@ export class UserController {
     @Body(ValidationPipe) updateUserProfileDto: UpdateUserProfileDto,
     @Request() req: RequestWithUser
   ): Promise<PublicUserProfileResponseDto> {
-    const { description, nickname, colour } = updateUserProfileDto;
+    const { description, nickname, username, colour } = updateUserProfileDto;
     // Blank is an answer here: a zone the person emptied is cleared, not left as it was.
     const blankable = (value: string): string | null => value.trim() || null;
 
     const update: Parameters<UserService["updateMyProfile"]>[1] = {};
     if (description !== undefined) update.description = blankable(description);
     if (nickname !== undefined) update.nickname = blankable(nickname);
+    if (username !== undefined) update.username = username.trim();
     if (colour !== undefined) update.colour = colour;
 
     const updated = await this.userService.updateMyProfile(req.user.id, update);

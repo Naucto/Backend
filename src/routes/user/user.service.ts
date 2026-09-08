@@ -203,9 +203,6 @@ export class UserService {
   /**
    * The parts of a profile its owner writes.
    *
-   * The handle is not among them: it is what friend requests and profile links resolve, so changing
-   * one has consequences beyond this row that have not been worked through.
-   *
    * Each zone is committed on its own, so an absent field means "leave it" and an empty string
    * means "clear it" — the two are not the same answer.
    */
@@ -214,20 +211,35 @@ export class UserService {
     data: {
       description?: string | null;
       nickname?: string | null;
+      username?: string;
       colour?: PersonalColour;
     }
   ): Promise<PublicProfile> {
-    return this.prisma.user.update({
-      where: { id },
-      data: {
-        ...(data.description === undefined
-          ? {}
-          : { description: data.description }),
-        ...(data.nickname === undefined ? {} : { nickname: data.nickname }),
-        ...(data.colour === undefined ? {} : { colour: data.colour })
-      },
-      select: { ...PUBLIC_PROFILE_SELECT }
-    });
+    try {
+      return await this.prisma.user.update({
+        where: { id },
+        data: {
+          ...(data.description === undefined
+            ? {}
+            : { description: data.description }),
+          ...(data.nickname === undefined ? {} : { nickname: data.nickname }),
+          ...(data.username === undefined ? {} : { username: data.username }),
+          ...(data.colour === undefined ? {} : { colour: data.colour })
+        },
+        select: { ...PUBLIC_PROFILE_SELECT }
+      });
+    } catch (error) {
+      // A handle is what a friend request and a profile link resolve, so it cannot be shared; name
+      // the field that collided rather than letting a database code reach the person.
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002"
+      ) {
+        throw new ConflictException(`Handle ${data.username} is already taken`);
+      }
+
+      throw error;
+    }
   }
 
   async findRolesByNames(names: string[]): Promise<Role[]> {

@@ -3295,6 +3295,9 @@
           },
           "401": {
             "description": "Unauthorized"
+          },
+          "409": {
+            "description": "The handle asked for belongs to someone else"
           }
         },
         "security": [
@@ -3302,7 +3305,7 @@
             "JWT-auth": []
           }
         ],
-        "summary": "Update the parts of your own profile you write: display name, description, accent",
+        "summary": "Update the parts of your own profile you write: names, description, accent",
         "tags": [
           "users"
         ]
@@ -6796,6 +6799,13 @@
             "description": "Public profile description displayed on the profile",
             "example": "I love making games",
             "maxLength": 160
+          },
+          "username": {
+            "type": "string",
+            "description": "Handle, unique across the platform — people add you as a friend with it",
+            "example": "louis",
+            "minLength": 3,
+            "maxLength": 24
           },
           "colour": {
             "type": "string",

@@ -66,17 +66,12 @@ describe("UserService", () => {
       );
     });
 
-    it("should refuse to carry a handle change at all", async () => {
-      prisma.user.update.mockResolvedValue({});
+    it("should name the handle that collided rather than leak a database code", async () => {
+      prisma.user.update.mockRejectedValue(uniqueViolation(["username"]));
 
-      // The handle is what a friend request and a profile link resolve, so it is not one of the
-      // fields a zone commits — the type says so, and nothing here forwards it.
-      await service.updateMyProfile(1, {
-        nickname: "Louis",
-      } as Parameters<typeof service.updateMyProfile>[1]);
-
-      const data = prisma.user.update.mock.calls[0]![0]!.data as Record<string, unknown>;
-      expect(data).not.toHaveProperty("username");
+      await expect(
+        service.updateMyProfile(1, { username: "louis" })
+      ).rejects.toBeInstanceOf(ConflictException);
     });
   });
 
