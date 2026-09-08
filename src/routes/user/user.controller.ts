@@ -103,11 +103,7 @@ export class UserController {
 
   @Patch("profile")
   @ApiOperation({
-    summary: "Update the parts of your own profile you write: names, description, accent"
-  })
-  @ApiResponse({
-    status: HttpStatus.CONFLICT,
-    description: "The handle asked for belongs to someone else"
+    summary: "Update the parts of your own profile you write: display name, description, accent"
   })
   @ApiResponse({
     status: HttpStatus.OK,
@@ -120,14 +116,13 @@ export class UserController {
     @Body(ValidationPipe) updateUserProfileDto: UpdateUserProfileDto,
     @Request() req: RequestWithUser
   ): Promise<PublicUserProfileResponseDto> {
-    const { description, nickname, username, colour } = updateUserProfileDto;
+    const { description, nickname, colour } = updateUserProfileDto;
     // Blank is an answer here: a zone the person emptied is cleared, not left as it was.
     const blankable = (value: string): string | null => value.trim() || null;
 
     const update: Parameters<UserService["updateMyProfile"]>[1] = {};
     if (description !== undefined) update.description = blankable(description);
     if (nickname !== undefined) update.nickname = blankable(nickname);
-    if (username !== undefined) update.username = username.trim();
     if (colour !== undefined) update.colour = colour;
 
     const updated = await this.userService.updateMyProfile(req.user.id, update);
@@ -277,6 +272,40 @@ export class UserController {
     };
   }
 
+  /**
+   * Drop one of the two profile images.
+   *
+   * Removing something that is not there is not an error: the caller wants the zone empty, and it
+   * is, so a second click on a slow connection must not read as a failure.
+   */
+  private async removeProfileAsset(
+    id: number,
+    req: RequestWithUser,
+    key: "profile" | "background",
+    label: string
+  ): Promise<{ message: string; id: number }> {
+    if (req.user.id !== id) {
+      throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    }
+
+    await this.s3Service.deleteFile({ key: `users/${id}/${key}` });
+
+    return { message: `${label} removed successfully`, id };
+  }
+
+  @Delete(":id/profile-picture")
+  @ApiOperation({ summary: "Remove your own profile picture" })
+  @ApiParam({ name: "id", description: "User ID" })
+  @ApiResponse({ status: HttpStatus.OK, description: "Removed, or there was none" })
+  @ApiResponse({ status: HttpStatus.FORBIDDEN, description: "Not your profile" })
+  @UseGuards(JwtAuthGuard)
+  async removeProfilePicture(
+    @Param("id", ParseIntPipe) id: number,
+    @Request() req: RequestWithUser
+  ): Promise<{ message: string; id: number }> {
+    return this.removeProfileAsset(id, req, "profile", "Profile picture");
+  }
+
   @Post(":id/profile-background")
   @ApiOperation({ summary: "Upload a user's profile background" })
   @ApiParam({ name: "id", description: "User ID" })
@@ -340,6 +369,19 @@ export class UserController {
         (await this.getPublicAssetUrl(key)) ??
         this.cloudfrontService.getCDNUrl(key)
     };
+  }
+
+  @Delete(":id/profile-background")
+  @ApiOperation({ summary: "Remove your own profile background" })
+  @ApiParam({ name: "id", description: "User ID" })
+  @ApiResponse({ status: HttpStatus.OK, description: "Removed, or there was none" })
+  @ApiResponse({ status: HttpStatus.FORBIDDEN, description: "Not your profile" })
+  @UseGuards(JwtAuthGuard)
+  async removeProfileBackground(
+    @Param("id", ParseIntPipe) id: number,
+    @Request() req: RequestWithUser
+  ): Promise<{ message: string; id: number }> {
+    return this.removeProfileAsset(id, req, "background", "Profile background");
   }
 
   @Get(":id/profile-picture")

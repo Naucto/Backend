@@ -200,42 +200,34 @@ export class UserService {
    * Each zone is committed on its own, so an absent field means "leave it" and an empty string
    * means "clear it" — the two are not the same answer.
    */
+  /**
+   * The parts of a profile its owner writes.
+   *
+   * The handle is not among them: it is what friend requests and profile links resolve, so changing
+   * one has consequences beyond this row that have not been worked through.
+   *
+   * Each zone is committed on its own, so an absent field means "leave it" and an empty string
+   * means "clear it" — the two are not the same answer.
+   */
   async updateMyProfile(
     id: number,
     data: {
       description?: string | null;
       nickname?: string | null;
-      username?: string;
       colour?: PersonalColour;
     }
   ): Promise<PublicProfile> {
-    const update: Prisma.UserUpdateInput = {
-      ...(data.description === undefined
-        ? {}
-        : { description: data.description }),
-      ...(data.nickname === undefined ? {} : { nickname: data.nickname }),
-      ...(data.username === undefined ? {} : { username: data.username }),
-      ...(data.colour === undefined ? {} : { colour: data.colour })
-    };
-
-    try {
-      return await this.prisma.user.update({
-        where: { id },
-        data: update,
-        select: { ...PUBLIC_PROFILE_SELECT }
-      });
-    } catch (error) {
-      // A handle is what people type to find someone, so it cannot be shared; say which field
-      // collided rather than letting a database code reach the person.
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === "P2002"
-      ) {
-        throw new ConflictException(`Handle ${data.username} is already taken`);
-      }
-
-      throw error;
-    }
+    return this.prisma.user.update({
+      where: { id },
+      data: {
+        ...(data.description === undefined
+          ? {}
+          : { description: data.description }),
+        ...(data.nickname === undefined ? {} : { nickname: data.nickname }),
+        ...(data.colour === undefined ? {} : { colour: data.colour })
+      },
+      select: { ...PUBLIC_PROFILE_SELECT }
+    });
   }
 
   async findRolesByNames(names: string[]): Promise<Role[]> {

@@ -3295,9 +3295,6 @@
           },
           "401": {
             "description": "Unauthorized"
-          },
-          "409": {
-            "description": "The handle asked for belongs to someone else"
           }
         },
         "security": [
@@ -3305,7 +3302,7 @@
             "JWT-auth": []
           }
         ],
-        "summary": "Update the parts of your own profile you write: names, description, accent",
+        "summary": "Update the parts of your own profile you write: display name, description, accent",
         "tags": [
           "users"
         ]
@@ -3499,6 +3496,37 @@
           "users"
         ]
       },
+      "delete": {
+        "operationId": "UserController_removeProfilePicture",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "User ID",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed, or there was none"
+          },
+          "403": {
+            "description": "Not your profile"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Remove your own profile picture",
+        "tags": [
+          "users"
+        ]
+      },
       "get": {
         "operationId": "UserController_getProfilePicture",
         "parameters": [
@@ -3590,6 +3618,37 @@
           }
         ],
         "summary": "Upload a user's profile background",
+        "tags": [
+          "users"
+        ]
+      },
+      "delete": {
+        "operationId": "UserController_removeProfileBackground",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "User ID",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed, or there was none"
+          },
+          "403": {
+            "description": "Not your profile"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Remove your own profile background",
         "tags": [
           "users"
         ]
@@ -6737,13 +6796,6 @@
             "description": "Public profile description displayed on the profile",
             "example": "I love making games",
             "maxLength": 160
-          },
-          "username": {
-            "type": "string",
-            "description": "Handle, unique across the platform — people add you as a friend with it",
-            "example": "louis",
-            "minLength": 3,
-            "maxLength": 24
           },
           "colour": {
             "type": "string",

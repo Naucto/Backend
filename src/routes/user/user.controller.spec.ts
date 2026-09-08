@@ -11,6 +11,7 @@ import { HttpException, HttpStatus } from "@nestjs/common";
 describe("UserController", () => {
   let controller: UserController;
   let userService: UserService;
+  let s3Service: S3Service;
   const accountDeletion = { deleteAccount: jest.fn() };
 
   beforeEach(async () => {
@@ -62,6 +63,7 @@ describe("UserController", () => {
 
     controller = module.get<UserController>(UserController);
     userService = module.get<UserService>(UserService);
+    s3Service = module.get<S3Service>(S3Service);
   });
 
   it("should be defined", () => {
@@ -81,6 +83,24 @@ describe("UserController", () => {
         expect(err).toBeInstanceOf(HttpException);
         expect((err as HttpException).getStatus()).toBe(HttpStatus.FORBIDDEN);
       }
+    });
+  });
+
+  describe("removeProfilePicture", () => {
+    it("refuses to clear someone else's zone", async () => {
+      await expect(
+        controller.removeProfilePicture(222, { user: { id: 111 } } as any)
+      ).rejects.toBeInstanceOf(HttpException);
+    });
+
+    it("answers the same whether or not there was an image", async () => {
+      // Clearing something already clear is what the caller asked for, so it is not a failure.
+      (s3Service.deleteFile as jest.Mock).mockResolvedValue(undefined);
+
+      const result = await controller.removeProfilePicture(7, { user: { id: 7 } } as any);
+
+      expect(s3Service.deleteFile).toHaveBeenCalledWith({ key: "users/7/profile" });
+      expect(result).toEqual({ message: "Profile picture removed successfully", id: 7 });
     });
   });
 

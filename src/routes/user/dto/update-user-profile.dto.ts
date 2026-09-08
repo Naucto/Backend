@@ -1,16 +1,6 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { PersonalColour } from "@prisma/client";
-import {
-  IsEnum,
-  IsOptional,
-  IsString,
-  Matches,
-  MaxLength,
-  MinLength
-} from "class-validator";
-
-/** What a handle may hold: letters, digits, and the two separators a name reads with. */
-const HANDLE = /^[a-zA-Z0-9._-]+$/;
+import { IsEnum, IsOptional, IsString, MaxLength } from "class-validator";
 
 export class UpdateUserProfileDto {
   @ApiPropertyOptional({
@@ -31,21 +21,6 @@ export class UpdateUserProfileDto {
   @IsString()
   @MaxLength(160)
     description?: string;
-
-  @ApiPropertyOptional({
-    description: "Handle, unique across the platform — people add you as a friend with it",
-    example: "louis",
-    minLength: 3,
-    maxLength: 24
-  })
-  @IsOptional()
-  @IsString()
-  @MinLength(3)
-  @MaxLength(24)
-  @Matches(HANDLE, {
-    message: "A handle may hold letters, digits, dots, dashes and underscores"
-  })
-    username?: string;
 
   @ApiPropertyOptional({
     description: "The accent this person is drawn in",
