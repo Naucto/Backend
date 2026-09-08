@@ -3,10 +3,7 @@ import { promises as fs } from "fs";
 import * as path from "path";
 import { FeaturesResponseDto } from "./dto/features.dto";
 
-/**
- * Each flag is taken one key at a time and falls back to off, rather than the parsed object being
- * used as the answer: a config written before a flag existed must not be read as turning it on.
- */
+/** A config written before a flag existed must not be read as turning that flag on. */
 @Injectable()
 export class FeaturesService implements OnModuleInit {
   private readonly _logger = new Logger(FeaturesService.name);
