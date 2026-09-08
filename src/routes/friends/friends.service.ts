@@ -376,6 +376,17 @@ export class FriendsService {
       return user.id;
     }
 
+    if (dto.username !== undefined) {
+      const user = await this.prisma.user.findUnique({
+        where: { username: dto.username },
+        select: { id: true, deletedAt: true }
+      });
+      if (!user || user.deletedAt) {
+        throw new NotFoundException("No user with this handle");
+      }
+      return user.id;
+    }
+
     if (dto.friendCode !== undefined) {
       const id = await this.userService.findIdByFriendCode(dto.friendCode);
       if (id === null) {
@@ -384,7 +395,9 @@ export class FriendsService {
       return id;
     }
 
-    throw new BadRequestException("userId or friendCode is required");
+    throw new BadRequestException(
+      "userId, username or friendCode is required"
+    );
   }
 
   private async hasPlayedGameOf(

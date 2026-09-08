@@ -7,8 +7,17 @@ export class SendFriendRequestDto {
   @IsOptional()
   @IsInt()
   @Min(1)
-  @AtLeastOne(["userId", "friendCode"])
+  @AtLeastOne(["userId", "username", "friendCode"])
     userId?: number;
+
+  @ApiPropertyOptional({
+    description: "Handle of the person to befriend — what the profile shows after the @",
+    example: "louis"
+  })
+  @IsOptional()
+  @IsString()
+  @Length(3, 24)
+    username?: string;
 
   @ApiPropertyOptional({
     description: "Friend code of the user to befriend (case-insensitive, dashes/spaces ignored)",

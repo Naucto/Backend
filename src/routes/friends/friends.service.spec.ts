@@ -133,6 +133,33 @@ describe("FriendsService", () => {
       );
     });
 
+    it("resolves the target from a handle", async () => {
+      // The profile shows a handle and says people add you with it; typing it has to be enough.
+      user.findUnique.mockResolvedValue({ id: 2, deletedAt: null });
+      friendship.findUnique.mockResolvedValue(null);
+      friendRequest.findUnique.mockResolvedValue(null);
+      friendRequest.create.mockResolvedValue({
+        id: 11, fromId: 1, toId: 2, from: alice, to: bob, createdAt: new Date()
+      });
+
+      await service.sendRequest(1, { username: "bob" });
+
+      expect(user.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { username: "bob" } })
+      );
+      expect(friendRequest.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { fromId: 1, toId: 2 } })
+      );
+    });
+
+    it("404s on an unknown handle", async () => {
+      user.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.sendRequest(1, { username: "nobody" })
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
     it("404s on an unknown friend code", async () => {
       userService.findIdByFriendCode.mockResolvedValue(null);
 
