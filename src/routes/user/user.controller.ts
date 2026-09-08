@@ -52,6 +52,7 @@ import { UpdateUserProfileDto } from "./dto/update-user-profile.dto";
 import { PublicUserProfileResponseDto } from "./dto/public-user-profile-response.dto";
 import { MeDto, UpdateMeDto } from "./dto/me.dto";
 import { DeleteAccountDto } from "./dto/delete-account.dto";
+import { ProfileImageUploadResponseDto } from "./dto/profile-image-upload-response.dto";
 import { AccountDeletionService } from "./account-deletion.service";
 import { REFRESH_COOKIE_NAME, refreshCookieOptions } from "@auth/auth.utils";
 
@@ -101,7 +102,13 @@ export class UserController {
   }
 
   @Patch("profile")
-  @ApiOperation({ summary: "Update current user profile" })
+  @ApiOperation({
+    summary: "Update the parts of your own profile you write: names, description, accent"
+  })
+  @ApiResponse({
+    status: HttpStatus.CONFLICT,
+    description: "The handle asked for belongs to someone else"
+  })
   @ApiResponse({
     status: HttpStatus.OK,
     description: "User profile updated successfully",
@@ -113,13 +120,15 @@ export class UserController {
     @Body(ValidationPipe) updateUserProfileDto: UpdateUserProfileDto,
     @Request() req: RequestWithUser
   ): Promise<PublicUserProfileResponseDto> {
-    const descriptionSource = updateUserProfileDto.description;
-    const description = descriptionSource === undefined ? undefined : descriptionSource.trim() || null;
+    const { description, nickname, username, colour } = updateUserProfileDto;
+    // Blank is an answer here: a zone the person emptied is cleared, not left as it was.
+    const blankable = (value: string): string | null => value.trim() || null;
 
-    const update: { description?: string | null } = {};
-    if (description !== undefined) {
-      update.description = description;
-    }
+    const update: Parameters<UserService["updateMyProfile"]>[1] = {};
+    if (description !== undefined) update.description = blankable(description);
+    if (nickname !== undefined) update.nickname = blankable(nickname);
+    if (username !== undefined) update.username = username.trim();
+    if (colour !== undefined) update.colour = colour;
 
     const updated = await this.userService.updateMyProfile(req.user.id, update);
 
@@ -219,7 +228,11 @@ export class UserController {
       }
     }
   })
-  @ApiResponse({ status: HttpStatus.CREATED, description: "Profile uploaded" })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: "Profile uploaded",
+    type: ProfileImageUploadResponseDto
+  })
   @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(FileInterceptor("file"))
@@ -234,7 +247,7 @@ export class UserController {
     )
       file: Express.Multer.File,
     @Request() req: RequestWithUser
-  ): Promise<{ message: string; id: number }> {
+  ): Promise<ProfileImageUploadResponseDto> {
     if (req.user.id !== id) {
       throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     }
@@ -253,7 +266,15 @@ export class UserController {
     });
     await this.s3Service.setObjectPublicRead(key);
 
-    return { message: "Profile picture uploaded successfully", id };
+    return {
+      message: "Profile picture uploaded successfully",
+      id,
+      // Versioned when the store already answers for it; the plain address otherwise, which is
+      // still the right one — a version only spares the browser a stale cache.
+      resourceUrl:
+        (await this.getPublicAssetUrl(key)) ??
+        this.cloudfrontService.getCDNUrl(key)
+    };
   }
 
   @Post(":id/profile-background")
@@ -272,7 +293,11 @@ export class UserController {
       }
     }
   })
-  @ApiResponse({ status: HttpStatus.CREATED, description: "Profile background uploaded" })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: "Profile background uploaded",
+    type: ProfileImageUploadResponseDto
+  })
   @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(FileInterceptor("file"))
@@ -287,7 +312,7 @@ export class UserController {
     )
       file: Express.Multer.File,
     @Request() req: RequestWithUser
-  ): Promise<{ message: string; id: number }> {
+  ): Promise<ProfileImageUploadResponseDto> {
     if (req.user.id !== id) {
       throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     }
@@ -306,7 +331,15 @@ export class UserController {
     });
     await this.s3Service.setObjectPublicRead(key);
 
-    return { message: "Profile background uploaded successfully", id };
+    return {
+      message: "Profile background uploaded successfully",
+      id,
+      // Versioned when the store already answers for it; the plain address otherwise, which is
+      // still the right one — a version only spares the browser a stale cache.
+      resourceUrl:
+        (await this.getPublicAssetUrl(key)) ??
+        this.cloudfrontService.getCDNUrl(key)
+    };
   }
 
   @Get(":id/profile-picture")

@@ -2,7 +2,13 @@ import { ConflictException, Injectable, NotFoundException } from "@nestjs/common
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
-import { Prisma, Role, SessionJoinPolicy, User } from "@prisma/client";
+import {
+  PersonalColour,
+  Prisma,
+  Role,
+  SessionJoinPolicy,
+  User
+} from "@prisma/client";
 import * as bcrypt from "bcryptjs";
 import { MeDto } from "./dto/me.dto";
 import { generateFriendCode, normalizeFriendCode } from "./friend-code.util";
@@ -16,6 +22,7 @@ const PUBLIC_PROFILE_SELECT = {
   username: true,
   nickname: true,
   description: true,
+  colour: true,
   createdAt: true
 } as const;
 
@@ -31,6 +38,7 @@ export type PublicProfile = {
   username: string;
   nickname: string | null;
   description: string | null;
+  colour: PersonalColour | null;
   createdAt: Date;
 };
 
@@ -186,27 +194,48 @@ export class UserService {
     );
   }
 
+  /**
+   * The parts of a profile its owner writes: the two names, the line under them, the accent.
+   *
+   * Each zone is committed on its own, so an absent field means "leave it" and an empty string
+   * means "clear it" — the two are not the same answer.
+   */
   async updateMyProfile(
     id: number,
-    data: { description?: string | null }
+    data: {
+      description?: string | null;
+      nickname?: string | null;
+      username?: string;
+      colour?: PersonalColour;
+    }
   ): Promise<PublicProfile> {
-    const nextProfileText = data.description;
+    const update: Prisma.UserUpdateInput = {
+      ...(data.description === undefined
+        ? {}
+        : { description: data.description }),
+      ...(data.nickname === undefined ? {} : { nickname: data.nickname }),
+      ...(data.username === undefined ? {} : { username: data.username }),
+      ...(data.colour === undefined ? {} : { colour: data.colour })
+    };
 
-    const updatedUser = await this.prisma.user.update({
-      where: { id },
-      data: {
-        ...(nextProfileText !== undefined
-          ? {
-            description: nextProfileText
-          }
-          : {})
-      },
-      select: {
-        ...PUBLIC_PROFILE_SELECT
+    try {
+      return await this.prisma.user.update({
+        where: { id },
+        data: update,
+        select: { ...PUBLIC_PROFILE_SELECT }
+      });
+    } catch (error) {
+      // A handle is what people type to find someone, so it cannot be shared; say which field
+      // collided rather than letting a database code reach the person.
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002"
+      ) {
+        throw new ConflictException(`Handle ${data.username} is already taken`);
       }
-    });
 
-    return updatedUser;
+      throw error;
+    }
   }
 
   async findRolesByNames(names: string[]): Promise<Role[]> {

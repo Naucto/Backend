@@ -3295,6 +3295,9 @@
           },
           "401": {
             "description": "Unauthorized"
+          },
+          "409": {
+            "description": "The handle asked for belongs to someone else"
           }
         },
         "security": [
@@ -3302,7 +3305,7 @@
             "JWT-auth": []
           }
         ],
-        "summary": "Update current user profile",
+        "summary": "Update the parts of your own profile you write: names, description, accent",
         "tags": [
           "users"
         ]
@@ -3473,7 +3476,14 @@
         },
         "responses": {
           "201": {
-            "description": "Profile uploaded"
+            "description": "Profile uploaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileImageUploadResponseDto"
+                }
+              }
+            }
           },
           "401": {
             "description": "Unauthorized"
@@ -3561,7 +3571,14 @@
         },
         "responses": {
           "201": {
-            "description": "Profile background uploaded"
+            "description": "Profile background uploaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileImageUploadResponseDto"
+                }
+              }
+            }
           },
           "401": {
             "description": "Unauthorized"
@@ -6627,6 +6644,19 @@
             "example": "https://cdn.example.com/users/1/background?v=abc123",
             "nullable": true
           },
+          "colour": {
+            "type": "string",
+            "description": "The accent this person is drawn in; null until they pick one",
+            "enum": [
+              "SKY",
+              "BLUSH",
+              "JADE",
+              "GOLD",
+              "ORANGE",
+              "HOT"
+            ],
+            "nullable": true
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string",
@@ -6697,6 +6727,26 @@
             "description": "Public profile description displayed on the profile",
             "example": "I love making games",
             "maxLength": 160
+          },
+          "username": {
+            "type": "string",
+            "description": "Handle, unique across the platform — people add you as a friend with it",
+            "example": "louis",
+            "minLength": 3,
+            "maxLength": 24
+          },
+          "colour": {
+            "type": "string",
+            "description": "The accent this person is drawn in",
+            "enum": [
+              "SKY",
+              "BLUSH",
+              "JADE",
+              "GOLD",
+              "ORANGE",
+              "HOT"
+            ],
+            "example": "SKY"
           }
         }
       },
@@ -6766,6 +6816,30 @@
         },
         "required": [
           "confirmation"
+        ]
+      },
+      "ProfileImageUploadResponseDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "example": "Profile picture uploaded successfully"
+          },
+          "id": {
+            "type": "number",
+            "description": "User ID",
+            "example": 12
+          },
+          "resourceUrl": {
+            "type": "string",
+            "description": "Where the image now lives, versioned so a replacement is not served from cache",
+            "example": "https://cdn.example/users/12/profile?v=abc"
+          }
+        },
+        "required": [
+          "message",
+          "id",
+          "resourceUrl"
         ]
       },
       "SignedCdnResourceDto": {

@@ -1,3 +1,14 @@
+// The six accents a person may wear. Fixed rather than free: the colour has to read against both
+// themes and stand apart from the accents that mean "act" and "danger" elsewhere.
+enum PersonalColour {
+  SKY
+  BLUSH
+  JADE
+  GOLD
+  ORANGE
+  HOT
+}
+
 enum SessionJoinPolicy {
   ANYONE
   FRIENDS
@@ -10,6 +21,8 @@ model User {
   username  String   @unique
   nickname  String?
   description String?
+  // Null until picked: a colour is then derived from the id, so everyone has one from day one.
+  colour    PersonalColour?
   password  String?
   createdAt DateTime @default(now())
 

@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { PersonalColour } from "@prisma/client";
 
 export class PublicUserProfileDto {
   @ApiProperty({ description: "User ID", example: 1 })
@@ -38,6 +39,13 @@ export class PublicUserProfileDto {
     nullable: true
   })
     backgroundImageUrl?: string | null;
+
+  @ApiPropertyOptional({
+    description: "The accent this person is drawn in; null until they pick one",
+    enum: PersonalColour,
+    nullable: true
+  })
+    colour?: PersonalColour | null;
 
   @ApiProperty({
     description: "When the account was created — the profile header shows the year",

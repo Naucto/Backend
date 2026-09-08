@@ -44,6 +44,37 @@ describe("UserService", () => {
     service = module.get<UserService>(UserService);
   });
 
+  describe("updateMyProfile", () => {
+    it("should write the display name, which the route accepted and dropped", async () => {
+      prisma.user.update.mockResolvedValue({});
+
+      await service.updateMyProfile(1, { nickname: "Louis" });
+
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { nickname: "Louis" } })
+      );
+    });
+
+    it("should leave alone what the request did not mention", async () => {
+      prisma.user.update.mockResolvedValue({});
+
+      // Each zone commits on its own, so a request carrying one field must not clear the others.
+      await service.updateMyProfile(1, { colour: "JADE" });
+
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { colour: "JADE" } })
+      );
+    });
+
+    it("should name the handle that collided rather than leak a database code", async () => {
+      prisma.user.update.mockRejectedValue(uniqueViolation(["username"]));
+
+      await expect(
+        service.updateMyProfile(1, { username: "louis" })
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
   describe("searchPublic", () => {
     it("should put an exact handle first", async () => {
       prisma.user.findMany.mockResolvedValue([
@@ -96,6 +127,7 @@ describe("UserService", () => {
           username: true,
           nickname: true,
           description: true,
+          colour: true,
           createdAt: true
         }
       });
@@ -129,6 +161,7 @@ describe("UserService", () => {
           username: true,
           nickname: true,
           description: true,
+          colour: true,
           createdAt: true
         }
       });

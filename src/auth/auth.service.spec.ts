@@ -138,6 +138,7 @@ describe("AuthService", () => {
         password: "hashedPass",
         createdAt: new Date(),
         friendCode: null,
+        colour: null,
         sessionJoinPolicy: "ANYONE" as const,
         deletedAt: null
       });
@@ -157,6 +158,7 @@ describe("AuthService", () => {
         description: null,
         createdAt: new Date(),
         friendCode: null,
+        colour: null,
         sessionJoinPolicy: "ANYONE" as const,
         deletedAt: null
       };
@@ -180,6 +182,7 @@ describe("AuthService", () => {
         description: null,
         createdAt: new Date(),
         friendCode: null,
+        colour: null,
         sessionJoinPolicy: "ANYONE" as const,
         deletedAt: null
       };
@@ -222,6 +225,7 @@ describe("AuthService", () => {
                 password: "hashedPass",
                 createdAt: new Date(),
                 friendCode: null,
+                colour: null,
                 sessionJoinPolicy: "ANYONE" as const,
                 deletedAt: null
               }
@@ -266,6 +270,7 @@ describe("AuthService", () => {
                 password: "hashedPass",
                 createdAt: new Date(),
                 friendCode: null,
+                colour: null,
                 sessionJoinPolicy: "ANYONE" as const,
                 deletedAt: null
               }
@@ -296,6 +301,7 @@ describe("AuthService", () => {
         password: "hashedPassword",
         createdAt: new Date(),
         friendCode: null,
+        colour: null,
         sessionJoinPolicy: "ANYONE" as const,
         deletedAt: null
       });
@@ -346,6 +352,7 @@ describe("AuthService", () => {
           password: "pass",
           createdAt: new Date(),
           friendCode: null,
+          colour: null,
           sessionJoinPolicy: "ANYONE" as const,
           deletedAt: null
         }
@@ -385,6 +392,7 @@ describe("AuthService", () => {
           password: "pass",
           createdAt: new Date(),
           friendCode: null,
+          colour: null,
           sessionJoinPolicy: "ANYONE" as const,
           deletedAt: null
         }
@@ -443,6 +451,7 @@ describe("AuthService", () => {
         password: null,
         createdAt: new Date(),
         friendCode: null,
+        colour: null,
         sessionJoinPolicy: "ANYONE" as const,
         deletedAt: null
       } as any);
