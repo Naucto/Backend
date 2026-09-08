@@ -113,20 +113,27 @@ export class MultiplayerController {
 
   @Get()
   @ApiOperation({
-    summary: "List game sessions for a project, from the caller's perspective"
+    summary: "List open game sessions from the caller's perspective, one game's or every game's"
   })
-  @ApiQuery({ name: "projectId", type: "number", required: true })
+  @ApiQuery({ name: "projectId", type: "number", required: false })
+  @ApiQuery({
+    name: "q",
+    type: "string",
+    required: false,
+    description: "Narrow to sessions whose room or game name holds this"
+  })
   @ApiResponse({ status: HttpStatus.OK, type: GameSessionListResponseDto })
   async list(
     @Req() req: RequestWithUser,
-    @Query("projectId", ParseIntPipe) projectId: number
+    @Query("projectId", new ParseIntPipe({ optional: true })) projectId?: number,
+    @Query("q") q?: string
   ): Promise<GameSessionListResponseDto> {
     let sessions: GameSessionEx[];
 
     try {
-      sessions = await this._multiplayerService.list(projectId, req.user.id);
+      sessions = await this._multiplayerService.list(projectId, req.user.id, q);
     } catch (error) {
-      this._rethrow(error, `list sessions for project ${projectId}`);
+      this._rethrow(error, `list sessions for project ${projectId ?? "any"}`);
     }
 
     const response = new GameSessionListResponseDto();

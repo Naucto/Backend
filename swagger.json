@@ -1722,10 +1722,19 @@
         "parameters": [
           {
             "name": "projectId",
-            "required": true,
+            "required": false,
             "in": "query",
             "schema": {
               "type": "number"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Narrow to sessions whose room or game name holds this",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -1746,7 +1755,7 @@
             "JWT-auth": []
           }
         ],
-        "summary": "List game sessions for a project, from the caller's perspective",
+        "summary": "List open game sessions from the caller's perspective, one game's or every game's",
         "tags": [
           "game-sessions"
         ]

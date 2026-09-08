@@ -587,6 +587,30 @@ describe("MultiplayerService", () => {
         "public-uuid"
       ]);
     });
+
+    it("asks about every game when no project is named", async () => {
+      gameSession.findMany.mockResolvedValueOnce([]);
+
+      // The search panel's LIVE NOW section is not looking at one game; it is looking for one.
+      await service.list(undefined, 99);
+
+      expect(gameSession.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { endedAt: null } })
+      );
+    });
+
+    it("matches a term against the room's name as well as the game's", async () => {
+      gameSession.findMany.mockResolvedValueOnce([]);
+
+      await service.list(undefined, 99, " arena ");
+
+      const calls = gameSession.findMany.mock.calls;
+      const where = calls[calls.length - 1]![0].where;
+      expect(where.OR).toEqual([
+        { title: { contains: "arena", mode: "insensitive" } },
+        { project: { name: { contains: "arena", mode: "insensitive" } } }
+      ]);
+    });
   });
 
   describe("joinByCode", () => {

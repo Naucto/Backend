@@ -152,10 +152,29 @@ export class MultiplayerService {
     return this._buildConnection(created, userId, "host");
   }
 
-  async list(projectId: number, userId: number): Promise<GameSessionEx[]> {
+  /**
+   * Open sessions the caller may see: one game's when a project is named, every game's otherwise.
+   *
+   * Without a project this is the lobby a search panel shows, so it takes a term and matches the
+   * room's own name as well as the game's — people remember a session by either.
+   */
+  async list(
+    projectId: number | undefined,
+    userId: number,
+    search?: string
+  ): Promise<GameSessionEx[]> {
+    const term = search?.trim();
+    const contains = { contains: term ?? "", mode: "insensitive" } as const;
+
     const sessions = await this._prismaService.gameSession.findMany({
       include: SESSION_RELATIONS,
-      where: { projectId, endedAt: null }
+      where: {
+        endedAt: null,
+        ...(projectId === undefined ? {} : { projectId }),
+        ...(term
+          ? { OR: [{ title: contains }, { project: { name: contains } }] }
+          : {})
+      }
     });
 
     const visible: GameSessionEx[] = [];
