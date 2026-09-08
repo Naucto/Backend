@@ -239,6 +239,28 @@ export class ProjectService {
     );
   }
 
+  /**
+   * Where a search term is looked for: the two names, the two descriptions, the creator, and an
+   * exact tag.
+   *
+   * A tag matches whole or not at all — Prisma compares array members, it cannot look inside one —
+   * so a partial tag is the tag catalogue's job, not this one's.
+   */
+  private searchClauses(term: string): Prisma.ProjectWhereInput[] {
+    const contains = { contains: term, mode: "insensitive" } as const;
+
+    return [
+      { publishedName: contains },
+      { name: contains },
+      { publishedShortDesc: contains },
+      { shortDesc: contains },
+      { publishedTags: { hasSome: [term, term.toLowerCase()] } },
+      { tags: { hasSome: [term, term.toLowerCase()] } },
+      { creator: { username: contains } },
+      { creator: { nickname: contains } }
+    ];
+  }
+
   private buildPublishedGamesWhere(
     filters: PublishedProjectFilters = {}
   ): Prisma.ProjectWhereInput {
@@ -265,22 +287,7 @@ export class ProjectService {
     }
 
     if (normalizedSearch) {
-      andClauses.push({
-        OR: [
-          {
-            publishedName: {
-              contains: normalizedSearch,
-              mode: "insensitive"
-            }
-          },
-          {
-            name: {
-              contains: normalizedSearch,
-              mode: "insensitive"
-            }
-          }
-        ]
-      });
+      andClauses.push({ OR: this.searchClauses(normalizedSearch) });
     }
 
     if (normalizedTags.length > 0) {

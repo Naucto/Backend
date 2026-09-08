@@ -877,6 +877,28 @@ describe("ProjectService", () => {
         expect.objectContaining({ where })
       );
     });
+
+    it("should look for a search term beyond the game's name", async () => {
+      prismaMock.project.count.mockResolvedValue(0);
+      prismaMock.project.findMany.mockResolvedValue([]);
+
+      await service.fetchPublishedGamesPaginated(1, 10, { search: "snake" });
+
+      const where = prismaMock.project.count.mock.calls[0]![0]!.where as {
+        AND: { OR?: unknown[] }[];
+      };
+      const or = where.AND.find((clause) => clause.OR)!.OR!;
+
+      // Someone typing a word remembers it from anywhere it was shown — the blurb under a game,
+      // the tag on its card, the person who made it. Matching the title alone answers for none.
+      expect(or).toEqual(
+        expect.arrayContaining([
+          { publishedShortDesc: { contains: "snake", mode: "insensitive" } },
+          { publishedTags: { hasSome: ["snake", "snake"] } },
+          { creator: { username: { contains: "snake", mode: "insensitive" } } }
+        ])
+      );
+    });
   });
 
   describe("deleteVersion", () => {
