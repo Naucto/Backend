@@ -5559,6 +5559,10 @@
             "type": "string",
             "description": "Display nickname of the host, if set"
           },
+          "projectId": {
+            "type": "number",
+            "description": "ID of the game (project) being played"
+          },
           "projectName": {
             "type": "string",
             "description": "Name of the game (project) being played"
@@ -5578,6 +5582,7 @@
           "visibility",
           "hostId",
           "hostUsername",
+          "projectId",
           "projectName",
           "maxPlayers",
           "playerCount"

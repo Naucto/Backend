@@ -296,6 +296,7 @@ export class MultiplayerController {
     if (session.host.nickname) {
       dto.hostNickname = session.host.nickname;
     }
+    dto.projectId = session.projectId;
     dto.projectName = session.project.name;
     dto.maxPlayers = session.maxPlayers;
     // Prefer the live connected count (includes editor self-joins); fall back to
