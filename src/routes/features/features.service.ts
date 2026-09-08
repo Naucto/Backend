@@ -4,10 +4,8 @@ import * as path from "path";
 import { FeaturesResponseDto } from "./dto/features.dto";
 
 /**
- * What a deployment is showing.
- *
- * Every flag is off unless the config says otherwise: a deployment whose file is missing, or whose
- * file has never heard of a flag added since, shows nothing new rather than something half built.
+ * Each flag is taken one key at a time and falls back to off, rather than the parsed object being
+ * used as the answer: a config written before a flag existed must not be read as turning it on.
  */
 @Injectable()
 export class FeaturesService implements OnModuleInit {
