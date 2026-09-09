@@ -3,7 +3,11 @@ import { WebRTCOfferDto, WebRTCOfferPeerICEServerConfig } from "./webrtc.dto";
 import { IsArray, IsInt, IsOptional, IsString, IsUrl, validateSync } from "class-validator";
 import { plainToInstance } from "class-transformer";
 import { WebRTCServiceOfferError } from "./webrtc.error";
-import { WebRTCServer } from "@webrtc/server/webrtc.server";
+import {
+  WEBRTC_SERVER_NAMES,
+  WebRTCServer,
+  type WebRTCServerName
+} from "@webrtc/server/webrtc.server";
 import { WebRTCServerRuntimeError } from "@webrtc/server/webrtc.server.error";
 
 import path from "path";
@@ -76,11 +80,32 @@ export class WebRTCService implements OnModuleInit {
     if (this._started) server.listen();
   }
 
-  public allocatePort(): number {
-    if (this._nextPort === undefined) {
-      const base = Number(this._configService.get<string>("BACKEND_WEBRTC_PORT_BASE"));
-      this._nextPort = Number.isInteger(base) && base > 0 ? base : 10000;
+  private portBase(): number {
+    const base = Number(this._configService.get<string>("BACKEND_WEBRTC_PORT_BASE"));
+
+    return Number.isInteger(base) && base > 0 ? base : 10000;
+  }
+
+  /**
+   * The port a named server binds, fixed by its name rather than by when it was built.
+   *
+   * A deployment maps one domain per name onto one port each, and that map is written by hand
+   * outside this repository — so which port a name answers on is a contract, not an implementation
+   * detail. Handing ports out in the order Nest happens to construct the servers made it luck:
+   * theta ended up serving notifications on the game name's port and the pairing socket on the
+   * user name's, so every client was sent to the wrong server by a URL that named the right one.
+   *
+   * WEBRTC_SERVER_NAMES is declared in the deployment's own order, so its index is the offset.
+   */
+  public allocatePort(name?: WebRTCServerName): number {
+    const names = Object.values(WEBRTC_SERVER_NAMES);
+
+    if (name !== undefined) {
+      return this.portBase() + names.indexOf(name);
     }
+
+    // Ad-hoc servers have no name and so no domain; they take what is left above the named block.
+    this._nextPort ??= this.portBase() + names.length;
 
     return this._nextPort++;
   }

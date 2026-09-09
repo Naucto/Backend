@@ -1,6 +1,7 @@
 import { ConfigService } from "@nestjs/config";
 import { WebRTCService } from "./webrtc.service";
 import { WebRTCServerRuntimeError } from "./server/webrtc.server.error";
+import { WEBRTC_SERVER_NAMES } from "./server/webrtc.server";
 
 describe("WebRTCService.buildSignalingUrl", () => {
   const collab = { name: "collab" as const, port: 10000 };
@@ -70,5 +71,44 @@ describe("WebRTCService.buildSignalingUrl", () => {
     expect(() => service.buildSignalingUrl("relay.example.org")).toThrow(
       WebRTCServerRuntimeError
     );
+  });
+});
+
+/**
+ * A deployment maps one domain per name onto one port each, by hand and outside this repository.
+ * Which port a name answers on is therefore a contract: pinned here so a reordering of the DI
+ * graph cannot silently send every client to the wrong server behind a URL naming the right one.
+ */
+describe("WebRTCService.allocatePort", () => {
+  const createService = (base?: string): WebRTCService => {
+    const configService = {
+      get: jest.fn((key: string) => (key === "BACKEND_WEBRTC_PORT_BASE" ? base : undefined))
+    } as unknown as ConfigService;
+
+    return new WebRTCService(configService);
+  };
+
+  it("gives a named server the port its name sits at, whatever order it is asked in", () => {
+    const service = createService("10010");
+
+    expect(service.allocatePort("user")).toBe(10012);
+    expect(service.allocatePort("collab")).toBe(10010);
+    expect(service.allocatePort("game")).toBe(10011);
+    // Asking twice is the same answer: the port belongs to the name, not to the call.
+    expect(service.allocatePort("user")).toBe(10012);
+  });
+
+  it("keeps unnamed servers off every named port", () => {
+    const service = createService("10010");
+    const named = Object.values(WEBRTC_SERVER_NAMES).map((n) => service.allocatePort(n));
+
+    expect(service.allocatePort()).toBe(10010 + named.length);
+    expect(service.allocatePort()).toBe(10011 + named.length);
+    expect(named).not.toContain(10010 + named.length);
+  });
+
+  it("falls back to 10000 when the base is unset or nonsense", () => {
+    expect(createService(undefined).allocatePort("collab")).toBe(10000);
+    expect(createService("not-a-port").allocatePort("collab")).toBe(10000);
   });
 });

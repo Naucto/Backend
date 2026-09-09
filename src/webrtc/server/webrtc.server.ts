@@ -217,7 +217,7 @@ export class WebRTCServer<
     if (extraOpts.port !== undefined) {
       this._port = extraOpts.port;
     } else {
-      this._port = webrtcService.allocatePort();
+      this._port = webrtcService.allocatePort(extraOpts.name);
     }
 
     extraOpts.port = this._port;
