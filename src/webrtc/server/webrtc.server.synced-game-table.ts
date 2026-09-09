@@ -216,7 +216,12 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
 
       if (existingSlave && existingSlave !== socket) {
         existingSlave.close();
-      } else if (room.host) {
+      }
+
+      // Told on every accepted socket, a reconnection included: this is the host's only word that
+      // a player is there, and a socket that drops and comes back used to replace the old one in
+      // silence. The host went on trading signals with a player its game had never heard of.
+      if (room.host) {
         this.send(room.host, {
           type: SyncedGameTableControlType.PEER_JOINED,
           userId: socket.userId
