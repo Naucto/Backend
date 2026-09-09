@@ -14,6 +14,8 @@ import {
   RemoveCollaboratorDto
 } from "./dto/collaborator-project.dto";
 import { S3Service } from "@s3/s3.service";
+import { ModuleRef } from "@nestjs/core";
+import { NotificationsService } from "src/notifications/notifications.service";
 import { Prisma, Project, User } from "@prisma/client";
 import { ConfigService } from "@nestjs/config";
 import { DownloadedFile } from "@s3/s3.interface";
@@ -145,7 +147,8 @@ export class ProjectService {
   constructor(
     @Inject(ConfigService) configService: ConfigService,
     private prisma: PrismaService,
-    private readonly s3Service: S3Service
+    private readonly s3Service: S3Service,
+    private readonly moduleRef: ModuleRef
   ) {
     this.max_history_version =
       configService.get<number>("S3_MAX_AUTO_HISTORY_VERSION") ?? 10;
@@ -590,7 +593,7 @@ export class ProjectService {
       );
     }
 
-    return this.prisma.project.update({
+    const updated = await this.prisma.project.update({
       where: { id },
       data: {
         collaborators: { connect: { id: user.id } }
@@ -604,6 +607,28 @@ export class ProjectService {
         }
       }
     });
+
+    // Being given a project is the one collaboration event the invitee has no other way to learn
+    // about: nothing tells them, and the project simply appears in their list at the next reload.
+    // The id is what turns the notification into a way in.
+    //
+    // Resolved from the graph rather than imported: notifications reach auth for the JWT their
+    // socket checks, auth reaches users, and users reach projects. Importing the module here
+    // closes that ring at the ES level, where forwardRef cannot help -- a module in the ring is
+    // still undefined when the one before it is decorated.
+    const notifications = this.moduleRef.get(NotificationsService, {
+      strict: false
+    });
+    await notifications.createNotification({
+      userId: user.id,
+      title: updated.name,
+      message: `${project.creator.username} added you to ${updated.name}`,
+      type: "INFO",
+      kind: "COLLABORATOR_ADDED",
+      data: { projectId: updated.id }
+    });
+
+    return updated;
   }
 
   async removeCollaborator(

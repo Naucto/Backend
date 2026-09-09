@@ -3,6 +3,7 @@ import { ProjectService } from "./project.service";
 import { S3Service } from "@s3/s3.service";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { ConfigService } from "@nestjs/config";
+import { NotificationsService } from "src/notifications/notifications.service";
 import {
   BadRequestException,
   ForbiddenException,
@@ -152,6 +153,10 @@ describe("ProjectService", () => {
     setObjectPublicRead: jest.fn()
   };
 
+  const notificationsMock = {
+    createNotification: jest.fn()
+  };
+
   const configServiceMock = {
     get: jest.fn((key: string) => {
       if (key === "S3_MAX_AUTO_HISTORY_VERSION") return "5";
@@ -176,6 +181,10 @@ describe("ProjectService", () => {
         {
           provide: ConfigService,
           useValue: configServiceMock
+        },
+        {
+          provide: NotificationsService,
+          useValue: notificationsMock
         }
       ]
     }).compile();
@@ -599,6 +608,15 @@ describe("ProjectService", () => {
       prismaMock.project.update.mockResolvedValue(mockProjects[0]);
 
       const result = await service.addCollaborator(1, addDto);
+
+      // Nothing else tells the invitee they were added; the project simply turns up in their list.
+      expect(notificationsMock.createNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: addDto.userId,
+          kind: "COLLABORATOR_ADDED",
+          data: { projectId: mockProjects[0]!.id }
+        })
+      );
 
       expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
         where: { id: addDto.userId }
