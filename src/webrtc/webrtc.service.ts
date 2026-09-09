@@ -89,13 +89,13 @@ export class WebRTCService implements OnModuleInit {
   /**
    * The port a named server binds, fixed by its name rather than by when it was built.
    *
-   * A deployment maps one domain per name onto one port each, and that map is written by hand
-   * outside this repository — so which port a name answers on is a contract, not an implementation
-   * detail. Handing ports out in the order Nest happens to construct the servers made it luck:
-   * theta ended up serving notifications on the game name's port and the pairing socket on the
-   * user name's, so every client was sent to the wrong server by a URL that named the right one.
+   * A deployment maps one domain per name onto one port each, by hand and outside this repository,
+   * so which port a name answers on is a contract. Handing ports out in construction order leaves
+   * that contract to whatever order the DI graph resolves in, and a client then reaches the wrong
+   * server through a URL that names the right one.
    *
-   * WEBRTC_SERVER_NAMES is declared in the deployment's own order, so its index is the offset.
+   * The offset is the name's index in WEBRTC_SERVER_NAMES, which is therefore declared in the
+   * order the deployment maps and may not be reordered.
    */
   public allocatePort(name?: WebRTCServerName): number {
     const names = Object.values(WEBRTC_SERVER_NAMES);

@@ -74,11 +74,7 @@ describe("WebRTCService.buildSignalingUrl", () => {
   });
 });
 
-/**
- * A deployment maps one domain per name onto one port each, by hand and outside this repository.
- * Which port a name answers on is therefore a contract: pinned here so a reordering of the DI
- * graph cannot silently send every client to the wrong server behind a URL naming the right one.
- */
+/** Pinned because a deployment maps a name to a port outside this repository. */
 describe("WebRTCService.allocatePort", () => {
   const createService = (base?: string): WebRTCService => {
     const configService = {
