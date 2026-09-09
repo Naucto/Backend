@@ -525,7 +525,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProjectResponseDto"
+                  "$ref": "#/components/schemas/ProjectExResponseDto"
                 }
               }
             }
@@ -4754,6 +4754,127 @@
           "maxBlobBytes"
         ]
       },
+      "ContentSizeBreakdownDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "number",
+            "example": 2048,
+            "description": "UTF-8 bytes of Lua source"
+          },
+          "sprites": {
+            "type": "number",
+            "example": 512,
+            "description": "Painted sprite-sheet pixels"
+          },
+          "flags": {
+            "type": "number",
+            "example": 4,
+            "description": "Sprites with at least one flag set"
+          },
+          "map": {
+            "type": "number",
+            "example": 300,
+            "description": "Map tiles set"
+          },
+          "sound": {
+            "type": "number",
+            "example": 1024,
+            "description": "UTF-8 bytes of instruments, patterns, songs, sfx and samples"
+          },
+          "palette": {
+            "type": "number",
+            "example": 112,
+            "description": "Bytes of the colour palette"
+          },
+          "total": {
+            "type": "number",
+            "example": 4000,
+            "description": "Sum of every category"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "example": 1,
+            "description": "Game document schema version (0 = legacy document)"
+          }
+        },
+        "required": [
+          "code",
+          "sprites",
+          "flags",
+          "map",
+          "sound",
+          "palette",
+          "total",
+          "schemaVersion"
+        ]
+      },
+      "ProjectSizeDto": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "number",
+            "example": 1,
+            "description": "Project ID"
+          },
+          "contentSize": {
+            "$ref": "#/components/schemas/ContentSizeBreakdownDto"
+          },
+          "maxContentBytes": {
+            "type": "number",
+            "example": 1048576,
+            "description": "Maximum logical content size (bytes) a game can be published at"
+          },
+          "withinBudget": {
+            "type": "boolean",
+            "example": true,
+            "description": "Whether the project fits within the publishing budget"
+          }
+        },
+        "required": [
+          "projectId",
+          "contentSize",
+          "maxContentBytes",
+          "withinBudget"
+        ]
+      },
+      "CreateProjectDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The name of the project",
+            "example": "MySuperVideoGame",
+            "maxLength": 25
+          },
+          "shortDesc": {
+            "type": "string",
+            "description": "A short description of the project",
+            "example": "A 2D platformer game with pixel art graphics",
+            "maxLength": 50
+          },
+          "iconUrl": {
+            "type": "string",
+            "description": "URL to the project icon",
+            "example": "https://example.com/icons/MySuperVideoGame.png"
+          },
+          "tags": {
+            "description": "Tags attached to the project",
+            "example": [
+              "Shooter",
+              "Action"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "shortDesc"
+        ]
+      },
       "ProjectResponseDto": {
         "type": "object",
         "properties": {
@@ -4912,127 +5033,6 @@
           "uniquePlayers",
           "activePlayers",
           "likes"
-        ]
-      },
-      "ContentSizeBreakdownDto": {
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "number",
-            "example": 2048,
-            "description": "UTF-8 bytes of Lua source"
-          },
-          "sprites": {
-            "type": "number",
-            "example": 512,
-            "description": "Painted sprite-sheet pixels"
-          },
-          "flags": {
-            "type": "number",
-            "example": 4,
-            "description": "Sprites with at least one flag set"
-          },
-          "map": {
-            "type": "number",
-            "example": 300,
-            "description": "Map tiles set"
-          },
-          "sound": {
-            "type": "number",
-            "example": 1024,
-            "description": "UTF-8 bytes of instruments, patterns, songs, sfx and samples"
-          },
-          "palette": {
-            "type": "number",
-            "example": 112,
-            "description": "Bytes of the colour palette"
-          },
-          "total": {
-            "type": "number",
-            "example": 4000,
-            "description": "Sum of every category"
-          },
-          "schemaVersion": {
-            "type": "number",
-            "example": 1,
-            "description": "Game document schema version (0 = legacy document)"
-          }
-        },
-        "required": [
-          "code",
-          "sprites",
-          "flags",
-          "map",
-          "sound",
-          "palette",
-          "total",
-          "schemaVersion"
-        ]
-      },
-      "ProjectSizeDto": {
-        "type": "object",
-        "properties": {
-          "projectId": {
-            "type": "number",
-            "example": 1,
-            "description": "Project ID"
-          },
-          "contentSize": {
-            "$ref": "#/components/schemas/ContentSizeBreakdownDto"
-          },
-          "maxContentBytes": {
-            "type": "number",
-            "example": 1048576,
-            "description": "Maximum logical content size (bytes) a game can be published at"
-          },
-          "withinBudget": {
-            "type": "boolean",
-            "example": true,
-            "description": "Whether the project fits within the publishing budget"
-          }
-        },
-        "required": [
-          "projectId",
-          "contentSize",
-          "maxContentBytes",
-          "withinBudget"
-        ]
-      },
-      "CreateProjectDto": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "description": "The name of the project",
-            "example": "MySuperVideoGame",
-            "maxLength": 25
-          },
-          "shortDesc": {
-            "type": "string",
-            "description": "A short description of the project",
-            "example": "A 2D platformer game with pixel art graphics",
-            "maxLength": 50
-          },
-          "iconUrl": {
-            "type": "string",
-            "description": "URL to the project icon",
-            "example": "https://example.com/icons/MySuperVideoGame.png"
-          },
-          "tags": {
-            "description": "Tags attached to the project",
-            "example": [
-              "Shooter",
-              "Action"
-            ],
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "name",
-          "shortDesc"
         ]
       },
       "ForkProjectResponseDto": {
