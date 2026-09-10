@@ -498,19 +498,19 @@ export class ProjectService {
   async remove(id: number): Promise<void> {
     await this.findOne(id);
 
-    // The sessions go first: their foreign keys are ON DELETE RESTRICT, and opening the editor
-    // always creates a work session -- so whoever presses delete is sitting in the row that blocks
-    // it, and every attempt came back a bare 500. One transaction with the project itself, so a
-    // project is never left without the sessions that pointed at it.
+    // The sessions go first, in the same transaction as the project. Both session tables point at
+    // a project with ON DELETE RESTRICT, and opening the editor always creates a work session --
+    // so whoever asks for the delete is sitting in the row that would refuse it. Together, because
+    // a project must never be left without the sessions that pointed at it.
     await this.prisma.$transaction([
       this.prisma.gameSession.deleteMany({ where: { projectId: id } }),
       this.prisma.workSession.deleteMany({ where: { projectId: id } }),
       this.prisma.project.delete({ where: { id } })
     ]);
 
-    // Only once the row is gone, and never fatally. This ran first and threw on failure, so every
-    // one of those failed deletes took the game's release, checkpoints and saves with it and left
-    // the project standing. A blob nobody points at any more is recoverable; a game is not.
+    // Only once the row is gone, and never fatally: content dropped ahead of a delete that then
+    // fails is content lost for nothing. A blob nobody points at any more is recoverable; a game
+    // is not.
     await this.removeStoredContent(id);
   }
 

@@ -519,8 +519,8 @@ describe("ProjectService", () => {
 
       await service.remove(projectId);
 
-      // Both session tables point at the project with ON DELETE RESTRICT, so they have to go in
-      // the same transaction as the row itself or the delete cannot happen at all.
+      // Asserted because the foreign keys refuse the delete outright while a session still points
+      // at the project.
       expect(prismaMock.gameSession.deleteMany).toHaveBeenCalledWith({
         where: { projectId }
       });
@@ -532,8 +532,8 @@ describe("ProjectService", () => {
         where: { id: projectId }
       });
 
-      // And the content goes after the row, never before: this order is what keeps a failed delete
-      // from taking the game's release with it.
+      // The order is the load-bearing part: content dropped before the row would be lost to a
+      // delete that then fails.
       expect(prismaMock.project.delete.mock.invocationCallOrder[0]).toBeLessThan(
         s3ServiceMock.deleteFile.mock.invocationCallOrder[0]!
       );
