@@ -35,6 +35,12 @@ class WebRTCServiceConfig {
 @Injectable()
 export class WebRTCService implements OnModuleInit {
   private static DEV_HOSTNAME = "localhost";
+  /**
+   * Browsers warn past four ICE servers and gather candidates more slowly with each one,
+   * and a relay that is never the one that answers has cost the connection its setup for
+   * nothing. Three is a STUN plus two ways round a symmetric NAT.
+   */
+  private static MAX_ICE_SERVERS = 3;
 
   private readonly _logger = new Logger(WebRTCService.name);
   private _started = false;
@@ -42,6 +48,7 @@ export class WebRTCService implements OnModuleInit {
   private readonly _hookedServers = new Set<WebRTCServer>();
 
   private _config?: WebRTCServiceConfig;
+  private _relayCursor = 0;
   private _nextPort?: number;
   private _publicUrlTemplate?: string | undefined;
   public _publicAddress?: string | undefined;
@@ -221,6 +228,22 @@ export class WebRTCService implements OnModuleInit {
     return targetServer;
   }
 
+  /**
+   * Which relays this offer carries, out of everything the file lists.
+   *
+   * The file stays the full inventory; an offer is a choice from it. STUN goes first because it is
+   * the cheap path and costs a session nothing when the direct connection works, and the TURN
+   * entries rotate from one offer to the next so the same relay does not carry every session.
+   */
+  private pickRelays(relays: readonly WebRTCServiceConfigRelay[]): WebRTCServiceConfigRelay[] {
+    const stun = relays.filter(relay => !relay.username);
+    const turn = relays.filter(relay => relay.username);
+    const start = turn.length ? this._relayCursor++ % turn.length : 0;
+
+    return [ ...stun, ...turn.slice(start), ...turn.slice(0, start) ]
+      .slice(0, WebRTCService.MAX_ICE_SERVERS);
+  }
+
   // targetServer can be either a concrete WebRTCServer or a URL to that server
   public buildOffer(targetServer: WebRTCServer | string): WebRTCOfferDto {
     if (!this._config) {
@@ -237,7 +260,7 @@ export class WebRTCService implements OnModuleInit {
     offerDto.maxConns = this._config.maxClients;
     offerDto.peerOpts = {
       config: {
-        iceServers: this._config.relays.map(
+        iceServers: this.pickRelays(this._config.relays).map(
           relay => {
             const relayConfig: WebRTCOfferPeerICEServerConfig = {
               urls: relay.url,
