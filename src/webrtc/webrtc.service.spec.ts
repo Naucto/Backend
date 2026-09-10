@@ -5,7 +5,6 @@ import { WEBRTC_SERVER_NAMES } from "./server/webrtc.server";
 import { TurnCredentialsService } from "./turn-credentials.service";
 import { WebRTCOfferPeerICEServerConfig } from "./webrtc.dto";
 
-/** Stands in for the minting service, holding whatever a test wants it to hold -- nothing, by default. */
 const stubCredentials = (
   current: WebRTCOfferPeerICEServerConfig[] | undefined = undefined
 ): TurnCredentialsService => ({ current: () => current }) as unknown as TurnCredentialsService;
@@ -116,10 +115,6 @@ describe("WebRTCService.allocatePort", () => {
   });
 });
 
-/**
- * An offer is what a client actually receives, and it had no test at all. Both branches matter:
- * the configured inventory is the fallback the deployment still leans on.
- */
 describe("WebRTCService.buildOffer", () => {
   const createService = async (
     credentials: TurnCredentialsService
@@ -129,7 +124,7 @@ describe("WebRTCService.buildOffer", () => {
     } as unknown as ConfigService;
     const service = new WebRTCService(configService, credentials);
     service._publicAddress = "localhost";
-    // Reads the committed config/webrtc.json, which is what production decodes into place too.
+    // Reads the committed relay file -- the same one a deployment decodes into place.
     await service.loadConfig();
 
     return service;
@@ -148,7 +143,6 @@ describe("WebRTCService.buildOffer", () => {
       expect(Array.isArray(server.urls)).toBe(true);
       expect(server.urls).toHaveLength(1);
     }
-    // STUN leads: it is the cheap path, and it costs a direct connection nothing.
     expect(iceServers[0]?.urls[0]).toMatch(/^stun:/);
   });
 
@@ -167,7 +161,7 @@ describe("WebRTCService.buildOffer", () => {
     ];
     const service = await createService(stubCredentials(minted));
 
-    // One server, four transports -- not four servers, and not three of them.
+    // One server carrying four transports: not four servers, and so not three of them either.
     expect(iceServersOf(service)).toEqual(minted);
   });
 

@@ -141,10 +141,7 @@ export class WebRTCService implements OnModuleInit {
     );
   }
 
-  /**
-   * Public for the same reason loadPublicUrlTemplate is: a test builds this service without the
-   * module that would have called onModuleInit, and an offer is not testable without its relays.
-   */
+  /** Public for the same reason loadPublicUrlTemplate is: a test builds this service by hand. */
   public async loadConfig(): Promise<void> {
     const configPath = path.resolve(process.cwd(), "config", "webrtc.json");
 
@@ -265,7 +262,7 @@ export class WebRTCService implements OnModuleInit {
 
     offerDto.maxConns = this._config.maxClients;
     // Minted credentials are one relay reached several ways, not an inventory to choose from, so
-    // they bypass pickRelays and go out whole. The file is the fallback, and stays the inventory.
+    // they go out whole. The file is the fallback, and it is the inventory pickRelays exists for.
     const iceServers = this._turnCredentials.current() ?? this.pickRelays(this._config.relays).map(
       relay => {
         const relayConfig: WebRTCOfferPeerICEServerConfig = {

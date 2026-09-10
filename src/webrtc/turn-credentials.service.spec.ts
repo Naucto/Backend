@@ -28,8 +28,8 @@ const ONE_SERVER_FOUR_TRANSPORTS = {
 describe("TurnCredentialsService", () => {
   const originalFetch = global.fetch;
 
-  // Not decorative: jest.setup.ts loads the real .env, so a test that forgot to replace fetch
-  // would spend a developer's own credentials against the live provider.
+  // The test setup loads the real .env, so a case that forgot to replace fetch would spend a
+  // developer's own credentials against the live provider.
   afterEach(() => {
     global.fetch = originalFetch;
   });
