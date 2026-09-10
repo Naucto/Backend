@@ -141,25 +141,33 @@ export class WebRTCService implements OnModuleInit {
     );
   }
 
-  /** Public for the same reason loadPublicUrlTemplate is: a test builds this service by hand. */
-  public async loadConfig(): Promise<void> {
+  /**
+   * Takes a relay inventory, whatever read it. Public because the file is not in the repository --
+   * it holds credentials -- so a test has to hand its own inventory over instead.
+   */
+  public applyConfig(raw: unknown, source: string): boolean {
+    const configInstance = plainToInstance(WebRTCServiceConfig, raw);
+    const configErrors = validateSync(configInstance, { whitelist: true, forbidNonWhitelisted: true });
+
+    if (configErrors.length > 0) {
+      this._logger.error(`Invalid WebRTC service config in ${source}`);
+      this._logger.error(JSON.stringify(configErrors));
+      return false;
+    }
+
+    this._config = configInstance;
+    this._logger.log(`WebRTC service config loaded successfully from ${source}`);
+
+    return true;
+  }
+
+  private async loadConfig(): Promise<void> {
     const configPath = path.resolve(process.cwd(), "config", "webrtc.json");
 
     try {
       const rawFile = await fs.readFile(configPath, "utf-8");
-      const parsedRawObject = JSON.parse(rawFile);
 
-      const configInstance = plainToInstance(WebRTCServiceConfig, parsedRawObject);
-      const configErrors = validateSync(configInstance, { whitelist: true, forbidNonWhitelisted: true });
-
-      if (configErrors.length > 0) {
-        this._logger.error(`Invalid WebRTC service config in ${configPath}`);
-        this._logger.error(JSON.stringify(configErrors));
-        return;
-      }
-
-      this._config = configInstance;
-      this._logger.log(`WebRTC service config loaded successfully from ${configPath}`);
+      this.applyConfig(JSON.parse(rawFile), configPath);
     } catch (err) {
       if (err instanceof Error) {
         this._logger.error(`Failed to read WebRTC service config from ${configPath}: ${err.message}`);

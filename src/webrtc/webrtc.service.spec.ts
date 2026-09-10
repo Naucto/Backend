@@ -116,16 +116,28 @@ describe("WebRTCService.allocatePort", () => {
 });
 
 describe("WebRTCService.buildOffer", () => {
-  const createService = async (
-    credentials: TurnCredentialsService
-  ): Promise<WebRTCService> => {
+  /**
+   * The shape a deployment's relay file has: one STUN, then TURN entries sharing credentials.
+   * Written out here because that file holds credentials and is not in the repository, so a test
+   * that read it would pass on a developer's machine and fail everywhere else.
+   */
+  const RELAY_FILE = {
+    maxClients: 50,
+    relays: [
+      { url: "stun:stun.example.net:80" },
+      { url: "turn:relay.example.net:80", username: "u", credential: "c" },
+      { url: "turn:relay.example.net:443", username: "u", credential: "c" },
+      { url: "turns:relay.example.net:443?transport=tcp", username: "u", credential: "c" }
+    ]
+  };
+
+  const createService = (credentials: TurnCredentialsService): WebRTCService => {
     const configService = {
       get: jest.fn(() => undefined)
     } as unknown as ConfigService;
     const service = new WebRTCService(configService, credentials);
     service._publicAddress = "localhost";
-    // Reads the committed relay file -- the same one a deployment decodes into place.
-    await service.loadConfig();
+    expect(service.applyConfig(RELAY_FILE, "test")).toBe(true);
 
     return service;
   };
@@ -133,8 +145,8 @@ describe("WebRTCService.buildOffer", () => {
   const iceServersOf = (service: WebRTCService): WebRTCOfferPeerICEServerConfig[] =>
     service.buildOffer("ws://localhost:10000").peerOpts.config.iceServers;
 
-  it("wraps each configured relay's single URL in a list", async () => {
-    const service = await createService(stubCredentials());
+  it("wraps each configured relay's single URL in a list", () => {
+    const service = createService(stubCredentials());
 
     const iceServers = iceServersOf(service);
 
@@ -146,7 +158,7 @@ describe("WebRTCService.buildOffer", () => {
     expect(iceServers[0]?.urls[0]).toMatch(/^stun:/);
   });
 
-  it("hands out minted credentials whole, without running them through pickRelays", async () => {
+  it("hands out minted credentials whole, without running them through pickRelays", () => {
     const minted: WebRTCOfferPeerICEServerConfig[] = [
       {
         urls: [
@@ -159,15 +171,15 @@ describe("WebRTCService.buildOffer", () => {
         credential: "minted-secret"
       }
     ];
-    const service = await createService(stubCredentials(minted));
+    const service = createService(stubCredentials(minted));
 
     // One server carrying four transports: not four servers, and so not three of them either.
     expect(iceServersOf(service)).toEqual(minted);
   });
 
-  it("still takes maxConns from the file when credentials are minted", async () => {
-    const withMinted = await createService(stubCredentials([ { urls: [ "turn:x:1" ] } ]));
-    const withoutMinted = await createService(stubCredentials());
+  it("still takes maxConns from the file when credentials are minted", () => {
+    const withMinted = createService(stubCredentials([ { urls: [ "turn:x:1" ] } ]));
+    const withoutMinted = createService(stubCredentials());
 
     expect(withMinted.buildOffer("ws://localhost:10000").maxConns).toBe(
       withoutMinted.buildOffer("ws://localhost:10000").maxConns
