@@ -2,6 +2,13 @@ import { ConfigService } from "@nestjs/config";
 import { WebRTCService } from "./webrtc.service";
 import { WebRTCServerRuntimeError } from "./server/webrtc.server.error";
 import { WEBRTC_SERVER_NAMES } from "./server/webrtc.server";
+import { TurnCredentialsService } from "./turn-credentials.service";
+import { WebRTCOfferPeerICEServerConfig } from "./webrtc.dto";
+
+/** Stands in for the minting service, holding whatever a test wants it to hold -- nothing, by default. */
+const stubCredentials = (
+  current: WebRTCOfferPeerICEServerConfig[] | undefined = undefined
+): TurnCredentialsService => ({ current: () => current }) as unknown as TurnCredentialsService;
 
 describe("WebRTCService.buildSignalingUrl", () => {
   const collab = { name: "collab" as const, port: 10000 };
@@ -11,7 +18,7 @@ describe("WebRTCService.buildSignalingUrl", () => {
     const configService = {
       get: jest.fn((key: string) => env[key])
     } as unknown as ConfigService;
-    const service = new WebRTCService(configService);
+    const service = new WebRTCService(configService, stubCredentials());
     service._publicAddress = env["BACKEND_WEBRTC_HOSTNAME"] ?? "localhost";
     service.loadPublicUrlTemplate(env["BACKEND_WEBRTC_PUBLIC_URL_TEMPLATE"]);
     return service;
@@ -81,7 +88,7 @@ describe("WebRTCService.allocatePort", () => {
       get: jest.fn((key: string) => (key === "BACKEND_WEBRTC_PORT_BASE" ? base : undefined))
     } as unknown as ConfigService;
 
-    return new WebRTCService(configService);
+    return new WebRTCService(configService, stubCredentials());
   };
 
   it("gives a named server the port its name sits at, whatever order it is asked in", () => {
@@ -106,5 +113,70 @@ describe("WebRTCService.allocatePort", () => {
   it("falls back to 10000 when the base is unset or nonsense", () => {
     expect(createService(undefined).allocatePort("collab")).toBe(10000);
     expect(createService("not-a-port").allocatePort("collab")).toBe(10000);
+  });
+});
+
+/**
+ * An offer is what a client actually receives, and it had no test at all. Both branches matter:
+ * the configured inventory is the fallback the deployment still leans on.
+ */
+describe("WebRTCService.buildOffer", () => {
+  const createService = async (
+    credentials: TurnCredentialsService
+  ): Promise<WebRTCService> => {
+    const configService = {
+      get: jest.fn(() => undefined)
+    } as unknown as ConfigService;
+    const service = new WebRTCService(configService, credentials);
+    service._publicAddress = "localhost";
+    // Reads the committed config/webrtc.json, which is what production decodes into place too.
+    await service.loadConfig();
+
+    return service;
+  };
+
+  const iceServersOf = (service: WebRTCService): WebRTCOfferPeerICEServerConfig[] =>
+    service.buildOffer("ws://localhost:10000").peerOpts.config.iceServers;
+
+  it("wraps each configured relay's single URL in a list", async () => {
+    const service = await createService(stubCredentials());
+
+    const iceServers = iceServersOf(service);
+
+    expect(iceServers.length).toBeGreaterThan(0);
+    for (const server of iceServers) {
+      expect(Array.isArray(server.urls)).toBe(true);
+      expect(server.urls).toHaveLength(1);
+    }
+    // STUN leads: it is the cheap path, and it costs a direct connection nothing.
+    expect(iceServers[0]?.urls[0]).toMatch(/^stun:/);
+  });
+
+  it("hands out minted credentials whole, without running them through pickRelays", async () => {
+    const minted: WebRTCOfferPeerICEServerConfig[] = [
+      {
+        urls: [
+          "stun:stun.example.net:3478",
+          "turn:turn.example.net:3478?transport=udp",
+          "turn:turn.example.net:3478?transport=tcp",
+          "turns:turn.example.net:5349?transport=tcp"
+        ],
+        username: "minted-user",
+        credential: "minted-secret"
+      }
+    ];
+    const service = await createService(stubCredentials(minted));
+
+    // One server, four transports -- not four servers, and not three of them.
+    expect(iceServersOf(service)).toEqual(minted);
+  });
+
+  it("still takes maxConns from the file when credentials are minted", async () => {
+    const withMinted = await createService(stubCredentials([ { urls: [ "turn:x:1" ] } ]));
+    const withoutMinted = await createService(stubCredentials());
+
+    expect(withMinted.buildOffer("ws://localhost:10000").maxConns).toBe(
+      withoutMinted.buildOffer("ws://localhost:10000").maxConns
+    );
   });
 });

@@ -5488,7 +5488,10 @@
         "type": "object",
         "properties": {
           "urls": {
-            "type": "string"
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "username": {
             "type": "object"

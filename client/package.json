@@ -1,6 +1,6 @@
 {
   "name": "@naucto/api-client",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Typed fetch client for the Naucto backend API, generated from swagger.json with @hey-api/openapi-ts.",
   "license": "GPL-3.0",
   "repository": {

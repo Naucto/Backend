@@ -13,6 +13,7 @@ import { WebRTCServerRuntimeError } from "@webrtc/server/webrtc.server.error";
 import path from "path";
 import fs from "fs/promises";
 import { ConfigService } from "@nestjs/config";
+import { TurnCredentialsService } from "./turn-credentials.service";
 
 class WebRTCServiceConfigRelay {
   @IsUrl()
@@ -54,7 +55,8 @@ export class WebRTCService implements OnModuleInit {
   public _publicAddress?: string | undefined;
 
   constructor(
-    @Inject(ConfigService) private readonly _configService: ConfigService
+    @Inject(ConfigService) private readonly _configService: ConfigService,
+    @Inject(TurnCredentialsService) private readonly _turnCredentials: TurnCredentialsService
   )
   {}
 
@@ -139,7 +141,11 @@ export class WebRTCService implements OnModuleInit {
     );
   }
 
-  private async loadConfig(): Promise<void> {
+  /**
+   * Public for the same reason loadPublicUrlTemplate is: a test builds this service without the
+   * module that would have called onModuleInit, and an offer is not testable without its relays.
+   */
+  public async loadConfig(): Promise<void> {
     const configPath = path.resolve(process.cwd(), "config", "webrtc.json");
 
     try {
@@ -258,21 +264,21 @@ export class WebRTCService implements OnModuleInit {
     offerDto.signaling = [ signalingUrl ];
 
     offerDto.maxConns = this._config.maxClients;
-    offerDto.peerOpts = {
-      config: {
-        iceServers: this.pickRelays(this._config.relays).map(
-          relay => {
-            const relayConfig: WebRTCOfferPeerICEServerConfig = {
-              urls: relay.url,
-              username: relay.username,
-              credential: relay.credential
-            };
+    // Minted credentials are one relay reached several ways, not an inventory to choose from, so
+    // they bypass pickRelays and go out whole. The file is the fallback, and stays the inventory.
+    const iceServers = this._turnCredentials.current() ?? this.pickRelays(this._config.relays).map(
+      relay => {
+        const relayConfig: WebRTCOfferPeerICEServerConfig = {
+          urls: [ relay.url ],
+          username: relay.username,
+          credential: relay.credential
+        };
 
-            return relayConfig;
-          }
-        )
+        return relayConfig;
       }
-    };
+    );
+
+    offerDto.peerOpts = { config: { iceServers } };
 
     return offerDto;
   }
