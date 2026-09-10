@@ -154,8 +154,11 @@ export class ProjectService {
     private readonly s3Service: S3Service,
     private readonly moduleRef: ModuleRef
   ) {
+    // Four, because an author looking for a state they were in reaches for the last few and never
+    // for the tenth: the ones worth keeping past that are the ones somebody named, and a named
+    // version is a checkpoint, kept apart and never pruned.
     this.max_history_version =
-      configService.get<number>("S3_MAX_AUTO_HISTORY_VERSION") ?? 10;
+      configService.get<number>("S3_MAX_AUTO_HISTORY_VERSION") ?? 4;
     this.max_checkpoints =
       configService.get<number>("S3_MAX_CHECKPOINTS") ?? 10;
     this.auto_save_delay =
