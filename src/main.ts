@@ -11,7 +11,7 @@ import { ConfigService } from "@nestjs/config";
 import express, { Request, Response, NextFunction } from "express";
 
 import { NestFactory } from "@nestjs/core";
-import { ValidationPipe } from "@nestjs/common";
+import { ViolationValidationPipe } from "@common/pipes/violation-validation.pipe";
 
 import { setupGracefulShutdown } from "@tygra/nestjs-graceful-shutdown";
 
@@ -48,7 +48,7 @@ if (isProduction) {
   app.useLogger(["log", "error", "warn", "debug"]);
 
   app.useGlobalPipes(
-    new ValidationPipe({
+    new ViolationValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true

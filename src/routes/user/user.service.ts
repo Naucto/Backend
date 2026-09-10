@@ -12,6 +12,7 @@ import {
 import * as bcrypt from "bcryptjs";
 import { MeDto } from "./dto/me.dto";
 import { generateFriendCode, normalizeFriendCode } from "./friend-code.util";
+import { conflictViolation } from "@common/validation/violation.exception";
 
 /**
  * What anyone may see of a person. `createdAt` is here because the profile header shows the year
@@ -235,7 +236,11 @@ export class UserService {
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === "P2002"
       ) {
-        throw new ConflictException(`Handle ${data.username} is already taken`);
+        throw conflictViolation(
+          `Handle ${data.username} is already taken`,
+          "username",
+          "USERNAME_TAKEN"
+        );
       }
 
       throw error;

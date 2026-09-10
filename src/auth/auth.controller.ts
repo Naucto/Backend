@@ -1,5 +1,7 @@
 import {
   Controller,
+  Get,
+  HttpStatus,
   Post,
   Patch,
   Body,
@@ -32,6 +34,13 @@ import {
   decryptRefreshToken
 } from "./refresh-cookie.crypto";
 import { refreshCookieOptions } from "./auth.utils";
+import { PASSWORD_POLICY } from "./password-policy";
+import { PasswordPolicyDto } from "./dto/password-policy.dto";
+import { Public } from "./decorators/public.decorator";
+import {
+  ConflictErrorResponseDto,
+  ValidationErrorResponseDto
+} from "@common/validation/error-response.dto";
 
 @ApiTags("auth")
 @Controller("auth")
@@ -77,6 +86,22 @@ export class AuthController {
     return { access_token };
   }
 
+  @Public()
+  @Get("password-policy")
+  @ApiOperation({
+    summary: "The password rule this deployment enforces, so a form can enforce the same one"
+  })
+  @ApiResponse({ status: HttpStatus.OK, type: PasswordPolicyDto })
+  getPasswordPolicy(): PasswordPolicyDto {
+    return {
+      minLength: PASSWORD_POLICY.minLength,
+      minCharacterClasses: PASSWORD_POLICY.minCharacterClasses,
+      // Spread, not passed: the policy is `as const`, so its array is readonly and handing it out
+      // directly would let a caller mutate the rule this process enforces.
+      characterClasses: [ ...PASSWORD_POLICY.characterClasses ]
+    };
+  }
+
   @Post("register")
   @ApiOperation({ summary: "Register a new user and return an access token" })
   @ApiBody({ type: CreateUserDto })
@@ -89,9 +114,12 @@ export class AuthController {
       required: ["access_token"]
     }
   })
-  @ApiResponse({ status: 400, description: "Bad request" })
-  @ApiResponse({ status: 409, description: "Email already in use" })
-  @ApiResponse({ status: 403, description: "Cannot register as an admin" })
+  @ApiResponse({ status: 400, description: "Bad request", type: ValidationErrorResponseDto })
+  @ApiResponse({
+    status: 409,
+    description: "Email or username already in use",
+    type: ConflictErrorResponseDto
+  })
   async register(
     @Body() createUserDto: CreateUserDto,
     @Res({ passthrough: true }) res: Response

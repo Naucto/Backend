@@ -2959,6 +2959,28 @@
         ]
       }
     },
+    "/auth/password-policy": {
+      "get": {
+        "operationId": "AuthController_getPasswordPolicy",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordPolicyDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "The password rule this deployment enforces, so a form can enforce the same one",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/auth/register": {
       "post": {
         "operationId": "AuthController_register",
@@ -2994,13 +3016,24 @@
             }
           },
           "400": {
-            "description": "Bad request"
-          },
-          "403": {
-            "description": "Cannot register as an admin"
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponseDto"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Email already in use"
+            "description": "Email or username already in use",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictErrorResponseDto"
+                }
+              }
+            }
           }
         },
         "summary": "Register a new user and return an access token",
@@ -6367,6 +6400,42 @@
           "password"
         ]
       },
+      "PasswordPolicyDto": {
+        "type": "object",
+        "properties": {
+          "minLength": {
+            "type": "number",
+            "description": "Fewest characters a password may hold",
+            "example": 8
+          },
+          "minCharacterClasses": {
+            "type": "number",
+            "description": "How many of the character classes below a password must draw on",
+            "example": 2
+          },
+          "characterClasses": {
+            "type": "array",
+            "description": "The classes that count towards minCharacterClasses",
+            "example": [
+              "letters",
+              "digits"
+            ],
+            "items": {
+              "type": "string",
+              "enum": [
+                "letters",
+                "digits",
+                "symbols"
+              ]
+            }
+          }
+        },
+        "required": [
+          "minLength",
+          "minCharacterClasses",
+          "characterClasses"
+        ]
+      },
       "CreateUserDto": {
         "type": "object",
         "properties": {
@@ -6388,13 +6457,96 @@
           "password": {
             "type": "string",
             "description": "User password",
-            "example": "password123"
+            "example": "password123",
+            "minLength": 8
           }
         },
         "required": [
           "email",
           "username",
           "password"
+        ]
+      },
+      "ViolationDto": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string",
+            "description": "Dotted path of the rejected field, array indices included",
+            "example": "password"
+          },
+          "code": {
+            "type": "string",
+            "description": "Stable identifier for the rule it broke",
+            "example": "PASSWORD_TOO_SHORT"
+          }
+        },
+        "required": [
+          "field",
+          "code"
+        ]
+      },
+      "ValidationErrorResponseDto": {
+        "type": "object",
+        "properties": {
+          "statusCode": {
+            "type": "number",
+            "example": 400
+          },
+          "error": {
+            "type": "string",
+            "example": "Bad Request"
+          },
+          "message": {
+            "example": [
+              "Password must be at least 8 characters"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "violations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ViolationDto"
+            }
+          }
+        },
+        "required": [
+          "statusCode",
+          "error",
+          "message",
+          "violations"
+        ]
+      },
+      "ConflictErrorResponseDto": {
+        "type": "object",
+        "properties": {
+          "statusCode": {
+            "type": "number",
+            "example": 409
+          },
+          "error": {
+            "type": "string",
+            "example": "Conflict"
+          },
+          "message": {
+            "type": "string",
+            "example": "Email already in use"
+          },
+          "violations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ViolationDto"
+            }
+          }
+        },
+        "required": [
+          "statusCode",
+          "error",
+          "message",
+          "violations"
         ]
       },
       "GoogleCodeDto": {
@@ -6450,7 +6602,7 @@
           "newPassword": {
             "type": "string",
             "description": "New password",
-            "minLength": 6
+            "minLength": 8
           }
         },
         "required": [
@@ -6977,7 +7129,8 @@
           "password": {
             "type": "string",
             "description": "User password",
-            "example": "password123"
+            "example": "password123",
+            "minLength": 8
           }
         }
       },

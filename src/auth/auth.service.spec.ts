@@ -201,6 +201,17 @@ describe("AuthService", () => {
   });
 
   describe("register", () => {
+    /** The body a client actually receives, which is where the field and the code live. */
+    const conflictBodyOf = async (email: string, username: string): Promise<unknown> => {
+      try {
+        await authService.register({ email, username, password: "pass", roles: [] });
+      } catch (err) {
+        return (err as ConflictException).getResponse();
+      }
+
+      throw new Error("expected a conflict");
+    };
+
     it("should throw ConflictException if email already exists", async () => {
       userService.findAll.mockImplementation(
         async (params?: Prisma.UserFindManyArgs): Promise<User[]> => {
@@ -243,6 +254,13 @@ describe("AuthService", () => {
           roles: []
         })
       ).rejects.toThrow(ConflictException);
+
+      await expect(conflictBodyOf("exists@example.com", "user")).resolves.toEqual(
+        expect.objectContaining({
+          statusCode: 409,
+          violations: [ { field: "email", code: "EMAIL_TAKEN" } ]
+        })
+      );
     });
 
     it("should throw ConflictException if username already exists", async () => {
@@ -288,6 +306,13 @@ describe("AuthService", () => {
           roles: []
         })
       ).rejects.toThrow(ConflictException);
+
+      await expect(conflictBodyOf("free@example.com", "existsUser")).resolves.toEqual(
+        expect.objectContaining({
+          statusCode: 409,
+          violations: [ { field: "username", code: "USERNAME_TAKEN" } ]
+        })
+      );
     });
 
     it("should create user and return access token", async () => {

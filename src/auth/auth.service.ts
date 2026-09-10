@@ -1,6 +1,5 @@
 import {
   Injectable,
-  ConflictException,
   UnauthorizedException,
   InternalServerErrorException,
   BadRequestException,
@@ -21,6 +20,7 @@ import { PrismaService } from "@ourPrisma/prisma.service";
 import { ConfigService } from "@nestjs/config";
 import { parseExpiresIn, timespanToMs } from "./auth.utils";
 import { v4 as uuidv4 } from "uuid";
+import { conflictViolation } from "@common/validation/violation.exception";
 
 @Injectable()
 export class AuthService {
@@ -121,11 +121,11 @@ export class AuthService {
     ]);
 
     if (existingByEmail.length > 0) {
-      throw new ConflictException("Email already in use");
+      throw conflictViolation("Email already in use", "email", "EMAIL_TAKEN");
     }
 
     if (existingByUsername.length > 0) {
-      throw new ConflictException("Username already in use");
+      throw conflictViolation("Username already in use", "username", "USERNAME_TAKEN");
     }
 
     createUserDto.roles = [];
