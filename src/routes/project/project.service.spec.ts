@@ -138,7 +138,11 @@ describe("ProjectService", () => {
     },
     workSession: {
       findMany: jest.fn(),
-      update: jest.fn()
+      update: jest.fn(),
+      deleteMany: jest.fn()
+    },
+    gameSession: {
+      deleteMany: jest.fn()
     },
     $transaction: jest.fn((operations: Array<Promise<unknown>>) =>
       Promise.all(operations)
@@ -505,7 +509,7 @@ describe("ProjectService", () => {
   });
 
   describe("remove", () => {
-    it("should delete the S3 file and project successfully", async () => {
+    it("clears the sessions and the project together, then the stored content", async () => {
       const projectId = 1;
       prismaMock.project.findUnique.mockResolvedValue(mockProjects[0]);
       prismaMock.project.delete.mockResolvedValue(mockProjects[0]);
@@ -515,93 +519,46 @@ describe("ProjectService", () => {
 
       await service.remove(projectId);
 
-      expect(prismaMock.project.findUnique).toHaveBeenCalledWith({
-        where: { id: projectId },
-        include: {
-          creator: {
-            select: {
-              id: true,
-              username: true,
-              email: true
-            }
-          },
-          collaborators: {
-            select: {
-              id: true,
-              username: true,
-              email: true
-            }
-          }
-        }
+      // Both session tables point at the project with ON DELETE RESTRICT, so they have to go in
+      // the same transaction as the row itself or the delete cannot happen at all.
+      expect(prismaMock.gameSession.deleteMany).toHaveBeenCalledWith({
+        where: { projectId }
       });
-      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({
-        key: `release/${projectId}`
+      expect(prismaMock.workSession.deleteMany).toHaveBeenCalledWith({
+        where: { projectId }
       });
+      expect(prismaMock.$transaction).toHaveBeenCalled();
       expect(prismaMock.project.delete).toHaveBeenCalledWith({
         where: { id: projectId }
       });
+
+      // And the content goes after the row, never before: this order is what keeps a failed delete
+      // from taking the game's release with it.
+      expect(prismaMock.project.delete.mock.invocationCallOrder[0]).toBeLessThan(
+        s3ServiceMock.deleteFile.mock.invocationCallOrder[0]!
+      );
+      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({
+        key: `release/${projectId}`
+      });
     });
 
-    it("should throw InternalServerErrorException if s3Service.deleteFile fails", async () => {
+    it("still deletes the project when its stored content cannot be reached", async () => {
       const projectId = 1;
       prismaMock.project.findUnique.mockResolvedValue(mockProjects[0]);
+      prismaMock.project.delete.mockResolvedValue(mockProjects[0]);
       s3ServiceMock.deleteFile.mockRejectedValue(new Error("S3 error"));
 
-      await expect(service.remove(projectId)).rejects.toThrow(
-        InternalServerErrorException
-      );
+      await expect(service.remove(projectId)).resolves.toBeUndefined();
 
-      expect(prismaMock.project.findUnique).toHaveBeenCalled();
-      expect(s3ServiceMock.deleteFile).toHaveBeenCalled();
+      expect(prismaMock.project.delete).toHaveBeenCalledWith({
+        where: { id: projectId }
+      });
     });
 
     it("should throw NotFoundException if project does not exist", async () => {
       prismaMock.project.findUnique.mockResolvedValue(null);
 
       await expect(service.remove(999)).rejects.toThrow(NotFoundException);
-    });
-
-    it("should throw InternalServerErrorException with unknown error if s3Service.deleteFile throws non-Error", async () => {
-      const projectId = 123;
-
-      prismaMock.project.findUnique.mockResolvedValue({
-        ...mockProjects[0],
-        id: projectId
-      });
-
-      s3ServiceMock.deleteFile.mockImplementation(() => {
-        throw "some string error";
-      });
-
-      await expect(service.remove(projectId)).rejects.toThrow(
-        InternalServerErrorException
-      );
-      await expect(service.remove(projectId)).rejects.toThrow(
-        `Error deleting S3 file with key ${projectId}: Unknown error`
-      );
-
-      expect(prismaMock.project.findUnique).toHaveBeenCalledWith({
-        where: { id: projectId },
-        include: {
-          creator: {
-            select: {
-              id: true,
-              username: true,
-              email: true
-            }
-          },
-          collaborators: {
-            select: {
-              id: true,
-              username: true,
-              email: true
-            }
-          }
-        }
-      });
-      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({
-        key: `release/${projectId}`
-      });
     });
   });
 

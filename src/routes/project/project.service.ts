@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException
 } from "@nestjs/common";
 import { PrismaService } from "@ourPrisma/prisma.service";
@@ -140,6 +141,8 @@ const RELEASE_WINDOW_DAYS: Record<Exclude<ReleaseWindow, "all">, number> = {
 export class ProjectService {
   static COLLABORATOR_SELECT = COLLABORATOR_SELECT;
   static CREATOR_SELECT = CREATOR_SELECT;
+
+  private readonly logger = new Logger(ProjectService.name);
 
   private readonly max_history_version;
   private readonly max_checkpoints;
@@ -495,43 +498,39 @@ export class ProjectService {
   async remove(id: number): Promise<void> {
     await this.findOne(id);
 
+    // The sessions go first: their foreign keys are ON DELETE RESTRICT, and opening the editor
+    // always creates a work session -- so whoever presses delete is sitting in the row that blocks
+    // it, and every attempt came back a bare 500. One transaction with the project itself, so a
+    // project is never left without the sessions that pointed at it.
+    await this.prisma.$transaction([
+      this.prisma.gameSession.deleteMany({ where: { projectId: id } }),
+      this.prisma.workSession.deleteMany({ where: { projectId: id } }),
+      this.prisma.project.delete({ where: { id } })
+    ]);
+
+    // Only once the row is gone, and never fatally. This ran first and threw on failure, so every
+    // one of those failed deletes took the game's release, checkpoints and saves with it and left
+    // the project standing. A blob nobody points at any more is recoverable; a game is not.
+    await this.removeStoredContent(id);
+  }
+
+  private async removeStoredContent(id: number): Promise<void> {
     try {
       await this.s3Service.deleteFile({ key: `release/${id}` });
 
-      const checkpoint_prefix = `checkpoint/${id}/`;
-      const checkpoints = await this.s3Service.listObjects({
-        prefix: checkpoint_prefix
-      });
-      if (checkpoints.length > 0) {
-        const objects = checkpoints.map((o) => o.Key!);
-        await this.s3Service.deleteFiles({ keys: objects });
-      }
-
-      const save_prefix = `save/${id}/`;
-      const saves = await this.s3Service.listObjects({ prefix: save_prefix });
-      if (saves.length > 0) {
-        const objects = saves.map((o) => o.Key!);
-        await this.s3Service.deleteFiles({ keys: objects });
+      for (const prefix of [`checkpoint/${id}/`, `save/${id}/`]) {
+        const objects = await this.s3Service.listObjects({ prefix });
+        if (objects.length > 0) {
+          await this.s3Service.deleteFiles({ keys: objects.map((o) => o.Key!) });
+        }
       }
     } catch (error: unknown) {
-      if (error instanceof Error) {
-        throw new InternalServerErrorException(
-          `Error deleting S3 file with key ${id}: ${error.message}`,
-          { cause: error }
-        );
-      } else {
-        throw new InternalServerErrorException(
-          `Error deleting S3 file with key ${id}: Unknown error`,
-          { cause: error }
-        );
-      }
+      this.logger.error(
+        `Project ${id} was deleted but its stored content was not: ${
+          error instanceof Error ? error.message : "unknown error"
+        }`
+      );
     }
-
-    await this.prisma.project.delete({
-      where: { id }
-    });
-
-    return;
   }
 
   private async findUserByIdentifier(
