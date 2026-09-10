@@ -47,7 +47,10 @@ jobs:
       - name: Publish
         working-directory: client
         run: |
-          npm version "${{ steps.meta.outputs.version }}" --no-git-tag-version
+          # --allow-same-version, because the release path deliberately asks for the version the
+          # file already holds: the step above refuses a tag that disagrees with it. Without this,
+          # npm calls that a no-op and fails, and no tagged release could ever publish.
+          npm version "${{ steps.meta.outputs.version }}" --no-git-tag-version --allow-same-version
           npm publish --tag "${{ steps.meta.outputs.tag }}"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
