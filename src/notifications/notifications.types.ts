@@ -7,7 +7,8 @@ export const NOTIFICATION_KINDS = [
   "FRIEND_REQUEST",
   "FRIEND_ACCEPTED",
   "FEATURED",
-  "COLLABORATOR_ADDED"
+  "COLLABORATOR_ADDED",
+  "COLLABORATOR_REMOVED"
 ] as const;
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];

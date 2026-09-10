@@ -4,6 +4,7 @@ import { S3Service } from "@s3/s3.service";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { ConfigService } from "@nestjs/config";
 import { NotificationsService } from "src/notifications/notifications.service";
+import { WorkSessionService } from "@work-session/work-session.service";
 import {
   BadRequestException,
   ForbiddenException,
@@ -157,6 +158,10 @@ describe("ProjectService", () => {
     createNotification: jest.fn()
   };
 
+  const workSessionsMock = {
+    kick: jest.fn().mockResolvedValue(undefined)
+  };
+
   const configServiceMock = {
     get: jest.fn((key: string) => {
       if (key === "S3_MAX_AUTO_HISTORY_VERSION") return "5";
@@ -185,6 +190,10 @@ describe("ProjectService", () => {
         {
           provide: NotificationsService,
           useValue: notificationsMock
+        },
+        {
+          provide: WorkSessionService,
+          useValue: workSessionsMock
         }
       ]
     }).compile();
@@ -723,6 +732,39 @@ describe("ProjectService", () => {
         })
       );
       expect(result).toEqual(mockProjects[0]);
+    });
+
+    it("should tell the removed collaborator and close their live session", async () => {
+      prismaMock.user.findUnique.mockResolvedValue({ id: 2 });
+      prismaMock.project.findUnique.mockResolvedValue({
+        ...mockProjects[0],
+        collaborators: [{ id: 2 }, { id: 3 }]
+      });
+      prismaMock.project.update.mockResolvedValue(mockProjects[0]);
+
+      await service.removeCollaborator(1, removeDto);
+
+      expect(notificationsMock.createNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 2,
+          kind: "COLLABORATOR_REMOVED"
+        })
+      );
+      expect(workSessionsMock.kick).toHaveBeenCalledWith(1, 2);
+    });
+
+    it("removes the collaborator even when no session is open to close", async () => {
+      prismaMock.user.findUnique.mockResolvedValue({ id: 2 });
+      prismaMock.project.findUnique.mockResolvedValue({
+        ...mockProjects[0],
+        collaborators: [{ id: 2 }, { id: 3 }]
+      });
+      prismaMock.project.update.mockResolvedValue(mockProjects[0]);
+      workSessionsMock.kick.mockRejectedValueOnce(new NotFoundException());
+
+      await expect(service.removeCollaborator(1, removeDto)).resolves.toEqual(
+        mockProjects[0]
+      );
     });
 
     it("should throw NotFoundException if user not found", async () => {

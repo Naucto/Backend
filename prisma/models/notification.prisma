@@ -11,6 +11,7 @@ enum NotificationKind {
   FRIEND_ACCEPTED
   FEATURED
   COLLABORATOR_ADDED
+  COLLABORATOR_REMOVED
 }
 
 model Notification {

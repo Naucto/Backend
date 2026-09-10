@@ -16,6 +16,7 @@ import {
 import { S3Service } from "@s3/s3.service";
 import { ModuleRef } from "@nestjs/core";
 import { NotificationsService } from "src/notifications/notifications.service";
+import { WorkSessionService } from "@work-session/work-session.service";
 import { Prisma, Project, User } from "@prisma/client";
 import { ConfigService } from "@nestjs/config";
 import { DownloadedFile } from "@s3/s3.interface";
@@ -653,7 +654,7 @@ export class ProjectService {
       );
     }
 
-    return this.prisma.project.update({
+    const updated = await this.prisma.project.update({
       where: { id },
       data: {
         collaborators: {
@@ -669,6 +670,33 @@ export class ProjectService {
         }
       }
     });
+
+    // Losing the project is worth the same word as being given it, and for the same reason: without
+    // one, someone who was editing a minute ago finds the project gone from their list and has no
+    // way to tell an eviction from a bug. No projectId travels with it -- there is nothing left to
+    // open.
+    //
+    // Both services are resolved from the graph rather than imported, for the reason spelled out
+    // in addCollaborator.
+    const notifications = this.moduleRef.get(NotificationsService, {
+      strict: false
+    });
+    await notifications.createNotification({
+      userId: user.id,
+      title: updated.name,
+      message: `${project.creator.username} removed you from ${updated.name}`,
+      type: "INFO",
+      kind: "COLLABORATOR_REMOVED"
+    });
+
+    // A revoked collaborator kept editing until their next reload: the live session holds its own
+    // list of who is in the room, and disconnecting them from the project never touched it.
+    const sessions = this.moduleRef.get(WorkSessionService, { strict: false });
+    await sessions.kick(id, user.id).catch(() => {
+      // No open session on the project, which is the common case and not a failure of the removal.
+    });
+
+    return updated;
   }
 
   async updateLastTimeUpdate(projectId: number): Promise<void> {
