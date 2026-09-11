@@ -43,6 +43,7 @@ export class UpdateProjectDto {
     required: false,
     maxLength: PROJECT_LONG_DESC_MAX_LENGTH
   })
+  @IsOptional()
   @IsString()
   @MaxLength(PROJECT_LONG_DESC_MAX_LENGTH)
     longDesc?: string | null;
