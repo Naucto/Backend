@@ -1,0 +1,7283 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/projects/releases": {
+      "get": {
+        "operationId": "ProjectController_getAllReleases",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "A JSON array of projects with collaborators and creator information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectExResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get all released projects",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/releases/paginated": {
+      "get": {
+        "operationId": "ProjectController_getPaginatedReleases",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tags",
+            "required": false,
+            "in": "query",
+            "description": "Comma-separated tag list",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "releaseWindow",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "all",
+                "365d",
+                "30d",
+                "7d"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Shelf ordering; defaults to newest first",
+            "schema": {
+              "enum": [
+                "fresh",
+                "popular",
+                "liked",
+                "discussed",
+                "name"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A paginated list of released projects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedProjectsResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get released projects with pagination",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/releases/tags": {
+      "get": {
+        "operationId": "ProjectController_getReleaseTags",
+        "parameters": [
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Narrow to tags holding this fragment",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tags, most used first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseTagsResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "List the tags published games carry",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/releases/count": {
+      "get": {
+        "operationId": "ProjectController_countReleasedProjects",
+        "parameters": [
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tags",
+            "required": false,
+            "in": "query",
+            "description": "Comma-separated tag list",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "releaseWindow",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "all",
+                "365d",
+                "30d",
+                "7d"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The total number of released projects matching the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectsCountResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Count released projects with filters",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/releases/{id}": {
+      "get": {
+        "operationId": "ProjectController_getRelease",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project release metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectExResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get project release version",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/releases/{id}/content": {
+      "get": {
+        "operationId": "ProjectController_getReleaseContent",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project release file",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get project release version",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/releases/{id}/content-url": {
+      "get": {
+        "operationId": "ProjectController_getReleaseContentUrl",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Signed Edge URL for the release",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignedUrlResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get signed CDN URL for a release",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/limits": {
+      "get": {
+        "operationId": "ProjectController_getLimits",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Content budget and blob size limits",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectLimitsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get the project size limits",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects": {
+      "get": {
+        "operationId": "ProjectController_findAll",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A paginated list of projects with collaborators and creator information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedProjectsResponseDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Retrieve the paginated list of projects",
+        "tags": [
+          "projects"
+        ]
+      },
+      "post": {
+        "operationId": "ProjectController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProjectDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Project created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request – invalid input"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Create a new project",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/count": {
+      "get": {
+        "operationId": "ProjectController_countProjects",
+        "parameters": [
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tags",
+            "required": false,
+            "in": "query",
+            "description": "Comma-separated tag list",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "all",
+                "drafts",
+                "published"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The total number of user projects matching the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectsCountResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Count the user's projects with filters",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/{id}": {
+      "get": {
+        "operationId": "ProjectController_findOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Numeric ID of the project to retrieve",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project object",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectExResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid user or project ID"
+          },
+          "404": {
+            "description": "Project not found"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Retrieve a single project",
+        "tags": [
+          "projects"
+        ]
+      },
+      "put": {
+        "operationId": "ProjectController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Numeric ID of the project to update",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProjectDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated project object",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found"
+          },
+          "500": {
+            "description": "Error updating project"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Update an existing project",
+        "tags": [
+          "projects"
+        ]
+      },
+      "delete": {
+        "operationId": "ProjectController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Numeric ID of the project to delete",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Project deleted successfully (no content)"
+          },
+          "404": {
+            "description": "Project not found"
+          },
+          "500": {
+            "description": "Error deleting project"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Delete a project",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/{id}/size": {
+      "get": {
+        "description": "Logical content size per category (code, sprites, flags, map, sound, palette) computed from the decoded game document, compared against the publishing budget.",
+        "operationId": "ProjectController_getSize",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Size breakdown",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectSizeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Project not found"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get the size breakdown of the project's latest save",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/{id}/fork": {
+      "post": {
+        "operationId": "ProjectController_fork",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Numeric ID of the published project to fork",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Forked project created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForkProjectResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Project is not published"
+          },
+          "404": {
+            "description": "Project not found"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Fork a published project",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/{id}/add-collaborator": {
+      "patch": {
+        "description": "Add a collaborator to a project by providing either userId, username, or email. At least one must be provided.",
+        "operationId": "ProjectController_addCollaborator",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Numeric ID of the project to update",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddCollaboratorDto"
+              },
+              "examples": {
+                "byUserId": {
+                  "summary": "Add by User ID",
+                  "value": {
+                    "userId": 42
+                  }
+                },
+                "byUsername": {
+                  "summary": "Add by Username",
+                  "value": {
+                    "username": "john_doe"
+                  }
+                },
+                "byEmail": {
+                  "summary": "Add by Email",
+                  "value": {
+                    "email": "john.doe@example.com"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated project object with collaborators",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectExResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - no valid identifier provided"
+          },
+          "404": {
+            "description": "Project or user not found"
+          },
+          "500": {
+            "description": "Error Patching project"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Add a new collaborator",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/{id}/remove-collaborator": {
+      "delete": {
+        "description": "Remove a collaborator from a project by providing either userId, username, or email. At least one must be provided.",
+        "operationId": "ProjectController_removeCollaborator",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Numeric ID of the project to update",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoveCollaboratorDto"
+              },
+              "examples": {
+                "byUserId": {
+                  "summary": "Remove by User ID",
+                  "value": {
+                    "userId": 42
+                  }
+                },
+                "byUsername": {
+                  "summary": "Remove by Username",
+                  "value": {
+                    "username": "john_doe"
+                  }
+                },
+                "byEmail": {
+                  "summary": "Remove by Email",
+                  "value": {
+                    "email": "john.doe@example.com"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated project object with collaborators",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectExResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - no valid identifier provided"
+          },
+          "403": {
+            "description": "Forbidden - cannot remove project creator"
+          },
+          "404": {
+            "description": "Project or user not found"
+          },
+          "500": {
+            "description": "Error remove collaborator on project"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Remove a collaborator",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/{id}/saveContent": {
+      "patch": {
+        "operationId": "ProjectController_saveProjectContent",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Project file (zip, pdf, png, etc.)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "File uploaded successfully"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "422": {
+            "description": "File validation failed"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Save project's content (Upload)",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/{id}/image": {
+      "post": {
+        "operationId": "ProjectController_uploadProjectImage",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Project image file (JPEG, PNG, GIF, WebP)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Image uploaded successfully"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "422": {
+            "description": "Invalid file type or size"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Upload project image",
+        "tags": [
+          "projects"
+        ]
+      },
+      "get": {
+        "operationId": "ProjectController_getProjectImage",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "CDN URL for the project image",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageUrlResponseDto"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Project has no image"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get CDN URL for project image (authenticated, any project status)",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/public/{id}/image": {
+      "get": {
+        "operationId": "ProjectController_getPublishedProjectImage",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Project ID",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Returns the CDN URL for the project image",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageUrlResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found, not published, or has no image"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get public CDN URL for a published project's image",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/{id}/fetchContent": {
+      "get": {
+        "operationId": "ProjectController_fetchProjectContent",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File fetched successfully",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "File not found"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Fetch project's content",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/{id}/saveCheckpoint/{name}": {
+      "post": {
+        "operationId": "ProjectController_saveCheckpoint",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "File uploaded successfully"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "422": {
+            "description": "File validation failed"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Save project's checkpoint",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/{id}/deleteCheckpoint/{name}": {
+      "delete": {
+        "operationId": "ProjectController_deleteCheckpoint",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "File deleted successfully"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Delete project's checkpoint",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/{id}/publish": {
+      "post": {
+        "operationId": "ProjectController_publish",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Project published successfully"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "413": {
+            "description": "Project content exceeds the publishing budget",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectTooLargeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Publish project",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/{id}/unpublish": {
+      "post": {
+        "operationId": "ProjectController_unpublish",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Project unpublished successfully"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Unpublish project",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/{id}/versions": {
+      "get": {
+        "operationId": "ProjectController_getVersions",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project versions retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectVersionsResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get project versions",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/{id}/checkpoints": {
+      "get": {
+        "operationId": "ProjectController_getCheckpoints",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project checkpoints retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectCheckpointsResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get project checkpoints",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/{id}/versions/{version}": {
+      "delete": {
+        "operationId": "ProjectController_deleteVersion",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Version deleted successfully"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "No such version"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Delete a project autosave",
+        "tags": [
+          "projects"
+        ]
+      },
+      "get": {
+        "operationId": "ProjectController_getVersion",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project version retrieved successfully",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Fetch a project version",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/{id}/checkpoints/{checkpoint}": {
+      "get": {
+        "operationId": "ProjectController_getCheckpoint",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "checkpoint",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project checkpoint retrieved successfully",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Fetch a project checkpoint",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/releases/{id}/like": {
+      "post": {
+        "operationId": "ProjectController_likeProject",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Like status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LikeResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Like a published project (idempotent, authenticated users only)",
+        "tags": [
+          "projects"
+        ]
+      },
+      "delete": {
+        "operationId": "ProjectController_unlikeProject",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Like removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LikeResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Unlike a published project (authenticated users only)",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/releases/{id}/like-status": {
+      "get": {
+        "operationId": "ProjectController_getLikeStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Like status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LikeResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get like status for a project (authenticated users only)",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/releases/{id}/view": {
+      "post": {
+        "operationId": "ProjectController_registerReleaseView",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated view count",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Register a play view for a published project",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/{id}/update-release": {
+      "post": {
+        "operationId": "ProjectController_updateRelease",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Release updated successfully"
+          },
+          "400": {
+            "description": "Project is not published"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "413": {
+            "description": "Project content exceeds the publishing budget",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectTooLargeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Update an already published project's release content",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/game-sessions": {
+      "post": {
+        "operationId": "MultiplayerController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGameSessionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameSessionConnectionResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Create a new game session, with the caller as host",
+        "tags": [
+          "game-sessions"
+        ]
+      },
+      "get": {
+        "operationId": "MultiplayerController_list",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Narrow to sessions whose room or game name holds this",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameSessionListResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "List open game sessions from the caller's perspective, one game's or every game's",
+        "tags": [
+          "game-sessions"
+        ]
+      }
+    },
+    "/game-sessions/join-by-code": {
+      "post": {
+        "operationId": "MultiplayerController_joinByCode",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JoinByCodeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameSessionConnectionResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Join an invite-code game session by its code",
+        "tags": [
+          "game-sessions"
+        ]
+      }
+    },
+    "/game-sessions/{sessionId}": {
+      "get": {
+        "operationId": "MultiplayerController_get",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameSessionResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Fetch a single game session",
+        "tags": [
+          "game-sessions"
+        ]
+      },
+      "patch": {
+        "operationId": "MultiplayerController_update",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateGameSessionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Update game session settings (host only)",
+        "tags": [
+          "game-sessions"
+        ]
+      },
+      "delete": {
+        "operationId": "MultiplayerController_remove",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Close/delete a game session (host only)",
+        "tags": [
+          "game-sessions"
+        ]
+      }
+    },
+    "/game-sessions/{sessionId}/players": {
+      "get": {
+        "operationId": "MultiplayerController_players",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionRosterResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Who is in a game session",
+        "tags": [
+          "game-sessions"
+        ]
+      }
+    },
+    "/game-sessions/{sessionId}/invite": {
+      "post": {
+        "operationId": "MultiplayerController_invite",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteToSessionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Invite someone to a session (host only)",
+        "tags": [
+          "game-sessions"
+        ]
+      }
+    },
+    "/game-sessions/{sessionId}/join": {
+      "post": {
+        "operationId": "MultiplayerController_join",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JoinGameSessionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameSessionConnectionResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Join a game session as a player",
+        "tags": [
+          "game-sessions"
+        ]
+      }
+    },
+    "/game-sessions/{sessionId}/leave": {
+      "post": {
+        "operationId": "MultiplayerController_leave",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Leave a game session as a player",
+        "tags": [
+          "game-sessions"
+        ]
+      }
+    },
+    "/game-sessions/{sessionId}/ticket": {
+      "post": {
+        "operationId": "MultiplayerController_refreshTicket",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameSessionConnectionResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Mint a fresh connection ticket for the caller's session",
+        "tags": [
+          "game-sessions"
+        ]
+      }
+    },
+    "/projects/{projectId}/comments": {
+      "get": {
+        "operationId": "ProjectCommentController_getComments",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "newest",
+                "oldest"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of comments",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedCommentsResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get comments for a project",
+        "tags": [
+          "comments"
+        ]
+      },
+      "post": {
+        "operationId": "ProjectCommentController_createComment",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCommentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Comment created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Create a comment on a project",
+        "tags": [
+          "comments"
+        ]
+      }
+    },
+    "/projects/{projectId}/comments/{commentId}/reply": {
+      "post": {
+        "operationId": "ProjectCommentController_createReply",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "commentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCommentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Reply created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Reply to a comment",
+        "tags": [
+          "comments"
+        ]
+      }
+    },
+    "/projects/{projectId}/comments/{commentId}": {
+      "put": {
+        "operationId": "ProjectCommentController_updateComment",
+        "parameters": [
+          {
+            "name": "commentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCommentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Comment updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Edit a comment",
+        "tags": [
+          "comments"
+        ]
+      },
+      "delete": {
+        "operationId": "ProjectCommentController_deleteComment",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "commentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Comment deleted"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Delete a comment",
+        "tags": [
+          "comments"
+        ]
+      }
+    },
+    "/notifications/webrtc-offer": {
+      "get": {
+        "operationId": "NotificationsController_getWebRTCOffer",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Notification websocket configuration"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get notification websocket configuration",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/notifications/test": {
+      "post": {
+        "operationId": "NotificationsController_sendTestNotification",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationTestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Notification created and sent"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Send a test notification to the current user",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/notifications/read-all": {
+      "patch": {
+        "operationId": "NotificationsController_markAllAsRead",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Number of notifications marked as read"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Mark every unread notification of the current user as read",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/notifications/{id}/read": {
+      "patch": {
+        "operationId": "NotificationsController_markAsRead",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Notification marked as read"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "set one notification as read",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/friends": {
+      "get": {
+        "operationId": "FriendsController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FriendDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "List the caller's friends",
+        "tags": [
+          "friends"
+        ]
+      }
+    },
+    "/friends/requests": {
+      "get": {
+        "operationId": "FriendsController_requests",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FriendRequestDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "List pending friend requests (incoming and outgoing)",
+        "tags": [
+          "friends"
+        ]
+      },
+      "post": {
+        "operationId": "FriendsController_send",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendFriendRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The created request, or empty when a crossed request was auto-accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FriendRequestDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Target user not found"
+          },
+          "409": {
+            "description": "Already friends or already requested"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Send a friend request by user id or friend code; a crossed request is accepted instead",
+        "tags": [
+          "friends"
+        ]
+      }
+    },
+    "/friends/requests/{id}/accept": {
+      "post": {
+        "operationId": "FriendsController_accept",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Friend request ID",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": "Request not found"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Accept an incoming friend request",
+        "tags": [
+          "friends"
+        ]
+      }
+    },
+    "/friends/requests/{id}": {
+      "delete": {
+        "operationId": "FriendsController_decline",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Friend request ID",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": "Request not found"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Decline an incoming or cancel an outgoing friend request",
+        "tags": [
+          "friends"
+        ]
+      }
+    },
+    "/friends/recent-players": {
+      "get": {
+        "operationId": "FriendsController_recentPlayers",
+        "parameters": [
+          {
+            "name": "days",
+            "required": false,
+            "in": "query",
+            "description": "Look-back window (default 30)",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RecentPlayerDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "People the caller recently played with",
+        "tags": [
+          "friends"
+        ]
+      }
+    },
+    "/friends/{userId}": {
+      "delete": {
+        "operationId": "FriendsController_remove",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "description": "ID of the friend to remove",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": "Not friends"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Remove a friend",
+        "tags": [
+          "friends"
+        ]
+      }
+    },
+    "/users/{id}/friendship": {
+      "get": {
+        "operationId": "UserFriendshipController_friendship",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "User ID",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FriendshipStatusDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Friendship status between the caller and a user",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/presence/friends": {
+      "get": {
+        "operationId": "PresenceController_friends",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PresenceDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Presence of the caller's online friends",
+        "tags": [
+          "presence"
+        ]
+      }
+    },
+    "/users/{id}/presence": {
+      "get": {
+        "operationId": "UserPresenceController_presence",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "User ID",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresenceDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User is offline"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Presence of a user (404 when offline)",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/releases/featured": {
+      "get": {
+        "operationId": "FeaturedReleaseController_getFeatured",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "The featured release, or null when none is set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeaturedReleaseResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get the current featured release (game of the week)",
+        "tags": [
+          "releases"
+        ]
+      }
+    },
+    "/admin/featured-release": {
+      "put": {
+        "operationId": "AdminFeaturedReleaseController_setFeatured",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetFeaturedReleaseDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The new featured release",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeaturedReleaseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Project is not published"
+          },
+          "403": {
+            "description": "Admin role required"
+          },
+          "404": {
+            "description": "Project not found"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Feature a published project (replaces the current pick)",
+        "tags": [
+          "admin"
+        ]
+      },
+      "delete": {
+        "operationId": "AdminFeaturedReleaseController_clearFeatured",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": "No featured release remains"
+          },
+          "403": {
+            "description": "Admin role required"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Clear the current featured release",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/featured-release/history": {
+      "get": {
+        "operationId": "AdminFeaturedReleaseController_getHistory",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Featured releases, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeaturedReleaseHistoryDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin role required"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "List past and current featured releases",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "operationId": "AuthController_login",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User logged in successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "access_token": {
+                      "type": "string",
+                      "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                    }
+                  },
+                  "required": [
+                    "access_token"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Invalid credentials"
+          }
+        },
+        "summary": "Authenticate a user and return an access token",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/password-policy": {
+      "get": {
+        "operationId": "AuthController_getPasswordPolicy",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordPolicyDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "The password rule this deployment enforces, so a form can enforce the same one",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/register": {
+      "post": {
+        "operationId": "AuthController_register",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User registered successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "access_token": {
+                      "type": "string",
+                      "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                    }
+                  },
+                  "required": [
+                    "access_token"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponseDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Email or username already in use",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Register a new user and return an access token",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/google/code": {
+      "post": {
+        "operationId": "AuthController_loginWithGoogleCode",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoogleCodeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Login successful with Google",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "access_token": {
+                      "type": "string",
+                      "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                    }
+                  },
+                  "required": [
+                    "access_token"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid Google code or code_verifier"
+          }
+        },
+        "summary": "Authenticate with Google authorization code + PKCE",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/github": {
+      "post": {
+        "operationId": "AuthController_loginWithGithub",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GithubLoginDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Login successful with GitHub",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "access_token": {
+                      "type": "string",
+                      "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                    }
+                  },
+                  "required": [
+                    "access_token"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or expired GitHub code"
+          }
+        },
+        "summary": "Authenticate with GitHub OAuth authorization code",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/microsoft": {
+      "post": {
+        "operationId": "AuthController_loginWithMicrosoft",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MicrosoftLoginDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Login successful with Microsoft",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "access_token": {
+                      "type": "string",
+                      "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                    }
+                  },
+                  "required": [
+                    "access_token"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid Microsoft ID token"
+          }
+        },
+        "summary": "Authenticate with Microsoft ID token",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "operationId": "AuthController_refresh",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Access token refreshed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "access_token": {
+                      "type": "string",
+                      "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                    }
+                  },
+                  "required": [
+                    "access_token"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Refresh token missing or invalid"
+          }
+        },
+        "summary": "Refresh the access token using refresh token cookie",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/password": {
+      "patch": {
+        "operationId": "AuthController_changePassword",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Password updated successfully"
+          },
+          "400": {
+            "description": "Current password required for non-OAuth accounts"
+          },
+          "401": {
+            "description": "Current password incorrect"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Change password, OAuth users can set one without providing a current password",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "operationId": "AuthController_logout",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Logout successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "example": {
+                    "success": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "End the session and clear the refresh token cookie",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/users/profile": {
+      "get": {
+        "operationId": "UserController_getProfile",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Returns the current user profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfileResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get current user profile",
+        "tags": [
+          "users"
+        ]
+      },
+      "patch": {
+        "operationId": "UserController_updateMyProfile",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserProfileDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "User profile updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicUserProfileResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "409": {
+            "description": "The handle asked for belongs to someone else"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Update the parts of your own profile you write: names, description, accent",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/me": {
+      "get": {
+        "operationId": "UserController_getMe",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get the current user's account settings",
+        "tags": [
+          "users"
+        ]
+      },
+      "patch": {
+        "operationId": "UserController_updateMe",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Update the current user's account settings",
+        "tags": [
+          "users"
+        ]
+      },
+      "delete": {
+        "operationId": "UserController_deleteMe",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteAccountDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Account deleted, refresh cookie cleared"
+          },
+          "400": {
+            "description": "Missing DELETE confirmation"
+          },
+          "401": {
+            "description": "Unauthorized or wrong password"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Delete the current account (soft-delete + anonymise; purges sessions, tokens, friends, notifications, unpublished games)",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/me/friend-code/regenerate": {
+      "post": {
+        "operationId": "UserController_regenerateFriendCode",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Replace the current user's friend code",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/{id}/profile-picture": {
+      "post": {
+        "operationId": "UserController_uploadProfilePicture",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "User ID",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Profile picture file"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Profile uploaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileImageUploadResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Upload a user's profile picture",
+        "tags": [
+          "users"
+        ]
+      },
+      "delete": {
+        "operationId": "UserController_removeProfilePicture",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "User ID",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed, or there was none"
+          },
+          "403": {
+            "description": "Not your profile"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Remove your own profile picture",
+        "tags": [
+          "users"
+        ]
+      },
+      "get": {
+        "operationId": "UserController_getProfilePicture",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "User ID",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Signed cookies and CDN resource URL",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignedCdnResourceDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get signed CDN access to a user's profile picture",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/{id}/profile-background": {
+      "post": {
+        "operationId": "UserController_uploadProfileBackground",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "User ID",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Profile background file"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Profile background uploaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileImageUploadResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Upload a user's profile background",
+        "tags": [
+          "users"
+        ]
+      },
+      "delete": {
+        "operationId": "UserController_removeProfileBackground",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "User ID",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed, or there was none"
+          },
+          "403": {
+            "description": "Not your profile"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Remove your own profile background",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users": {
+      "get": {
+        "operationId": "UserController_findAll",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Page number",
+            "schema": {
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Items per page",
+            "schema": {
+              "example": 10,
+              "type": "number"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Free-text search over username and nickname — what a person types into the search box, where they do not know which of the two they are looking at",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "nickname",
+            "required": false,
+            "in": "query",
+            "description": "Filter by nickname",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "email",
+            "required": false,
+            "in": "query",
+            "description": "Filter by email",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortBy",
+            "required": false,
+            "in": "query",
+            "description": "Sort by field",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "id",
+                "username",
+                "email",
+                "createdAt"
+              ]
+            }
+          },
+          {
+            "name": "order",
+            "required": false,
+            "in": "query",
+            "description": "Sort order",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Returns paginated list of users",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserListResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get all users with pagination and filtering",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/{id}": {
+      "get": {
+        "operationId": "UserController_findOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "User ID",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Returns the user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserSingleResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid ID format"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get a user by ID",
+        "tags": [
+          "users"
+        ]
+      },
+      "patch": {
+        "operationId": "UserController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "User ID",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "User updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserSingleResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Update a user by ID",
+        "tags": [
+          "users"
+        ]
+      },
+      "delete": {
+        "operationId": "UserController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "User ID",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User deleted successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "number",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "User deleted successfully"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Delete a user by ID",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/public/search": {
+      "get": {
+        "operationId": "UserPublicController_search",
+        "parameters": [
+          {
+            "name": "q",
+            "required": true,
+            "in": "query",
+            "description": "What was typed",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching people, exact handle first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicUserSearchResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Find people by handle or display name",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/public/{id}/profile": {
+      "get": {
+        "operationId": "UserPublicController_getPublicProfile",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "User ID",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Returns the public user profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicUserProfileResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User not found"
+          }
+        },
+        "summary": "Get a public user profile by ID",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/public/username/{username}/profile": {
+      "get": {
+        "operationId": "UserPublicController_getPublicProfileByUsername",
+        "parameters": [
+          {
+            "name": "username",
+            "required": true,
+            "in": "path",
+            "description": "Username",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Returns the public user profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicUserProfileResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User not found"
+          }
+        },
+        "summary": "Get a public user profile by username",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/public/{id}/likes": {
+      "get": {
+        "operationId": "UserPublicController_getLikedGames",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "User ID",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Returns the list of published games liked by the user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectExResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get a user's liked published games",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/public/{id}/published-games": {
+      "get": {
+        "operationId": "UserPublicController_getPublishedGames",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "User ID",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "ownedOnly",
+            "required": false,
+            "in": "query",
+            "description": "Only the games this user owns, rather than every game they are credited on",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Returns the list of games published by the user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectExResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get a user's published games",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/public/{id}/collaborations": {
+      "get": {
+        "operationId": "UserPublicController_getCollaborations",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "User ID",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Games the user helped build but does not own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectExResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get published games the user collaborated on",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/public/{id}/remixes": {
+      "get": {
+        "operationId": "UserPublicController_getRemixes",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "User ID",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Games other people forked from one of this user's",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectExResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get published games remixed from this user's",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/work-sessions/join/{id}": {
+      "post": {
+        "operationId": "WorkSessionController_join",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Project ID",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The work session has been successfully created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JoinWorkSessionDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request."
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Join a work session",
+        "tags": [
+          "work-sessions"
+        ]
+      }
+    },
+    "/work-sessions/leave/{id}": {
+      "post": {
+        "operationId": "WorkSessionController_leave",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Project ID",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successfully left the work session."
+          },
+          "400": {
+            "description": "Bad request."
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Leave a work session",
+        "tags": [
+          "work-sessions"
+        ]
+      }
+    },
+    "/work-sessions/kick/{id}": {
+      "post": {
+        "operationId": "WorkSessionController_kick",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Project ID",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KickWorkSessionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successfully left the work session."
+          },
+          "400": {
+            "description": "Bad request."
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Kick user from work session",
+        "tags": [
+          "work-sessions"
+        ]
+      }
+    },
+    "/work-sessions/info/{id}": {
+      "get": {
+        "operationId": "WorkSessionController_getInfo",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Project ID",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Work session info retrieved successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FetchWorkSessionDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Work session not found."
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get work session info",
+        "tags": [
+          "work-sessions"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "Naucto API",
+    "description": "The Naucto API documentation",
+    "version": "1.0",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "JWT-auth": {
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "type": "http",
+        "description": "Enter your JWT : Bearer <token>"
+      }
+    },
+    "schemas": {
+      "ForkedFromDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 42
+          },
+          "name": {
+            "type": "string",
+            "example": "Snake 8-bit"
+          },
+          "ownerUsername": {
+            "type": "string",
+            "example": "alice"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "ownerUsername"
+        ]
+      },
+      "UserBasicInfoDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 1,
+            "description": "The unique identifier of the user"
+          },
+          "username": {
+            "type": "string",
+            "example": "john_doe",
+            "description": "The username"
+          },
+          "email": {
+            "type": "string",
+            "example": "john.doe@example.com",
+            "description": "The email address"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "email"
+        ]
+      },
+      "ProjectExResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 1,
+            "description": "The unique identifier of the project"
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the project",
+            "example": "MySuperVideoGame"
+          },
+          "shortDesc": {
+            "type": "string",
+            "description": "A short description of the project",
+            "example": "A 2D platformer game with pixel art graphics"
+          },
+          "longDesc": {
+            "type": "string",
+            "description": "A detailed description of the project",
+            "example": "This game features multiple levels, power-ups, and boss fights.",
+            "nullable": true
+          },
+          "tags": {
+            "description": "Tags associated with the project",
+            "example": [
+              "Roguelike",
+              "Action",
+              "Custom Jam"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "iconUrl": {
+            "type": "string",
+            "description": "URL to the project icon",
+            "example": "https://example.com/icons/MySuperVideoGame.png",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "description": "The current status of the project",
+            "enum": [
+              "IN_PROGRESS",
+              "COMPLETED",
+              "ARCHIVED"
+            ],
+            "example": "IN_PROGRESS",
+            "nullable": true
+          },
+          "monetization": {
+            "type": "string",
+            "description": "The monetization strategy for this project",
+            "enum": [
+              "NONE",
+              "ADS",
+              "PAID"
+            ],
+            "example": "NONE",
+            "nullable": true
+          },
+          "price": {
+            "type": "number",
+            "example": 99.99,
+            "description": "The price of the project, if applicable",
+            "nullable": true
+          },
+          "userId": {
+            "type": "number",
+            "example": 1,
+            "description": "The ID of the user who owns this project"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2023-04-15T12:00:00Z",
+            "description": "The date and time when the project was created"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2023-05-15T12:00:00Z",
+            "description": "The date and time when the project was last updated"
+          },
+          "publishedAt": {
+            "type": "string",
+            "example": "2023-05-20T12:00:00Z",
+            "description": "The date and time when the project was last published",
+            "nullable": true
+          },
+          "viewCount": {
+            "type": "number",
+            "example": 123,
+            "description": "The number of times players opened this game's play page"
+          },
+          "uniquePlayers": {
+            "type": "number",
+            "example": 123,
+            "description": "The number of unique players who have interacted with this project"
+          },
+          "activePlayers": {
+            "type": "number",
+            "example": 42,
+            "description": "The number of currently active players in this project"
+          },
+          "likes": {
+            "type": "number",
+            "example": 87,
+            "description": "The number of likes received by the project"
+          },
+          "commentCount": {
+            "type": "number",
+            "example": 12,
+            "description": "The number of comments on the project"
+          },
+          "forkCount": {
+            "type": "number",
+            "example": 7,
+            "description": "The number of forks created from this project"
+          },
+          "forkedFromId": {
+            "type": "number",
+            "example": 42,
+            "description": "The ID of the project this was forked from, if any",
+            "nullable": true
+          },
+          "forkedFrom": {
+            "description": "The project this was forked from, by name — lineage renders a title and an author rather than an id",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ForkedFromDto"
+              }
+            ]
+          },
+          "collaborators": {
+            "description": "The users collaborating on this project",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserBasicInfoDto"
+            }
+          },
+          "creator": {
+            "description": "The creator of this project",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserBasicInfoDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "shortDesc",
+          "longDesc",
+          "tags",
+          "iconUrl",
+          "status",
+          "monetization",
+          "price",
+          "userId",
+          "createdAt",
+          "updatedAt",
+          "publishedAt",
+          "viewCount",
+          "uniquePlayers",
+          "activePlayers",
+          "likes",
+          "collaborators",
+          "creator"
+        ]
+      },
+      "PaginatedProjectsResponseDto": {
+        "type": "object",
+        "properties": {
+          "projects": {
+            "description": "The projects included in the current page",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProjectExResponseDto"
+            }
+          },
+          "total": {
+            "type": "number",
+            "description": "The total number of projects matching the request",
+            "example": 128
+          },
+          "page": {
+            "type": "number",
+            "description": "The current page number",
+            "example": 1
+          },
+          "limit": {
+            "type": "number",
+            "description": "The number of projects requested per page",
+            "example": 25
+          }
+        },
+        "required": [
+          "projects",
+          "total",
+          "page",
+          "limit"
+        ]
+      },
+      "ReleaseTagDto": {
+        "type": "object",
+        "properties": {
+          "tag": {
+            "type": "string",
+            "description": "The tag, written as the games carry it",
+            "example": "snake"
+          },
+          "count": {
+            "type": "number",
+            "description": "Published games carrying it",
+            "example": 14
+          }
+        },
+        "required": [
+          "tag",
+          "count"
+        ]
+      },
+      "ReleaseTagsResponseDto": {
+        "type": "object",
+        "properties": {
+          "tags": {
+            "description": "Tags, most used first",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReleaseTagDto"
+            }
+          }
+        },
+        "required": [
+          "tags"
+        ]
+      },
+      "ProjectsCountResponseDto": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number",
+            "description": "The total number of projects matching the request",
+            "example": 27
+          }
+        },
+        "required": [
+          "total"
+        ]
+      },
+      "SignedUrlResponseDto": {
+        "type": "object",
+        "properties": {
+          "signedUrl": {
+            "type": "string",
+            "example": "https://cdn.example.com/files/project-123?Expires=1640995200&Signature=abc123",
+            "description": "The signed CloudFront URL for accessing the protected file"
+          }
+        },
+        "required": [
+          "signedUrl"
+        ]
+      },
+      "ProjectLimitsDto": {
+        "type": "object",
+        "properties": {
+          "maxContentBytes": {
+            "type": "number",
+            "example": 1048576,
+            "description": "Maximum logical content size (bytes) a game can be published at"
+          },
+          "maxBlobBytes": {
+            "type": "number",
+            "example": 16777216,
+            "description": "Maximum size (bytes) of an uploaded project blob"
+          }
+        },
+        "required": [
+          "maxContentBytes",
+          "maxBlobBytes"
+        ]
+      },
+      "ContentSizeBreakdownDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "number",
+            "example": 2048,
+            "description": "UTF-8 bytes of Lua source"
+          },
+          "sprites": {
+            "type": "number",
+            "example": 512,
+            "description": "Painted sprite-sheet pixels"
+          },
+          "flags": {
+            "type": "number",
+            "example": 4,
+            "description": "Sprites with at least one flag set"
+          },
+          "map": {
+            "type": "number",
+            "example": 300,
+            "description": "Map tiles set"
+          },
+          "sound": {
+            "type": "number",
+            "example": 1024,
+            "description": "UTF-8 bytes of instruments, patterns, songs, sfx and samples"
+          },
+          "palette": {
+            "type": "number",
+            "example": 112,
+            "description": "Bytes of the colour palette"
+          },
+          "total": {
+            "type": "number",
+            "example": 4000,
+            "description": "Sum of every category"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "example": 1,
+            "description": "Game document schema version (0 = legacy document)"
+          }
+        },
+        "required": [
+          "code",
+          "sprites",
+          "flags",
+          "map",
+          "sound",
+          "palette",
+          "total",
+          "schemaVersion"
+        ]
+      },
+      "ProjectSizeDto": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "number",
+            "example": 1,
+            "description": "Project ID"
+          },
+          "contentSize": {
+            "$ref": "#/components/schemas/ContentSizeBreakdownDto"
+          },
+          "maxContentBytes": {
+            "type": "number",
+            "example": 1048576,
+            "description": "Maximum logical content size (bytes) a game can be published at"
+          },
+          "withinBudget": {
+            "type": "boolean",
+            "example": true,
+            "description": "Whether the project fits within the publishing budget"
+          }
+        },
+        "required": [
+          "projectId",
+          "contentSize",
+          "maxContentBytes",
+          "withinBudget"
+        ]
+      },
+      "CreateProjectDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The name of the project",
+            "example": "MySuperVideoGame",
+            "maxLength": 25
+          },
+          "shortDesc": {
+            "type": "string",
+            "description": "A short description of the project",
+            "example": "A 2D platformer game with pixel art graphics",
+            "maxLength": 50
+          },
+          "iconUrl": {
+            "type": "string",
+            "description": "URL to the project icon",
+            "example": "https://example.com/icons/MySuperVideoGame.png"
+          },
+          "tags": {
+            "description": "Tags attached to the project",
+            "example": [
+              "Shooter",
+              "Action"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "shortDesc"
+        ]
+      },
+      "ProjectResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 1,
+            "description": "The unique identifier of the project"
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the project",
+            "example": "MySuperVideoGame"
+          },
+          "shortDesc": {
+            "type": "string",
+            "description": "A short description of the project",
+            "example": "A 2D platformer game with pixel art graphics"
+          },
+          "longDesc": {
+            "type": "string",
+            "description": "A detailed description of the project",
+            "example": "This game features multiple levels, power-ups, and boss fights.",
+            "nullable": true
+          },
+          "tags": {
+            "description": "Tags associated with the project",
+            "example": [
+              "Roguelike",
+              "Action",
+              "Custom Jam"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "iconUrl": {
+            "type": "string",
+            "description": "URL to the project icon",
+            "example": "https://example.com/icons/MySuperVideoGame.png",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "description": "The current status of the project",
+            "enum": [
+              "IN_PROGRESS",
+              "COMPLETED",
+              "ARCHIVED"
+            ],
+            "example": "IN_PROGRESS",
+            "nullable": true
+          },
+          "monetization": {
+            "type": "string",
+            "description": "The monetization strategy for this project",
+            "enum": [
+              "NONE",
+              "ADS",
+              "PAID"
+            ],
+            "example": "NONE",
+            "nullable": true
+          },
+          "price": {
+            "type": "number",
+            "example": 99.99,
+            "description": "The price of the project, if applicable",
+            "nullable": true
+          },
+          "userId": {
+            "type": "number",
+            "example": 1,
+            "description": "The ID of the user who owns this project"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2023-04-15T12:00:00Z",
+            "description": "The date and time when the project was created"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2023-05-15T12:00:00Z",
+            "description": "The date and time when the project was last updated"
+          },
+          "publishedAt": {
+            "type": "string",
+            "example": "2023-05-20T12:00:00Z",
+            "description": "The date and time when the project was last published",
+            "nullable": true
+          },
+          "viewCount": {
+            "type": "number",
+            "example": 123,
+            "description": "The number of times players opened this game's play page"
+          },
+          "uniquePlayers": {
+            "type": "number",
+            "example": 123,
+            "description": "The number of unique players who have interacted with this project"
+          },
+          "activePlayers": {
+            "type": "number",
+            "example": 42,
+            "description": "The number of currently active players in this project"
+          },
+          "likes": {
+            "type": "number",
+            "example": 87,
+            "description": "The number of likes received by the project"
+          },
+          "commentCount": {
+            "type": "number",
+            "example": 12,
+            "description": "The number of comments on the project"
+          },
+          "forkCount": {
+            "type": "number",
+            "example": 7,
+            "description": "The number of forks created from this project"
+          },
+          "forkedFromId": {
+            "type": "number",
+            "example": 42,
+            "description": "The ID of the project this was forked from, if any",
+            "nullable": true
+          },
+          "forkedFrom": {
+            "description": "The project this was forked from, by name — lineage renders a title and an author rather than an id",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ForkedFromDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "shortDesc",
+          "longDesc",
+          "tags",
+          "iconUrl",
+          "status",
+          "monetization",
+          "price",
+          "userId",
+          "createdAt",
+          "updatedAt",
+          "publishedAt",
+          "viewCount",
+          "uniquePlayers",
+          "activePlayers",
+          "likes"
+        ]
+      },
+      "ForkProjectResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 1,
+            "description": "The unique identifier of the project"
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the project",
+            "example": "MySuperVideoGame"
+          },
+          "shortDesc": {
+            "type": "string",
+            "description": "A short description of the project",
+            "example": "A 2D platformer game with pixel art graphics"
+          },
+          "longDesc": {
+            "type": "string",
+            "description": "A detailed description of the project",
+            "example": "This game features multiple levels, power-ups, and boss fights.",
+            "nullable": true
+          },
+          "tags": {
+            "description": "Tags associated with the project",
+            "example": [
+              "Roguelike",
+              "Action",
+              "Custom Jam"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "iconUrl": {
+            "type": "string",
+            "description": "URL to the project icon",
+            "example": "https://example.com/icons/MySuperVideoGame.png",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "description": "The current status of the project",
+            "enum": [
+              "IN_PROGRESS",
+              "COMPLETED",
+              "ARCHIVED"
+            ],
+            "example": "IN_PROGRESS",
+            "nullable": true
+          },
+          "monetization": {
+            "type": "string",
+            "description": "The monetization strategy for this project",
+            "enum": [
+              "NONE",
+              "ADS",
+              "PAID"
+            ],
+            "example": "NONE",
+            "nullable": true
+          },
+          "price": {
+            "type": "number",
+            "example": 99.99,
+            "description": "The price of the project, if applicable",
+            "nullable": true
+          },
+          "userId": {
+            "type": "number",
+            "example": 1,
+            "description": "The ID of the user who owns this project"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2023-04-15T12:00:00Z",
+            "description": "The date and time when the project was created"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2023-05-15T12:00:00Z",
+            "description": "The date and time when the project was last updated"
+          },
+          "publishedAt": {
+            "type": "string",
+            "example": "2023-05-20T12:00:00Z",
+            "description": "The date and time when the project was last published",
+            "nullable": true
+          },
+          "viewCount": {
+            "type": "number",
+            "example": 123,
+            "description": "The number of times players opened this game's play page"
+          },
+          "uniquePlayers": {
+            "type": "number",
+            "example": 123,
+            "description": "The number of unique players who have interacted with this project"
+          },
+          "activePlayers": {
+            "type": "number",
+            "example": 42,
+            "description": "The number of currently active players in this project"
+          },
+          "likes": {
+            "type": "number",
+            "example": 87,
+            "description": "The number of likes received by the project"
+          },
+          "commentCount": {
+            "type": "number",
+            "example": 12,
+            "description": "The number of comments on the project"
+          },
+          "forkCount": {
+            "type": "number",
+            "example": 7,
+            "description": "The number of forks created from this project"
+          },
+          "forkedFromId": {
+            "type": "number",
+            "example": 42,
+            "description": "The ID of the project this was forked from, if any",
+            "nullable": true
+          },
+          "forkedFrom": {
+            "description": "The project this was forked from, by name — lineage renders a title and an author rather than an id",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ForkedFromDto"
+              }
+            ]
+          },
+          "collaborators": {
+            "description": "The users collaborating on this project",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserBasicInfoDto"
+            }
+          },
+          "creator": {
+            "description": "The creator of this project",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserBasicInfoDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "shortDesc",
+          "longDesc",
+          "tags",
+          "iconUrl",
+          "status",
+          "monetization",
+          "price",
+          "userId",
+          "createdAt",
+          "updatedAt",
+          "publishedAt",
+          "viewCount",
+          "uniquePlayers",
+          "activePlayers",
+          "likes",
+          "collaborators",
+          "creator"
+        ]
+      },
+      "UpdateProjectDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The name of the project",
+            "example": "MySuperVideoGame",
+            "maxLength": 25
+          },
+          "shortDesc": {
+            "type": "string",
+            "description": "A short description of the project",
+            "example": "A 2D platformer game with pixel art graphics",
+            "maxLength": 50
+          },
+          "longDesc": {
+            "type": "object",
+            "description": "A detailed description of the project",
+            "example": "This game features multiple levels, power-ups, and boss fights.",
+            "maxLength": 300
+          },
+          "tags": {
+            "description": "Tags attached to the project",
+            "example": [
+              "RPG",
+              "Adventure"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "iconUrl": {
+            "type": "string",
+            "description": "URL to the project icon",
+            "example": "https://example.com/icons/MySuperVideoGame.png"
+          },
+          "status": {
+            "type": "string",
+            "description": "Project status",
+            "enum": [
+              "IN_PROGRESS",
+              "COMPLETED",
+              "ARCHIVED"
+            ],
+            "default": "IN_PROGRESS"
+          },
+          "monetization": {
+            "type": "string",
+            "description": "Monetization type",
+            "enum": [
+              "NONE",
+              "ADS",
+              "PAID"
+            ],
+            "default": "NONE"
+          },
+          "price": {
+            "type": "number",
+            "description": "The price of the project",
+            "example": 99.99
+          }
+        },
+        "required": [
+          "name",
+          "shortDesc"
+        ]
+      },
+      "AddCollaboratorDto": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "number",
+            "description": "User ID of the user to add as collaborator",
+            "example": 42
+          },
+          "username": {
+            "type": "string",
+            "description": "Username of the user to add as collaborator",
+            "example": "john_doe"
+          },
+          "email": {
+            "type": "string",
+            "description": "Email of the user to add as collaborator",
+            "example": "john.doe@example.com"
+          }
+        }
+      },
+      "RemoveCollaboratorDto": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "number",
+            "description": "User ID of the user to remove as collaborator",
+            "example": 42
+          },
+          "username": {
+            "type": "string",
+            "description": "Username of the user to remove as collaborator",
+            "example": "john_doe"
+          },
+          "email": {
+            "type": "string",
+            "description": "Email of the user to remove as collaborator",
+            "example": "john.doe@example.com"
+          }
+        }
+      },
+      "ImageUrlResponseDto": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "example": "https://cdn.example.com/projects/42/image",
+            "description": "The public CDN URL for the image"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "ProjectTooLargeDto": {
+        "type": "object",
+        "properties": {
+          "statusCode": {
+            "type": "number",
+            "example": 413
+          },
+          "error": {
+            "type": "string",
+            "example": "Payload Too Large"
+          },
+          "code": {
+            "type": "string",
+            "example": "PROJECT_TOO_LARGE"
+          },
+          "message": {
+            "type": "string",
+            "example": "Project content is 1200000 bytes, above the 1048576 bytes limit"
+          },
+          "contentSize": {
+            "$ref": "#/components/schemas/ContentSizeBreakdownDto"
+          },
+          "maxContentBytes": {
+            "type": "number",
+            "example": 1048576
+          }
+        },
+        "required": [
+          "statusCode",
+          "error",
+          "code",
+          "message",
+          "contentSize",
+          "maxContentBytes"
+        ]
+      },
+      "ProjectSaveDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Object name inside the project's save prefix",
+            "example": "1742901234567"
+          },
+          "date": {
+            "format": "date-time",
+            "type": "string",
+            "description": "When the blob was written",
+            "example": "2025-03-25T11:20:34.000Z"
+          }
+        },
+        "required": [
+          "name",
+          "date"
+        ]
+      },
+      "ProjectVersionsResponseDto": {
+        "type": "object",
+        "properties": {
+          "versions": {
+            "description": "Autosaves, newest last",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProjectSaveDto"
+            }
+          }
+        },
+        "required": [
+          "versions"
+        ]
+      },
+      "ProjectCheckpointsResponseDto": {
+        "type": "object",
+        "properties": {
+          "checkpoints": {
+            "description": "Named checkpoints",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProjectSaveDto"
+            }
+          }
+        },
+        "required": [
+          "checkpoints"
+        ]
+      },
+      "LikeResponseDto": {
+        "type": "object",
+        "properties": {
+          "likes": {
+            "type": "number",
+            "example": 42,
+            "description": "Total number of likes on the project"
+          },
+          "liked": {
+            "type": "boolean",
+            "example": true,
+            "description": "Whether the current user has liked this project"
+          }
+        },
+        "required": [
+          "likes",
+          "liked"
+        ]
+      },
+      "ViewResponseDto": {
+        "type": "object",
+        "properties": {
+          "viewCount": {
+            "type": "number",
+            "example": 128,
+            "description": "The number of play opens registered for the project"
+          }
+        },
+        "required": [
+          "viewCount"
+        ]
+      },
+      "CreateGameSessionDto": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "number",
+            "description": "ID of the project this session is played on"
+          },
+          "title": {
+            "type": "string",
+            "description": "Human-readable title of the session"
+          },
+          "maxPlayers": {
+            "type": "number",
+            "description": "Maximum number of players, host included",
+            "minimum": 2,
+            "maximum": 16
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "PUBLIC",
+              "FRIENDS_ONLY",
+              "INVITE_CODE"
+            ]
+          }
+        },
+        "required": [
+          "projectId",
+          "title",
+          "maxPlayers",
+          "visibility"
+        ]
+      },
+      "WebRTCOfferPeerICEServerConfig": {
+        "type": "object",
+        "properties": {
+          "urls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "username": {
+            "type": "object"
+          },
+          "credential": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "urls"
+        ]
+      },
+      "WebRTCOfferPeerOptsConfig": {
+        "type": "object",
+        "properties": {
+          "iceServers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebRTCOfferPeerICEServerConfig"
+            }
+          }
+        },
+        "required": [
+          "iceServers"
+        ]
+      },
+      "WebRTCOfferPeerOpts": {
+        "type": "object",
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/WebRTCOfferPeerOptsConfig"
+          }
+        },
+        "required": [
+          "config"
+        ]
+      },
+      "WebRTCOfferDto": {
+        "type": "object",
+        "properties": {
+          "signaling": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "maxConns": {
+            "type": "number"
+          },
+          "peerOpts": {
+            "$ref": "#/components/schemas/WebRTCOfferPeerOpts"
+          }
+        },
+        "required": [
+          "signaling",
+          "maxConns",
+          "peerOpts"
+        ]
+      },
+      "GameSessionConnectionResponseDto": {
+        "type": "object",
+        "properties": {
+          "sessionUuid": {
+            "type": "string"
+          },
+          "playerId": {
+            "type": "number",
+            "description": "Player id assigned to this connection"
+          },
+          "webrtcConfig": {
+            "$ref": "#/components/schemas/WebRTCOfferDto"
+          },
+          "connectionTicket": {
+            "type": "string",
+            "description": "Short-lived signed ticket presented on the WebRTC connection"
+          },
+          "joinCode": {
+            "type": "string",
+            "description": "Join code to share, present only when hosting an INVITE_CODE session"
+          }
+        },
+        "required": [
+          "sessionUuid",
+          "playerId",
+          "webrtcConfig",
+          "connectionTicket"
+        ]
+      },
+      "JoinByCodeDto": {
+        "type": "object",
+        "properties": {
+          "joinCode": {
+            "type": "string",
+            "description": "Invite code of the session to join"
+          },
+          "editorTest": {
+            "type": "boolean",
+            "description": "Set by the game editor to allow a self-join for solo testing"
+          }
+        },
+        "required": [
+          "joinCode"
+        ]
+      },
+      "GameSessionResponseDto": {
+        "type": "object",
+        "properties": {
+          "sessionUuid": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "PUBLIC",
+              "FRIENDS_ONLY",
+              "INVITE_CODE"
+            ]
+          },
+          "hostId": {
+            "type": "number",
+            "description": "ID of the host user"
+          },
+          "hostUsername": {
+            "type": "string",
+            "description": "Username of the host"
+          },
+          "hostNickname": {
+            "type": "string",
+            "description": "Display nickname of the host, if set"
+          },
+          "projectId": {
+            "type": "number",
+            "description": "ID of the game (project) being played"
+          },
+          "projectName": {
+            "type": "string",
+            "description": "Name of the game (project) being played"
+          },
+          "maxPlayers": {
+            "type": "number",
+            "description": "Maximum number of players, host included"
+          },
+          "playerCount": {
+            "type": "number",
+            "description": "Current number of players, host included"
+          }
+        },
+        "required": [
+          "sessionUuid",
+          "title",
+          "visibility",
+          "hostId",
+          "hostUsername",
+          "projectId",
+          "projectName",
+          "maxPlayers",
+          "playerCount"
+        ]
+      },
+      "GameSessionListResponseDto": {
+        "type": "object",
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GameSessionResponseDto"
+            }
+          }
+        },
+        "required": [
+          "sessions"
+        ]
+      },
+      "SessionPlayerDto": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "number",
+            "description": "User ID",
+            "example": 42
+          },
+          "username": {
+            "type": "string",
+            "description": "Username",
+            "example": "alice"
+          },
+          "nickname": {
+            "type": "string",
+            "description": "Display nickname, if set",
+            "nullable": true
+          },
+          "host": {
+            "type": "boolean",
+            "description": "Whether this player is hosting",
+            "example": false
+          }
+        },
+        "required": [
+          "userId",
+          "username",
+          "host"
+        ]
+      },
+      "SessionRosterResponseDto": {
+        "type": "object",
+        "properties": {
+          "players": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionPlayerDto"
+            }
+          },
+          "maxPlayers": {
+            "type": "number",
+            "description": "Slots the session was opened with",
+            "example": 4
+          }
+        },
+        "required": [
+          "players",
+          "maxPlayers"
+        ]
+      },
+      "InviteToSessionDto": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "number",
+            "description": "Who to invite",
+            "example": 42
+          }
+        },
+        "required": [
+          "userId"
+        ]
+      },
+      "UpdateGameSessionDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "New title of the session"
+          },
+          "maxPlayers": {
+            "type": "number",
+            "description": "New maximum number of players, host included",
+            "minimum": 2,
+            "maximum": 16
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "PUBLIC",
+              "FRIENDS_ONLY",
+              "INVITE_CODE"
+            ]
+          }
+        }
+      },
+      "JoinGameSessionDto": {
+        "type": "object",
+        "properties": {
+          "joinCode": {
+            "type": "string",
+            "description": "Join code, required for INVITE_CODE sessions"
+          },
+          "editorTest": {
+            "type": "boolean",
+            "description": "Set by the game editor to allow a self-join for solo testing"
+          }
+        }
+      },
+      "CommentAuthorDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 1
+          },
+          "username": {
+            "type": "string",
+            "example": "john_doe"
+          },
+          "nickname": {
+            "type": "string",
+            "example": "John",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "username"
+        ]
+      },
+      "CommentResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 1
+          },
+          "content": {
+            "type": "string",
+            "example": "Great game!"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2023-04-15T12:00:00Z"
+          },
+          "projectId": {
+            "type": "number",
+            "example": 1
+          },
+          "author": {
+            "$ref": "#/components/schemas/CommentAuthorDto"
+          },
+          "deleted": {
+            "type": "boolean",
+            "example": false
+          },
+          "replies": {
+            "description": "Replies to this comment (only for top-level comments)",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommentResponseDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "content",
+          "createdAt",
+          "projectId",
+          "author"
+        ]
+      },
+      "PaginatedCommentsResponseDto": {
+        "type": "object",
+        "properties": {
+          "comments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommentResponseDto"
+            }
+          },
+          "total": {
+            "type": "number",
+            "example": 42
+          },
+          "page": {
+            "type": "number",
+            "example": 1
+          },
+          "limit": {
+            "type": "number",
+            "example": 20
+          }
+        },
+        "required": [
+          "comments",
+          "total",
+          "page",
+          "limit"
+        ]
+      },
+      "CreateCommentDto": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "The content of the comment",
+            "example": "Great game, love the pixel art!",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "NotificationTestDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "example": "Test Notification",
+            "description": "The title of the test notification"
+          },
+          "message": {
+            "type": "string",
+            "example": "This is a test notification message.",
+            "description": "The message content of the test notification"
+          },
+          "type": {
+            "type": "string",
+            "example": "INFO",
+            "description": "The type of the notification",
+            "enum": [
+              "INFO",
+              "WARNING"
+            ]
+          }
+        },
+        "required": [
+          "title",
+          "message",
+          "type"
+        ]
+      },
+      "FriendDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 1
+          },
+          "username": {
+            "type": "string",
+            "example": "xX_DarkGamer_Xx"
+          },
+          "nickname": {
+            "type": "object",
+            "nullable": true,
+            "example": "JohnDoe"
+          },
+          "since": {
+            "type": "string",
+            "description": "When the friendship was created (ISO 8601)",
+            "example": "2026-06-07T09:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "since"
+        ]
+      },
+      "UserSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 1
+          },
+          "username": {
+            "type": "string",
+            "example": "xX_DarkGamer_Xx"
+          },
+          "nickname": {
+            "type": "object",
+            "nullable": true,
+            "example": "JohnDoe"
+          }
+        },
+        "required": [
+          "id",
+          "username"
+        ]
+      },
+      "FriendRequestDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 12
+          },
+          "from": {
+            "$ref": "#/components/schemas/UserSummaryDto"
+          },
+          "to": {
+            "$ref": "#/components/schemas/UserSummaryDto"
+          },
+          "mutuals": {
+            "type": "number",
+            "description": "Friends the two users have in common"
+          },
+          "playedYourGame": {
+            "type": "boolean",
+            "description": "Whether the sender has played a game session hosted on one of the recipient's projects"
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-06-07T09:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "from",
+          "to",
+          "createdAt"
+        ]
+      },
+      "SendFriendRequestDto": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "number",
+            "description": "ID of the user to befriend"
+          },
+          "username": {
+            "type": "string",
+            "description": "Handle of the person to befriend — what the profile shows after the @",
+            "example": "louis"
+          },
+          "friendCode": {
+            "type": "string",
+            "description": "Friend code of the user to befriend (case-insensitive, dashes/spaces ignored)",
+            "example": "7K3Q-W9ZB"
+          }
+        }
+      },
+      "RecentPlayerDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 1
+          },
+          "username": {
+            "type": "string",
+            "example": "xX_DarkGamer_Xx"
+          },
+          "nickname": {
+            "type": "object",
+            "nullable": true,
+            "example": "JohnDoe"
+          },
+          "game": {
+            "type": "string",
+            "description": "Name of the game played together"
+          },
+          "playedAt": {
+            "type": "string",
+            "description": "Start of the most recent shared game session (ISO 8601)",
+            "example": "2026-06-07T09:00:00.000Z"
+          },
+          "friend": {
+            "type": "boolean",
+            "description": "Whether this player is already a friend"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "game",
+          "playedAt",
+          "friend"
+        ]
+      },
+      "FriendshipStatus": {
+        "type": "string",
+        "enum": [
+          "NONE",
+          "PENDING",
+          "FRIENDS"
+        ]
+      },
+      "FriendshipStatusDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FriendshipStatus"
+              }
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "PresenceKind": {
+        "type": "string",
+        "enum": [
+          "IDLE",
+          "PLAYING",
+          "BUILDING",
+          "HOSTING"
+        ]
+      },
+      "PresenceDto": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "number",
+            "example": 1
+          },
+          "username": {
+            "type": "string",
+            "example": "louis",
+            "description": "Who it is, so a row can name them without a second call"
+          },
+          "nickname": {
+            "type": "object",
+            "nullable": true,
+            "example": "Louis"
+          },
+          "kind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PresenceKind"
+              }
+            ]
+          },
+          "releaseId": {
+            "type": "object",
+            "nullable": true,
+            "description": "Released project being played (PLAYING)"
+          },
+          "projectId": {
+            "type": "object",
+            "nullable": true,
+            "description": "Project being edited (BUILDING) or hosted (HOSTING)"
+          },
+          "sessionId": {
+            "type": "object",
+            "nullable": true,
+            "description": "Game session UUID (HOSTING)"
+          },
+          "title": {
+            "type": "object",
+            "nullable": true,
+            "description": "Game session title or project name"
+          },
+          "coverUrl": {
+            "type": "object",
+            "nullable": true,
+            "description": "Cover of the game being played, built or hosted"
+          },
+          "players": {
+            "type": "object",
+            "nullable": true,
+            "description": "Players in the hosted session, host included"
+          },
+          "maxPlayers": {
+            "type": "object",
+            "nullable": true
+          },
+          "joinable": {
+            "type": "boolean",
+            "description": "Whether the caller may join the hosted session"
+          },
+          "since": {
+            "type": "string",
+            "description": "When this activity started (ISO 8601)",
+            "example": "2026-06-07T09:00:00.000Z"
+          }
+        },
+        "required": [
+          "userId",
+          "username",
+          "kind",
+          "since"
+        ]
+      },
+      "FeaturedCuratorDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 1
+          },
+          "username": {
+            "type": "string",
+            "example": "admin"
+          }
+        },
+        "required": [
+          "id",
+          "username"
+        ]
+      },
+      "FeaturedReleaseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 7,
+            "description": "Featured entry ID"
+          },
+          "projectId": {
+            "type": "number",
+            "example": 42,
+            "description": "Featured project ID"
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "startsAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-08-17T09:00:00Z"
+          },
+          "endsAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "featuredBy": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FeaturedCuratorDto"
+              }
+            ]
+          },
+          "project": {
+            "description": "Release metadata of the featured project",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProjectExResponseDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "startsAt",
+          "project"
+        ]
+      },
+      "FeaturedReleaseResponseDto": {
+        "type": "object",
+        "properties": {
+          "featured": {
+            "nullable": true,
+            "description": "The current featured release, or null when none is set",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FeaturedReleaseDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "featured"
+        ]
+      },
+      "SetFeaturedReleaseDto": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "number",
+            "example": 42,
+            "description": "ID of the published project"
+          },
+          "note": {
+            "type": "string",
+            "example": "Editor's pick: a tight one-button platformer",
+            "description": "Optional curator note shown next to the featured game",
+            "maxLength": 280
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "FeaturedProjectSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 42
+          },
+          "name": {
+            "type": "string",
+            "example": "Moon Lander"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "FeaturedReleaseHistoryEntryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 7
+          },
+          "projectId": {
+            "type": "number",
+            "example": 42
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "startsAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-08-10T09:00:00Z"
+          },
+          "endsAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "featuredBy": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FeaturedCuratorDto"
+              }
+            ]
+          },
+          "project": {
+            "$ref": "#/components/schemas/FeaturedProjectSummaryDto"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "startsAt",
+          "project"
+        ]
+      },
+      "FeaturedReleaseHistoryDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FeaturedReleaseHistoryEntryDto"
+            }
+          },
+          "total": {
+            "type": "number",
+            "example": 12
+          },
+          "page": {
+            "type": "number",
+            "example": 1
+          },
+          "limit": {
+            "type": "number",
+            "example": 20
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "limit"
+        ]
+      },
+      "LoginDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "User email address",
+            "example": "user@example.com"
+          },
+          "password": {
+            "type": "string",
+            "description": "User password",
+            "example": "password123",
+            "minLength": 6
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ]
+      },
+      "PasswordPolicyDto": {
+        "type": "object",
+        "properties": {
+          "minLength": {
+            "type": "number",
+            "description": "Fewest characters a password may hold",
+            "example": 8
+          },
+          "minCharacterClasses": {
+            "type": "number",
+            "description": "How many of the character classes below a password must draw on",
+            "example": 2
+          },
+          "characterClasses": {
+            "type": "array",
+            "description": "The classes that count towards minCharacterClasses",
+            "example": [
+              "letters",
+              "digits"
+            ],
+            "items": {
+              "type": "string",
+              "enum": [
+                "letters",
+                "digits",
+                "symbols"
+              ]
+            }
+          }
+        },
+        "required": [
+          "minLength",
+          "minCharacterClasses",
+          "characterClasses"
+        ]
+      },
+      "CreateUserDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "User email address",
+            "example": "user@example.com"
+          },
+          "username": {
+            "type": "string",
+            "description": "User username",
+            "example": "xX_DarkGamer_Xx"
+          },
+          "nickname": {
+            "type": "string",
+            "description": "User nick name",
+            "example": "JohnDoe"
+          },
+          "password": {
+            "type": "string",
+            "description": "User password",
+            "example": "password123",
+            "minLength": 8
+          }
+        },
+        "required": [
+          "email",
+          "username",
+          "password"
+        ]
+      },
+      "ViolationDto": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string",
+            "description": "Dotted path of the rejected field, array indices included",
+            "example": "password"
+          },
+          "code": {
+            "type": "string",
+            "description": "Stable identifier for the rule it broke",
+            "example": "PASSWORD_TOO_SHORT"
+          }
+        },
+        "required": [
+          "field",
+          "code"
+        ]
+      },
+      "ValidationErrorResponseDto": {
+        "type": "object",
+        "properties": {
+          "statusCode": {
+            "type": "number",
+            "example": 400
+          },
+          "error": {
+            "type": "string",
+            "example": "Bad Request"
+          },
+          "message": {
+            "example": [
+              "Password must be at least 8 characters"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "violations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ViolationDto"
+            }
+          }
+        },
+        "required": [
+          "statusCode",
+          "error",
+          "message",
+          "violations"
+        ]
+      },
+      "ConflictErrorResponseDto": {
+        "type": "object",
+        "properties": {
+          "statusCode": {
+            "type": "number",
+            "example": 409
+          },
+          "error": {
+            "type": "string",
+            "example": "Conflict"
+          },
+          "message": {
+            "type": "string",
+            "example": "Email already in use"
+          },
+          "violations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ViolationDto"
+            }
+          }
+        },
+        "required": [
+          "statusCode",
+          "error",
+          "message",
+          "violations"
+        ]
+      },
+      "GoogleCodeDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Google authorization code"
+          },
+          "codeVerifier": {
+            "type": "string",
+            "description": "PKCE code verifier"
+          }
+        },
+        "required": [
+          "code",
+          "codeVerifier"
+        ]
+      },
+      "GithubLoginDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "GitHub OAuth authorization code",
+            "example": "abc123def456"
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "MicrosoftLoginDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Microsoft ID token",
+            "example": "eyJhbGciOiJSUzI1NiIs..."
+          }
+        },
+        "required": [
+          "token"
+        ]
+      },
+      "ChangePasswordDto": {
+        "type": "object",
+        "properties": {
+          "currentPassword": {
+            "type": "string",
+            "description": "Current password (not required for OAuth accounts)"
+          },
+          "newPassword": {
+            "type": "string",
+            "description": "New password",
+            "minLength": 8
+          }
+        },
+        "required": [
+          "newPassword"
+        ]
+      },
+      "UserRoleDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "Role ID",
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "description": "Role name",
+            "example": "Admin"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "UserResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "User ID",
+            "example": 1
+          },
+          "email": {
+            "type": "string",
+            "description": "User email address",
+            "example": "user@example.com"
+          },
+          "username": {
+            "type": "string",
+            "description": "Username",
+            "example": "xX_DarkGamer_Xx"
+          },
+          "nickname": {
+            "type": "string",
+            "description": "User nickname",
+            "example": "JohnDoe",
+            "nullable": true
+          },
+          "roles": {
+            "description": "User roles",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserRoleDto"
+            }
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "User creation date",
+            "example": "2023-01-01T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "User last update date",
+            "example": "2023-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "username",
+          "nickname",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "PaginationMetaDto": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "Current page number",
+            "example": 1
+          },
+          "limit": {
+            "type": "number",
+            "description": "Number of items per page",
+            "example": 10
+          },
+          "total": {
+            "type": "number",
+            "description": "Total number of items",
+            "example": 100
+          },
+          "totalPages": {
+            "type": "number",
+            "description": "Total number of pages",
+            "example": 10
+          }
+        },
+        "required": [
+          "page",
+          "limit",
+          "total",
+          "totalPages"
+        ]
+      },
+      "UserListResponseDto": {
+        "type": "object",
+        "properties": {
+          "statusCode": {
+            "type": "number",
+            "description": "HTTP status code",
+            "example": 200
+          },
+          "message": {
+            "type": "string",
+            "description": "Response message",
+            "example": "Users retrieved successfully"
+          },
+          "data": {
+            "description": "List of users",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserResponseDto"
+            }
+          },
+          "meta": {
+            "description": "Pagination metadata",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaginationMetaDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "statusCode",
+          "message",
+          "data",
+          "meta"
+        ]
+      },
+      "UserSingleResponseDto": {
+        "type": "object",
+        "properties": {
+          "statusCode": {
+            "type": "number",
+            "description": "HTTP status code",
+            "example": 200
+          },
+          "message": {
+            "type": "string",
+            "description": "Response message",
+            "example": "User retrieved successfully"
+          },
+          "data": {
+            "description": "User data",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserResponseDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "statusCode",
+          "message",
+          "data"
+        ]
+      },
+      "UserProfileResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "User ID",
+            "example": 1
+          },
+          "email": {
+            "type": "string",
+            "description": "User email address",
+            "example": "user@example.com"
+          },
+          "username": {
+            "type": "string",
+            "description": "Username",
+            "example": "xX_DarkGamer_Xx"
+          },
+          "nickname": {
+            "type": "string",
+            "description": "User nickname",
+            "example": "JohnDoe",
+            "nullable": true
+          },
+          "roles": {
+            "description": "User roles",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserRoleDto"
+            }
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "User creation date",
+            "example": "2023-01-01T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "User last update date",
+            "example": "2023-01-01T00:00:00.000Z"
+          },
+          "message": {
+            "type": "string",
+            "description": "User profile message",
+            "example": "Profile retrieved successfully"
+          },
+          "profileImageUrl": {
+            "type": "string",
+            "description": "Public CDN URL of the profile image (if any)",
+            "example": "https://cdn.example.com/users/1/profile?v=abc123",
+            "nullable": true
+          },
+          "backgroundImageUrl": {
+            "type": "string",
+            "description": "Public CDN URL of the profile background image (if any)",
+            "example": "https://cdn.example.com/users/1/background?v=abc123",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "username",
+          "nickname",
+          "createdAt",
+          "updatedAt",
+          "message",
+          "profileImageUrl",
+          "backgroundImageUrl"
+        ]
+      },
+      "PublicUserProfileDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "User ID",
+            "example": 1
+          },
+          "username": {
+            "type": "string",
+            "description": "Username",
+            "example": "xX_DarkGamer_Xx"
+          },
+          "nickname": {
+            "type": "string",
+            "description": "User nickname / bio",
+            "example": "JohnDoe",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "description": "User profile description",
+            "example": "I love making games",
+            "nullable": true
+          },
+          "profileImageUrl": {
+            "type": "string",
+            "description": "Public CDN URL of the profile image (if any)",
+            "example": "https://cdn.example.com/users/1/profile?v=abc123",
+            "nullable": true
+          },
+          "backgroundImageUrl": {
+            "type": "string",
+            "description": "Public CDN URL of the profile background image (if any)",
+            "example": "https://cdn.example.com/users/1/background?v=abc123",
+            "nullable": true
+          },
+          "colour": {
+            "type": "string",
+            "description": "The accent this person is drawn in; null until they pick one",
+            "enum": [
+              "SKY",
+              "BLUSH",
+              "JADE",
+              "GOLD",
+              "ORANGE",
+              "HOT"
+            ],
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "When the account was created — the profile header shows the year",
+            "example": "2025-03-14T09:00:00.000Z"
+          },
+          "gameCount": {
+            "type": "number",
+            "description": "Published games this person owns",
+            "example": 7
+          },
+          "totalPlays": {
+            "type": "number",
+            "description": "Total plays across their published games",
+            "example": 12400
+          },
+          "totalLikes": {
+            "type": "number",
+            "description": "Total likes across their published games",
+            "example": 318
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "createdAt"
+        ]
+      },
+      "PublicUserProfileResponseDto": {
+        "type": "object",
+        "properties": {
+          "statusCode": {
+            "type": "number",
+            "description": "HTTP status code",
+            "example": 200
+          },
+          "message": {
+            "type": "string",
+            "description": "Response message",
+            "example": "Public user profile retrieved successfully"
+          },
+          "data": {
+            "description": "Public user profile",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PublicUserProfileDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "statusCode",
+          "message",
+          "data"
+        ]
+      },
+      "UpdateUserProfileDto": {
+        "type": "object",
+        "properties": {
+          "nickname": {
+            "type": "string",
+            "description": "Public nickname / bio displayed on the profile",
+            "example": "Jojo",
+            "maxLength": 160
+          },
+          "description": {
+            "type": "string",
+            "description": "Public profile description displayed on the profile",
+            "example": "I love making games",
+            "maxLength": 160
+          },
+          "username": {
+            "type": "string",
+            "description": "Handle, unique across the platform — people add you as a friend with it",
+            "example": "louis",
+            "minLength": 3,
+            "maxLength": 24
+          },
+          "colour": {
+            "type": "string",
+            "description": "The accent this person is drawn in",
+            "enum": [
+              "SKY",
+              "BLUSH",
+              "JADE",
+              "GOLD",
+              "ORANGE",
+              "HOT"
+            ],
+            "example": "SKY"
+          }
+        }
+      },
+      "SessionJoinPolicy": {
+        "type": "string",
+        "enum": [
+          "ANYONE",
+          "FRIENDS",
+          "CODE_ONLY"
+        ],
+        "description": "Who may join the game sessions this user hosts"
+      },
+      "MeDto": {
+        "type": "object",
+        "properties": {
+          "friendCode": {
+            "type": "string",
+            "description": "Code other users enter to send a friend request",
+            "example": "7K3QW9ZB"
+          },
+          "sessionJoinPolicy": {
+            "description": "Who may join the game sessions this user hosts",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SessionJoinPolicy"
+              }
+            ]
+          }
+        },
+        "required": [
+          "friendCode",
+          "sessionJoinPolicy"
+        ]
+      },
+      "UpdateMeDto": {
+        "type": "object",
+        "properties": {
+          "sessionJoinPolicy": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SessionJoinPolicy"
+              }
+            ]
+          }
+        }
+      },
+      "DeleteAccountDto": {
+        "type": "object",
+        "properties": {
+          "confirmation": {
+            "type": "string",
+            "description": "Must be the literal string DELETE",
+            "example": "DELETE",
+            "enum": [
+              "DELETE"
+            ]
+          },
+          "removePublishedGames": {
+            "type": "boolean",
+            "description": "Also remove the user's published games (default: keep them, attributed to Deleted user)",
+            "default": false
+          },
+          "password": {
+            "type": "string",
+            "description": "Current password; verified when provided on a password account"
+          }
+        },
+        "required": [
+          "confirmation"
+        ]
+      },
+      "ProfileImageUploadResponseDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "example": "Profile picture uploaded successfully"
+          },
+          "id": {
+            "type": "number",
+            "description": "User ID",
+            "example": 12
+          },
+          "resourceUrl": {
+            "type": "string",
+            "description": "Where the image now lives, versioned so a replacement is not served from cache",
+            "example": "https://cdn.example/users/12/profile?v=abc"
+          }
+        },
+        "required": [
+          "message",
+          "id",
+          "resourceUrl"
+        ]
+      },
+      "SignedCdnResourceDto": {
+        "type": "object",
+        "properties": {
+          "resourceUrl": {
+            "type": "string",
+            "example": "https://cdn.example.com/projects/42/image",
+            "description": "The CDN URL for the resource (requires signed cookies)"
+          },
+          "cookies": {
+            "type": "object",
+            "description": "Signed Edge cookies (also set as HTTP-only cookies)",
+            "example": {
+              "CloudFront-Expires": "1735660800",
+              "CloudFront-Signature": "base64-signature",
+              "CloudFront-Key-Pair-Id": "K1234567890",
+              "CloudFront-Policy": "base64-policy"
+            }
+          }
+        },
+        "required": [
+          "resourceUrl",
+          "cookies"
+        ]
+      },
+      "UpdateUserDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "User email address",
+            "example": "user@example.com"
+          },
+          "username": {
+            "type": "string",
+            "description": "User username",
+            "example": "xX_DarkGamer_Xx"
+          },
+          "nickname": {
+            "type": "string",
+            "description": "User nick name",
+            "example": "JohnDoe"
+          },
+          "password": {
+            "type": "string",
+            "description": "User password",
+            "example": "password123",
+            "minLength": 8
+          }
+        }
+      },
+      "PublicUserSearchHitDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "User ID",
+            "example": 12
+          },
+          "username": {
+            "type": "string",
+            "description": "Handle, unique across the platform",
+            "example": "louis"
+          },
+          "nickname": {
+            "type": "object",
+            "description": "Display name",
+            "example": "Louis",
+            "nullable": true
+          },
+          "profileImageUrl": {
+            "type": "object",
+            "description": "Profile picture, null when the person has not set one",
+            "example": "https://cdn.example/users/12/profile?v=abc",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "username"
+        ]
+      },
+      "PublicUserSearchResponseDto": {
+        "type": "object",
+        "properties": {
+          "statusCode": {
+            "type": "number",
+            "description": "HTTP status code",
+            "example": 200
+          },
+          "message": {
+            "type": "string",
+            "description": "Response message",
+            "example": "Users retrieved successfully"
+          },
+          "data": {
+            "description": "Matching people",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicUserSearchHitDto"
+            }
+          }
+        },
+        "required": [
+          "statusCode",
+          "message",
+          "data"
+        ]
+      },
+      "JoinWorkSessionDto": {
+        "type": "object",
+        "properties": {
+          "roomId": {
+            "type": "string",
+            "description": "The unique room ID for the work session",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "hostId": {
+            "type": "number",
+            "description": "The user ID of the session's host",
+            "example": 1
+          },
+          "webrtcOffer": {
+            "description": "The WebRTC offer given to the client",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WebRTCOfferDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "roomId",
+          "hostId",
+          "webrtcOffer"
+        ]
+      },
+      "KickWorkSessionDto": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "number",
+            "description": "The ID of the user participating in the work session",
+            "example": 1
+          }
+        },
+        "required": [
+          "userId"
+        ]
+      },
+      "FetchWorkSessionDto": {
+        "type": "object",
+        "properties": {
+          "users": {
+            "description": "The ID of the user participating in the work session",
+            "example": [
+              1,
+              2,
+              3
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "hostId": {
+            "type": "number",
+            "description": "The ID of the session's host",
+            "example": 1
+          },
+          "project": {
+            "type": "number",
+            "description": "The ID of the project this work session belongs to",
+            "example": 1
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "The date and time when the work session started",
+            "example": "2023-04-15T12:00:00Z"
+          },
+          "roomId": {
+            "type": "string",
+            "description": "The ID of the room for this work session",
+            "example": "room-12345"
+          }
+        },
+        "required": [
+          "users",
+          "hostId",
+          "project",
+          "startedAt",
+          "roomId"
+        ]
+      }
+    }
+  }
+}

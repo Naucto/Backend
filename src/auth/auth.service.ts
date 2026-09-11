@@ -1,6 +1,5 @@
 import {
   Injectable,
-  ConflictException,
   UnauthorizedException,
   InternalServerErrorException,
   BadRequestException,
@@ -21,6 +20,7 @@ import { PrismaService } from "@ourPrisma/prisma.service";
 import { ConfigService } from "@nestjs/config";
 import { parseExpiresIn, timespanToMs } from "./auth.utils";
 import { v4 as uuidv4 } from "uuid";
+import { conflictViolation } from "@common/validation/violation.exception";
 
 @Injectable()
 export class AuthService {
@@ -121,11 +121,11 @@ export class AuthService {
     ]);
 
     if (existingByEmail.length > 0) {
-      throw new ConflictException("Email already in use");
+      throw conflictViolation("Email already in use", "email", "EMAIL_TAKEN");
     }
 
     if (existingByUsername.length > 0) {
-      throw new ConflictException("Username already in use");
+      throw conflictViolation("Username already in use", "username", "USERNAME_TAKEN");
     }
 
     createUserDto.roles = [];
@@ -201,7 +201,7 @@ export class AuthService {
       payload = this.jwtService.verify(oldToken, {
         secret: jwtSecret
       });
-    } catch (e) {
+    } catch {
       throw new UnauthorizedException("Invalid or expired refresh token");
     }
 
@@ -241,6 +241,15 @@ export class AuthService {
 
       return { access_token, refresh_token };
     });
+  }
+
+  /**
+   * Ends every session for a user. Logout cannot revoke by presented token — the refresh cookie is
+   * scoped to the refresh route and never reaches it — so it revokes by user id, which also signs
+   * the account out of any other tab or device holding a refresh token.
+   */
+  async revokeAllRefreshTokens(userId: number): Promise<void> {
+    await this.prisma.refreshToken.deleteMany({ where: { userId } });
   }
 
   async revokeRefreshToken(token: string): Promise<void> {

@@ -1,16 +1,29 @@
 import { Test, TestingModule } from "@nestjs/testing";
-import { NotFoundException } from "@nestjs/common";
+import { ConflictException, NotFoundException } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import { UserService } from "./user.service";
 import { PrismaService } from "@ourPrisma/prisma.service";
 
+function uniqueViolation(target: string[]): Prisma.PrismaClientKnownRequestError {
+  return new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+    code: "P2002",
+    clientVersion: "test",
+    meta: { target }
+  });
+}
+
 describe("UserService", () => {
   let service: UserService;
-  let prisma: { user: { findUnique: jest.Mock } };
+  let prisma: {
+    user: { findUnique: jest.Mock; update: jest.Mock; findMany: jest.Mock };
+  };
 
   beforeEach(async () => {
     prisma = {
       user: {
-        findUnique: jest.fn()
+        findUnique: jest.fn(),
+        update: jest.fn(),
+        findMany: jest.fn()
       }
     };
 
@@ -31,6 +44,65 @@ describe("UserService", () => {
     service = module.get<UserService>(UserService);
   });
 
+  describe("updateMyProfile", () => {
+    it("should write the display name, which the route accepted and dropped", async () => {
+      prisma.user.update.mockResolvedValue({});
+
+      await service.updateMyProfile(1, { nickname: "Louis" });
+
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { nickname: "Louis" } })
+      );
+    });
+
+    it("should leave alone what the request did not mention", async () => {
+      prisma.user.update.mockResolvedValue({});
+
+      // Each zone commits on its own, so a request carrying one field must not clear the others.
+      await service.updateMyProfile(1, { colour: "JADE" });
+
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { colour: "JADE" } })
+      );
+    });
+
+    it("should name the handle that collided rather than leak a database code", async () => {
+      prisma.user.update.mockRejectedValue(uniqueViolation(["username"]));
+
+      await expect(
+        service.updateMyProfile(1, { username: "louis" })
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
+  describe("searchPublic", () => {
+    it("should put an exact handle first", async () => {
+      prisma.user.findMany.mockResolvedValue([
+        { id: 1, username: "louisette", nickname: null },
+        { id: 2, username: "louis", nickname: null }
+      ]);
+
+      // Typing a whole handle names a person; alphabetical order would bury them under a
+      // longer name that merely starts the same way.
+      const hits = await service.searchPublic("Louis", 10);
+
+      expect(hits.map((h) => h.username)).toEqual(["louis", "louisette"]);
+    });
+
+    it("should never offer a deleted account", async () => {
+      prisma.user.findMany.mockResolvedValue([]);
+
+      await service.searchPublic("lou", 5);
+
+      expect(prisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ deletedAt: null }),
+          take: 5
+        })
+      );
+    });
+  });
+
   it("should be defined", () => {
     expect(service).toBeDefined();
   });
@@ -41,7 +113,8 @@ describe("UserService", () => {
         id: 1,
         username: "alice",
         nickname: "Ali",
-        description: "Hello"
+        description: "Hello",
+        createdAt: new Date("2025-03-14T09:00:00.000Z")
       };
 
       prisma.user.findUnique.mockResolvedValue(publicProfile);
@@ -53,7 +126,9 @@ describe("UserService", () => {
           id: true,
           username: true,
           nickname: true,
-          description: true
+          description: true,
+          colour: true,
+          createdAt: true
         }
       });
     });
@@ -85,7 +160,9 @@ describe("UserService", () => {
           id: true,
           username: true,
           nickname: true,
-          description: true
+          description: true,
+          colour: true,
+          createdAt: true
         }
       });
     });
@@ -96,6 +173,155 @@ describe("UserService", () => {
       await expect(service.findPublicProfileByUsername("unknown")).rejects.toThrow(
         new NotFoundException("User with username unknown not found")
       );
+    });
+  });
+
+  describe("getMe", () => {
+    it("returns the stored friend code and join policy", async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        friendCode: "7K3QW9ZB",
+        sessionJoinPolicy: "FRIENDS"
+      });
+
+      await expect(service.getMe(1)).resolves.toEqual({
+        friendCode: "7K3QW9ZB",
+        sessionJoinPolicy: "FRIENDS"
+      });
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it("lazily mints a friend code when the user has none", async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        friendCode: null,
+        sessionJoinPolicy: "ANYONE"
+      });
+      prisma.user.update.mockResolvedValue({ id: 1 });
+
+      const me = await service.getMe(1);
+
+      expect(me.friendCode).toHaveLength(8);
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 1 },
+          data: { friendCode: me.friendCode }
+        })
+      );
+    });
+
+    it("retries on a friend code collision", async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        friendCode: null,
+        sessionJoinPolicy: "ANYONE"
+      });
+      prisma.user.update
+        .mockRejectedValueOnce(uniqueViolation(["friendCode"]))
+        .mockResolvedValueOnce({ id: 1 });
+
+      const me = await service.getMe(1);
+
+      expect(me.friendCode).toHaveLength(8);
+      expect(prisma.user.update).toHaveBeenCalledTimes(2);
+    });
+
+    it("gives up after repeated collisions", async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        friendCode: null,
+        sessionJoinPolicy: "ANYONE"
+      });
+      prisma.user.update.mockRejectedValue(uniqueViolation(["friendCode"]));
+
+      await expect(service.getMe(1)).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it("rethrows unrelated unique violations", async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        friendCode: null,
+        sessionJoinPolicy: "ANYONE"
+      });
+      prisma.user.update.mockRejectedValue(uniqueViolation(["email"]));
+
+      await expect(service.getMe(1)).rejects.toBeInstanceOf(
+        Prisma.PrismaClientKnownRequestError
+      );
+    });
+
+    it("throws NotFound for an unknown user", async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+
+      await expect(service.getMe(42)).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe("updateMe", () => {
+    it("persists the join policy and returns the settings", async () => {
+      prisma.user.update.mockResolvedValue({ id: 1 });
+      prisma.user.findUnique.mockResolvedValue({
+        friendCode: "7K3QW9ZB",
+        sessionJoinPolicy: "CODE_ONLY"
+      });
+
+      await expect(
+        service.updateMe(1, { sessionJoinPolicy: "CODE_ONLY" })
+      ).resolves.toEqual({
+        friendCode: "7K3QW9ZB",
+        sessionJoinPolicy: "CODE_ONLY"
+      });
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { sessionJoinPolicy: "CODE_ONLY" } })
+      );
+    });
+
+    it("does not write when nothing changed", async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        friendCode: "7K3QW9ZB",
+        sessionJoinPolicy: "ANYONE"
+      });
+
+      await service.updateMe(1, {});
+
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("regenerateFriendCode", () => {
+    it("replaces the code even when one already exists", async () => {
+      prisma.user.update.mockResolvedValue({ id: 1 });
+      prisma.user.findUnique.mockResolvedValue({
+        friendCode: "NEWCODE1",
+        sessionJoinPolicy: "ANYONE"
+      });
+
+      await expect(service.regenerateFriendCode(1)).resolves.toEqual({
+        friendCode: "NEWCODE1",
+        sessionJoinPolicy: "ANYONE"
+      });
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { friendCode: expect.any(String) }
+        })
+      );
+    });
+  });
+
+  describe("findIdByFriendCode", () => {
+    it("normalizes the code and resolves a live user", async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 7, deletedAt: null });
+
+      await expect(service.findIdByFriendCode("7k3q-w9zb")).resolves.toBe(7);
+      expect(prisma.user.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { friendCode: "7K3QW9ZB" } })
+      );
+    });
+
+    it("returns null for malformed codes without querying", async () => {
+      await expect(service.findIdByFriendCode("nope")).resolves.toBeNull();
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    });
+
+    it("returns null for a deleted user", async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 7, deletedAt: new Date() });
+
+      await expect(service.findIdByFriendCode("7K3QW9ZB")).resolves.toBeNull();
     });
   });
 });

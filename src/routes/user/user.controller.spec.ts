@@ -1,6 +1,7 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { UserController } from "./user.controller";
 import { UserService } from "./user.service";
+import { AccountDeletionService } from "./account-deletion.service";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { S3Service } from "@s3/s3.service";
 import { CloudfrontService } from "src/routes/s3/edge.service";
@@ -9,12 +10,16 @@ import { HttpException, HttpStatus } from "@nestjs/common";
 
 describe("UserController", () => {
   let controller: UserController;
+  let userService: UserService;
+  let s3Service: S3Service;
+  const accountDeletion = { deleteAccount: jest.fn() };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [UserController],
       providers: [
         UserService,
+        { provide: AccountDeletionService, useValue: accountDeletion },
         {
           provide: PrismaService,
           useValue: {
@@ -57,6 +62,8 @@ describe("UserController", () => {
     }).compile();
 
     controller = module.get<UserController>(UserController);
+    userService = module.get<UserService>(UserService);
+    s3Service = module.get<S3Service>(S3Service);
   });
 
   it("should be defined", () => {
@@ -76,6 +83,99 @@ describe("UserController", () => {
         expect(err).toBeInstanceOf(HttpException);
         expect((err as HttpException).getStatus()).toBe(HttpStatus.FORBIDDEN);
       }
+    });
+  });
+
+  describe("removeProfilePicture", () => {
+    it("refuses to clear someone else's zone", async () => {
+      await expect(
+        controller.removeProfilePicture(222, { user: { id: 111 } } as any)
+      ).rejects.toBeInstanceOf(HttpException);
+    });
+
+    it("answers the same whether or not there was an image", async () => {
+      // Clearing something already clear is what the caller asked for, so it is not a failure.
+      (s3Service.deleteFile as jest.Mock).mockResolvedValue(undefined);
+
+      const result = await controller.removeProfilePicture(7, { user: { id: 7 } } as any);
+
+      expect(s3Service.deleteFile).toHaveBeenCalledWith({ key: "users/7/profile" });
+      expect(result).toEqual({ message: "Profile picture removed successfully", id: 7 });
+    });
+  });
+
+  describe("/users/me", () => {
+    const req = { user: { id: 7 } } as any;
+
+    it("returns the account settings", async () => {
+      userService.getMe = jest.fn().mockResolvedValue({
+        friendCode: "7K3QW9ZB",
+        sessionJoinPolicy: "ANYONE"
+      });
+
+      await expect(controller.getMe(req)).resolves.toEqual({
+        friendCode: "7K3QW9ZB",
+        sessionJoinPolicy: "ANYONE"
+      });
+      expect(userService.getMe).toHaveBeenCalledWith(7);
+    });
+
+    it("forwards only the provided fields on update", async () => {
+      userService.updateMe = jest.fn().mockResolvedValue({
+        friendCode: "7K3QW9ZB",
+        sessionJoinPolicy: "FRIENDS"
+      });
+
+      await controller.updateMe(req, { sessionJoinPolicy: "FRIENDS" });
+      expect(userService.updateMe).toHaveBeenCalledWith(7, {
+        sessionJoinPolicy: "FRIENDS"
+      });
+
+      await controller.updateMe(req, {});
+      expect(userService.updateMe).toHaveBeenLastCalledWith(7, {});
+    });
+
+    it("regenerates the friend code", async () => {
+      userService.regenerateFriendCode = jest.fn().mockResolvedValue({
+        friendCode: "NEWCODE1",
+        sessionJoinPolicy: "ANYONE"
+      });
+
+      await expect(controller.regenerateFriendCode(req)).resolves.toEqual({
+        friendCode: "NEWCODE1",
+        sessionJoinPolicy: "ANYONE"
+      });
+    });
+  });
+
+  describe("DELETE /users/me", () => {
+    it("deletes the account and clears the refresh cookie", async () => {
+      accountDeletion.deleteAccount.mockResolvedValue(undefined);
+      const res = { clearCookie: jest.fn() } as any;
+
+      await controller.deleteMe(
+        { user: { id: 7 } } as any,
+        { confirmation: "DELETE", removePublishedGames: true },
+        res
+      );
+
+      expect(accountDeletion.deleteAccount).toHaveBeenCalledWith(7, {
+        removePublishedGames: true
+      });
+      expect(res.clearCookie).toHaveBeenCalledWith(
+        "refresh_token",
+        expect.objectContaining({ path: "/auth/refresh", httpOnly: true })
+      );
+    });
+
+    it("does not clear the cookie when deletion fails", async () => {
+      accountDeletion.deleteAccount.mockRejectedValue(new Error("boom"));
+      const res = { clearCookie: jest.fn() } as any;
+
+      await expect(
+        controller.deleteMe({ user: { id: 7 } } as any, { confirmation: "DELETE" }, res)
+      ).rejects.toThrow("boom");
+      expect(res.clearCookie).not.toHaveBeenCalled();
     });
   });
 });

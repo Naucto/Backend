@@ -3,6 +3,8 @@ import { ProjectService } from "./project.service";
 import { S3Service } from "@s3/s3.service";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { ConfigService } from "@nestjs/config";
+import { NotificationsService } from "src/notifications/notifications.service";
+import { WorkSessionService } from "@work-session/work-session.service";
 import {
   BadRequestException,
   ForbiddenException,
@@ -12,6 +14,10 @@ import {
 
 import { CREATOR_SELECT, COLLABORATOR_SELECT } from "./project.service";
 import { ProjectStatus, MonetizationType, Prisma } from "@prisma/client";
+import * as Y from "yjs";
+import { Readable } from "stream";
+import { GAME_KEYS, PROJECT_CONTENT_MAX_BYTES } from "./content-size";
+import { ProjectTooLargeException } from "./project.error";
 
 type ProjectWithCreatorAndCollaborators = Prisma.ProjectGetPayload<{
   include: {
@@ -51,6 +57,8 @@ const mockProjects: ProjectWithCreatorAndCollaborators[] = [
     contentExtension: ".zip",
     contentUploadedAt: new Date(),
     forkedFromId: null,
+    contentSize: null,
+    contentSizeTotal: null,
     creator: {
       id: 42,
       email: "creator@example.com",
@@ -90,6 +98,8 @@ const mockProjects: ProjectWithCreatorAndCollaborators[] = [
     contentExtension: ".zip",
     contentUploadedAt: new Date(),
     forkedFromId: null,
+    contentSize: null,
+    contentSizeTotal: null,
     creator: {
       id: 42,
       email: "creator@example.com",
@@ -110,6 +120,7 @@ describe("ProjectService", () => {
 
   const prismaMock = {
     project: {
+      aggregate: jest.fn(),
       count: jest.fn(),
       create: jest.fn(),
       findMany: jest.fn(),
@@ -127,7 +138,11 @@ describe("ProjectService", () => {
     },
     workSession: {
       findMany: jest.fn(),
-      update: jest.fn()
+      update: jest.fn(),
+      deleteMany: jest.fn()
+    },
+    gameSession: {
+      deleteMany: jest.fn()
     },
     $transaction: jest.fn((operations: Array<Promise<unknown>>) =>
       Promise.all(operations)
@@ -137,7 +152,18 @@ describe("ProjectService", () => {
   const s3ServiceMock = {
     deleteFile: jest.fn(),
     listObjects: jest.fn(),
-    deleteFiles: jest.fn()
+    deleteFiles: jest.fn(),
+    downloadFile: jest.fn(),
+    uploadFile: jest.fn(),
+    setObjectPublicRead: jest.fn()
+  };
+
+  const notificationsMock = {
+    createNotification: jest.fn()
+  };
+
+  const workSessionsMock = {
+    kick: jest.fn().mockResolvedValue(undefined)
   };
 
   const configServiceMock = {
@@ -164,6 +190,14 @@ describe("ProjectService", () => {
         {
           provide: ConfigService,
           useValue: configServiceMock
+        },
+        {
+          provide: NotificationsService,
+          useValue: notificationsMock
+        },
+        {
+          provide: WorkSessionService,
+          useValue: workSessionsMock
         }
       ]
     }).compile();
@@ -475,7 +509,7 @@ describe("ProjectService", () => {
   });
 
   describe("remove", () => {
-    it("should delete the S3 file and project successfully", async () => {
+    it("clears the sessions and the project together, then the stored content", async () => {
       const projectId = 1;
       prismaMock.project.findUnique.mockResolvedValue(mockProjects[0]);
       prismaMock.project.delete.mockResolvedValue(mockProjects[0]);
@@ -485,93 +519,46 @@ describe("ProjectService", () => {
 
       await service.remove(projectId);
 
-      expect(prismaMock.project.findUnique).toHaveBeenCalledWith({
-        where: { id: projectId },
-        include: {
-          creator: {
-            select: {
-              id: true,
-              username: true,
-              email: true
-            }
-          },
-          collaborators: {
-            select: {
-              id: true,
-              username: true,
-              email: true
-            }
-          }
-        }
+      // Asserted because the foreign keys refuse the delete outright while a session still points
+      // at the project.
+      expect(prismaMock.gameSession.deleteMany).toHaveBeenCalledWith({
+        where: { projectId }
       });
-      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({
-        key: `release/${projectId}`
+      expect(prismaMock.workSession.deleteMany).toHaveBeenCalledWith({
+        where: { projectId }
       });
+      expect(prismaMock.$transaction).toHaveBeenCalled();
       expect(prismaMock.project.delete).toHaveBeenCalledWith({
         where: { id: projectId }
       });
+
+      // The order is the load-bearing part: content dropped before the row would be lost to a
+      // delete that then fails.
+      expect(prismaMock.project.delete.mock.invocationCallOrder[0]).toBeLessThan(
+        s3ServiceMock.deleteFile.mock.invocationCallOrder[0]!
+      );
+      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({
+        key: `release/${projectId}`
+      });
     });
 
-    it("should throw InternalServerErrorException if s3Service.deleteFile fails", async () => {
+    it("still deletes the project when its stored content cannot be reached", async () => {
       const projectId = 1;
       prismaMock.project.findUnique.mockResolvedValue(mockProjects[0]);
+      prismaMock.project.delete.mockResolvedValue(mockProjects[0]);
       s3ServiceMock.deleteFile.mockRejectedValue(new Error("S3 error"));
 
-      await expect(service.remove(projectId)).rejects.toThrow(
-        InternalServerErrorException
-      );
+      await expect(service.remove(projectId)).resolves.toBeUndefined();
 
-      expect(prismaMock.project.findUnique).toHaveBeenCalled();
-      expect(s3ServiceMock.deleteFile).toHaveBeenCalled();
+      expect(prismaMock.project.delete).toHaveBeenCalledWith({
+        where: { id: projectId }
+      });
     });
 
     it("should throw NotFoundException if project does not exist", async () => {
       prismaMock.project.findUnique.mockResolvedValue(null);
 
       await expect(service.remove(999)).rejects.toThrow(NotFoundException);
-    });
-
-    it("should throw InternalServerErrorException with unknown error if s3Service.deleteFile throws non-Error", async () => {
-      const projectId = 123;
-
-      prismaMock.project.findUnique.mockResolvedValue({
-        ...mockProjects[0],
-        id: projectId
-      });
-
-      s3ServiceMock.deleteFile.mockImplementation(() => {
-        throw "some string error";
-      });
-
-      await expect(service.remove(projectId)).rejects.toThrow(
-        InternalServerErrorException
-      );
-      await expect(service.remove(projectId)).rejects.toThrow(
-        `Error deleting S3 file with key ${projectId}: Unknown error`
-      );
-
-      expect(prismaMock.project.findUnique).toHaveBeenCalledWith({
-        where: { id: projectId },
-        include: {
-          creator: {
-            select: {
-              id: true,
-              username: true,
-              email: true
-            }
-          },
-          collaborators: {
-            select: {
-              id: true,
-              username: true,
-              email: true
-            }
-          }
-        }
-      });
-      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({
-        key: `release/${projectId}`
-      });
     });
   });
 
@@ -587,6 +574,15 @@ describe("ProjectService", () => {
       prismaMock.project.update.mockResolvedValue(mockProjects[0]);
 
       const result = await service.addCollaborator(1, addDto);
+
+      // Nothing else tells the invitee they were added; the project simply turns up in their list.
+      expect(notificationsMock.createNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: addDto.userId,
+          kind: "COLLABORATOR_ADDED",
+          data: { projectId: mockProjects[0]!.id }
+        })
+      );
 
       expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
         where: { id: addDto.userId }
@@ -693,6 +689,39 @@ describe("ProjectService", () => {
         })
       );
       expect(result).toEqual(mockProjects[0]);
+    });
+
+    it("should tell the removed collaborator and close their live session", async () => {
+      prismaMock.user.findUnique.mockResolvedValue({ id: 2 });
+      prismaMock.project.findUnique.mockResolvedValue({
+        ...mockProjects[0],
+        collaborators: [{ id: 2 }, { id: 3 }]
+      });
+      prismaMock.project.update.mockResolvedValue(mockProjects[0]);
+
+      await service.removeCollaborator(1, removeDto);
+
+      expect(notificationsMock.createNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 2,
+          kind: "COLLABORATOR_REMOVED"
+        })
+      );
+      expect(workSessionsMock.kick).toHaveBeenCalledWith(1, 2);
+    });
+
+    it("removes the collaborator even when no session is open to close", async () => {
+      prismaMock.user.findUnique.mockResolvedValue({ id: 2 });
+      prismaMock.project.findUnique.mockResolvedValue({
+        ...mockProjects[0],
+        collaborators: [{ id: 2 }, { id: 3 }]
+      });
+      prismaMock.project.update.mockResolvedValue(mockProjects[0]);
+      workSessionsMock.kick.mockRejectedValueOnce(new NotFoundException());
+
+      await expect(service.removeCollaborator(1, removeDto)).resolves.toEqual(
+        mockProjects[0]
+      );
     });
 
     it("should throw NotFoundException if user not found", async () => {
@@ -835,6 +864,297 @@ describe("ProjectService", () => {
       );
       expect(result.page).toBe(1);
       expect(result.limit).toBe(100);
+    });
+
+    it("should order by the requested shelf sort", async () => {
+      prismaMock.project.count.mockResolvedValue(1);
+      prismaMock.project.findMany.mockResolvedValue([publishedProject]);
+
+      await service.fetchPublishedGamesPaginated(1, 10, {}, "popular");
+
+      expect(prismaMock.project.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: [{ viewCount: "desc" }, { publishedAt: "desc" }]
+        })
+      );
+    });
+
+    it("should apply the search filter to both the page and its total", async () => {
+      prismaMock.project.count.mockResolvedValue(0);
+      prismaMock.project.findMany.mockResolvedValue([]);
+
+      await service.fetchPublishedGamesPaginated(1, 10, { search: "snake" });
+
+      const where = prismaMock.project.count.mock.calls[0]![0]!.where;
+      expect(where).toEqual(
+        expect.objectContaining({ status: "COMPLETED", AND: expect.any(Array) })
+      );
+      // The same filter has to reach findMany, or page 1 of a search shows unfiltered games.
+      expect(prismaMock.project.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where })
+      );
+    });
+
+    it("should look for a search term beyond the game's name", async () => {
+      prismaMock.project.count.mockResolvedValue(0);
+      prismaMock.project.findMany.mockResolvedValue([]);
+
+      await service.fetchPublishedGamesPaginated(1, 10, { search: "snake" });
+
+      const where = prismaMock.project.count.mock.calls[0]![0]!.where as {
+        AND: { OR?: unknown[] }[];
+      };
+      const or = where.AND.find((clause) => clause.OR)!.OR!;
+
+      // Someone typing a word remembers it from anywhere it was shown — the blurb under a game,
+      // the tag on its card, the person who made it. Matching the title alone answers for none.
+      expect(or).toEqual(
+        expect.arrayContaining([
+          { publishedShortDesc: { contains: "snake", mode: "insensitive" } },
+          { publishedTags: { hasSome: ["snake", "snake"] } },
+          { creator: { username: { contains: "snake", mode: "insensitive" } } }
+        ])
+      );
+    });
+  });
+
+  describe("deleteVersion", () => {
+    it("should delete an existing autosave", async () => {
+      s3ServiceMock.listObjects.mockResolvedValue([
+        { Key: "save/1/1742901234567", LastModified: new Date() }
+      ]);
+      s3ServiceMock.deleteFile.mockResolvedValue(undefined);
+
+      await service.deleteVersion(1, "1742901234567");
+
+      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({
+        key: "save/1/1742901234567"
+      });
+    });
+
+    it("should refuse a name that could climb out of the project prefix", async () => {
+      await expect(service.deleteVersion(1, "../release/2")).rejects.toThrow(
+        BadRequestException
+      );
+      expect(s3ServiceMock.deleteFile).not.toHaveBeenCalled();
+    });
+
+    it("should 404 rather than delete a key that is not one of this project's saves", async () => {
+      s3ServiceMock.listObjects.mockResolvedValue([]);
+
+      await expect(service.deleteVersion(1, "1742901234567")).rejects.toThrow(
+        NotFoundException
+      );
+      expect(s3ServiceMock.deleteFile).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("profile shelves", () => {
+    it("should exclude games the person owns from their collaborations", async () => {
+      prismaMock.project.findMany.mockResolvedValue([]);
+
+      await service.fetchCollaborationsByUser(7);
+
+      expect(prismaMock.project.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            status: "COMPLETED",
+            userId: { not: 7 },
+            collaborators: { some: { id: 7 } }
+          }
+        })
+      );
+    });
+
+    it("should list remixes by the owner of what they were forked from", async () => {
+      prismaMock.project.findMany.mockResolvedValue([]);
+
+      await service.fetchRemixesOfUser(7);
+
+      expect(prismaMock.project.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            status: "COMPLETED",
+            userId: { not: 7 },
+            forkedFrom: { userId: 7 }
+          }
+        })
+      );
+    });
+
+    it("should sum plays and likes over owned published games", async () => {
+      prismaMock.project.count.mockResolvedValue(3);
+      prismaMock.project.aggregate.mockResolvedValue({
+        _sum: { viewCount: 1240, likes: 318 }
+      });
+
+      await expect(service.fetchUserTotals(7)).resolves.toEqual({
+        gameCount: 3,
+        totalPlays: 1240,
+        totalLikes: 318
+      });
+    });
+
+    it("should report zeroes when a person has published nothing", async () => {
+      prismaMock.project.count.mockResolvedValue(0);
+      prismaMock.project.aggregate.mockResolvedValue({
+        _sum: { viewCount: null, likes: null }
+      });
+
+      await expect(service.fetchUserTotals(7)).resolves.toEqual({
+        gameCount: 0,
+        totalPlays: 0,
+        totalLikes: 0
+      });
+    });
+  });
+  describe("content size budget", () => {
+    const encodeGame = (codeLength: number): Buffer => {
+      const doc = new Y.Doc();
+      doc.getMap<unknown>(GAME_KEYS.meta).set("schemaVersion", 1);
+      const file = new Y.Map<unknown>();
+      const text = new Y.Text();
+      doc.getMap<unknown>(GAME_KEYS.codeFiles).set("main", file);
+      file.set("text", text);
+      text.insert(0, "x".repeat(codeLength));
+      return Buffer.from(Y.encodeStateAsUpdate(doc));
+    };
+
+    const mockLastVersion = (blob: Buffer): void => {
+      s3ServiceMock.listObjects.mockResolvedValue([
+        { Key: "save/1/100", LastModified: new Date(100) }
+      ]);
+      s3ServiceMock.downloadFile.mockResolvedValue({
+        body: Readable.from(blob),
+        contentType: "application/octet-stream",
+        contentLength: blob.byteLength
+      });
+    };
+
+    it("exposes the limits", () => {
+      expect(service.getLimits()).toEqual({
+        maxContentBytes: PROJECT_CONTENT_MAX_BYTES,
+        maxBlobBytes: 16 * 1024 * 1024
+      });
+    });
+
+    it("stores the breakdown when saving", async () => {
+      s3ServiceMock.listObjects.mockResolvedValue([]);
+      prismaMock.workSession.findMany.mockResolvedValue([]);
+      s3ServiceMock.uploadFile.mockResolvedValue(undefined);
+      prismaMock.project.update.mockResolvedValue({});
+
+      await service.save(1, {
+        buffer: encodeGame(10)
+      } as unknown as Express.Multer.File);
+
+      expect(prismaMock.project.update).toHaveBeenCalledWith({
+        where: { id: 1 },
+        data: {
+          contentSize: expect.objectContaining({ code: 10, schemaVersion: 1 }),
+          contentSizeTotal: 10
+        }
+      });
+    });
+
+    it("returns the stored breakdown without touching S3", async () => {
+      const contentSize = {
+        code: 5,
+        sprites: 0,
+        flags: 0,
+        map: 0,
+        sound: 0,
+        palette: 0,
+        total: 5,
+        schemaVersion: 1
+      };
+      prismaMock.project.findUnique.mockResolvedValue({ contentSize });
+
+      const result = await service.getContentSize(1);
+
+      expect(result).toEqual({
+        projectId: 1,
+        contentSize,
+        maxContentBytes: PROJECT_CONTENT_MAX_BYTES,
+        withinBudget: true
+      });
+      expect(s3ServiceMock.downloadFile).not.toHaveBeenCalled();
+    });
+
+    it("computes and persists the breakdown when it is missing", async () => {
+      prismaMock.project.findUnique.mockResolvedValue({ contentSize: null });
+      prismaMock.project.update.mockResolvedValue({});
+      mockLastVersion(encodeGame(7));
+
+      const result = await service.getContentSize(1);
+
+      expect(result.contentSize.code).toBe(7);
+      expect(prismaMock.project.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ contentSizeTotal: 7 })
+        })
+      );
+    });
+
+    it("rejects publishing a project above the budget with a 413", async () => {
+      prismaMock.project.findUnique.mockResolvedValue({
+        name: "Big",
+        shortDesc: "",
+        longDesc: null,
+        tags: []
+      });
+      prismaMock.project.update.mockResolvedValue({});
+      mockLastVersion(encodeGame(PROJECT_CONTENT_MAX_BYTES + 1));
+
+      await expect(service.publish(1)).rejects.toBeInstanceOf(
+        ProjectTooLargeException
+      );
+
+      const calls = prismaMock.project.update.mock.calls as Array<
+        [{ data: Record<string, unknown> }]
+      >;
+      expect(calls.some((call) => call[0].data["status"] === "COMPLETED")).toBe(
+        false
+      );
+      expect(s3ServiceMock.uploadFile).not.toHaveBeenCalled();
+    });
+
+    it("publishes a project within the budget", async () => {
+      prismaMock.project.findUnique.mockResolvedValue({
+        name: "Small",
+        shortDesc: "",
+        longDesc: null,
+        tags: []
+      });
+      prismaMock.project.update.mockResolvedValue({});
+      s3ServiceMock.uploadFile.mockResolvedValue(undefined);
+      s3ServiceMock.setObjectPublicRead.mockResolvedValue(undefined);
+      mockLastVersion(encodeGame(3));
+
+      await service.publish(1);
+
+      expect(prismaMock.project.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: "COMPLETED" })
+        })
+      );
+      expect(s3ServiceMock.uploadFile).toHaveBeenCalledWith(
+        expect.objectContaining({ keyName: "release/1" })
+      );
+    });
+
+    it("lists projects without a breakdown", async () => {
+      prismaMock.project.findMany.mockResolvedValue([{ id: 3 }, { id: 4 }]);
+
+      await expect(service.findProjectsWithoutContentSize(2)).resolves.toEqual([
+        3, 4
+      ]);
+      expect(prismaMock.project.findMany).toHaveBeenCalledWith({
+        where: { contentSizeTotal: null },
+        select: { id: true },
+        orderBy: { id: "asc" },
+        take: 2
+      });
     });
   });
 });

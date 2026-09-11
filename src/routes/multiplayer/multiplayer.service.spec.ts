@@ -8,6 +8,8 @@ import { PrismaService } from "@ourPrisma/prisma.service";
 import { WebRTCService } from "@webrtc/webrtc.service";
 
 import { MultiplayerService } from "./multiplayer.service";
+import { FriendsService } from "@friends/friends.service";
+import { NotificationsService } from "src/notifications/notifications.service";
 import { SyncedGameTableWebRTCServer } from "@webrtc/server/webrtc.server.synced-game-table";
 import {
   MultiplayerForbiddenError,
@@ -58,6 +60,9 @@ describe("MultiplayerService", () => {
   // Runs the interactive transaction callback against the same gameSession mock.
   const $transaction = jest.fn();
 
+  const user = { findUnique: jest.fn() };
+  const notificationsService = { createNotification: jest.fn() };
+  const friendsService = { areFriends: jest.fn() };
   const projectService = { findOne: jest.fn() };
   const webrtcService = { buildOffer: jest.fn() };
   const jwtService = { sign: jest.fn(), verify: jest.fn() };
@@ -74,14 +79,18 @@ describe("MultiplayerService", () => {
     $transaction.mockImplementation((cb: (tx: unknown) => unknown) =>
       cb({ gameSession })
     );
+    user.findUnique.mockResolvedValue({ sessionJoinPolicy: "ANYONE" });
+    friendsService.areFriends.mockResolvedValue(false);
 
     const module = await Test.createTestingModule({
       providers: [
         MultiplayerService,
         { provide: ProjectService, useValue: projectService },
         { provide: WebRTCService, useValue: webrtcService },
-        { provide: PrismaService, useValue: { gameSession, $transaction } },
-        { provide: JwtService, useValue: jwtService }
+        { provide: PrismaService, useValue: { gameSession, user, $transaction } },
+        { provide: JwtService, useValue: jwtService },
+        { provide: FriendsService, useValue: friendsService },
+        { provide: NotificationsService, useValue: notificationsService }
       ]
     }).compile();
 
@@ -166,6 +175,141 @@ describe("MultiplayerService", () => {
 
       expect(result.joinCode).toBeDefined();
       expect(result.joinCode).toHaveLength(8);
+    });
+  });
+
+  describe("host join policy", () => {
+    it("forces INVITE_CODE and mints a join code for a CODE_ONLY host", async () => {
+      projectService.findOne.mockResolvedValueOnce({ id: 1 });
+      gameSession.findFirst.mockResolvedValueOnce(null);
+      user.findUnique.mockResolvedValueOnce({ sessionJoinPolicy: "CODE_ONLY" });
+      gameSession.create.mockImplementationOnce(
+        ({ data }: { data: { joinCode: string; visibility: string } }) =>
+          Promise.resolve(
+            makeSession({
+              visibility: data.visibility as GameSessionVisibility,
+              joinCode: data.joinCode
+            })
+          )
+      );
+
+      const result = await service.create(1, {
+        projectId: 1,
+        title: "x",
+        maxPlayers: 4,
+        visibility: GameSessionVisibility.PUBLIC
+      });
+
+      expect(gameSession.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            visibility: GameSessionVisibility.INVITE_CODE,
+            joinCode: expect.any(String)
+          })
+        })
+      );
+      expect(result.joinCode).toHaveLength(8);
+    });
+
+    it("raises PUBLIC to FRIENDS_ONLY for a FRIENDS host but keeps a stricter choice", async () => {
+      projectService.findOne.mockResolvedValue({ id: 1 });
+      gameSession.findFirst.mockResolvedValue(null);
+      user.findUnique.mockResolvedValue({ sessionJoinPolicy: "FRIENDS" });
+      gameSession.create.mockResolvedValue(makeSession());
+
+      await service.create(1, {
+        projectId: 1,
+        title: "x",
+        maxPlayers: 4,
+        visibility: GameSessionVisibility.PUBLIC
+      });
+      expect(gameSession.create).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            visibility: GameSessionVisibility.FRIENDS_ONLY
+          })
+        })
+      );
+
+      gameSession.create.mockImplementationOnce(
+        ({ data }: { data: { joinCode: string } }) =>
+          Promise.resolve(makeSession({ joinCode: data.joinCode }))
+      );
+      await service.create(1, {
+        projectId: 1,
+        title: "x",
+        maxPlayers: 4,
+        visibility: GameSessionVisibility.INVITE_CODE
+      });
+      expect(gameSession.create).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            visibility: GameSessionVisibility.INVITE_CODE
+          })
+        })
+      );
+    });
+
+    it("applies the floor on update too", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(makeSession({ hostId: 1 }));
+      user.findUnique.mockResolvedValueOnce({ sessionJoinPolicy: "FRIENDS" });
+      gameSession.update.mockResolvedValueOnce(makeSession());
+
+      await service.update("session-uuid", 1, {
+        visibility: GameSessionVisibility.PUBLIC
+      });
+
+      expect(gameSession.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            visibility: GameSessionVisibility.FRIENDS_ONLY
+          })
+        })
+      );
+    });
+  });
+
+  describe("friends-only sessions", () => {
+    it("lists FRIENDS_ONLY sessions only to the host's friends", async () => {
+      gameSession.findMany.mockResolvedValue([
+        makeSession({ hostId: 1, visibility: GameSessionVisibility.FRIENDS_ONLY })
+      ]);
+
+      friendsService.areFriends.mockResolvedValueOnce(false);
+      await expect(service.list(1, 2)).resolves.toHaveLength(0);
+
+      friendsService.areFriends.mockResolvedValueOnce(true);
+      await expect(service.list(1, 2)).resolves.toHaveLength(1);
+      expect(friendsService.areFriends).toHaveBeenCalledWith(2, 1);
+    });
+
+    it("lets a friend join and blocks a stranger", async () => {
+      const session = makeSession({
+        hostId: 1,
+        visibility: GameSessionVisibility.FRIENDS_ONLY
+      });
+      gameSession.findFirst.mockResolvedValue(session);
+      gameSession.findUnique.mockResolvedValue(session);
+      gameSession.update.mockResolvedValue(session);
+
+      friendsService.areFriends.mockResolvedValueOnce(false);
+      await expect(service.join("session-uuid", 2)).rejects.toBeInstanceOf(
+        MultiplayerForbiddenError
+      );
+
+      friendsService.areFriends.mockResolvedValueOnce(true);
+      await expect(service.join("session-uuid", 2)).resolves.toMatchObject({
+        connectionTicket: "signed.ticket"
+      });
+    });
+
+    it("lets a friend fetch a FRIENDS_ONLY session", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(
+        makeSession({ hostId: 1, visibility: GameSessionVisibility.FRIENDS_ONLY })
+      );
+      friendsService.areFriends.mockResolvedValueOnce(true);
+
+      await expect(service.get("session-uuid", 2)).resolves.toBeDefined();
     });
   });
 
@@ -345,6 +489,80 @@ describe("MultiplayerService", () => {
     });
   });
 
+  describe("roster", () => {
+    it("names the host first, then everyone who joined", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(
+        makeSession({
+          hostId: 1,
+          host: { id: 1, username: "alice", nickname: "Ali" },
+          otherUsers: [
+            { id: 2, username: "bob", nickname: null } as User,
+            { id: 3, username: "cleo", nickname: "Cle" } as User
+          ]
+        } as Partial<GameSessionEx>)
+      );
+
+      await expect(service.roster("session-uuid", 2)).resolves.toEqual({
+        players: [
+          { userId: 1, username: "alice", nickname: "Ali", host: true },
+          { userId: 2, username: "bob", nickname: null, host: false },
+          { userId: 3, username: "cleo", nickname: "Cle", host: false }
+        ],
+        maxPlayers: 4
+      });
+    });
+
+    it("does not leak the roster of a session the caller cannot discover", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(
+        makeSession({
+          hostId: 1,
+          visibility: GameSessionVisibility.INVITE_CODE,
+          joinCode: "ABCDEFGH"
+        })
+      );
+
+      await expect(service.roster("session-uuid", 99)).rejects.toBeInstanceOf(
+        MultiplayerGameSessionNotFoundError
+      );
+    });
+  });
+
+  describe("invite", () => {
+    it("notifies the invitee with the code that gets them in", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(
+        makeSession({
+          hostId: 1,
+          host: { id: 1, username: "alice", nickname: null },
+          project: { id: 9, name: "Snake" },
+          projectId: 9,
+          visibility: GameSessionVisibility.INVITE_CODE,
+          joinCode: "ABCDEFGH"
+        } as Partial<GameSessionEx>)
+      );
+
+      await service.invite("session-uuid", 1, 42);
+
+      expect(notificationsService.createNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 42,
+          data: expect.objectContaining({
+            sessionId: "session-uuid",
+            joinCode: "ABCDEFGH"
+          })
+        })
+      );
+    });
+
+    it("refuses an invite from anyone but the host", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(makeSession({ hostId: 1 }));
+
+      await expect(service.invite("session-uuid", 99, 42)).rejects.toBeInstanceOf(
+        MultiplayerForbiddenError
+      );
+      expect(notificationsService.createNotification).not.toHaveBeenCalled();
+    });
+  });
+
   describe("list (visibility filtering)", () => {
     it("returns PUBLIC sessions but omits FRIENDS_ONLY and INVITE_CODE", async () => {
       gameSession.findMany.mockResolvedValueOnce([
@@ -367,6 +585,30 @@ describe("MultiplayerService", () => {
 
       expect(sessions.map((session) => session.sessionId)).toEqual([
         "public-uuid"
+      ]);
+    });
+
+    it("asks about every game when no project is named", async () => {
+      gameSession.findMany.mockResolvedValueOnce([]);
+
+      // The search panel's LIVE NOW section is not looking at one game; it is looking for one.
+      await service.list(undefined, 99);
+
+      expect(gameSession.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { endedAt: null } })
+      );
+    });
+
+    it("matches a term against the room's name as well as the game's", async () => {
+      gameSession.findMany.mockResolvedValueOnce([]);
+
+      await service.list(undefined, 99, " arena ");
+
+      const calls = gameSession.findMany.mock.calls;
+      const where = calls[calls.length - 1]![0].where;
+      expect(where.OR).toEqual([
+        { title: { contains: "arena", mode: "insensitive" } },
+        { project: { name: { contains: "arena", mode: "insensitive" } } }
       ]);
     });
   });

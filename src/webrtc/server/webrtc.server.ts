@@ -167,8 +167,24 @@ export function WebRTCServerAuthEvent(): MethodDecorator {
   return decoratorWrapper;
 }
 
+/**
+ * Stable public names of the WebSocket servers. In production each name maps
+ * to its own subdomain through BACKEND_WEBRTC_PUBLIC_URL_TEMPLATE (see
+ * WebRTCService.buildSignalingUrl): collab = Yjs collaboration, game =
+ * multiplayer game table, user = per-user notifications/presence.
+ */
+export const WEBRTC_SERVER_NAMES = {
+  collab: "collab",
+  game: "game",
+  user: "user"
+} as const;
+export type WebRTCServerName =
+  (typeof WEBRTC_SERVER_NAMES)[keyof typeof WEBRTC_SERVER_NAMES];
+
 export class WebRTCServerOptions {
   port?: number;
+  /** Public name substituted for `{name}` in the signaling URL template. */
+  name?: WebRTCServerName;
   compressed: boolean = true;
   compressionThreshold: number = 256;
 }
@@ -181,6 +197,7 @@ export class WebRTCServer<
   private readonly _logger: Logger;
 
   private readonly _port: number;
+  private readonly _name: WebRTCServerName | undefined;
   private readonly _httpServer: HTTPServer;
   private readonly _wsServer: WebSocketServer;
   private readonly _extraOpts: OptsT;
@@ -190,6 +207,7 @@ export class WebRTCServer<
   private readonly _clientEventHandlers: WebRTCEventHandlerMap = new Map();
 
   private _isShuttingDown = false;
+  private _listening = false;
 
   constructor(
     webrtcService: WebRTCService,
@@ -199,10 +217,12 @@ export class WebRTCServer<
     if (extraOpts.port !== undefined) {
       this._port = extraOpts.port;
     } else {
-      this._port = webrtcService.allocatePort();
+      this._port = webrtcService.allocatePort(extraOpts.name);
     }
 
     extraOpts.port = this._port;
+
+    this._name = extraOpts.name;
 
     this._logger = new Logger(`${this.constructor.name} (${whatFor})`);
 
@@ -240,15 +260,30 @@ export class WebRTCServer<
       this._internal_base_onUpgrade(request, socket, head);
     });
 
-    this._httpServer.listen(this._port);
-
     webrtcService.registerServer(this);
   }
 
   // --------------------------------------------------------------------------
 
+  /**
+   * Binds the socket. Deliberately not done in the constructor: a provider that opens a listener
+   * while Nest is still wiring the graph cannot be resolved without taking a real port, which
+   * makes the application graph untestable and collides with any second process (jest, the
+   * swagger generator) that constructs it. `WebRTCService` calls this once the module is up.
+   */
+  public listen(): void {
+    if (this._listening) return;
+    this._listening = true;
+    this._httpServer.listen(this._port);
+  }
+
   public get port(): number {
     return this._port;
+  }
+
+  /** Public name used by the signaling URL template; unset for ad-hoc servers. */
+  public get name(): WebRTCServerName | undefined {
+    return this._name;
   }
 
   public get logger(): Logger {

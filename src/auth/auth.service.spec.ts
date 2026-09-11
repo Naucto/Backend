@@ -25,7 +25,7 @@ const configServiceValue = {
   })
 };
 
-function makeRefreshTokenMock(overrides: Record<string, jest.Mock> = {}) {
+function makeRefreshTokenMock(overrides: Record<string, jest.Mock> = {}): Record<string, jest.Mock> {
   return {
     create: jest.fn().mockResolvedValue({
       id: 1,
@@ -41,7 +41,7 @@ function makeRefreshTokenMock(overrides: Record<string, jest.Mock> = {}) {
   };
 }
 
-function makePrisma(refreshTokenOverrides: Record<string, jest.Mock> = {}) {
+function makePrisma(refreshTokenOverrides: Record<string, jest.Mock> = {}): Record<string, any> {
   return {
     $transaction: jest.fn((cb: any) =>
       cb({
@@ -83,7 +83,7 @@ describe("AuthService", () => {
 
   const prismaService = makePrisma();
 
-  async function buildModule(prisma = prismaService, googleAuth = {}) {
+  async function buildModule(prisma = prismaService, googleAuth = {}): Promise<AuthService> {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
@@ -136,7 +136,11 @@ describe("AuthService", () => {
         nickname: null,
         description: null,
         password: "hashedPass",
-        createdAt: new Date()
+        createdAt: new Date(),
+        friendCode: null,
+        colour: null,
+        sessionJoinPolicy: "ANYONE" as const,
+        deletedAt: null
       });
       (bcrypt.compare as jest.Mock).mockResolvedValueOnce(false);
       await expect(
@@ -152,7 +156,11 @@ describe("AuthService", () => {
         username: "testuser",
         nickname: null,
         description: null,
-        createdAt: new Date()
+        createdAt: new Date(),
+        friendCode: null,
+        colour: null,
+        sessionJoinPolicy: "ANYONE" as const,
+        deletedAt: null
       };
       userService.findByEmail.mockResolvedValue(mockUser);
       const result = await authService.validateUser(
@@ -172,7 +180,11 @@ describe("AuthService", () => {
         username: "testuser",
         nickname: null,
         description: null,
-        createdAt: new Date()
+        createdAt: new Date(),
+        friendCode: null,
+        colour: null,
+        sessionJoinPolicy: "ANYONE" as const,
+        deletedAt: null
       };
       jest.spyOn(authService, "validateUser").mockResolvedValue(mockUser);
 
@@ -189,6 +201,17 @@ describe("AuthService", () => {
   });
 
   describe("register", () => {
+    /** The body a client actually receives, which is where the field and the code live. */
+    const conflictBodyOf = async (email: string, username: string): Promise<unknown> => {
+      try {
+        await authService.register({ email, username, password: "pass", roles: [] });
+      } catch (err) {
+        return (err as ConflictException).getResponse();
+      }
+
+      throw new Error("expected a conflict");
+    };
+
     it("should throw ConflictException if email already exists", async () => {
       userService.findAll.mockImplementation(
         async (params?: Prisma.UserFindManyArgs): Promise<User[]> => {
@@ -211,7 +234,11 @@ describe("AuthService", () => {
                 nickname: null,
                 description: null,
                 password: "hashedPass",
-                createdAt: new Date()
+                createdAt: new Date(),
+                friendCode: null,
+                colour: null,
+                sessionJoinPolicy: "ANYONE" as const,
+                deletedAt: null
               }
             ];
           }
@@ -227,6 +254,13 @@ describe("AuthService", () => {
           roles: []
         })
       ).rejects.toThrow(ConflictException);
+
+      await expect(conflictBodyOf("exists@example.com", "user")).resolves.toEqual(
+        expect.objectContaining({
+          statusCode: 409,
+          violations: [ { field: "email", code: "EMAIL_TAKEN" } ]
+        })
+      );
     });
 
     it("should throw ConflictException if username already exists", async () => {
@@ -252,7 +286,11 @@ describe("AuthService", () => {
                 nickname: null,
                 description: null,
                 password: "hashedPass",
-                createdAt: new Date()
+                createdAt: new Date(),
+                friendCode: null,
+                colour: null,
+                sessionJoinPolicy: "ANYONE" as const,
+                deletedAt: null
               }
             ];
           }
@@ -268,6 +306,13 @@ describe("AuthService", () => {
           roles: []
         })
       ).rejects.toThrow(ConflictException);
+
+      await expect(conflictBodyOf("free@example.com", "existsUser")).resolves.toEqual(
+        expect.objectContaining({
+          statusCode: 409,
+          violations: [ { field: "username", code: "USERNAME_TAKEN" } ]
+        })
+      );
     });
 
     it("should create user and return access token", async () => {
@@ -279,7 +324,11 @@ describe("AuthService", () => {
         nickname: null,
         description: null,
         password: "hashedPassword",
-        createdAt: new Date()
+        createdAt: new Date(),
+        friendCode: null,
+        colour: null,
+        sessionJoinPolicy: "ANYONE" as const,
+        deletedAt: null
       });
 
       const result = await authService.register({
@@ -326,7 +375,11 @@ describe("AuthService", () => {
           username: "user",
           nickname: null,
           password: "pass",
-          createdAt: new Date()
+          createdAt: new Date(),
+          friendCode: null,
+          colour: null,
+          sessionJoinPolicy: "ANYONE" as const,
+          deletedAt: null
         }
       };
 
@@ -362,7 +415,11 @@ describe("AuthService", () => {
           username: "user",
           nickname: null,
           password: "pass",
-          createdAt: new Date()
+          createdAt: new Date(),
+          friendCode: null,
+          colour: null,
+          sessionJoinPolicy: "ANYONE" as const,
+          deletedAt: null
         }
       };
 
@@ -417,7 +474,11 @@ describe("AuthService", () => {
         username: "googleuser",
         nickname: null,
         password: null,
-        createdAt: new Date()
+        createdAt: new Date(),
+        friendCode: null,
+        colour: null,
+        sessionJoinPolicy: "ANYONE" as const,
+        deletedAt: null
       } as any);
 
       await expect(

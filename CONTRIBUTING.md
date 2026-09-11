@@ -29,14 +29,18 @@ describes what part you're working on in one word
 
 # Commit content:
 
-There is no pre-commit hook in this repo, so lint and tests are **not** run automatically — make
-sure your change is clean before committing:
+A husky pre-commit hook runs `eslint --fix` on staged files and the commit-msg hook checks the
+`[PART] [TYPE] Message` format (commitlint). Tests and typecheck are **not** run automatically —
+make sure your change is clean before pushing:
 
 - `npm run lint` — ESLint (note: it runs with `--fix` and will modify files).
+- `npm run typecheck` — `tsc --noEmit` over the whole project.
 - `npm run build` — must compile under the strict `tsconfig`.
 - `npm run test` — unit tests.
+- `npm run swagger:check` — `swagger.json` is committed; regenerate it when you touch an endpoint.
 
-CI runs the build and test suite on every push/PR to `main` and must pass before merge.
+CI (`.github/workflows/ci.yml`) runs lint, typecheck, build, tests (against Postgres) and the
+swagger drift check on every push/PR to `main` and must pass before merge.
 
 If you changed the database schema (`prisma/models/*.prisma`), include the generated migration
 (`npx prisma migrate dev --name <desc>`); never hand-edit files under `prisma/migrations/`.

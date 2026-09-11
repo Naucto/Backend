@@ -363,7 +363,7 @@ describe("SyncedGameTableWebRTCServer — connection lifecycle", () => {
     expect(roomOf("s2")!.slaves.has(3)).toBe(false);
   });
 
-  it("replaces a reconnecting slave without the stale close evicting it", () => {
+  it("replaces a reconnecting slave, announces it, and survives the stale close", () => {
     const host = rawSocket();
     const slaveA = rawSocket();
     authAndConnect(ticket("s2", 1, "host"), host);
@@ -375,9 +375,16 @@ describe("SyncedGameTableWebRTCServer — connection lifecycle", () => {
 
     expect(slaveA.close).toHaveBeenCalled();
     expect(roomOf("s2")!.slaves.get(2)).toBe(slaveB);
-    expect(host.send).not.toHaveBeenCalled();
 
-    // The superseded socket's close must not touch the live replacement.
+    // Announced again: this is the host's only word that the player is there, and its game keeps
+    // no player it was never told about.
+    expect(JSON.parse(host.send.mock.calls[0]![0] as string)).toMatchObject({
+      type: "peer-joined",
+      userId: 2
+    });
+    host.send.mockClear();
+
+    // The superseded socket's close must not touch the live replacement, nor report it gone.
     internals._internal_sgt_onClose(slaveA);
     expect(roomOf("s2")!.slaves.get(2)).toBe(slaveB);
     expect(host.send).not.toHaveBeenCalled();

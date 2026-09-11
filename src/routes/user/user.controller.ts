@@ -36,7 +36,7 @@ import { Request } from "@nestjs/common";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
 import { RolesGuard } from "@auth/guards/roles.guard";
 import { Roles } from "@auth/decorators/roles.decorator";
-import { Prisma } from "@prisma/client";
+import { Prisma, SessionJoinPolicy } from "@prisma/client";
 import { UserResponseDto } from "./dto/user-response.dto";
 import { UserListResponseDto } from "./dto/user-list-response.dto";
 import { UserSingleResponseDto } from "./dto/user-single-response.dto";
@@ -50,6 +50,11 @@ import { CloudfrontService } from "src/routes/s3/edge.service";
 import { SignedCdnResourceDto } from "@common/dto/signed-cdn-resource.dto";
 import { UpdateUserProfileDto } from "./dto/update-user-profile.dto";
 import { PublicUserProfileResponseDto } from "./dto/public-user-profile-response.dto";
+import { MeDto, UpdateMeDto } from "./dto/me.dto";
+import { DeleteAccountDto } from "./dto/delete-account.dto";
+import { ProfileImageUploadResponseDto } from "./dto/profile-image-upload-response.dto";
+import { AccountDeletionService } from "./account-deletion.service";
+import { REFRESH_COOKIE_NAME, refreshCookieOptions } from "@auth/auth.utils";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = /^image\/(jpeg|png|gif|webp)$/;
@@ -69,7 +74,8 @@ export class UserController {
   constructor(
     private readonly userService: UserService,
     private readonly s3Service: S3Service,
-    private readonly cloudfrontService: CloudfrontService
+    private readonly cloudfrontService: CloudfrontService,
+    private readonly accountDeletionService: AccountDeletionService
   ) {}
 
   private async getPublicAssetUrl(key: string): Promise<string | null> {
@@ -91,12 +97,28 @@ export class UserController {
   })
   @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
   @UseGuards(JwtAuthGuard)
-  getProfile(@Request() req: RequestWithUser): UserDto {
-    return req.user;
+  async getProfile(
+    @Request() req: RequestWithUser
+  ): Promise<UserDto & { profileImageUrl: string | null; backgroundImageUrl: string | null }> {
+    // The guard hands back the row, which holds no picture: the two images live in object storage
+    // under a key derived from the id. Resolving them here is what lets anything showing the
+    // viewer — the account menu, their own comment row — show the face they set on their profile.
+    const [profileImageUrl, backgroundImageUrl] = await Promise.all([
+      this.getPublicAssetUrl(`users/${req.user.id}/profile`),
+      this.getPublicAssetUrl(`users/${req.user.id}/background`)
+    ]);
+
+    return { ...req.user, profileImageUrl, backgroundImageUrl };
   }
 
   @Patch("profile")
-  @ApiOperation({ summary: "Update current user profile" })
+  @ApiOperation({
+    summary: "Update the parts of your own profile you write: names, description, accent"
+  })
+  @ApiResponse({
+    status: HttpStatus.CONFLICT,
+    description: "The handle asked for belongs to someone else"
+  })
   @ApiResponse({
     status: HttpStatus.OK,
     description: "User profile updated successfully",
@@ -108,13 +130,15 @@ export class UserController {
     @Body(ValidationPipe) updateUserProfileDto: UpdateUserProfileDto,
     @Request() req: RequestWithUser
   ): Promise<PublicUserProfileResponseDto> {
-    const descriptionSource = updateUserProfileDto.description;
-    const description = descriptionSource === undefined ? undefined : descriptionSource.trim() || null;
+    const { description, nickname, username, colour } = updateUserProfileDto;
+    // Blank is an answer here: a zone the person emptied is cleared, not left as it was.
+    const blankable = (value: string): string | null => value.trim() || null;
 
-    const update: { description?: string | null } = {};
-    if (description !== undefined) {
-      update.description = description;
-    }
+    const update: Parameters<UserService["updateMyProfile"]>[1] = {};
+    if (description !== undefined) update.description = blankable(description);
+    if (nickname !== undefined) update.nickname = blankable(nickname);
+    if (username !== undefined) update.username = username.trim();
+    if (colour !== undefined) update.colour = colour;
 
     const updated = await this.userService.updateMyProfile(req.user.id, update);
 
@@ -130,6 +154,72 @@ export class UserController {
         backgroundImageUrl
       }
     };
+  }
+
+  // Declared before the ":id" routes so "me" is never parsed as a user id.
+  @Get("me")
+  @ApiOperation({ summary: "Get the current user's account settings" })
+  @ApiResponse({ status: HttpStatus.OK, type: MeDto })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
+  @UseGuards(JwtAuthGuard)
+  async getMe(@Request() req: RequestWithUser): Promise<MeDto> {
+    return this.userService.getMe(req.user.id);
+  }
+
+  @Patch("me")
+  @ApiOperation({ summary: "Update the current user's account settings" })
+  @ApiBody({ type: UpdateMeDto })
+  @ApiResponse({ status: HttpStatus.OK, type: MeDto })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
+  @UseGuards(JwtAuthGuard)
+  async updateMe(
+    @Request() req: RequestWithUser,
+    @Body(ValidationPipe) dto: UpdateMeDto
+  ): Promise<MeDto> {
+    const update: { sessionJoinPolicy?: SessionJoinPolicy } = {};
+    if (dto.sessionJoinPolicy !== undefined) {
+      update.sessionJoinPolicy = dto.sessionJoinPolicy;
+    }
+
+    return this.userService.updateMe(req.user.id, update);
+  }
+
+  @Delete("me")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary:
+      "Delete the current account (soft-delete + anonymise; purges sessions, tokens, friends, notifications, unpublished games)"
+  })
+  @ApiBody({ type: DeleteAccountDto })
+  @ApiResponse({ status: HttpStatus.NO_CONTENT, description: "Account deleted, refresh cookie cleared" })
+  @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: "Missing DELETE confirmation" })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized or wrong password" })
+  @UseGuards(JwtAuthGuard)
+  async deleteMe(
+    @Request() req: RequestWithUser,
+    @Body(ValidationPipe) dto: DeleteAccountDto,
+    @Res({ passthrough: true }) res: Response
+  ): Promise<void> {
+    const options: { removePublishedGames?: boolean; password?: string } = {};
+    if (dto.removePublishedGames !== undefined) {
+      options.removePublishedGames = dto.removePublishedGames;
+    }
+    if (dto.password !== undefined) {
+      options.password = dto.password;
+    }
+
+    await this.accountDeletionService.deleteAccount(req.user.id, options);
+    res.clearCookie(REFRESH_COOKIE_NAME, refreshCookieOptions());
+  }
+
+  @Post("me/friend-code/regenerate")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Replace the current user's friend code" })
+  @ApiResponse({ status: HttpStatus.OK, type: MeDto })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
+  @UseGuards(JwtAuthGuard)
+  async regenerateFriendCode(@Request() req: RequestWithUser): Promise<MeDto> {
+    return this.userService.regenerateFriendCode(req.user.id);
   }
 
   @Post(":id/profile-picture")
@@ -148,7 +238,11 @@ export class UserController {
       }
     }
   })
-  @ApiResponse({ status: HttpStatus.CREATED, description: "Profile uploaded" })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: "Profile uploaded",
+    type: ProfileImageUploadResponseDto
+  })
   @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(FileInterceptor("file"))
@@ -161,9 +255,9 @@ export class UserController {
         .addFileTypeValidator({ fileType: ALLOWED_IMAGE_TYPES })
         .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY })
     )
-    file: Express.Multer.File,
+      file: Express.Multer.File,
     @Request() req: RequestWithUser
-  ): Promise<{ message: string; id: number }> {
+  ): Promise<ProfileImageUploadResponseDto> {
     if (req.user.id !== id) {
       throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     }
@@ -182,7 +276,49 @@ export class UserController {
     });
     await this.s3Service.setObjectPublicRead(key);
 
-    return { message: "Profile picture uploaded successfully", id };
+    return {
+      message: "Profile picture uploaded successfully",
+      id,
+      // Versioned when the store already answers for it; the plain address otherwise, which is
+      // still the right one — a version only spares the browser a stale cache.
+      resourceUrl:
+        (await this.getPublicAssetUrl(key)) ??
+        this.cloudfrontService.getCDNUrl(key)
+    };
+  }
+
+  /**
+   * Drop one of the two profile images.
+   *
+   * Removing something that is not there is not an error: the caller wants the zone empty, and it
+   * is, so a second click on a slow connection must not read as a failure.
+   */
+  private async removeProfileAsset(
+    id: number,
+    req: RequestWithUser,
+    key: "profile" | "background",
+    label: string
+  ): Promise<{ message: string; id: number }> {
+    if (req.user.id !== id) {
+      throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    }
+
+    await this.s3Service.deleteFile({ key: `users/${id}/${key}` });
+
+    return { message: `${label} removed successfully`, id };
+  }
+
+  @Delete(":id/profile-picture")
+  @ApiOperation({ summary: "Remove your own profile picture" })
+  @ApiParam({ name: "id", description: "User ID" })
+  @ApiResponse({ status: HttpStatus.OK, description: "Removed, or there was none" })
+  @ApiResponse({ status: HttpStatus.FORBIDDEN, description: "Not your profile" })
+  @UseGuards(JwtAuthGuard)
+  async removeProfilePicture(
+    @Param("id", ParseIntPipe) id: number,
+    @Request() req: RequestWithUser
+  ): Promise<{ message: string; id: number }> {
+    return this.removeProfileAsset(id, req, "profile", "Profile picture");
   }
 
   @Post(":id/profile-background")
@@ -201,7 +337,11 @@ export class UserController {
       }
     }
   })
-  @ApiResponse({ status: HttpStatus.CREATED, description: "Profile background uploaded" })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: "Profile background uploaded",
+    type: ProfileImageUploadResponseDto
+  })
   @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Unauthorized" })
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(FileInterceptor("file"))
@@ -216,7 +356,7 @@ export class UserController {
     )
       file: Express.Multer.File,
     @Request() req: RequestWithUser
-  ): Promise<{ message: string; id: number }> {
+  ): Promise<ProfileImageUploadResponseDto> {
     if (req.user.id !== id) {
       throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     }
@@ -235,7 +375,28 @@ export class UserController {
     });
     await this.s3Service.setObjectPublicRead(key);
 
-    return { message: "Profile background uploaded successfully", id };
+    return {
+      message: "Profile background uploaded successfully",
+      id,
+      // Versioned when the store already answers for it; the plain address otherwise, which is
+      // still the right one — a version only spares the browser a stale cache.
+      resourceUrl:
+        (await this.getPublicAssetUrl(key)) ??
+        this.cloudfrontService.getCDNUrl(key)
+    };
+  }
+
+  @Delete(":id/profile-background")
+  @ApiOperation({ summary: "Remove your own profile background" })
+  @ApiParam({ name: "id", description: "User ID" })
+  @ApiResponse({ status: HttpStatus.OK, description: "Removed, or there was none" })
+  @ApiResponse({ status: HttpStatus.FORBIDDEN, description: "Not your profile" })
+  @UseGuards(JwtAuthGuard)
+  async removeProfileBackground(
+    @Param("id", ParseIntPipe) id: number,
+    @Request() req: RequestWithUser
+  ): Promise<{ message: string; id: number }> {
+    return this.removeProfileAsset(id, req, "background", "Profile background");
   }
 
   @Get(":id/profile-picture")
@@ -286,7 +447,7 @@ export class UserController {
     data: UserDto[];
     meta: { page: number; limit: number; total: number; totalPages: number };
   }> {
-    const { page = 1, limit = 10, nickname, email, sortBy, order } = filterDto;
+    const { page = 1, limit = 10, q, nickname, email, sortBy, order } = filterDto;
 
     const pageNumber = Number(page) || 1;
     const limitNumber = Number(limit) || 10;
@@ -298,6 +459,12 @@ export class UserController {
     const skip = (pageNumber - 1) * limitNumber;
     const filter: Prisma.UserWhereInput = {};
 
+    if (q) {
+      filter.OR = [
+        { username: { contains: q, mode: "insensitive" } },
+        { nickname: { contains: q, mode: "insensitive" } }
+      ];
+    }
     if (nickname) filter.nickname = { contains: nickname };
     if (email) filter.email = { contains: email };
 

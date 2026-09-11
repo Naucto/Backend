@@ -8,6 +8,7 @@ import { CloudfrontService } from "src/routes/s3/edge.service";
 
 describe("ProjectController", () => {
   let controller: ProjectController;
+  let projectService: ProjectService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -51,9 +52,33 @@ describe("ProjectController", () => {
     }).compile();
 
     controller = module.get<ProjectController>(ProjectController);
+    projectService = module.get<ProjectService>(ProjectService);
   });
 
   it("should be defined", () => {
     expect(controller).toBeDefined();
+  });
+
+  describe("getReleaseTags", () => {
+    it("should keep a suggestion list to a handful however many are asked for", async () => {
+      const fetchTags = jest
+        .spyOn(projectService, "fetchPublishedTags")
+        .mockResolvedValue([]);
+
+      await controller.getReleaseTags("sn", "500");
+
+      expect(fetchTags).toHaveBeenCalledWith("sn", 12);
+    });
+
+    it("should ask for every tag when nothing was typed", async () => {
+      const fetchTags = jest
+        .spyOn(projectService, "fetchPublishedTags")
+        .mockResolvedValue([{ tag: "snake", count: 4 }]);
+
+      const result = await controller.getReleaseTags();
+
+      expect(fetchTags).toHaveBeenCalledWith("", 12);
+      expect(result).toEqual({ tags: [{ tag: "snake", count: 4 }] });
+    });
   });
 });

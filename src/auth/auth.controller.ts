@@ -1,5 +1,7 @@
 import {
   Controller,
+  Get,
+  HttpStatus,
   Post,
   Patch,
   Body,
@@ -31,21 +33,22 @@ import {
   encryptRefreshToken,
   decryptRefreshToken
 } from "./refresh-cookie.crypto";
+import { refreshCookieOptions } from "./auth.utils";
+import { PASSWORD_POLICY } from "./password-policy";
+import { PasswordPolicyDto } from "./dto/password-policy.dto";
+import { Public } from "./decorators/public.decorator";
+import {
+  ConflictErrorResponseDto,
+  ValidationErrorResponseDto
+} from "@common/validation/error-response.dto";
 
 @ApiTags("auth")
 @Controller("auth")
 export class AuthController {
-  private readonly isProd = process.env["NODE_ENV"] === "production";
-
   constructor(private readonly authService: AuthService) {}
 
   private getRefreshCookieOptions(): CookieOptions {
-    return {
-      httpOnly: true,
-      secure: this.isProd,
-      sameSite: this.isProd ? "none" : "lax",
-      path: "/auth/refresh"
-    };
+    return refreshCookieOptions();
   }
 
   private setRefreshCookie(res: Response, token: string): void {
@@ -83,6 +86,22 @@ export class AuthController {
     return { access_token };
   }
 
+  @Public()
+  @Get("password-policy")
+  @ApiOperation({
+    summary: "The password rule this deployment enforces, so a form can enforce the same one"
+  })
+  @ApiResponse({ status: HttpStatus.OK, type: PasswordPolicyDto })
+  getPasswordPolicy(): PasswordPolicyDto {
+    return {
+      minLength: PASSWORD_POLICY.minLength,
+      minCharacterClasses: PASSWORD_POLICY.minCharacterClasses,
+      // Spread, not passed: the policy is `as const`, so its array is readonly and handing it out
+      // directly would let a caller mutate the rule this process enforces.
+      characterClasses: [ ...PASSWORD_POLICY.characterClasses ]
+    };
+  }
+
   @Post("register")
   @ApiOperation({ summary: "Register a new user and return an access token" })
   @ApiBody({ type: CreateUserDto })
@@ -95,9 +114,12 @@ export class AuthController {
       required: ["access_token"]
     }
   })
-  @ApiResponse({ status: 400, description: "Bad request" })
-  @ApiResponse({ status: 409, description: "Email already in use" })
-  @ApiResponse({ status: 403, description: "Cannot register as an admin" })
+  @ApiResponse({ status: 400, description: "Bad request", type: ValidationErrorResponseDto })
+  @ApiResponse({
+    status: 409,
+    description: "Email or username already in use",
+    type: ConflictErrorResponseDto
+  })
   async register(
     @Body() createUserDto: CreateUserDto,
     @Res({ passthrough: true }) res: Response
@@ -256,27 +278,28 @@ export class AuthController {
     return { success: true };
   }
 
+  /**
+   * The refresh cookie is scoped to `path=/auth/refresh` (see `refreshCookieOptions`), so it is
+   * never sent to this route: reading it here found nothing, revoked nothing and cleared nothing,
+   * and logout reported success while the session stayed alive — the next page load refreshed
+   * straight back in. Revoke by authenticated user instead, which is also what "sign out" should
+   * mean when the same account is open in more than one tab.
+   */
   @Post("logout")
-  @ApiOperation({ summary: "Remove refresh token cookie" })
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth("JWT-auth")
+  @ApiOperation({ summary: "End the session and clear the refresh token cookie" })
   @ApiResponse({
     status: 200,
     description: "Logout successful",
     schema: { example: { success: true } }
   })
   async logout(
-    @Req() req: Request,
+    @Req() req: RequestWithUser,
     @Res({ passthrough: true }) res: Response
   ): Promise<{ success: boolean }> {
-    const refresh_cookie = req.cookies["refresh_token"];
-    if (refresh_cookie) {
-      try {
-        await this.authService.revokeRefreshToken(
-          decryptRefreshToken(refresh_cookie)
-        );
-      } catch {
-      }
-      res.clearCookie("refresh_token", this.getRefreshCookieOptions());
-    }
+    await this.authService.revokeAllRefreshTokens(req.user.id);
+    res.clearCookie("refresh_token", this.getRefreshCookieOptions());
     return { success: true };
   }
 }

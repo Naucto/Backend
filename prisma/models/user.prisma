@@ -1,11 +1,37 @@
+// The six accents a person may wear. Fixed rather than free: the colour has to read against both
+// themes and stand apart from the accents that mean "act" and "danger" elsewhere.
+enum PersonalColour {
+  SKY
+  BLUSH
+  JADE
+  GOLD
+  ORANGE
+  HOT
+}
+
+enum SessionJoinPolicy {
+  ANYONE
+  FRIENDS
+  CODE_ONLY
+}
+
 model User {
   id        Int      @id @default(autoincrement())
   email     String   @unique
   username  String   @unique
   nickname  String?
   description String?
+  // Null until picked: a colour is then derived from the id, so everyone has one from day one.
+  colour    PersonalColour?
   password  String?
   createdAt DateTime @default(now())
+
+  // Crockford base32 code (8 chars) shared to add friends; generated lazily on
+  // first read so existing rows stay NULL until requested.
+  friendCode        String?           @unique
+  sessionJoinPolicy SessionJoinPolicy @default(ANYONE)
+  // Soft-delete marker: set by account deletion, rejected by the JWT strategy.
+  deletedAt         DateTime?
 
   roles Role[] @relation("UserRoles")
 
@@ -28,6 +54,7 @@ model User {
 
   refreshTokens RefreshToken[]
   notifications Notification[]
+  featuredReleases FeaturedRelease[] @relation("FeaturedReleaseCurator")
 }
 
 model Role {
@@ -50,24 +77,28 @@ model RefreshToken {
 
 model FriendRequest {
   id        Int      @id @default(autoincrement())
-  from      User     @relation("SentFriendRequests", fields: [fromId], references: [id])
+  from      User     @relation("SentFriendRequests", fields: [fromId], references: [id], onDelete: Cascade)
   fromId    Int
-  to        User     @relation("ReceivedFriendRequests", fields: [toId], references: [id])
+  to        User     @relation("ReceivedFriendRequests", fields: [toId], references: [id], onDelete: Cascade)
   toId      Int
   createdAt DateTime @default(now())
 
   @@unique([fromId, toId])
+  @@index([toId])
 }
 
+// Canonical pair order: userAId < userBId (enforced by FriendsService), so a
+// friendship is stored exactly once and looked up without an OR.
 model Friendship {
   id        Int      @id @default(autoincrement())
-  userA     User     @relation("UserAFriends", fields: [userAId], references: [id])
+  userA     User     @relation("UserAFriends", fields: [userAId], references: [id], onDelete: Cascade)
   userAId   Int
-  userB     User     @relation("UserBFriends", fields: [userBId], references: [id])
+  userB     User     @relation("UserBFriends", fields: [userBId], references: [id], onDelete: Cascade)
   userBId   Int
   createdAt DateTime @default(now())
 
   @@unique([userAId, userBId])
+  @@index([userBId])
 }
 
 model Subscription {

@@ -3,12 +3,17 @@ import { WebRTCOfferDto, WebRTCOfferPeerICEServerConfig } from "./webrtc.dto";
 import { IsArray, IsInt, IsOptional, IsString, IsUrl, validateSync } from "class-validator";
 import { plainToInstance } from "class-transformer";
 import { WebRTCServiceOfferError } from "./webrtc.error";
-import { WebRTCServer } from "@webrtc/server/webrtc.server";
+import {
+  WEBRTC_SERVER_NAMES,
+  WebRTCServer,
+  type WebRTCServerName
+} from "@webrtc/server/webrtc.server";
 import { WebRTCServerRuntimeError } from "@webrtc/server/webrtc.server.error";
 
 import path from "path";
 import fs from "fs/promises";
 import { ConfigService } from "@nestjs/config";
+import { TurnCredentialsService } from "./turn-credentials.service";
 
 class WebRTCServiceConfigRelay {
   @IsUrl()
@@ -31,17 +36,27 @@ class WebRTCServiceConfig {
 @Injectable()
 export class WebRTCService implements OnModuleInit {
   private static DEV_HOSTNAME = "localhost";
+  /**
+   * Browsers warn past four ICE servers and gather candidates more slowly with each one,
+   * and a relay that is never the one that answers has cost the connection its setup for
+   * nothing. Three is a STUN plus two ways round a symmetric NAT.
+   */
+  private static MAX_ICE_SERVERS = 3;
 
   private readonly _logger = new Logger(WebRTCService.name);
+  private _started = false;
 
   private readonly _hookedServers = new Set<WebRTCServer>();
 
   private _config?: WebRTCServiceConfig;
+  private _relayCursor = 0;
   private _nextPort?: number;
+  private _publicUrlTemplate?: string | undefined;
   public _publicAddress?: string | undefined;
 
   constructor(
-    @Inject(ConfigService) private readonly _configService: ConfigService
+    @Inject(ConfigService) private readonly _configService: ConfigService,
+    @Inject(TurnCredentialsService) private readonly _turnCredentials: TurnCredentialsService
   )
   {}
 
@@ -51,22 +66,55 @@ export class WebRTCService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     this._publicAddress = this._configService.get<string>("BACKEND_WEBRTC_HOSTNAME");
+    this.loadPublicUrlTemplate(
+      this._configService.get<string>("BACKEND_WEBRTC_PUBLIC_URL_TEMPLATE")
+    );
 
     await Promise.all([
       this.fetchPublicAddress(),
       this.loadConfig(),
     ]);
+
+    // Servers bind here rather than in their own constructors, so resolving the DI graph never
+    // takes a port. Anything registered later binds on registration instead.
+    for (const server of this._hookedServers) {
+      server.listen();
+    }
+    this._started = true;
   }
 
   public registerServer(server: WebRTCServer): void {
     this._hookedServers.add(server);
+    // Registered after start-up (a server built lazily): bind it straight away.
+    if (this._started) server.listen();
   }
 
-  public allocatePort(): number {
-    if (this._nextPort === undefined) {
-      const base = Number(this._configService.get<string>("BACKEND_WEBRTC_PORT_BASE"));
-      this._nextPort = Number.isInteger(base) && base > 0 ? base : 10000;
+  private portBase(): number {
+    const base = Number(this._configService.get<string>("BACKEND_WEBRTC_PORT_BASE"));
+
+    return Number.isInteger(base) && base > 0 ? base : 10000;
+  }
+
+  /**
+   * The port a named server binds, fixed by its name rather than by when it was built.
+   *
+   * A deployment maps one domain per name onto one port each, by hand and outside this repository,
+   * so which port a name answers on is a contract. Handing ports out in construction order leaves
+   * that contract to whatever order the DI graph resolves in, and a client then reaches the wrong
+   * server through a URL that names the right one.
+   *
+   * The offset is the name's index in WEBRTC_SERVER_NAMES, which is therefore declared in the
+   * order the deployment maps and may not be reordered.
+   */
+  public allocatePort(name?: WebRTCServerName): number {
+    const names = Object.values(WEBRTC_SERVER_NAMES);
+
+    if (name !== undefined) {
+      return this.portBase() + names.indexOf(name);
     }
+
+    // Ad-hoc servers have no name and so no domain; they take what is left above the named block.
+    this._nextPort ??= this.portBase() + names.length;
 
     return this._nextPort++;
   }
@@ -93,24 +141,33 @@ export class WebRTCService implements OnModuleInit {
     );
   }
 
+  /**
+   * Takes a relay inventory, whatever read it. Public because the file is not in the repository --
+   * it holds credentials -- so a test has to hand its own inventory over instead.
+   */
+  public applyConfig(raw: unknown, source: string): boolean {
+    const configInstance = plainToInstance(WebRTCServiceConfig, raw);
+    const configErrors = validateSync(configInstance, { whitelist: true, forbidNonWhitelisted: true });
+
+    if (configErrors.length > 0) {
+      this._logger.error(`Invalid WebRTC service config in ${source}`);
+      this._logger.error(JSON.stringify(configErrors));
+      return false;
+    }
+
+    this._config = configInstance;
+    this._logger.log(`WebRTC service config loaded successfully from ${source}`);
+
+    return true;
+  }
+
   private async loadConfig(): Promise<void> {
     const configPath = path.resolve(process.cwd(), "config", "webrtc.json");
 
     try {
       const rawFile = await fs.readFile(configPath, "utf-8");
-      const parsedRawObject = JSON.parse(rawFile);
 
-      const configInstance = plainToInstance(WebRTCServiceConfig, parsedRawObject);
-      const configErrors = validateSync(configInstance, { whitelist: true, forbidNonWhitelisted: true });
-
-      if (configErrors.length > 0) {
-        this._logger.error(`Invalid WebRTC service config in ${configPath}`);
-        this._logger.error(JSON.stringify(configErrors));
-        return;
-      }
-
-      this._config = configInstance;
-      this._logger.log(`WebRTC service config loaded successfully from ${configPath}`);
+      this.applyConfig(JSON.parse(rawFile), configPath);
     } catch (err) {
       if (err instanceof Error) {
         this._logger.error(`Failed to read WebRTC service config from ${configPath}: ${err.message}`);
@@ -119,8 +176,56 @@ export class WebRTCService implements OnModuleInit {
     }
   }
 
-  private buildSignalingUrl(targetServer: WebRTCServer | string): string {
-    if (targetServer instanceof WebRTCServer) {
+  /**
+   * Production advertises one subdomain per WebSocket server through
+   * BACKEND_WEBRTC_PUBLIC_URL_TEMPLATE (e.g. `wss://{name}.ws.beta.naucto.net`,
+   * `{name}` being the server's stable public name, `{port}` its bound port).
+   * Without a template the server is reached directly on its port at
+   * BACKEND_WEBRTC_HOSTNAME (local dev).
+   */
+  public loadPublicUrlTemplate(template: string | undefined): void {
+    const trimmed = template?.trim();
+
+    if (!trimmed) {
+      this._publicUrlTemplate = undefined;
+      return;
+    }
+
+    if (!/^wss?:\/\//.test(trimmed)) {
+      throw new WebRTCServerRuntimeError(
+        "BACKEND_WEBRTC_PUBLIC_URL_TEMPLATE must start with ws:// or wss://, " +
+        `got: ${trimmed}`
+      );
+    }
+
+    if (!trimmed.includes("{name}") && !trimmed.includes("{port}")) {
+      this._logger.warn(
+        "BACKEND_WEBRTC_PUBLIC_URL_TEMPLATE contains neither {name} nor {port}: " +
+        "every WebSocket server will be advertised at the same URL"
+      );
+    }
+
+    this._publicUrlTemplate = trimmed;
+    this._logger.log(`WebSocket public URL template: ${trimmed}`);
+  }
+
+  public buildSignalingUrl(
+    targetServer: Pick<WebRTCServer, "name" | "port"> | string
+  ): string {
+    if (typeof targetServer !== "string") {
+      if (this._publicUrlTemplate !== undefined) {
+        if (targetServer.name === undefined) {
+          throw new WebRTCServerRuntimeError(
+            "Cannot build a public URL for a WebSocket server without a name " +
+            `(port ${targetServer.port}); see WEBRTC_SERVER_NAMES`
+          );
+        }
+
+        return this._publicUrlTemplate
+          .replace(/\{name\}/g, targetServer.name)
+          .replace(/\{port\}/g, String(targetServer.port));
+      }
+
       const protocol = this.isLocalDevEnv ? "ws" : "wss";
       return `${protocol}://${this._publicAddress}:${targetServer.port}`;
     }
@@ -132,6 +237,22 @@ export class WebRTCService implements OnModuleInit {
     }
 
     return targetServer;
+  }
+
+  /**
+   * Which relays this offer carries, out of everything the file lists.
+   *
+   * The file stays the full inventory; an offer is a choice from it. STUN goes first because it is
+   * the cheap path and costs a session nothing when the direct connection works, and the TURN
+   * entries rotate from one offer to the next so the same relay does not carry every session.
+   */
+  private pickRelays(relays: readonly WebRTCServiceConfigRelay[]): WebRTCServiceConfigRelay[] {
+    const stun = relays.filter(relay => !relay.username);
+    const turn = relays.filter(relay => relay.username);
+    const start = turn.length ? this._relayCursor++ % turn.length : 0;
+
+    return [ ...stun, ...turn.slice(start), ...turn.slice(0, start) ]
+      .slice(0, WebRTCService.MAX_ICE_SERVERS);
   }
 
   // targetServer can be either a concrete WebRTCServer or a URL to that server
@@ -148,21 +269,21 @@ export class WebRTCService implements OnModuleInit {
     offerDto.signaling = [ signalingUrl ];
 
     offerDto.maxConns = this._config.maxClients;
-    offerDto.peerOpts = {
-      config: {
-        iceServers: this._config.relays.map(
-          relay => {
-            const relayConfig: WebRTCOfferPeerICEServerConfig = {
-              urls: relay.url,
-              username: relay.username,
-              credential: relay.credential
-            };
+    // Minted credentials are one relay reached several ways, not an inventory to choose from, so
+    // they go out whole. The file is the fallback, and it is the inventory pickRelays exists for.
+    const iceServers = this._turnCredentials.current() ?? this.pickRelays(this._config.relays).map(
+      relay => {
+        const relayConfig: WebRTCOfferPeerICEServerConfig = {
+          urls: [ relay.url ],
+          username: relay.username,
+          credential: relay.credential
+        };
 
-            return relayConfig;
-          }
-        )
+        return relayConfig;
       }
-    };
+    );
+
+    offerDto.peerOpts = { config: { iceServers } };
 
     return offerDto;
   }

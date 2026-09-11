@@ -410,6 +410,15 @@ export class S3Service {
     }
   }
 
+  /**
+   * Marks a release object readable without credentials, because the browser fetches it straight
+   * from the edge endpoint.
+   *
+   * Per-object ACLs are an S3 feature, not an S3-API feature: MinIO — what the dev stack runs —
+   * answers `NotImplemented`, and there the bucket policy grants the same read (see the
+   * `minio-init` service in `docker-compose.dev.yml`). Swallowing exactly that one code keeps
+   * publish working against both, while any real failure still surfaces.
+   */
   async setObjectPublicRead(key: string, bucketName?: string): Promise<void> {
     const resolvedBucketName = this.resolveBucket(bucketName);
 
@@ -418,7 +427,20 @@ export class S3Service {
       Key: key,
       ACL: "public-read"
     };
-    const command = new PutObjectAclCommand(input);
-    await this.s3.send(command);
+    try {
+      await this.s3.send(new PutObjectAclCommand(input));
+    } catch (error) {
+      if (!isNotImplemented(error)) throw error;
+    }
   }
+}
+
+/** True for the `NotImplemented` an S3-compatible store returns for a feature it does not have. */
+function isNotImplemented(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "name" in error &&
+    (error as { name?: unknown }).name === "NotImplemented"
+  );
 }
