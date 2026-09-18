@@ -777,6 +777,79 @@ describe("ProjectService", () => {
     });
   });
 
+  describe("save", () => {
+    const file = { originalname: "game.bin" } as Express.Multer.File;
+    const saves = (ages: number[]): void => {
+      s3ServiceMock.listObjects.mockResolvedValue(
+        ages.map((age) => {
+          const at = Date.now() - age;
+          return { Key: `save/1/${at}`, LastModified: new Date(at) };
+        })
+      );
+    };
+
+    beforeEach(() => {
+      jest.spyOn(service, "updateLastTimeUpdate").mockResolvedValue(undefined);
+      s3ServiceMock.uploadFile.mockResolvedValue(undefined);
+      s3ServiceMock.deleteFile.mockResolvedValue(undefined);
+    });
+
+    it("rewrites the open slot while the window lasts", async () => {
+      saves([30_000, 700_000, 1_400_000, 2_100_000, 2_800_000]);
+      const newest = (await service.listVersions(1))[0]!.name;
+
+      await service.save(1, file);
+
+      expect(s3ServiceMock.deleteFile).not.toHaveBeenCalled();
+      expect(s3ServiceMock.uploadFile).toHaveBeenCalledWith(
+        expect.objectContaining({ keyName: `save/1/${newest}` })
+      );
+    });
+
+    it("opens a new slot past the window and lets the oldest go", async () => {
+      saves([660_000, 1_400_000, 2_100_000, 2_800_000, 3_500_000]);
+      const listed = await service.listVersions(1);
+      const oldest = listed[listed.length - 1]!.name;
+
+      await service.save(1, file);
+
+      expect(s3ServiceMock.deleteFile).toHaveBeenCalledTimes(1);
+      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({
+        key: `save/1/${oldest}`
+      });
+      const key = s3ServiceMock.uploadFile.mock.calls[0]![0]!.keyName as string;
+      expect(key).not.toBe(`save/1/${oldest}`);
+      expect(Number(key.split("/").pop())).toBeGreaterThan(Date.now() - 1000);
+    });
+
+    it("prunes everything beyond the slots it keeps", async () => {
+      saves([660_000, 1e6, 2e6, 3e6, 4e6, 5e6, 6e6]);
+
+      await service.save(1, file);
+
+      expect(s3ServiceMock.deleteFile).toHaveBeenCalledTimes(3);
+    });
+
+    it("keeps a single slot without reading past the list", async () => {
+      Object.assign(service, { max_history_version: 1 });
+      saves([660_000]);
+
+      await service.save(1, file);
+
+      expect(s3ServiceMock.deleteFile).toHaveBeenCalledTimes(1);
+      expect(s3ServiceMock.uploadFile).toHaveBeenCalledTimes(1);
+    });
+
+    it("starts the first slot on an empty history", async () => {
+      saves([]);
+
+      await service.save(1, file);
+
+      expect(s3ServiceMock.deleteFile).not.toHaveBeenCalled();
+      expect(s3ServiceMock.uploadFile).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe("updateLastTimeUpdate", () => {
     it("should update lastSave if sessions exist", async () => {
       const projectId = 1;

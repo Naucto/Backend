@@ -172,15 +172,18 @@ export class ProjectService {
     private readonly s3Service: S3Service,
     private readonly moduleRef: ModuleRef
   ) {
-    // Four, because an author looking for a state they were in reaches for the last few and never
-    // for the tenth: the ones worth keeping past that are the ones somebody named, and a named
-    // version is a checkpoint, kept apart and never pruned.
-    this.max_history_version =
-      configService.get<number>("S3_MAX_AUTO_HISTORY_VERSION") ?? 4;
-    this.max_checkpoints =
-      configService.get<number>("S3_MAX_CHECKPOINTS") ?? 10;
+    // Four slots, because an author looking for a state they were in reaches for the last few
+    // and never for the tenth: the ones worth keeping past that are the ones somebody named, and
+    // a named version is a checkpoint, kept apart and never pruned.
+    this.max_history_version = Number(
+      configService.get<string>("S3_MAX_AUTO_HISTORY_VERSION") ?? 4
+    );
+    this.max_checkpoints = Number(
+      configService.get<string>("S3_MAX_CHECKPOINTS") ?? 10
+    );
+    // Minutes in the environment; a slot stays open this long.
     this.auto_save_delay =
-      (configService.get<number>("S3_AUTO_HISTORY_DELAY") ?? 10) * 60000; // from minutes to milliseconds
+      Number(configService.get<string>("S3_AUTO_HISTORY_DELAY") ?? 10) * 60000;
   }
 
   private normalizeTags(tags?: string[]): string[] {
@@ -739,20 +742,25 @@ export class ProjectService {
     });
   }
 
+  /**
+   * An autosave lands in a slot: one key per `auto_save_delay` window, rewritten by every save
+   * inside the window, so a long session costs one slot per window rather than one per pause in
+   * the typing. Past the window a new slot opens and the oldest go, keeping `max_history_version`.
+   */
   async save(projectId: number, file: Express.Multer.File): Promise<void> {
-    const files = (await this.listVersions(projectId)).sort(newestFirst);
-    const actual_time = Date.now();
+    const saves = (await this.listVersions(projectId)).sort(newestFirst);
+    const now = Date.now();
+    const newest = saves[0];
+    const slot =
+      newest && now - Number(newest.name) < this.auto_save_delay
+        ? newest.name
+        : String(now);
 
-    if (files.length >= this.max_history_version) {
-      const last_save_time = actual_time - files[1]!.date.getTime();
-      const filename_prefix = `save/${projectId}/`;
-      if (last_save_time < this.auto_save_delay) {
+    if (slot !== newest?.name) {
+      const kept = Math.max(this.max_history_version - 1, 0);
+      for (const stale of saves.slice(kept)) {
         await this.s3Service.deleteFile({
-          key: filename_prefix + (files[0]?.name ?? "")
-        });
-      } else {
-        await this.s3Service.deleteFile({
-          key: filename_prefix + (files[files.length - 1]?.name ?? "")
+          key: `save/${projectId}/${stale.name}`
         });
       }
     }
@@ -760,7 +768,7 @@ export class ProjectService {
     await this.updateLastTimeUpdate(projectId);
     await this.s3Service.uploadFile({
       file,
-      keyName: `save/${projectId}/${actual_time}`
+      keyName: `save/${projectId}/${slot}`
     });
 
     if (file.buffer) {
