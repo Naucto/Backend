@@ -32,21 +32,21 @@ import {
 } from "./content-size";
 import { ProjectTooLargeException } from "./project.error";
 
+// What a project says about its people, on public routes as well as private ones: the id
+// and the name, never the address behind the account.
 export const CREATOR_SELECT = {
   id: true,
-  username: true,
-  email: true
+  username: true
 };
 
 export const COLLABORATOR_SELECT = {
   id: true,
-  username: true,
-  email: true
+  username: true
 };
 
 export type ProjectEx = Project & {
-  collaborators: Array<{ id: number; username: string; email: string }>;
-  creator: { id: number; username: string; email: string };
+  collaborators: Array<{ id: number; username: string }>;
+  creator: { id: number; username: string };
 };
 
 export type ProjectSave = {

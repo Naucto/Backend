@@ -13,12 +13,6 @@ export class UserBasicInfoDto {
     description: "The username"
   })
     username!: string;
-
-  @ApiProperty({
-    example: "john.doe@example.com",
-    description: "The email address"
-  })
-    email!: string;
 }
 
 export class ProjectResponseDto {

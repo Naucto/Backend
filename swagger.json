@@ -4485,17 +4485,11 @@
             "type": "string",
             "example": "john_doe",
             "description": "The username"
-          },
-          "email": {
-            "type": "string",
-            "example": "john.doe@example.com",
-            "description": "The email address"
           }
         },
         "required": [
           "id",
-          "username",
-          "email"
+          "username"
         ]
       },
       "ProjectExResponseDto": {

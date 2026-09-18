@@ -61,13 +61,11 @@ const mockProjects: ProjectWithCreatorAndCollaborators[] = [
     contentSizeTotal: null,
     creator: {
       id: 42,
-      email: "creator@example.com",
       username: "creatorUser"
     },
     collaborators: [
       {
         id: 1,
-        email: "user1@example.com",
         username: "user1"
       }
     ]
@@ -102,13 +100,11 @@ const mockProjects: ProjectWithCreatorAndCollaborators[] = [
     contentSizeTotal: null,
     creator: {
       id: 42,
-      email: "creator@example.com",
       username: "creatorUser"
     },
     collaborators: [
       {
         id: 1,
-        email: "user1@example.com",
         username: "user1"
       }
     ]
@@ -123,6 +119,7 @@ describe("ProjectService", () => {
       aggregate: jest.fn(),
       count: jest.fn(),
       create: jest.fn(),
+      findFirst: jest.fn(),
       findMany: jest.fn(),
       findUnique: jest.fn(),
       update: jest.fn(),
@@ -214,7 +211,11 @@ describe("ProjectService", () => {
   describe("likeProject / unlikeProject", () => {
     it("is idempotent when liking: upserts the like and syncs the counter from a row count", async () => {
       prismaMock.project.findUnique.mockResolvedValue({ id: 1 });
-      prismaMock.like.upsert.mockResolvedValue({ id: 10, userId: 7, projectId: 1 });
+      prismaMock.like.upsert.mockResolvedValue({
+        id: 10,
+        userId: 7,
+        projectId: 1
+      });
       prismaMock.like.count.mockResolvedValue(1);
       prismaMock.project.update.mockResolvedValue({ likes: 1 });
 
@@ -226,7 +227,9 @@ describe("ProjectService", () => {
         update: {}
       });
       // Counter is recomputed from the actual rows, never incremented blindly.
-      expect(prismaMock.like.count).toHaveBeenCalledWith({ where: { projectId: 1 } });
+      expect(prismaMock.like.count).toHaveBeenCalledWith({
+        where: { projectId: 1 }
+      });
       expect(prismaMock.project.update).toHaveBeenCalledWith({
         where: { id: 1 },
         data: { likes: 1 }
@@ -329,15 +332,13 @@ describe("ProjectService", () => {
           creator: {
             select: {
               id: true,
-              username: true,
-              email: true
+              username: true
             }
           },
           collaborators: {
             select: {
               id: true,
-              username: true,
-              email: true
+              username: true
             }
           }
         }
@@ -360,19 +361,32 @@ describe("ProjectService", () => {
           creator: {
             select: {
               id: true,
-              username: true,
-              email: true
+              username: true
             }
           },
           collaborators: {
             select: {
               id: true,
-              username: true,
-              email: true
+              username: true
             }
           }
         }
       });
+    });
+  });
+
+  describe("fetchRelease", () => {
+    it("names the people on a project without their addresses", async () => {
+      prismaMock.project.findFirst.mockResolvedValue({
+        ...mockProjects[0],
+        forkedFrom: null,
+        _count: { forks: 0, comments: 0 }
+      });
+
+      const result = await service.fetchRelease(1);
+
+      expect(result.creator).not.toHaveProperty("email");
+      for (const c of result.collaborators) expect(c).not.toHaveProperty("email");
     });
   });
 
@@ -393,10 +407,8 @@ describe("ProjectService", () => {
       prismaMock.project.create.mockResolvedValue({
         id: 10,
         ...createDto,
-        collaborators: [
-          { id: userId, username: "user1", email: "user1@example.com" }
-        ],
-        creator: { id: userId, username: "user1", email: "user1@example.com" }
+        collaborators: [{ id: userId, username: "user1" }],
+        creator: { id: userId, username: "user1" }
       });
 
       const result = await service.create(createDto, userId);
@@ -475,15 +487,13 @@ describe("ProjectService", () => {
           creator: {
             select: {
               id: true,
-              username: true,
-              email: true
+              username: true
             }
           },
           collaborators: {
             select: {
               id: true,
-              username: true,
-              email: true
+              username: true
             }
           }
         }
@@ -534,9 +544,9 @@ describe("ProjectService", () => {
 
       // The order is the load-bearing part: content dropped before the row would be lost to a
       // delete that then fails.
-      expect(prismaMock.project.delete.mock.invocationCallOrder[0]).toBeLessThan(
-        s3ServiceMock.deleteFile.mock.invocationCallOrder[0]!
-      );
+      expect(
+        prismaMock.project.delete.mock.invocationCallOrder[0]
+      ).toBeLessThan(s3ServiceMock.deleteFile.mock.invocationCallOrder[0]!);
       expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({
         key: `release/${projectId}`
       });
@@ -593,15 +603,13 @@ describe("ProjectService", () => {
           creator: {
             select: {
               id: true,
-              username: true,
-              email: true
+              username: true
             }
           },
           collaborators: {
             select: {
               id: true,
-              username: true,
-              email: true
+              username: true
             }
           }
         }
@@ -668,15 +676,13 @@ describe("ProjectService", () => {
           creator: {
             select: {
               id: true,
-              username: true,
-              email: true
+              username: true
             }
           },
           collaborators: {
             select: {
               id: true,
-              username: true,
-              email: true
+              username: true
             }
           }
         }
