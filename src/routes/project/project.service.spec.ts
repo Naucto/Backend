@@ -118,6 +118,10 @@ describe("ProjectService", () => {
   let service: ProjectService;
 
   const prismaMock = {
+    releaseView: {
+      count: jest.fn(),
+      create: jest.fn()
+    },
     project: {
       aggregate: jest.fn(),
       count: jest.fn(),
@@ -893,6 +897,71 @@ describe("ProjectService", () => {
         BadRequestException
       );
       expect(s3ServiceMock.listObjects).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("registerReleaseView", () => {
+    const viewer = { userId: 7, ip: "203.0.113.9" };
+
+    beforeEach(() => {
+      prismaMock.project.findFirst.mockResolvedValue({ id: 1, viewCount: 10 });
+      prismaMock.project.update.mockResolvedValue({ viewCount: 11 });
+    });
+
+    it("counts a reader's first view of the day, and a first reader twice over", async () => {
+      prismaMock.releaseView.count.mockResolvedValue(0);
+      prismaMock.releaseView.create.mockResolvedValue({});
+
+      await expect(service.registerReleaseView(1, viewer)).resolves.toEqual({
+        viewCount: 11
+      });
+
+      expect(prismaMock.releaseView.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ projectId: 1, viewerKey: "u:7" })
+      });
+      expect(prismaMock.project.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { viewCount: { increment: 1 }, uniquePlayers: { increment: 1 } }
+        })
+      );
+    });
+
+    it("moves nothing on a second view the same day", async () => {
+      prismaMock.releaseView.count.mockResolvedValue(1);
+      prismaMock.releaseView.create.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError("taken", {
+          code: "P2002",
+          clientVersion: "test"
+        })
+      );
+
+      await expect(service.registerReleaseView(1, viewer)).resolves.toEqual({
+        viewCount: 10
+      });
+
+      expect(prismaMock.project.update).not.toHaveBeenCalled();
+    });
+
+    it("counts a returning reader's view without counting them as new", async () => {
+      prismaMock.releaseView.count.mockResolvedValue(1);
+      prismaMock.releaseView.create.mockResolvedValue({});
+
+      await service.registerReleaseView(1, viewer);
+
+      expect(prismaMock.project.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { viewCount: { increment: 1 } } })
+      );
+    });
+
+    it("keys an anonymous reader by address, apart from any account", async () => {
+      prismaMock.releaseView.count.mockResolvedValue(0);
+      prismaMock.releaseView.create.mockResolvedValue({});
+
+      await service.registerReleaseView(1, { userId: null, ip: "203.0.113.9" });
+
+      const key = prismaMock.releaseView.create.mock.calls[0]![0].data.viewerKey as string;
+      expect(key).toMatch(/^ip:/);
+      expect(key).not.toContain("203.0.113.9");
     });
   });
 

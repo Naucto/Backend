@@ -73,6 +73,7 @@ import {
   SignedUrlResponseDto
 } from "./dto/project-response.dto";
 import { HeadObjectCommandOutput } from "@aws-sdk/client-s3";
+import { OptionalJwtAuthGuard } from "@auth/guards/optional-jwt-auth.guard";
 import { S3DownloadException } from "@s3/s3.error";
 import { S3Service } from "@s3/s3.service";
 import { CloudfrontService } from "src/routes/s3/edge.service";
@@ -1204,7 +1205,10 @@ export class ProjectController {
     return this.projectService.getLikeStatus(Number(id), req.user.id);
   }
 
+  // Public, yet it reads the bearer when there is one: a signed-in reader counts by account, an
+  // anonymous one by address.
   @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   @Post("releases/:id/view")
   @ApiOperation({ summary: "Register a play view for a published project" })
   @ApiParam({ name: "id", type: "string" })
@@ -1214,8 +1218,14 @@ export class ProjectController {
     type: ViewResponseDto
   })
   @HttpCode(HttpStatus.OK)
-  async registerReleaseView(@Param("id") id: string): Promise<ViewResponseDto> {
-    return this.projectService.registerReleaseView(Number(id));
+  async registerReleaseView(
+    @Param("id") id: string,
+    @Req() req: Request & { user?: { id: number } | null }
+  ): Promise<ViewResponseDto> {
+    return this.projectService.registerReleaseView(Number(id), {
+      userId: req.user?.id ?? null,
+      ip: req.ip ?? ""
+    });
   }
 
   @Post(":id/update-release")

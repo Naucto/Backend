@@ -49,6 +49,7 @@ model Project {
   workSession   WorkSession?
   userLikes     Like[]
   featuredReleases FeaturedRelease[]
+  releaseViews  ReleaseView[]
 
   // Aggregate statistics
   viewCount     Int @default(0)
@@ -84,4 +85,18 @@ model Like {
 
   @@unique([userId, projectId])
   @@index([projectId])
+}
+
+// One row per viewer per UTC day on a release; viewCount moves only when a row lands, so a
+// reload is not a view. viewerKey is the user's id, or a keyed hash of the address when anonymous.
+model ReleaseView {
+  id        Int      @id @default(autoincrement())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId Int
+  viewerKey String
+  day       DateTime @db.Date
+  createdAt DateTime @default(now())
+
+  @@unique([projectId, viewerKey, day])
+  @@index([projectId, viewerKey])
 }

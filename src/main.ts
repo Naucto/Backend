@@ -29,6 +29,9 @@ if (isProduction) {
 
 (async () => {
   const expressApp = express();
+  // The API sits behind the deployment's reverse proxy on a private network, so the address of
+  // the reader is the one that proxy reports, not the proxy's own.
+  expressApp.set("trust proxy", "loopback, linklocal, uniquelocal");
 
   const app = await NestFactory.create<NestExpressApplication>(
     AppModule,

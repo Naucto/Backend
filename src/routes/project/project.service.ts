@@ -30,6 +30,7 @@ import {
   computeContentSize,
   isContentSizeBreakdown
 } from "./content-size";
+import { viewerKeyOf } from "./viewer-key";
 import {
   CheckpointLimitException,
   ProjectNotPublishedException,
@@ -129,6 +130,11 @@ const newestFirst = (a: ProjectSave, b: ProjectSave): number =>
  * A version's name as it may land in an S3 key: anything that could climb out of the project's
  * prefix is refused rather than escaped.
  */
+/** A row refused for a unique index that already holds its key. */
+const isUniqueViolation = (error: unknown): boolean =>
+  error instanceof Prisma.PrismaClientKnownRequestError &&
+  error.code === "P2002";
+
 const keyName = (raw: string): string => {
   const name = raw.trim();
   if (!name || name.includes("/") || name.includes("..")) {
@@ -181,6 +187,7 @@ export class ProjectService {
   private readonly max_history_version;
   private readonly max_checkpoints;
   private readonly auto_save_delay;
+  private readonly view_secret: string;
 
   constructor(
     @Inject(ConfigService) configService: ConfigService,
@@ -200,6 +207,10 @@ export class ProjectService {
     // Minutes in the environment; a slot stays open this long.
     this.auto_save_delay =
       Number(configService.get<string>("S3_AUTO_HISTORY_DELAY") ?? 10) * 60000;
+    this.view_secret =
+      configService.get<string>("VIEW_HASH_SECRET") ??
+      configService.get<string>("JWT_SECRET") ??
+      "";
   }
 
   private normalizeTags(tags?: string[]): string[] {
@@ -1376,13 +1387,17 @@ export class ProjectService {
     );
   }
 
-  async registerReleaseView(projectId: number): Promise<{ viewCount: number }> {
+  /**
+   * One view per reader per UTC day. The unique row is what decides; the counter follows it, so a
+   * reload, or a loop of requests, moves nothing.
+   */
+  async registerReleaseView(
+    projectId: number,
+    viewer: { userId: number | null; ip: string }
+  ): Promise<{ viewCount: number }> {
     const project = await this.prisma.project.findFirst({
-      where: {
-        id: projectId,
-        ...PUBLISHED
-      },
-      select: { id: true }
+      where: { id: projectId, ...PUBLISHED },
+      select: { id: true, viewCount: true }
     });
 
     if (!project) {
@@ -1391,9 +1406,32 @@ export class ProjectService {
       );
     }
 
+    const viewerKey = viewerKeyOf(viewer.userId, viewer.ip, this.view_secret);
+    const now = new Date();
+    const day = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+    );
+    const seenBefore =
+      (await this.prisma.releaseView.count({ where: { projectId, viewerKey } })) >
+      0;
+
+    try {
+      await this.prisma.releaseView.create({
+        data: { projectId, viewerKey, day }
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        return { viewCount: project.viewCount };
+      }
+      throw error;
+    }
+
     const updated = await this.prisma.project.update({
       where: { id: projectId },
-      data: { viewCount: { increment: 1 } },
+      data: {
+        viewCount: { increment: 1 },
+        ...(seenBefore ? {} : { uniquePlayers: { increment: 1 } })
+      },
       select: { viewCount: true }
     });
 
