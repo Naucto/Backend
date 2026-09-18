@@ -44,6 +44,38 @@ export class ProjectLimitsDto {
     description: "Maximum size (bytes) of an uploaded project blob"
   })
     maxBlobBytes!: number;
+
+  @ApiProperty({
+    example: 20,
+    description: "Named versions a project may hold; saving under an existing name rewrites it"
+  })
+    maxCheckpoints!: number;
+
+  @ApiProperty({
+    example: 4,
+    description: "Autosave slots kept per project, oldest pruned"
+  })
+    maxAutosaves!: number;
+}
+
+export class CheckpointLimitDto {
+  @ApiProperty({ example: 400 })
+    statusCode!: number;
+
+  @ApiProperty({ example: "Bad Request" })
+    error!: string;
+
+  @ApiProperty({ example: "CHECKPOINT_LIMIT" })
+    code!: string;
+
+  @ApiProperty({ example: "20 versions out of 20 - delete one to save another" })
+    message!: string;
+
+  @ApiProperty({ example: 20, description: "Named versions the project holds" })
+    count!: number;
+
+  @ApiProperty({ example: 20, description: "Named versions it may hold" })
+    max!: number;
 }
 
 export class ProjectSizeDto {

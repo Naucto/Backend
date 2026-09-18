@@ -850,6 +850,52 @@ describe("ProjectService", () => {
     });
   });
 
+  describe("checkpoint", () => {
+    const named = (names: string[]): void => {
+      s3ServiceMock.listObjects.mockResolvedValue(
+        names.map((n) => ({ Key: `checkpoint/1/${n}`, LastModified: new Date() }))
+      );
+    };
+
+    beforeEach(() => {
+      jest.spyOn(service, "fetchLastVersion").mockResolvedValue({
+        body: Readable.from([]),
+        contentType: "application/octet-stream",
+        contentLength: 0
+      });
+      s3ServiceMock.uploadFile.mockResolvedValue(undefined);
+    });
+
+    it("refuses a new name once the project holds as many as it may", async () => {
+      named(["a", "b", "c", "d", "e"]);
+
+      await expect(service.checkpoint(1, "f")).rejects.toMatchObject({
+        count: 5,
+        max: 5
+      });
+      expect(s3ServiceMock.uploadFile).not.toHaveBeenCalled();
+    });
+
+    it("rewrites a name that exists even at the cap", async () => {
+      named(["a", "b", "c", "d", "e"]);
+
+      await service.checkpoint(1, " c ");
+
+      expect(s3ServiceMock.uploadFile).toHaveBeenCalledWith(
+        expect.objectContaining({ keyName: "checkpoint/1/c" })
+      );
+    });
+
+    it("refuses a name that could leave the project's prefix", async () => {
+      named([]);
+
+      await expect(service.checkpoint(1, "../x")).rejects.toBeInstanceOf(
+        BadRequestException
+      );
+      expect(s3ServiceMock.listObjects).not.toHaveBeenCalled();
+    });
+  });
+
   describe("updateLastTimeUpdate", () => {
     it("should update lastSave if sessions exist", async () => {
       const projectId = 1;
@@ -1158,7 +1204,9 @@ describe("ProjectService", () => {
     it("exposes the limits", () => {
       expect(service.getLimits()).toEqual({
         maxContentBytes: PROJECT_CONTENT_MAX_BYTES,
-        maxBlobBytes: 16 * 1024 * 1024
+        maxBlobBytes: 16 * 1024 * 1024,
+        maxCheckpoints: 5,
+        maxAutosaves: 5
       });
     });
 

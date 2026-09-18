@@ -31,6 +31,7 @@ import {
   isContentSizeBreakdown
 } from "./content-size";
 import {
+  CheckpointLimitException,
   ProjectNotPublishedException,
   ProjectTooLargeException
 } from "./project.error";
@@ -80,6 +81,8 @@ type ReleaseProject = ProjectEx & {
 export type ProjectLimits = {
   maxContentBytes: number;
   maxBlobBytes: number;
+  maxCheckpoints: number;
+  maxAutosaves: number;
 };
 
 export type ProjectSize = {
@@ -121,6 +124,19 @@ const RELEASE_CACHE_CONTROL = "no-cache";
  */
 const newestFirst = (a: ProjectSave, b: ProjectSave): number =>
   Number(b.name) - Number(a.name) || b.date.getTime() - a.date.getTime();
+
+/**
+ * A version's name as it may land in an S3 key: anything that could climb out of the project's
+ * prefix is refused rather than escaped.
+ */
+const keyName = (raw: string): string => {
+  const name = raw.trim();
+  if (!name || name.includes("/") || name.includes("..")) {
+    throw new BadRequestException(`Invalid version name: ${raw}`);
+  }
+
+  return name;
+};
 
 const RELEASE_ORDER_BY: Record<ReleaseSort, Prisma.ProjectOrderByWithRelationInput[]> = {
   fresh: [{ publishedAt: "desc" }, { createdAt: "desc" }],
@@ -179,7 +195,7 @@ export class ProjectService {
       configService.get<string>("S3_MAX_AUTO_HISTORY_VERSION") ?? 4
     );
     this.max_checkpoints = Number(
-      configService.get<string>("S3_MAX_CHECKPOINTS") ?? 10
+      configService.get<string>("S3_MAX_CHECKPOINTS") ?? 20
     );
     // Minutes in the environment; a slot stays open this long.
     this.auto_save_delay =
@@ -781,7 +797,9 @@ export class ProjectService {
   getLimits(): ProjectLimits {
     return {
       maxContentBytes: PROJECT_CONTENT_MAX_BYTES,
-      maxBlobBytes: PROJECT_BLOB_MAX_BYTES
+      maxBlobBytes: PROJECT_BLOB_MAX_BYTES,
+      maxCheckpoints: this.max_checkpoints,
+      maxAutosaves: this.max_history_version
     };
   }
 
@@ -865,11 +883,15 @@ export class ProjectService {
     return projects.map((project) => project.id);
   }
 
-  async checkpoint(projectId: number, name: string): Promise<void> {
-    const checkpoints = (await this.listCheckpoints(projectId)).length;
-    if (checkpoints >= this.max_checkpoints) {
-      throw new BadRequestException(
-        `Reached maximum number of checkpoints (${this.max_checkpoints})`
+  /** Saving under a name that exists rewrites that version, so the cap only meets a new name. */
+  async checkpoint(projectId: number, rawName: string): Promise<void> {
+    const name = keyName(rawName);
+    const existing = await this.listCheckpoints(projectId);
+    const overwriting = existing.some((c) => c.name === name);
+    if (!overwriting && existing.length >= this.max_checkpoints) {
+      throw new CheckpointLimitException(
+        existing.length,
+        this.max_checkpoints
       );
     }
 
@@ -883,7 +905,7 @@ export class ProjectService {
 
   async removeCheckpoint(projectId: number, checkpoint: string): Promise<void> {
     await this.s3Service.deleteFile({
-      key: `checkpoint/${projectId}/${checkpoint}`
+      key: `checkpoint/${projectId}/${keyName(checkpoint)}`
     });
   }
 
@@ -983,13 +1005,7 @@ export class ProjectService {
    * removable — a checkpoint is a deliberate marker, and a release is not a save at all.
    */
   async deleteVersion(projectId: number, version: string): Promise<void> {
-    const name = version.trim();
-
-    // The name lands in an S3 key, so anything that could climb out of the prefix is refused
-    // rather than escaped.
-    if (!name || name.includes("/") || name.includes("..")) {
-      throw new BadRequestException(`Invalid version name: ${version}`);
-    }
+    const name = keyName(version);
 
     const existing = await this.listVersions(projectId);
 
@@ -1028,8 +1044,9 @@ export class ProjectService {
     projectId: number,
     checkpoint: string
   ): Promise<DownloadedFile> {
-    const file = `checkpoint/${projectId}/${checkpoint}`;
-    return this.s3Service.downloadFile({ key: file });
+    return this.s3Service.downloadFile({
+      key: `checkpoint/${projectId}/${keyName(checkpoint)}`
+    });
   }
 
   async fetchRelease(projectId: number): Promise<ReleaseProject> {

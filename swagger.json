@@ -1147,6 +1147,16 @@
           "201": {
             "description": "File uploaded successfully"
           },
+          "400": {
+            "description": "The project holds as many named versions as it may",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckpointLimitDto"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden"
           },
@@ -4774,11 +4784,23 @@
             "type": "number",
             "example": 16777216,
             "description": "Maximum size (bytes) of an uploaded project blob"
+          },
+          "maxCheckpoints": {
+            "type": "number",
+            "example": 20,
+            "description": "Named versions a project may hold; saving under an existing name rewrites it"
+          },
+          "maxAutosaves": {
+            "type": "number",
+            "example": 4,
+            "description": "Autosave slots kept per project, oldest pruned"
           }
         },
         "required": [
           "maxContentBytes",
-          "maxBlobBytes"
+          "maxBlobBytes",
+          "maxCheckpoints",
+          "maxAutosaves"
         ]
       },
       "ContentSizeBreakdownDto": {
@@ -5358,6 +5380,45 @@
         },
         "required": [
           "url"
+        ]
+      },
+      "CheckpointLimitDto": {
+        "type": "object",
+        "properties": {
+          "statusCode": {
+            "type": "number",
+            "example": 400
+          },
+          "error": {
+            "type": "string",
+            "example": "Bad Request"
+          },
+          "code": {
+            "type": "string",
+            "example": "CHECKPOINT_LIMIT"
+          },
+          "message": {
+            "type": "string",
+            "example": "20 versions out of 20 - delete one to save another"
+          },
+          "count": {
+            "type": "number",
+            "example": 20,
+            "description": "Named versions the project holds"
+          },
+          "max": {
+            "type": "number",
+            "example": 20,
+            "description": "Named versions it may hold"
+          }
+        },
+        "required": [
+          "statusCode",
+          "error",
+          "code",
+          "message",
+          "count",
+          "max"
         ]
       },
       "ProjectTooLargeDto": {

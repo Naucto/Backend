@@ -81,6 +81,7 @@ import { Public } from "@auth/decorators/public.decorator";
 import { ImageUrlResponseDto } from "src/routes/common/dto/image-url-response.dto";
 import { LikeResponseDto } from "./dto/like-response.dto";
 import {
+  CheckpointLimitDto,
   ProjectLimitsDto,
   ProjectSizeDto,
   ProjectTooLargeDto
@@ -904,6 +905,11 @@ export class ProjectController {
   @ApiParam({ name: "id", type: "string" })
   @ApiParam({ name: "name", type: "string" })
   @ApiResponse({ status: 201, description: "File uploaded successfully" })
+  @ApiResponse({
+    status: 400,
+    description: "The project holds as many named versions as it may",
+    type: CheckpointLimitDto
+  })
   @ApiResponse({ status: 403, description: "Forbidden" })
   @ApiResponse({ status: 422, description: "File validation failed" })
   @HttpCode(HttpStatus.CREATED)
