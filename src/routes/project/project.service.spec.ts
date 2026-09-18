@@ -17,7 +17,10 @@ import { ProjectStatus, MonetizationType, Prisma } from "@prisma/client";
 import * as Y from "yjs";
 import { Readable } from "stream";
 import { GAME_KEYS, PROJECT_CONTENT_MAX_BYTES } from "./content-size";
-import { ProjectTooLargeException } from "./project.error";
+import {
+  ProjectNotPublishedException,
+  ProjectTooLargeException
+} from "./project.error";
 
 type ProjectWithCreatorAndCollaborators = Prisma.ProjectGetPayload<{
   include: {
@@ -823,10 +826,10 @@ describe("ProjectService", () => {
       const result = await service.fetchPublishedGamesPaginated(2, 1);
 
       expect(prismaMock.project.count).toHaveBeenCalledWith({
-        where: { status: "COMPLETED" }
+        where: { publishedAt: { not: null } }
       });
       expect(prismaMock.project.findMany).toHaveBeenCalledWith({
-        where: { status: "COMPLETED" },
+        where: { publishedAt: { not: null } },
         include: {
           collaborators: { select: ProjectService.COLLABORATOR_SELECT },
           creator: { select: ProjectService.CREATOR_SELECT },
@@ -893,7 +896,7 @@ describe("ProjectService", () => {
 
       const where = prismaMock.project.count.mock.calls[0]![0]!.where;
       expect(where).toEqual(
-        expect.objectContaining({ status: "COMPLETED", AND: expect.any(Array) })
+        expect.objectContaining({ publishedAt: { not: null }, AND: expect.any(Array) })
       );
       // The same filter has to reach findMany, or page 1 of a search shows unfiltered games.
       expect(prismaMock.project.findMany).toHaveBeenCalledWith(
@@ -964,7 +967,7 @@ describe("ProjectService", () => {
       expect(prismaMock.project.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {
-            status: "COMPLETED",
+            publishedAt: { not: null },
             userId: { not: 7 },
             collaborators: { some: { id: 7 } }
           }
@@ -980,7 +983,7 @@ describe("ProjectService", () => {
       expect(prismaMock.project.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {
-            status: "COMPLETED",
+            publishedAt: { not: null },
             userId: { not: 7 },
             forkedFrom: { userId: 7 }
           }
@@ -1119,13 +1122,11 @@ describe("ProjectService", () => {
       const calls = prismaMock.project.update.mock.calls as Array<
         [{ data: Record<string, unknown> }]
       >;
-      expect(calls.some((call) => call[0].data["status"] === "COMPLETED")).toBe(
-        false
-      );
+      expect(calls.some((call) => "publishedAt" in call[0].data)).toBe(false);
       expect(s3ServiceMock.uploadFile).not.toHaveBeenCalled();
     });
 
-    it("publishes a project within the budget", async () => {
+    it("publishes a project within the budget, and marks the row only once the blob is up", async () => {
       prismaMock.project.findUnique.mockResolvedValue({
         name: "Small",
         shortDesc: "",
@@ -1139,13 +1140,62 @@ describe("ProjectService", () => {
 
       await service.publish(1);
 
-      expect(prismaMock.project.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ status: "COMPLETED" })
-        })
-      );
       expect(s3ServiceMock.uploadFile).toHaveBeenCalledWith(
         expect.objectContaining({ keyName: "release/1" })
+      );
+      // The budget check stores the content size first; the row that matters is the one that
+      // carries publishedAt.
+      const calls = prismaMock.project.update.mock.calls as Array<
+        [{ data: Record<string, unknown> }]
+      >;
+      const marked = calls.findIndex((call) => "publishedAt" in call[0].data);
+      expect(marked).toBeGreaterThanOrEqual(0);
+      expect(calls[marked]![0].data).not.toHaveProperty("status");
+      expect(s3ServiceMock.uploadFile.mock.invocationCallOrder[0]).toBeLessThan(
+        prismaMock.project.update.mock.invocationCallOrder[marked]!
+      );
+    });
+
+    it("unpublishes by clearing the row before dropping the blob", async () => {
+      prismaMock.project.update.mockResolvedValue({});
+      s3ServiceMock.deleteFile.mockResolvedValue(undefined);
+
+      await service.unpublish(1);
+
+      expect(prismaMock.project.update).toHaveBeenCalledWith({
+        where: { id: 1 },
+        data: { publishedAt: null }
+      });
+      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({ key: "release/1" });
+      expect(prismaMock.project.update.mock.invocationCallOrder[0]).toBeLessThan(
+        s3ServiceMock.deleteFile.mock.invocationCallOrder[0]!
+      );
+    });
+
+    it("refuses to update the release of a project that has none", async () => {
+      prismaMock.project.findUnique.mockResolvedValue({
+        publishedAt: null,
+        name: "Small",
+        shortDesc: "",
+        longDesc: null,
+        tags: []
+      });
+
+      await expect(service.updateRelease(1)).rejects.toBeInstanceOf(
+        ProjectNotPublishedException
+      );
+      expect(s3ServiceMock.uploadFile).not.toHaveBeenCalled();
+    });
+
+    it("refuses to fork a project the hub does not carry, whatever its status says", async () => {
+      prismaMock.project.findUnique.mockResolvedValue({
+        ...mockProjects[0],
+        status: ProjectStatus.COMPLETED,
+        publishedAt: null
+      });
+
+      await expect(service.fork(1, 2)).rejects.toBeInstanceOf(
+        BadRequestException
       );
     });
 

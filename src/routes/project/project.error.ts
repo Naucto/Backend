@@ -8,6 +8,23 @@ export class ProjectNotFoundError extends Error {
   }
 }
 
+export const PROJECT_NOT_PUBLISHED_CODE = "PROJECT_NOT_PUBLISHED";
+
+/** 400 raised when a release is asked of a project that has none on the hub. */
+export class ProjectNotPublishedException extends HttpException {
+  constructor(projectId: number) {
+    super(
+      {
+        statusCode: HttpStatus.BAD_REQUEST,
+        error: "Bad Request",
+        code: PROJECT_NOT_PUBLISHED_CODE,
+        message: `Project with ID ${projectId} is not published`
+      },
+      HttpStatus.BAD_REQUEST
+    );
+  }
+}
+
 export const PROJECT_TOO_LARGE_CODE = "PROJECT_TOO_LARGE";
 
 /** 413 raised when a game's logical content exceeds the publishing budget. */

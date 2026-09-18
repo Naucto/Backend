@@ -815,7 +815,7 @@ export class ProjectController {
     @Param("id", ParseIntPipe) id: number
   ): Promise<ImageUrlResponseDto> {
     const project = await this.prismaService.project.findFirst({
-      where: { id, status: "COMPLETED" },
+      where: { id, publishedAt: { not: null } },
       select: { id: true }
     });
 

@@ -46,7 +46,7 @@ export class CurationService {
     }
 
     const project = await this.projectService.fetchRelease(current.projectId);
-    if (project.status !== "COMPLETED") {
+    if (!project.publishedAt) {
       // The game was unpublished since it was picked: retire the entry.
       await this.endCurrent();
       return null;
@@ -62,13 +62,13 @@ export class CurationService {
   ): Promise<FeaturedReleaseDto> {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      select: { id: true, status: true, userId: true, publishedName: true, name: true }
+      select: { id: true, publishedAt: true, userId: true, publishedName: true, name: true }
     });
 
     if (!project) {
       throw new NotFoundException(`Project with ID ${projectId} not found`);
     }
-    if (project.status !== "COMPLETED") {
+    if (!project.publishedAt) {
       throw new BadRequestException("Only published projects can be featured");
     }
 

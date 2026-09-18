@@ -4,7 +4,6 @@ import {
   NotFoundException,
   UnauthorizedException
 } from "@nestjs/common";
-import { ProjectStatus } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { ProjectService } from "@project/project.service";
@@ -64,7 +63,7 @@ export class AccountDeletionService {
     const projects = await this.prisma.project.findMany({
       where: {
         userId,
-        ...(removePublished ? {} : { NOT: { status: ProjectStatus.COMPLETED } })
+        ...(removePublished ? {} : { publishedAt: null })
       },
       select: { id: true }
     });

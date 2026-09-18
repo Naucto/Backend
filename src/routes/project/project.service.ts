@@ -30,7 +30,10 @@ import {
   computeContentSize,
   isContentSizeBreakdown
 } from "./content-size";
-import { ProjectTooLargeException } from "./project.error";
+import {
+  ProjectNotPublishedException,
+  ProjectTooLargeException
+} from "./project.error";
 
 // What a project says about its people, on public routes as well as private ones: the id
 // and the name, never the address behind the account.
@@ -103,6 +106,10 @@ export type ReleaseWindow = (typeof RELEASE_WINDOWS)[number];
  */
 export const RELEASE_SORTS = ["fresh", "popular", "liked", "discussed", "name"] as const;
 export type ReleaseSort = (typeof RELEASE_SORTS)[number];
+
+// The one test for "on the hub". `status` is what the author calls the game; this is what the
+// hub does with it, and it is set only once the release blob is in place.
+const PUBLISHED: Prisma.ProjectWhereInput = { publishedAt: { not: null } };
 
 const RELEASE_ORDER_BY: Record<ReleaseSort, Prisma.ProjectOrderByWithRelationInput[]> = {
   fresh: [{ publishedAt: "desc" }, { createdAt: "desc" }],
@@ -274,9 +281,7 @@ export class ProjectService {
   private buildPublishedGamesWhere(
     filters: PublishedProjectFilters = {}
   ): Prisma.ProjectWhereInput {
-    const where: Prisma.ProjectWhereInput = {
-      status: "COMPLETED"
-    };
+    const where: Prisma.ProjectWhereInput = { ...PUBLISHED };
     const andClauses: Prisma.ProjectWhereInput[] = [];
     const normalizedSearch = filters.search?.trim();
     const normalizedTags = this.normalizeTags(filters.tags);
@@ -350,15 +355,9 @@ export class ProjectService {
     const normalizedTags = this.normalizeTags(filters.tags);
 
     if (filters.status === "published") {
-      andClauses.push({
-        status: "COMPLETED"
-      });
+      andClauses.push(PUBLISHED);
     } else if (filters.status === "drafts") {
-      andClauses.push({
-        NOT: {
-          status: "COMPLETED"
-        }
-      });
+      andClauses.push({ publishedAt: null });
     }
 
     if (normalizedSearch) {
@@ -871,6 +870,34 @@ export class ProjectService {
     });
   }
 
+  /**
+   * Puts the latest save on the hub and only then marks the row: a project that says published
+   * while the hub has nothing to hand out is the state `unpublish` used to leave behind.
+   */
+  private async writeRelease(
+    projectId: number,
+    snapshot: Pick<Project, "name" | "shortDesc" | "longDesc" | "tags">
+  ): Promise<void> {
+    const file = await this.assertWithinBudget(projectId);
+    const releaseKey = `release/${projectId}`;
+    await this.s3Service.uploadFile({
+      file: file,
+      keyName: releaseKey
+    });
+    await this.s3Service.setObjectPublicRead(releaseKey);
+
+    await this.prisma.project.update({
+      where: { id: projectId },
+      data: {
+        publishedAt: new Date(),
+        publishedName: snapshot.name,
+        publishedShortDesc: snapshot.shortDesc,
+        publishedLongDesc: snapshot.longDesc,
+        publishedTags: snapshot.tags
+      }
+    });
+  }
+
   async publish(projectId: number): Promise<void> {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
@@ -886,34 +913,14 @@ export class ProjectService {
       throw new NotFoundException(`Project with ID ${projectId} not found`);
     }
 
-    const file = await this.assertWithinBudget(projectId);
-
-    await this.prisma.project.update({
-      where: { id: projectId },
-      data: {
-        status: "COMPLETED",
-        publishedAt: new Date(),
-        publishedName: project.name,
-        publishedShortDesc: project.shortDesc,
-        publishedLongDesc: project.longDesc,
-        publishedTags: project.tags
-      }
-    });
-
-    const releaseKey = `release/${projectId}`;
-    await this.s3Service.uploadFile({
-      file: file,
-      keyName: releaseKey
-    });
-    await this.s3Service.setObjectPublicRead(releaseKey);
+    await this.writeRelease(projectId, project);
   }
 
   async unpublish(projectId: number): Promise<void> {
+    // The row first: a blob nobody points at is harmless, a row pointing at a deleted blob is not.
     await this.prisma.project.update({
       where: { id: projectId },
-      data: {
-        status: "IN_PROGRESS"
-      }
+      data: { publishedAt: null }
     });
 
     await this.s3Service.deleteFile({ key: `release/${projectId}` });
@@ -923,7 +930,7 @@ export class ProjectService {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
       select: {
-        status: true,
+        publishedAt: true,
         name: true,
         shortDesc: true,
         longDesc: true,
@@ -931,30 +938,14 @@ export class ProjectService {
       }
     });
 
-    if (!project || project.status !== "COMPLETED") {
-      throw new BadRequestException(
-        `Project with ID ${projectId} is not published`
-      );
+    if (!project) {
+      throw new NotFoundException(`Project with ID ${projectId} not found`);
+    }
+    if (!project.publishedAt) {
+      throw new ProjectNotPublishedException(projectId);
     }
 
-    const file = await this.assertWithinBudget(projectId);
-    const releaseKey = `release/${projectId}`;
-    await this.s3Service.uploadFile({
-      file: file,
-      keyName: releaseKey
-    });
-    await this.s3Service.setObjectPublicRead(releaseKey);
-
-    await this.prisma.project.update({
-      where: { id: projectId },
-      data: {
-        publishedAt: new Date(),
-        publishedName: project.name,
-        publishedShortDesc: project.shortDesc,
-        publishedLongDesc: project.longDesc,
-        publishedTags: project.tags
-      }
-    });
+    await this.writeRelease(projectId, project);
   }
 
   async listVersions(projectId: number): Promise<ProjectSave[]> {
@@ -1093,7 +1084,7 @@ export class ProjectService {
   async fetchPublishedGames(): Promise<ReleaseProject[]> {
     const projects = await this.prisma.project.findMany({
       where: {
-        status: "COMPLETED"
+        ...PUBLISHED
       },
       include: {
         collaborators: {
@@ -1191,9 +1182,9 @@ export class ProjectService {
   ): Promise<ReleaseProject[]> {
     return this.fetchPublishedGamesByUserWhere(
       ownedOnly
-        ? { status: "COMPLETED", userId }
+        ? { ...PUBLISHED, userId }
         : {
-          status: "COMPLETED",
+          ...PUBLISHED,
           OR: [
             { userId },
             {
@@ -1220,7 +1211,7 @@ export class ProjectService {
   ): Promise<ReleaseProject[]> {
     return this.fetchPublishedGamesByUserWhere(
       {
-        status: "COMPLETED",
+        ...PUBLISHED,
         userId: { not: userId },
         collaborators: { some: { id: userId } }
       },
@@ -1237,7 +1228,7 @@ export class ProjectService {
   ): Promise<ReleaseProject[]> {
     return this.fetchPublishedGamesByUserWhere(
       {
-        status: "COMPLETED",
+        ...PUBLISHED,
         userId: { not: userId },
         forkedFrom: { userId }
       },
@@ -1268,7 +1259,7 @@ export class ProjectService {
           END
         ) AS tag
         FROM "Project"
-        WHERE "status" = 'COMPLETED'
+        WHERE "publishedAt" IS NOT NULL
       ) tags
       WHERE tag ILIKE ${`%${fragment}%`}
       GROUP BY tag
@@ -1281,7 +1272,7 @@ export class ProjectService {
   async fetchUserTotals(
     userId: number
   ): Promise<{ gameCount: number; totalPlays: number; totalLikes: number }> {
-    const where: Prisma.ProjectWhereInput = { status: "COMPLETED", userId };
+    const where: Prisma.ProjectWhereInput = { ...PUBLISHED, userId };
     const [gameCount, sums] = await this.prisma.$transaction([
       this.prisma.project.count({ where }),
       this.prisma.project.aggregate({ where, _sum: { viewCount: true, likes: true } })
@@ -1301,7 +1292,7 @@ export class ProjectService {
   ): Promise<ReleaseProject[]> {
     return this.fetchPublishedGamesByUserWhere(
       {
-        status: "COMPLETED",
+        ...PUBLISHED,
         userLikes: {
           some: { userId }
         }
@@ -1355,7 +1346,7 @@ export class ProjectService {
     const project = await this.prisma.project.findFirst({
       where: {
         id: projectId,
-        status: "COMPLETED"
+        ...PUBLISHED
       },
       select: { id: true }
     });
@@ -1469,7 +1460,7 @@ export class ProjectService {
       );
     }
 
-    if (sourceProject.status !== "COMPLETED") {
+    if (!sourceProject.publishedAt) {
       throw new BadRequestException("Only published projects can be forked");
     }
 

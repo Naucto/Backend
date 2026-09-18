@@ -71,7 +71,7 @@ describe("AccountDeletionService", () => {
 
     expect(prisma.project.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { userId: 7, NOT: { status: "COMPLETED" } }
+        where: { userId: 7, publishedAt: null }
       })
     );
     expect(projectService.remove).toHaveBeenCalledTimes(2);

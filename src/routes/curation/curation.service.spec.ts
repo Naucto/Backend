@@ -41,7 +41,7 @@ describe("CurationService", () => {
     createdAt: new Date("2026-08-17T09:00:00Z"),
     featuredBy: curator
   };
-  const release = { id: 42, name: "Moon Lander", status: "COMPLETED" };
+  const release = { id: 42, name: "Moon Lander", publishedAt: new Date() };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -90,7 +90,7 @@ describe("CurationService", () => {
       prismaMock.featuredRelease.findFirst.mockResolvedValue(row);
       projectServiceMock.fetchRelease.mockResolvedValue({
         ...release,
-        status: "IN_PROGRESS"
+        publishedAt: null
       });
       prismaMock.featuredRelease.updateMany.mockResolvedValue({ count: 1 });
 
@@ -128,7 +128,7 @@ describe("CurationService", () => {
     it("ends the previous pick, creates the new one and notifies the creator", async () => {
       prismaMock.project.findUnique.mockResolvedValue({
         id: 42,
-        status: "COMPLETED",
+        publishedAt: new Date(),
         userId: 3,
         publishedName: "Moon Lander",
         name: "moon"
@@ -166,7 +166,7 @@ describe("CurationService", () => {
     it("still features the game when the notification fails", async () => {
       prismaMock.project.findUnique.mockResolvedValue({
         id: 42,
-        status: "COMPLETED",
+        publishedAt: new Date(),
         userId: 3,
         publishedName: null,
         name: "moon"
