@@ -111,6 +111,17 @@ export type ReleaseSort = (typeof RELEASE_SORTS)[number];
 // hub does with it, and it is set only once the release blob is in place.
 const PUBLISHED: Prisma.ProjectWhereInput = { publishedAt: { not: null } };
 
+// The release sits at one key for the life of the game and the player fetches it straight from
+// the edge, so every copy on the way has to ask before serving what it kept.
+const RELEASE_CACHE_CONTROL = "no-cache";
+
+/**
+ * Newest autosave first. A key is the millisecond the save was made; S3's LastModified is whole
+ * seconds, so two saves in one second tie there and a stable sort would hand back the older one.
+ */
+const newestFirst = (a: ProjectSave, b: ProjectSave): number =>
+  Number(b.name) - Number(a.name) || b.date.getTime() - a.date.getTime();
+
 const RELEASE_ORDER_BY: Record<ReleaseSort, Prisma.ProjectOrderByWithRelationInput[]> = {
   fresh: [{ publishedAt: "desc" }, { createdAt: "desc" }],
   popular: [{ viewCount: "desc" }, { publishedAt: "desc" }],
@@ -729,9 +740,7 @@ export class ProjectService {
   }
 
   async save(projectId: number, file: Express.Multer.File): Promise<void> {
-    const files = (await this.listVersions(projectId)).sort(
-      (a, b) => b.date.getTime() - a.date.getTime()
-    );
+    const files = (await this.listVersions(projectId)).sort(newestFirst);
     const actual_time = Date.now();
 
     if (files.length >= this.max_history_version) {
@@ -882,7 +891,8 @@ export class ProjectService {
     const releaseKey = `release/${projectId}`;
     await this.s3Service.uploadFile({
       file: file,
-      keyName: releaseKey
+      keyName: releaseKey,
+      cacheControl: RELEASE_CACHE_CONTROL
     });
     await this.s3Service.setObjectPublicRead(releaseKey);
 
@@ -992,8 +1002,7 @@ export class ProjectService {
   }
 
   async fetchLastVersion(projectId: number): Promise<DownloadedFile> {
-    let files = await this.listVersions(projectId);
-    files = files.sort((a, b) => b.date.getTime() - a.date.getTime());
+    const files = (await this.listVersions(projectId)).sort(newestFirst);
 
     if (files.length === 0 || !files[0]?.name) {
       return {

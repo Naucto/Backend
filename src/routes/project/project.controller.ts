@@ -72,6 +72,7 @@ import {
   ProjectsCountResponseDto,
   SignedUrlResponseDto
 } from "./dto/project-response.dto";
+import { HeadObjectCommandOutput } from "@aws-sdk/client-s3";
 import { S3DownloadException } from "@s3/s3.error";
 import { S3Service } from "@s3/s3.service";
 import { CloudfrontService } from "src/routes/s3/edge.service";
@@ -339,6 +340,12 @@ export class ProjectController {
     }
   }
 
+  /** The key's address on the edge, told apart by upload so a new blob is a new URL. */
+  private versionedCdnUrl(key: string, head: HeadObjectCommandOutput): string {
+    const version = head.ETag?.replace(/"/g, "") ?? Date.now().toString();
+    return `${this.cloudfrontService.getCDNUrl(key)}?v=${version}`;
+  }
+
   @Public()
   @Get("releases/:id/content-url")
   @ApiOperation({ summary: "Get signed CDN URL for a release" })
@@ -352,13 +359,12 @@ export class ProjectController {
     @Param("id") id: string
   ): Promise<SignedUrlResponseDto> {
     const key = `release/${id}`;
-    const exists = await this.s3Service.fileExists(key);
-    if (!exists) {
+    const head = await this.s3Service.getFileMetadataOrNull(key);
+    if (!head) {
       throw new HttpException("Release not found", HttpStatus.NOT_FOUND);
     }
 
-    const signedUrl = this.cloudfrontService.generateSignedUrl(key);
-    return { signedUrl };
+    return { signedUrl: this.versionedCdnUrl(key, head) };
   }
 
   @Public()
@@ -787,9 +793,7 @@ export class ProjectController {
     if (!head) {
       throw new HttpException("No content", HttpStatus.NO_CONTENT);
     }
-    const version = head.ETag?.replace(/"/g, "") ?? Date.now().toString();
-    const url = `${this.cloudfrontService.getCDNUrl(key)}?v=${version}`;
-    return { url };
+    return { url: this.versionedCdnUrl(key, head) };
   }
 
   @Public()
@@ -829,9 +833,7 @@ export class ProjectController {
       throw new HttpException("Not found", HttpStatus.NOT_FOUND);
     }
 
-    const version = head.ETag?.replace(/"/g, "") ?? Date.now().toString();
-    const url = `${this.cloudfrontService.getCDNUrl(key)}?v=${version}`;
-    return { url };
+    return { url: this.versionedCdnUrl(key, head) };
   }
 
   @Get(":id/fetchContent")

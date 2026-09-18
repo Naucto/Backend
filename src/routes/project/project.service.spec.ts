@@ -1040,6 +1040,48 @@ describe("ProjectService", () => {
       });
     };
 
+    it("takes the newest save when two land in the same second, whatever the listing order", async () => {
+      const sameSecond = new Date(5000);
+      for (const keys of [
+        ["save/1/1000", "save/1/1500"],
+        ["save/1/1500", "save/1/1000"]
+      ]) {
+        s3ServiceMock.listObjects.mockResolvedValue(
+          keys.map((Key) => ({ Key, LastModified: sameSecond }))
+        );
+        s3ServiceMock.downloadFile.mockResolvedValue({
+          body: Readable.from([]),
+          contentType: "application/octet-stream",
+          contentLength: 0
+        });
+
+        await service.fetchLastVersion(1);
+
+        expect(s3ServiceMock.downloadFile).toHaveBeenLastCalledWith({
+          key: "save/1/1500"
+        });
+      }
+    });
+
+    it("tells the edge to ask again before serving a release it kept", async () => {
+      prismaMock.project.findUnique.mockResolvedValue({
+        name: "Small",
+        shortDesc: "",
+        longDesc: null,
+        tags: []
+      });
+      prismaMock.project.update.mockResolvedValue({});
+      s3ServiceMock.uploadFile.mockResolvedValue(undefined);
+      s3ServiceMock.setObjectPublicRead.mockResolvedValue(undefined);
+      mockLastVersion(encodeGame(3));
+
+      await service.publish(1);
+
+      expect(s3ServiceMock.uploadFile).toHaveBeenCalledWith(
+        expect.objectContaining({ keyName: "release/1", cacheControl: "no-cache" })
+      );
+    });
+
     it("exposes the limits", () => {
       expect(service.getLimits()).toEqual({
         maxContentBytes: PROJECT_CONTENT_MAX_BYTES,
