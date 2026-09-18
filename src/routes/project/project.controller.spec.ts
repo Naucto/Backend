@@ -1,5 +1,9 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { ProjectController } from "./project.controller";
+import {
+  ProjectCollaboratorGuard,
+  ProjectCreatorGuard
+} from "@auth/guards/project.guard";
 import { ProjectService } from "./project.service";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { ConfigService } from "@nestjs/config";
@@ -57,6 +61,21 @@ describe("ProjectController", () => {
 
   it("should be defined", () => {
     expect(controller).toBeDefined();
+  });
+
+  describe("release routes", () => {
+    it.each(["publish", "unpublish", "updateRelease"] as const)(
+      "%s is open to every collaborator, not the creator alone",
+      (method) => {
+        const guards = Reflect.getMetadata(
+          "__guards__",
+          ProjectController.prototype[method]
+        ) as unknown[];
+
+        expect(guards).toContain(ProjectCollaboratorGuard);
+        expect(guards).not.toContain(ProjectCreatorGuard);
+      }
+    );
   });
 
   describe("getReleaseTags", () => {

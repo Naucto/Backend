@@ -949,7 +949,7 @@ export class ProjectController {
   }
 
   @Post(":id/publish")
-  @UseGuards(ProjectCreatorGuard)
+  @UseGuards(ProjectCollaboratorGuard)
   @ApiOperation({ summary: "Publish project" })
   @ApiParam({ name: "id", type: "string" })
   @ApiResponse({ status: 201, description: "Project published successfully" })
@@ -969,7 +969,7 @@ export class ProjectController {
   }
 
   @Post(":id/unpublish")
-  @UseGuards(ProjectCreatorGuard)
+  @UseGuards(ProjectCollaboratorGuard)
   @ApiOperation({ summary: "Unpublish project" })
   @ApiParam({ name: "id", type: "string" })
   @ApiResponse({ status: 201, description: "Project unpublished successfully" })
@@ -1219,7 +1219,7 @@ export class ProjectController {
   }
 
   @Post(":id/update-release")
-  @UseGuards(ProjectCreatorGuard)
+  @UseGuards(ProjectCollaboratorGuard)
   @ApiOperation({
     summary: "Update an already published project's release content"
   })
