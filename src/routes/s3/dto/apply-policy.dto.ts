@@ -4,29 +4,29 @@ import { Type } from "class-transformer";
 
 class BucketPolicyStatementDto {
   @ApiProperty()
-  Sid!: string;
+    Sid!: string;
 
   @ApiProperty()
-  Effect!: string;
+    Effect!: string;
 
   @ApiProperty()
-  Principal!: "*" | { AWS: string };
+    Principal!: "*" | { AWS: string };
 
   @ApiProperty({ type: [String] })
-  Action!: string[];
+    Action!: string[];
 
   @ApiProperty()
-  Resource!: string;
+    Resource!: string;
 }
 
 class BucketPolicyDto {
   @ApiProperty()
-  Version!: string;
+    Version!: string;
 
   @ApiProperty({ type: [BucketPolicyStatementDto] })
   @ValidateNested({ each: true })
   @Type(() => BucketPolicyStatementDto)
-  Statement!: BucketPolicyStatementDto[];
+    Statement!: BucketPolicyStatementDto[];
 }
 
 export class ApplyPolicyDto {

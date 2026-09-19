@@ -13,6 +13,10 @@ import { WebRTCService } from "@webrtc/webrtc.service";
 import { MultiplayerModule } from "@multiplayer/multiplayer.module";
 import { ProjectCommentModule } from "@project-comment/project-comment.module";
 import { NotificationsModule } from "src/notifications/notifications.module";
+import { FriendsModule } from "@friends/friends.module";
+import { PresenceModule } from "src/presence/presence.module";
+import { CurationModule } from "@curation/curation.module";
+import { FeaturesModule } from "src/routes/features/features.module";
 import { AppConfig } from "src/app.config";
 import {
   GracefulShutdownModule,
@@ -44,7 +48,11 @@ import {
     WebRTCModule,
     MultiplayerModule,
     ProjectCommentModule,
-    NotificationsModule
+    NotificationsModule,
+    FriendsModule,
+    PresenceModule,
+    CurationModule,
+    FeaturesModule
   ],
   providers: [AppConfig],
   exports: [AppConfig]

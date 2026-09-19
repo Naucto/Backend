@@ -1,31 +1,151 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
-import { User, Prisma } from "@prisma/client";
+import {
+  PersonalColour,
+  Prisma,
+  Role,
+  SessionJoinPolicy,
+  User
+} from "@prisma/client";
 import * as bcrypt from "bcryptjs";
+import { MeDto } from "./dto/me.dto";
+import { generateFriendCode, normalizeFriendCode } from "./friend-code.util";
+import { conflictViolation } from "@common/validation/violation.exception";
 
-import { Role } from "@prisma/client";
+/**
+ * What anyone may see of a person. `createdAt` is here because the profile header shows the year
+ * they joined — a fact about a public profile, not an account detail.
+ */
+const PUBLIC_PROFILE_SELECT = {
+  id: true,
+  username: true,
+  nickname: true,
+  description: true,
+  colour: true,
+  createdAt: true
+} as const;
+
+/** A person as a search result names them: enough to recognise a face and click it. */
+export type PublicSearchHit = {
+  id: number;
+  username: string;
+  nickname: string | null;
+};
+
+export type PublicProfile = {
+  id: number;
+  username: string;
+  nickname: string | null;
+  description: string | null;
+  colour: PersonalColour | null;
+  createdAt: Date;
+};
 
 @Injectable()
 export class UserService {
   constructor(private readonly prisma: PrismaService) {}
   private static readonly BCRYPT_SALT_ROUNDS = 10;
+  private static readonly FRIEND_CODE_MAX_RETRIES = 5;
 
-  async findPublicProfile(id: number): Promise<{
-    id: number;
-    username: string;
-    nickname: string | null;
-    description: string | null;
-  }> {
+  // --------------------------------------------------------------------------
+  // Account settings (/users/me)
+  // --------------------------------------------------------------------------
+
+  async getMe(userId: number): Promise<MeDto> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { friendCode: true, sessionJoinPolicy: true }
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${userId} not found`);
+    }
+
+    // Lazily mint the code so pre-existing accounts get one on first read.
+    const friendCode =
+      user.friendCode ?? (await this.assignFreshFriendCode(userId));
+
+    return { friendCode, sessionJoinPolicy: user.sessionJoinPolicy };
+  }
+
+  async updateMe(
+    userId: number,
+    data: { sessionJoinPolicy?: SessionJoinPolicy }
+  ): Promise<MeDto> {
+    if (data.sessionJoinPolicy !== undefined) {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { sessionJoinPolicy: data.sessionJoinPolicy },
+        select: { id: true }
+      });
+    }
+
+    return this.getMe(userId);
+  }
+
+  async regenerateFriendCode(userId: number): Promise<MeDto> {
+    await this.assignFreshFriendCode(userId);
+    return this.getMe(userId);
+  }
+
+  // Resolve a user-typed friend code to a live (non-deleted) user id.
+  async findIdByFriendCode(rawCode: string): Promise<number | null> {
+    const friendCode = normalizeFriendCode(rawCode);
+    if (!friendCode) {
+      return null;
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { friendCode },
+      select: { id: true, deletedAt: true }
+    });
+
+    return user && !user.deletedAt ? user.id : null;
+  }
+
+  // Retries on a unique-constraint violation (P2002) so two users minting the
+  // same random code don't surface an error.
+  private async assignFreshFriendCode(userId: number): Promise<string> {
+    for (
+      let attempt = 0;
+      attempt < UserService.FRIEND_CODE_MAX_RETRIES;
+      attempt++
+    ) {
+      const friendCode = generateFriendCode();
+
+      try {
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: { friendCode },
+          select: { id: true }
+        });
+        return friendCode;
+      } catch (error: unknown) {
+        if (!this.isFriendCodeConflict(error)) {
+          throw error;
+        }
+      }
+    }
+
+    throw new ConflictException("Failed to generate a unique friend code");
+  }
+
+  private isFriendCodeConflict(error: unknown): boolean {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002" &&
+      JSON.stringify(error.meta?.["target"] ?? "").includes("friendCode")
+    );
+  }
+
+  // --------------------------------------------------------------------------
+
+  async findPublicProfile(id: number): Promise<PublicProfile> {
     const user = await this.prisma.user.findUnique({
       where: { id },
-      select: {
-        id: true,
-        username: true,
-        nickname: true,
-        description: true
-      }
+      select: PUBLIC_PROFILE_SELECT
     });
 
     if (!user) {
@@ -35,20 +155,10 @@ export class UserService {
     return user;
   }
 
-  async findPublicProfileByUsername(username: string): Promise<{
-    id: number;
-    username: string;
-    nickname: string | null;
-    description: string | null;
-  }> {
+  async findPublicProfileByUsername(username: string): Promise<PublicProfile> {
     const user = await this.prisma.user.findUnique({
       where: { username },
-      select: {
-        id: true,
-        username: true,
-        nickname: true,
-        description: true
-      }
+      select: PUBLIC_PROFILE_SELECT
     });
 
     if (!user) {
@@ -58,33 +168,83 @@ export class UserService {
     return user;
   }
 
-  async updateMyProfile(
-    id: number,
-    data: { description?: string | null }
-  ): Promise<{
-    id: number;
-    username: string;
-    description: string | null;
-  }> {
-    const nextProfileText = data.description;
+  /**
+   * People whose username or nickname holds the term, best first.
+   *
+   * An exact username outranks a partial one: someone typing a whole handle is naming a person,
+   * not browsing.
+   */
+  async searchPublic(term: string, limit: number): Promise<PublicSearchHit[]> {
+    const contains = { contains: term, mode: "insensitive" } as const;
 
-    const updatedUser = await this.prisma.user.update({
-      where: { id },
-      data: {
-        ...(nextProfileText !== undefined
-          ? {
-            description: nextProfileText
-          }
-          : {})
+    const users = await this.prisma.user.findMany({
+      where: {
+        deletedAt: null,
+        OR: [{ username: contains }, { nickname: contains }]
       },
-      select: {
-        id: true,
-        username: true,
-        description: true
-      }
+      select: { id: true, username: true, nickname: true },
+      orderBy: [{ username: "asc" }],
+      take: limit
     });
 
-    return updatedUser;
+    const lowered = term.toLowerCase();
+    return users.sort(
+      (a, b) =>
+        Number(b.username.toLowerCase() === lowered) -
+        Number(a.username.toLowerCase() === lowered)
+    );
+  }
+
+  /**
+   * The parts of a profile its owner writes: the two names, the line under them, the accent.
+   *
+   * Each zone is committed on its own, so an absent field means "leave it" and an empty string
+   * means "clear it" — the two are not the same answer.
+   */
+  /**
+   * The parts of a profile its owner writes.
+   *
+   * Each zone is committed on its own, so an absent field means "leave it" and an empty string
+   * means "clear it" — the two are not the same answer.
+   */
+  async updateMyProfile(
+    id: number,
+    data: {
+      description?: string | null;
+      nickname?: string | null;
+      username?: string;
+      colour?: PersonalColour;
+    }
+  ): Promise<PublicProfile> {
+    try {
+      return await this.prisma.user.update({
+        where: { id },
+        data: {
+          ...(data.description === undefined
+            ? {}
+            : { description: data.description }),
+          ...(data.nickname === undefined ? {} : { nickname: data.nickname }),
+          ...(data.username === undefined ? {} : { username: data.username }),
+          ...(data.colour === undefined ? {} : { colour: data.colour })
+        },
+        select: { ...PUBLIC_PROFILE_SELECT }
+      });
+    } catch (error) {
+      // A handle is what a friend request and a profile link resolve, so it cannot be shared; name
+      // the field that collided rather than letting a database code reach the person.
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002"
+      ) {
+        throw conflictViolation(
+          `Handle ${data.username} is already taken`,
+          "username",
+          "USERNAME_TAKEN"
+        );
+      }
+
+      throw error;
+    }
   }
 
   async findRolesByNames(names: string[]): Promise<Role[]> {

@@ -8,6 +8,49 @@ services:
     networks:
       - naucto-dev
 
+  # Object storage for the dev stack. Without it a published release can never be played locally:
+  # S3_ENDPOINT/EDGE_ENDPOINT point at a real bucket, the browser cannot reach it, and /play/:id
+  # renders a black screen with "Failed to fetch". MinIO speaks the same API and S3Service already
+  # passes `endpoint` with `forcePathStyle: true`, so nothing in the app changes.
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-naucto}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-naucto-dev-secret}
+    ports:
+      # 9000 must be published: the *browser* fetches release content straight from EDGE_ENDPOINT.
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - naucto-dev
+
+  # Creates the bucket and makes it anonymously readable, because EDGE_ENDPOINT hands the browser
+  # an unsigned URL. Runs once and exits.
+  minio-init:
+    image: minio/mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set dev http://minio:9000 ${S3_ACCESS_KEY_ID:-naucto} ${S3_SECRET_ACCESS_KEY:-naucto-dev-secret} &&
+      mc mb --ignore-existing dev/${S3_BUCKET_NAME:-naucto-dev} &&
+      mc anonymous set download dev/${S3_BUCKET_NAME:-naucto-dev} &&
+      echo 'minio ready: bucket ${S3_BUCKET_NAME:-naucto-dev} is public-read'
+      "
+    restart: "no"
+    networks:
+      - naucto-dev
+
   backend:
     build:
       target: dev
@@ -16,6 +59,8 @@ services:
     depends_on: !override
       db:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     networks:
       - naucto-dev
     volumes:
@@ -42,3 +87,5 @@ services:
         - action: rebuild
           path: prisma/schema.prisma
 
+volumes:
+  minio-data:

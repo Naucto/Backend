@@ -5,7 +5,8 @@ import { S3Client, ListObjectsV2Command } from "@aws-sdk/client-s3";
 
 jest.mock("@aws-sdk/client-s3", () => ({
   S3Client: jest.fn().mockImplementation(() => ({ send: jest.fn() })),
-  ListObjectsV2Command: jest.fn()
+  ListObjectsV2Command: jest.fn(),
+  PutObjectAclCommand: jest.fn()
 }));
 
 describe("S3Service", () => {
@@ -79,6 +80,30 @@ describe("S3Service", () => {
       await expect(
         s3Service.listObjects({ bucketName: "bucket" })
       ).rejects.toThrow(S3ListObjectsException);
+    });
+  });
+
+  describe("setObjectPublicRead", () => {
+    it("marks the object public", async () => {
+      mockS3.send.mockResolvedValueOnce({});
+      await s3Service.setObjectPublicRead("release/1");
+      expect(mockS3.send).toHaveBeenCalledTimes(1);
+    });
+
+    it("tolerates a store without per-object ACLs", async () => {
+      // MinIO, which the dev stack runs, answers NotImplemented here; its bucket policy grants the
+      // same read, so publish must not fail.
+      mockS3.send.mockRejectedValueOnce(
+        Object.assign(new Error("Not Implemented"), { name: "NotImplemented" })
+      );
+      await expect(s3Service.setObjectPublicRead("release/1")).resolves.toBeUndefined();
+    });
+
+    it("still surfaces a real failure", async () => {
+      mockS3.send.mockRejectedValueOnce(
+        Object.assign(new Error("nope"), { name: "AccessDenied" })
+      );
+      await expect(s3Service.setObjectPublicRead("release/1")).rejects.toThrow("nope");
     });
   });
 });

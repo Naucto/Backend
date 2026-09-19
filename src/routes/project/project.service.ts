@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException
 } from "@nestjs/common";
 import { PrismaService } from "@ourPrisma/prisma.service";
@@ -14,26 +15,43 @@ import {
   RemoveCollaboratorDto
 } from "./dto/collaborator-project.dto";
 import { S3Service } from "@s3/s3.service";
+import { ModuleRef } from "@nestjs/core";
+import { NotificationsService } from "src/notifications/notifications.service";
+import { WorkSessionService } from "@work-session/work-session.service";
 import { Prisma, Project, User } from "@prisma/client";
 import { ConfigService } from "@nestjs/config";
 import { DownloadedFile } from "@s3/s3.interface";
 import { Readable } from "stream";
+import { streamToBuffer } from "@util/stream.util";
+import {
+  ContentSizeBreakdown,
+  PROJECT_BLOB_MAX_BYTES,
+  PROJECT_CONTENT_MAX_BYTES,
+  computeContentSize,
+  isContentSizeBreakdown
+} from "./content-size";
+import { viewerKeyOf } from "./viewer-key";
+import {
+  CheckpointLimitException,
+  ProjectNotPublishedException,
+  ProjectTooLargeException
+} from "./project.error";
 
+// What a project says about its people, on public routes as well as private ones: the id
+// and the name, never the address behind the account.
 export const CREATOR_SELECT = {
   id: true,
-  username: true,
-  email: true
+  username: true
 };
 
 export const COLLABORATOR_SELECT = {
   id: true,
-  username: true,
-  email: true
+  username: true
 };
 
 export type ProjectEx = Project & {
-  collaborators: Array<{ id: number; username: string; email: string }>;
-  creator: { id: number; username: string; email: string };
+  collaborators: Array<{ id: number; username: string }>;
+  creator: { id: number; username: string };
 };
 
 export type ProjectSave = {
@@ -48,9 +66,31 @@ type ProjectWithCounts = ProjectEx & {
   };
 };
 
+/** Just enough of the parent to render "remixed from Snake by alice" instead of "#42". */
+export type ForkedFromSummary = {
+  id: number;
+  name: string;
+  ownerUsername: string;
+};
+
 type ReleaseProject = ProjectEx & {
   commentCount: number;
   forkCount: number;
+  forkedFrom?: ForkedFromSummary | null;
+};
+
+export type ProjectLimits = {
+  maxContentBytes: number;
+  maxBlobBytes: number;
+  maxCheckpoints: number;
+  maxAutosaves: number;
+};
+
+export type ProjectSize = {
+  projectId: number;
+  contentSize: ContentSizeBreakdown;
+  maxContentBytes: number;
+  withinBudget: boolean;
 };
 
 export type PaginatedProjectsResult<T> = {
@@ -62,6 +102,55 @@ export type PaginatedProjectsResult<T> = {
 
 export const RELEASE_WINDOWS = ["all", "365d", "30d", "7d"] as const;
 export type ReleaseWindow = (typeof RELEASE_WINDOWS)[number];
+
+/**
+ * How the hub's shelves are ordered. Sorting has to happen in the query: the client only ever
+ * holds one page, so ordering there means "the freshest of the 48 we happen to have", which is
+ * not what the shelf claims.
+ */
+export const RELEASE_SORTS = ["fresh", "popular", "liked", "discussed", "name"] as const;
+export type ReleaseSort = (typeof RELEASE_SORTS)[number];
+
+// The one test for "on the hub". `status` is what the author calls the game; this is what the
+// hub does with it, and it is set only once the release blob is in place.
+const PUBLISHED: Prisma.ProjectWhereInput = { publishedAt: { not: null } };
+
+// The release sits at one key for the life of the game and the player fetches it straight from
+// the edge, so every copy on the way has to ask before serving what it kept.
+const RELEASE_CACHE_CONTROL = "no-cache";
+
+/**
+ * Newest autosave first. A key is the millisecond the save was made; S3's LastModified is whole
+ * seconds, so two saves in one second tie there and a stable sort would hand back the older one.
+ */
+const newestFirst = (a: ProjectSave, b: ProjectSave): number =>
+  Number(b.name) - Number(a.name) || b.date.getTime() - a.date.getTime();
+
+/**
+ * A version's name as it may land in an S3 key: anything that could climb out of the project's
+ * prefix is refused rather than escaped.
+ */
+/** A row refused for a unique index that already holds its key. */
+const isUniqueViolation = (error: unknown): boolean =>
+  error instanceof Prisma.PrismaClientKnownRequestError &&
+  error.code === "P2002";
+
+const keyName = (raw: string): string => {
+  const name = raw.trim();
+  if (!name || name.includes("/") || name.includes("..")) {
+    throw new BadRequestException(`Invalid version name: ${raw}`);
+  }
+
+  return name;
+};
+
+const RELEASE_ORDER_BY: Record<ReleaseSort, Prisma.ProjectOrderByWithRelationInput[]> = {
+  fresh: [{ publishedAt: "desc" }, { createdAt: "desc" }],
+  popular: [{ viewCount: "desc" }, { publishedAt: "desc" }],
+  liked: [{ likes: "desc" }, { publishedAt: "desc" }],
+  discussed: [{ comments: { _count: "desc" } }, { publishedAt: "desc" }],
+  name: [{ publishedName: "asc" }, { name: "asc" }]
+};
 
 export const USER_PROJECT_STATUSES = ["all", "drafts", "published"] as const;
 export type UserProjectStatus = (typeof USER_PROJECT_STATUSES)[number];
@@ -93,21 +182,35 @@ export class ProjectService {
   static COLLABORATOR_SELECT = COLLABORATOR_SELECT;
   static CREATOR_SELECT = CREATOR_SELECT;
 
+  private readonly logger = new Logger(ProjectService.name);
+
   private readonly max_history_version;
   private readonly max_checkpoints;
   private readonly auto_save_delay;
+  private readonly view_secret: string;
 
   constructor(
     @Inject(ConfigService) configService: ConfigService,
     private prisma: PrismaService,
-    private readonly s3Service: S3Service
+    private readonly s3Service: S3Service,
+    private readonly moduleRef: ModuleRef
   ) {
-    this.max_history_version =
-      configService.get<number>("S3_MAX_AUTO_HISTORY_VERSION") ?? 10;
-    this.max_checkpoints =
-      configService.get<number>("S3_MAX_CHECKPOINTS") ?? 10;
+    // Four slots, because an author looking for a state they were in reaches for the last few
+    // and never for the tenth: the ones worth keeping past that are the ones somebody named, and
+    // a named version is a checkpoint, kept apart and never pruned.
+    this.max_history_version = Number(
+      configService.get<string>("S3_MAX_AUTO_HISTORY_VERSION") ?? 4
+    );
+    this.max_checkpoints = Number(
+      configService.get<string>("S3_MAX_CHECKPOINTS") ?? 20
+    );
+    // Minutes in the environment; a slot stays open this long.
     this.auto_save_delay =
-      (configService.get<number>("S3_AUTO_HISTORY_DELAY") ?? 10) * 60000; // from minutes to milliseconds
+      Number(configService.get<string>("S3_AUTO_HISTORY_DELAY") ?? 10) * 60000;
+    this.view_secret =
+      configService.get<string>("VIEW_HASH_SECRET") ??
+      configService.get<string>("JWT_SECRET") ??
+      "";
   }
 
   private normalizeTags(tags?: string[]): string[] {
@@ -194,12 +297,32 @@ export class ProjectService {
     );
   }
 
+  /**
+   * Where a search term is looked for: the two names, the two descriptions, the creator, and an
+   * exact tag.
+   *
+   * A tag matches whole or not at all — Prisma compares array members, it cannot look inside one —
+   * so a partial tag is the tag catalogue's job, not this one's.
+   */
+  private searchClauses(term: string): Prisma.ProjectWhereInput[] {
+    const contains = { contains: term, mode: "insensitive" } as const;
+
+    return [
+      { publishedName: contains },
+      { name: contains },
+      { publishedShortDesc: contains },
+      { shortDesc: contains },
+      { publishedTags: { hasSome: [term, term.toLowerCase()] } },
+      { tags: { hasSome: [term, term.toLowerCase()] } },
+      { creator: { username: contains } },
+      { creator: { nickname: contains } }
+    ];
+  }
+
   private buildPublishedGamesWhere(
     filters: PublishedProjectFilters = {}
   ): Prisma.ProjectWhereInput {
-    const where: Prisma.ProjectWhereInput = {
-      status: "COMPLETED"
-    };
+    const where: Prisma.ProjectWhereInput = { ...PUBLISHED };
     const andClauses: Prisma.ProjectWhereInput[] = [];
     const normalizedSearch = filters.search?.trim();
     const normalizedTags = this.normalizeTags(filters.tags);
@@ -220,22 +343,7 @@ export class ProjectService {
     }
 
     if (normalizedSearch) {
-      andClauses.push({
-        OR: [
-          {
-            publishedName: {
-              contains: normalizedSearch,
-              mode: "insensitive"
-            }
-          },
-          {
-            name: {
-              contains: normalizedSearch,
-              mode: "insensitive"
-            }
-          }
-        ]
-      });
+      andClauses.push({ OR: this.searchClauses(normalizedSearch) });
     }
 
     if (normalizedTags.length > 0) {
@@ -288,15 +396,9 @@ export class ProjectService {
     const normalizedTags = this.normalizeTags(filters.tags);
 
     if (filters.status === "published") {
-      andClauses.push({
-        status: "COMPLETED"
-      });
+      andClauses.push(PUBLISHED);
     } else if (filters.status === "drafts") {
-      andClauses.push({
-        NOT: {
-          status: "COMPLETED"
-        }
-      });
+      andClauses.push({ publishedAt: null });
     }
 
     if (normalizedSearch) {
@@ -439,43 +541,39 @@ export class ProjectService {
   async remove(id: number): Promise<void> {
     await this.findOne(id);
 
+    // The sessions go first, in the same transaction as the project. Both session tables point at
+    // a project with ON DELETE RESTRICT, and opening the editor always creates a work session --
+    // so whoever asks for the delete is sitting in the row that would refuse it. Together, because
+    // a project must never be left without the sessions that pointed at it.
+    await this.prisma.$transaction([
+      this.prisma.gameSession.deleteMany({ where: { projectId: id } }),
+      this.prisma.workSession.deleteMany({ where: { projectId: id } }),
+      this.prisma.project.delete({ where: { id } })
+    ]);
+
+    // Only once the row is gone, and never fatally: content dropped ahead of a delete that then
+    // fails is content lost for nothing. A blob nobody points at any more is recoverable; a game
+    // is not.
+    await this.removeStoredContent(id);
+  }
+
+  private async removeStoredContent(id: number): Promise<void> {
     try {
       await this.s3Service.deleteFile({ key: `release/${id}` });
 
-      const checkpoint_prefix = `checkpoint/${id}/`;
-      const checkpoints = await this.s3Service.listObjects({
-        prefix: checkpoint_prefix
-      });
-      if (checkpoints.length > 0) {
-        const objects = checkpoints.map((o) => o.Key!);
-        await this.s3Service.deleteFiles({ keys: objects });
-      }
-
-      const save_prefix = `save/${id}/`;
-      const saves = await this.s3Service.listObjects({ prefix: save_prefix });
-      if (saves.length > 0) {
-        const objects = saves.map((o) => o.Key!);
-        await this.s3Service.deleteFiles({ keys: objects });
+      for (const prefix of [`checkpoint/${id}/`, `save/${id}/`]) {
+        const objects = await this.s3Service.listObjects({ prefix });
+        if (objects.length > 0) {
+          await this.s3Service.deleteFiles({ keys: objects.map((o) => o.Key!) });
+        }
       }
     } catch (error: unknown) {
-      if (error instanceof Error) {
-        throw new InternalServerErrorException(
-          `Error deleting S3 file with key ${id}: ${error.message}`,
-          { cause: error }
-        );
-      } else {
-        throw new InternalServerErrorException(
-          `Error deleting S3 file with key ${id}: Unknown error`,
-          { cause: error }
-        );
-      }
+      this.logger.error(
+        `Project ${id} was deleted but its stored content was not: ${
+          error instanceof Error ? error.message : "unknown error"
+        }`
+      );
     }
-
-    await this.prisma.project.delete({
-      where: { id }
-    });
-
-    return;
   }
 
   private async findUserByIdentifier(
@@ -538,7 +636,7 @@ export class ProjectService {
       );
     }
 
-    return this.prisma.project.update({
+    const updated = await this.prisma.project.update({
       where: { id },
       data: {
         collaborators: { connect: { id: user.id } }
@@ -552,6 +650,28 @@ export class ProjectService {
         }
       }
     });
+
+    // Being given a project is the one collaboration event the invitee has no other way to learn
+    // about: nothing tells them, and the project simply appears in their list at the next reload.
+    // The id is what turns the notification into a way in.
+    //
+    // Resolved from the graph rather than imported: notifications reach auth for the JWT their
+    // socket checks, auth reaches users, and users reach projects. Importing the module here
+    // closes that ring at the ES level, where forwardRef cannot help -- a module in the ring is
+    // still undefined when the one before it is decorated.
+    const notifications = this.moduleRef.get(NotificationsService, {
+      strict: false
+    });
+    await notifications.createNotification({
+      userId: user.id,
+      title: updated.name,
+      message: `${project.creator.username} added you to ${updated.name}`,
+      type: "INFO",
+      kind: "COLLABORATOR_ADDED",
+      data: { projectId: updated.id }
+    });
+
+    return updated;
   }
 
   async removeCollaborator(
@@ -576,7 +696,7 @@ export class ProjectService {
       );
     }
 
-    return this.prisma.project.update({
+    const updated = await this.prisma.project.update({
       where: { id },
       data: {
         collaborators: {
@@ -592,6 +712,33 @@ export class ProjectService {
         }
       }
     });
+
+    // Losing the project is worth the same word as being given it, and for the same reason: without
+    // one, someone who was editing a minute ago finds the project gone from their list and has no
+    // way to tell an eviction from a bug. No projectId travels with it -- there is nothing left to
+    // open.
+    //
+    // Both services are resolved from the graph rather than imported, for the reason spelled out
+    // in addCollaborator.
+    const notifications = this.moduleRef.get(NotificationsService, {
+      strict: false
+    });
+    await notifications.createNotification({
+      userId: user.id,
+      title: updated.name,
+      message: `${project.creator.username} removed you from ${updated.name}`,
+      type: "INFO",
+      kind: "COLLABORATOR_REMOVED"
+    });
+
+    // A revoked collaborator kept editing until their next reload: the live session holds its own
+    // list of who is in the room, and disconnecting them from the project never touched it.
+    const sessions = this.moduleRef.get(WorkSessionService, { strict: false });
+    await sessions.kick(id, user.id).catch(() => {
+      // No open session on the project, which is the common case and not a failure of the removal.
+    });
+
+    return updated;
   }
 
   async updateLastTimeUpdate(projectId: number): Promise<void> {
@@ -622,22 +769,25 @@ export class ProjectService {
     });
   }
 
+  /**
+   * An autosave lands in a slot: one key per `auto_save_delay` window, rewritten by every save
+   * inside the window, so a long session costs one slot per window rather than one per pause in
+   * the typing. Past the window a new slot opens and the oldest go, keeping `max_history_version`.
+   */
   async save(projectId: number, file: Express.Multer.File): Promise<void> {
-    const files = (await this.listVersions(projectId)).sort(
-      (a, b) => b.date.getTime() - a.date.getTime()
-    );
-    const actual_time = Date.now();
+    const saves = (await this.listVersions(projectId)).sort(newestFirst);
+    const now = Date.now();
+    const newest = saves[0];
+    const slot =
+      newest && now - Number(newest.name) < this.auto_save_delay
+        ? newest.name
+        : String(now);
 
-    if (files.length >= this.max_history_version) {
-      const last_save_time = actual_time - files[1]!.date.getTime();
-      const filename_prefix = `save/${projectId}/`;
-      if (last_save_time < this.auto_save_delay) {
+    if (slot !== newest?.name) {
+      const kept = Math.max(this.max_history_version - 1, 0);
+      for (const stale of saves.slice(kept)) {
         await this.s3Service.deleteFile({
-          key: filename_prefix + (files[0]?.name ?? "")
-        });
-      } else {
-        await this.s3Service.deleteFile({
-          key: filename_prefix + (files[files.length - 1]?.name ?? "")
+          key: `save/${projectId}/${stale.name}`
         });
       }
     }
@@ -645,15 +795,114 @@ export class ProjectService {
     await this.updateLastTimeUpdate(projectId);
     await this.s3Service.uploadFile({
       file,
-      keyName: `save/${projectId}/${actual_time}`
+      keyName: `save/${projectId}/${slot}`
+    });
+
+    if (file.buffer) {
+      await this.storeContentSize(projectId, computeContentSize(file.buffer));
+    }
+  }
+
+  // ─── Content size budget ────────────────────────────────────────────
+
+  getLimits(): ProjectLimits {
+    return {
+      maxContentBytes: PROJECT_CONTENT_MAX_BYTES,
+      maxBlobBytes: PROJECT_BLOB_MAX_BYTES,
+      maxCheckpoints: this.max_checkpoints,
+      maxAutosaves: this.max_history_version
+    };
+  }
+
+  private async storeContentSize(
+    projectId: number,
+    contentSize: ContentSizeBreakdown
+  ): Promise<void> {
+    await this.prisma.project.update({
+      where: { id: projectId },
+      data: {
+        contentSize: contentSize as unknown as Prisma.InputJsonObject,
+        contentSizeTotal: contentSize.total
+      }
     });
   }
 
-  async checkpoint(projectId: number, name: string): Promise<void> {
-    const checkpoints = (await this.listCheckpoints(projectId)).length;
-    if (checkpoints >= this.max_checkpoints) {
-      throw new BadRequestException(
-        `Reached maximum number of checkpoints (${this.max_checkpoints})`
+  /** Decodes the latest save and persists its size breakdown. */
+  async recomputeContentSize(projectId: number): Promise<ContentSizeBreakdown> {
+    const file = await this.fetchLastVersion(projectId);
+    const contentSize = computeContentSize(await streamToBuffer(file.body));
+    await this.storeContentSize(projectId, contentSize);
+    return contentSize;
+  }
+
+  /** Returns the stored breakdown, computing it from the latest save if missing. */
+  async getContentSize(projectId: number): Promise<ProjectSize> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { contentSize: true }
+    });
+
+    if (!project) {
+      throw new NotFoundException(`Project with ID ${projectId} not found`);
+    }
+
+    const contentSize = isContentSizeBreakdown(project.contentSize)
+      ? project.contentSize
+      : await this.recomputeContentSize(projectId);
+
+    return {
+      projectId,
+      contentSize,
+      maxContentBytes: PROJECT_CONTENT_MAX_BYTES,
+      withinBudget: contentSize.total <= PROJECT_CONTENT_MAX_BYTES
+    };
+  }
+
+  /**
+   * Recomputes the size of the latest save and rejects it with a 413 when it
+   * exceeds the budget. Returns the release file so callers upload the exact
+   * bytes that were measured.
+   */
+  private async assertWithinBudget(projectId: number): Promise<DownloadedFile> {
+    const file = await this.fetchLastVersion(projectId);
+    const buffer = await streamToBuffer(file.body);
+    const contentSize = computeContentSize(buffer);
+    await this.storeContentSize(projectId, contentSize);
+
+    if (contentSize.total > PROJECT_CONTENT_MAX_BYTES) {
+      throw new ProjectTooLargeException(
+        contentSize,
+        PROJECT_CONTENT_MAX_BYTES
+      );
+    }
+
+    return {
+      body: Readable.from(buffer),
+      contentType: file.contentType ?? "application/octet-stream",
+      contentLength: buffer.byteLength
+    };
+  }
+
+  /** Projects whose size breakdown has never been computed (oldest first). */
+  async findProjectsWithoutContentSize(limit: number): Promise<number[]> {
+    const projects = await this.prisma.project.findMany({
+      where: { contentSizeTotal: null },
+      select: { id: true },
+      orderBy: { id: "asc" },
+      take: limit
+    });
+    return projects.map((project) => project.id);
+  }
+
+  /** Saving under a name that exists rewrites that version, so the cap only meets a new name. */
+  async checkpoint(projectId: number, rawName: string): Promise<void> {
+    const name = keyName(rawName);
+    const existing = await this.listCheckpoints(projectId);
+    const overwriting = existing.some((c) => c.name === name);
+    if (!overwriting && existing.length >= this.max_checkpoints) {
+      throw new CheckpointLimitException(
+        existing.length,
+        this.max_checkpoints
       );
     }
 
@@ -667,7 +916,36 @@ export class ProjectService {
 
   async removeCheckpoint(projectId: number, checkpoint: string): Promise<void> {
     await this.s3Service.deleteFile({
-      key: `checkpoint/${projectId}/${checkpoint}`
+      key: `checkpoint/${projectId}/${keyName(checkpoint)}`
+    });
+  }
+
+  /**
+   * Puts the latest save on the hub and only then marks the row: a project that says published
+   * while the hub has nothing to hand out is the state `unpublish` used to leave behind.
+   */
+  private async writeRelease(
+    projectId: number,
+    snapshot: Pick<Project, "name" | "shortDesc" | "longDesc" | "tags">
+  ): Promise<void> {
+    const file = await this.assertWithinBudget(projectId);
+    const releaseKey = `release/${projectId}`;
+    await this.s3Service.uploadFile({
+      file: file,
+      keyName: releaseKey,
+      cacheControl: RELEASE_CACHE_CONTROL
+    });
+    await this.s3Service.setObjectPublicRead(releaseKey);
+
+    await this.prisma.project.update({
+      where: { id: projectId },
+      data: {
+        publishedAt: new Date(),
+        publishedName: snapshot.name,
+        publishedShortDesc: snapshot.shortDesc,
+        publishedLongDesc: snapshot.longDesc,
+        publishedTags: snapshot.tags
+      }
     });
   }
 
@@ -686,33 +964,14 @@ export class ProjectService {
       throw new NotFoundException(`Project with ID ${projectId} not found`);
     }
 
-    await this.prisma.project.update({
-      where: { id: projectId },
-      data: {
-        status: "COMPLETED",
-        publishedAt: new Date(),
-        publishedName: project.name,
-        publishedShortDesc: project.shortDesc,
-        publishedLongDesc: project.longDesc,
-        publishedTags: project.tags
-      }
-    });
-
-    const file = await this.fetchLastVersion(projectId);
-    const releaseKey = `release/${projectId}`;
-    await this.s3Service.uploadFile({
-      file: file,
-      keyName: releaseKey
-    });
-    await this.s3Service.setObjectPublicRead(releaseKey);
+    await this.writeRelease(projectId, project);
   }
 
   async unpublish(projectId: number): Promise<void> {
+    // The row first: a blob nobody points at is harmless, a row pointing at a deleted blob is not.
     await this.prisma.project.update({
       where: { id: projectId },
-      data: {
-        status: "IN_PROGRESS"
-      }
+      data: { publishedAt: null }
     });
 
     await this.s3Service.deleteFile({ key: `release/${projectId}` });
@@ -722,7 +981,7 @@ export class ProjectService {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
       select: {
-        status: true,
+        publishedAt: true,
         name: true,
         shortDesc: true,
         longDesc: true,
@@ -730,30 +989,14 @@ export class ProjectService {
       }
     });
 
-    if (!project || project.status !== "COMPLETED") {
-      throw new BadRequestException(
-        `Project with ID ${projectId} is not published`
-      );
+    if (!project) {
+      throw new NotFoundException(`Project with ID ${projectId} not found`);
+    }
+    if (!project.publishedAt) {
+      throw new ProjectNotPublishedException(projectId);
     }
 
-    const file = await this.fetchLastVersion(projectId);
-    const releaseKey = `release/${projectId}`;
-    await this.s3Service.uploadFile({
-      file: file,
-      keyName: releaseKey
-    });
-    await this.s3Service.setObjectPublicRead(releaseKey);
-
-    await this.prisma.project.update({
-      where: { id: projectId },
-      data: {
-        publishedAt: new Date(),
-        publishedName: project.name,
-        publishedShortDesc: project.shortDesc,
-        publishedLongDesc: project.longDesc,
-        publishedTags: project.tags
-      }
-    });
+    await this.writeRelease(projectId, project);
   }
 
   async listVersions(projectId: number): Promise<ProjectSave[]> {
@@ -768,6 +1011,24 @@ export class ProjectService {
     ).map((o) => ({ name: o.Key!.split("/").pop()!, date: o.LastModified! }));
   }
 
+  /**
+   * Removes one autosave. The editor lets an author prune its history; only autosaves are
+   * removable — a checkpoint is a deliberate marker, and a release is not a save at all.
+   */
+  async deleteVersion(projectId: number, version: string): Promise<void> {
+    const name = keyName(version);
+
+    const existing = await this.listVersions(projectId);
+
+    if (!existing.some((v) => v.name === name)) {
+      throw new NotFoundException(
+        `Version ${name} not found for project ${projectId}`
+      );
+    }
+
+    await this.s3Service.deleteFile({ key: `save/${projectId}/${name}` });
+  }
+
   async fetchSavedVersion(
     projectId: number,
     version: string
@@ -776,8 +1037,7 @@ export class ProjectService {
   }
 
   async fetchLastVersion(projectId: number): Promise<DownloadedFile> {
-    let files = await this.listVersions(projectId);
-    files = files.sort((a, b) => b.date.getTime() - a.date.getTime());
+    const files = (await this.listVersions(projectId)).sort(newestFirst);
 
     if (files.length === 0 || !files[0]?.name) {
       return {
@@ -795,8 +1055,9 @@ export class ProjectService {
     projectId: number,
     checkpoint: string
   ): Promise<DownloadedFile> {
-    const file = `checkpoint/${projectId}/${checkpoint}`;
-    return this.s3Service.downloadFile({ key: file });
+    return this.s3Service.downloadFile({
+      key: `checkpoint/${projectId}/${keyName(checkpoint)}`
+    });
   }
 
   async fetchRelease(projectId: number): Promise<ReleaseProject> {
@@ -810,6 +1071,16 @@ export class ProjectService {
         },
         creator: {
           select: ProjectService.CREATOR_SELECT
+        },
+        // The parent by name, so lineage reads without a second request that 404s whenever the
+        // original was never published.
+        forkedFrom: {
+          select: {
+            id: true,
+            name: true,
+            publishedName: true,
+            creator: { select: { username: true } }
+          }
         },
         _count: {
           select: {
@@ -826,9 +1097,29 @@ export class ProjectService {
       throw new NotFoundException(`Project with ID ${projectId} not found`);
     }
 
-    return this.applyPublishedSnapshot(
-      this.withCommentCount(project as ProjectWithCounts)
-    );
+    const parent = (
+      project as unknown as {
+        forkedFrom?: {
+          id: number;
+          name: string;
+          publishedName: string | null;
+          creator: { username: string };
+        } | null;
+      }
+    ).forkedFrom;
+
+    return {
+      ...this.applyPublishedSnapshot(
+        this.withCommentCount(project as unknown as ProjectWithCounts)
+      ),
+      forkedFrom: parent
+        ? {
+          id: parent.id,
+          name: parent.publishedName ?? parent.name,
+          ownerUsername: parent.creator.username
+        }
+        : null
+    };
   }
 
   async fetchReleaseContent(projectId: number): Promise<DownloadedFile> {
@@ -838,7 +1129,7 @@ export class ProjectService {
   async fetchPublishedGames(): Promise<ReleaseProject[]> {
     const projects = await this.prisma.project.findMany({
       where: {
-        status: "COMPLETED"
+        ...PUBLISHED
       },
       include: {
         collaborators: {
@@ -864,12 +1155,14 @@ export class ProjectService {
 
   async fetchPublishedGamesPaginated(
     page?: number,
-    limit?: number
+    limit?: number,
+    filters: PublishedProjectFilters = {},
+    sort: ReleaseSort = "fresh"
   ): Promise<PaginatedProjectsResult<ReleaseProject>> {
     const safePage = this.normalizePage(page);
     const safeLimit = this.normalizeLimit(limit);
     const skip = (safePage - 1) * safeLimit;
-    const where = this.buildPublishedGamesWhere();
+    const where = this.buildPublishedGamesWhere(filters);
 
     const [total, projects] = await this.prisma.$transaction([
       this.prisma.project.count({
@@ -891,7 +1184,7 @@ export class ProjectService {
             }
           }
         },
-        orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
+        orderBy: RELEASE_ORDER_BY[sort],
         skip,
         take: safeLimit
       })
@@ -929,23 +1222,112 @@ export class ProjectService {
   async fetchPublishedGamesByUser(
     userId: number,
     page: number = DEFAULT_PAGE,
+    limit: number = DEFAULT_LIMIT,
+    ownedOnly = false
+  ): Promise<ReleaseProject[]> {
+    return this.fetchPublishedGamesByUserWhere(
+      ownedOnly
+        ? { ...PUBLISHED, userId }
+        : {
+          ...PUBLISHED,
+          OR: [
+            { userId },
+            {
+              collaborators: {
+                some: { id: userId }
+              }
+            }
+          ]
+        },
+      page,
+      limit
+    );
+  }
+
+  /**
+   * Games this person helped build but does not own. The profile draws GAMES and COLLABS as two
+   * shelves, so the split has to happen in the query — `fetchPublishedGamesByUser` returns the
+   * union of both and would put every collaboration on the owner's shelf too.
+   */
+  async fetchCollaborationsByUser(
+    userId: number,
+    page: number = DEFAULT_PAGE,
     limit: number = DEFAULT_LIMIT
   ): Promise<ReleaseProject[]> {
     return this.fetchPublishedGamesByUserWhere(
       {
-        status: "COMPLETED",
-        OR: [
-          { userId },
-          {
-            collaborators: {
-              some: { id: userId }
-            }
-          }
-        ]
+        ...PUBLISHED,
+        userId: { not: userId },
+        collaborators: { some: { id: userId } }
       },
       page,
       limit
     );
+  }
+
+  /** Published games other people forked from one of this person's. */
+  async fetchRemixesOfUser(
+    userId: number,
+    page: number = DEFAULT_PAGE,
+    limit: number = DEFAULT_LIMIT
+  ): Promise<ReleaseProject[]> {
+    return this.fetchPublishedGamesByUserWhere(
+      {
+        ...PUBLISHED,
+        userId: { not: userId },
+        forkedFrom: { userId }
+      },
+      page,
+      limit
+    );
+  }
+
+  /**
+   * The tags published games carry, most used first, optionally narrowed to those holding a
+   * fragment.
+   *
+   * Raw SQL because the tags are an array column: counting them means unnesting it, which the
+   * query builder has no shape for. A game that has never had its tags published falls back to
+   * its draft ones, the same way the shelf filter does.
+   */
+  async fetchPublishedTags(
+    fragment: string,
+    limit: number
+  ): Promise<{ tag: string; count: number }[]> {
+    return this.prisma.$queryRaw<{ tag: string; count: number }[]>`
+      SELECT tag, COUNT(*)::int AS count
+      FROM (
+        SELECT unnest(
+          CASE
+            WHEN cardinality("publishedTags") > 0 THEN "publishedTags"
+            ELSE "tags"
+          END
+        ) AS tag
+        FROM "Project"
+        WHERE "publishedAt" IS NOT NULL
+      ) tags
+      WHERE tag ILIKE ${`%${fragment}%`}
+      GROUP BY tag
+      ORDER BY count DESC, tag ASC
+      LIMIT ${limit}
+    `;
+  }
+
+  /** Totals for the profile header, counted rather than summed over one page of games. */
+  async fetchUserTotals(
+    userId: number
+  ): Promise<{ gameCount: number; totalPlays: number; totalLikes: number }> {
+    const where: Prisma.ProjectWhereInput = { ...PUBLISHED, userId };
+    const [gameCount, sums] = await this.prisma.$transaction([
+      this.prisma.project.count({ where }),
+      this.prisma.project.aggregate({ where, _sum: { viewCount: true, likes: true } })
+    ]);
+
+    return {
+      gameCount,
+      totalPlays: sums._sum.viewCount ?? 0,
+      totalLikes: sums._sum.likes ?? 0
+    };
   }
 
   async fetchLikedPublishedGamesByUser(
@@ -955,7 +1337,7 @@ export class ProjectService {
   ): Promise<ReleaseProject[]> {
     return this.fetchPublishedGamesByUserWhere(
       {
-        status: "COMPLETED",
+        ...PUBLISHED,
         userLikes: {
           some: { userId }
         }
@@ -1005,13 +1387,17 @@ export class ProjectService {
     );
   }
 
-  async registerReleaseView(projectId: number): Promise<{ viewCount: number }> {
+  /**
+   * One view per reader per UTC day. The unique row is what decides; the counter follows it, so a
+   * reload, or a loop of requests, moves nothing.
+   */
+  async registerReleaseView(
+    projectId: number,
+    viewer: { userId: number | null; ip: string }
+  ): Promise<{ viewCount: number }> {
     const project = await this.prisma.project.findFirst({
-      where: {
-        id: projectId,
-        status: "COMPLETED"
-      },
-      select: { id: true }
+      where: { id: projectId, ...PUBLISHED },
+      select: { id: true, viewCount: true }
     });
 
     if (!project) {
@@ -1020,9 +1406,32 @@ export class ProjectService {
       );
     }
 
+    const viewerKey = viewerKeyOf(viewer.userId, viewer.ip, this.view_secret);
+    const now = new Date();
+    const day = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+    );
+    const seenBefore =
+      (await this.prisma.releaseView.count({ where: { projectId, viewerKey } })) >
+      0;
+
+    try {
+      await this.prisma.releaseView.create({
+        data: { projectId, viewerKey, day }
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        return { viewCount: project.viewCount };
+      }
+      throw error;
+    }
+
     const updated = await this.prisma.project.update({
       where: { id: projectId },
-      data: { viewCount: { increment: 1 } },
+      data: {
+        viewCount: { increment: 1 },
+        ...(seenBefore ? {} : { uniquePlayers: { increment: 1 } })
+      },
       select: { viewCount: true }
     });
 
@@ -1123,7 +1532,7 @@ export class ProjectService {
       );
     }
 
-    if (sourceProject.status !== "COMPLETED") {
+    if (!sourceProject.publishedAt) {
       throw new BadRequestException("Only published projects can be forked");
     }
 

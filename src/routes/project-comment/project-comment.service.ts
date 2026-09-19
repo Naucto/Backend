@@ -123,14 +123,14 @@ export class ProjectCommentService {
   ): Promise<CommentResponseDto> {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      select: { status: true }
+      select: { publishedAt: true }
     });
 
     if (!project) {
       throw new NotFoundException(`Project with ID ${projectId} not found`);
     }
 
-    if (project.status !== "COMPLETED") {
+    if (!project.publishedAt) {
       throw new CommentProjectNotPublishedException(projectId);
     }
 

@@ -114,6 +114,38 @@ export class WorkSessionService {
     });
   }
 
+  /**
+   * The host is always somebody present. When the recorded one has gone, the present member with
+   * the lowest id takes over: deterministic, so two peers reporting the same drop agree on who.
+   */
+  private async electHost(sessionId: number): Promise<number> {
+    const session = await this.prismaService.workSession.findUnique({
+      where: { id: sessionId },
+      include: { users: { select: { id: true } } }
+    });
+    if (!session) {
+      throw new NotFoundException(`Work session ${sessionId} not found`);
+    }
+    if (session.users.some((u) => u.id === session.hostId)) {
+      return session.hostId;
+    }
+
+    const next = session.users.map((u) => u.id).sort((a, b) => a - b)[0];
+    if (next === undefined) {
+      return session.hostId;
+    }
+
+    this._logger.log(
+      `Host #${session.hostId} left work session ${sessionId}, #${next} takes over`
+    );
+    await this.prismaService.workSession.update({
+      where: { id: sessionId },
+      data: { host: { connect: { id: next } } }
+    });
+
+    return next;
+  }
+
   async join(projectId: number, user: UserDto): Promise<JoinWorkSessionDto> {
     const project = await this.prismaService.project.findFirst({
       where: { id: projectId }
@@ -174,7 +206,7 @@ export class WorkSessionService {
     const response = new JoinWorkSessionDto();
 
     response.roomId = workSession.roomId;
-    response.hostId = workSession.hostId;
+    response.hostId = await this.electHost(workSession.id);
     response.webrtcOffer = this.webrtcService.buildOffer(this._collabServer);
 
     // FIXME: also provide info regarding users?
@@ -205,6 +237,7 @@ export class WorkSessionService {
         lastActiveAt: new Date()
       }
     });
+    await this.electHost(workSession.id);
   }
 
   async kick(projectId: number, userId: number): Promise<void> {
@@ -230,6 +263,7 @@ export class WorkSessionService {
         lastActiveAt: new Date()
       }
     });
+    await this.electHost(workSession.id);
   }
 
   async getInfo(projectId: number): Promise<FetchWorkSessionDto> {

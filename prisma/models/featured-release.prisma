@@ -1,0 +1,16 @@
+// "Game of the week": one published project highlighted on the hub at a time.
+// A row with a null endsAt is the current pick; older rows form the history.
+model FeaturedRelease {
+  id           Int       @id @default(autoincrement())
+  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId    Int
+  featuredBy   User?     @relation("FeaturedReleaseCurator", fields: [featuredById], references: [id], onDelete: SetNull)
+  featuredById Int?
+  note         String?
+  startsAt     DateTime  @default(now())
+  endsAt       DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([projectId])
+  @@index([endsAt, startsAt])
+}

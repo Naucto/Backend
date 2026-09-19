@@ -1,3 +1,4 @@
+import { CookieOptions } from "express";
 import { BadEnvVarError } from "./auth.error";
 
 type TimeSpanUnit = "s" | "m" | "h" | "d" | "w" | "y";
@@ -49,4 +50,19 @@ export function timespanToMs(value: TimeSpan): number {
   };
 
   return amount * multipliers[unit];
+}
+
+export const REFRESH_COOKIE_NAME = "refresh_token";
+
+// Options shared by every place that sets or clears the refresh cookie: the
+// attributes must match exactly for clearCookie() to take effect.
+export function refreshCookieOptions(): CookieOptions {
+  const isProd = process.env["NODE_ENV"] === "production";
+
+  return {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? "none" : "lax",
+    path: "/auth/refresh"
+  };
 }

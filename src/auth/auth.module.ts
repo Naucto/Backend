@@ -71,7 +71,10 @@ function parseExpiresIn(v?: string): number | DurationString {
     MicrosoftAuthService,
     JwtStrategy
   ],
-  exports: [JwtAuthGuard, RolesGuard, JwtModule],
+  // UserModule rides along with RolesGuard: the guard takes a UserService, and Nest builds it in
+  // the *consumer's* injector — so exporting the guard without its dependency makes any module
+  // that uses it fail to resolve at boot.
+  exports: [JwtAuthGuard, RolesGuard, JwtModule, UserModule],
   controllers: [AuthController]
 })
 export class AuthModule {}

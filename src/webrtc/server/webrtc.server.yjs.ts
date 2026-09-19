@@ -2,7 +2,9 @@ import {
   WebRTCClientEvent,
   WebRTCClientSocket,
   WebRTCServerEvent,
-  WebRTCServerSocket
+  WebRTCServerSocket,
+  WebRTCServerName,
+  WEBRTC_SERVER_NAMES
 } from "@webrtc/server/webrtc.server";
 import {
   EventBasedMessage,
@@ -39,24 +41,24 @@ enum YjsMessageType {
 
 class YjsMessage {
   @IsEnum(YjsMessageType)
-  type!: YjsMessageType;
+    type!: YjsMessageType;
 }
 
 class YjsMessageSubscribe extends YjsMessage {
   @IsArray()
   @IsString({ each: true })
-  topics!: YjsWebRTCTopicID[];
+    topics!: YjsWebRTCTopicID[];
 }
 
 class YjsMessageUnsubscribe extends YjsMessage {
   @IsArray()
   @IsString({ each: true })
-  topics!: YjsWebRTCTopicID[];
+    topics!: YjsWebRTCTopicID[];
 }
 
 class YjsMessagePublish extends YjsMessage {
   @IsString()
-  topic!: YjsWebRTCTopicID;
+    topic!: YjsWebRTCTopicID;
 
   data?: unknown;
 }
@@ -66,6 +68,7 @@ class YjsMessagePing extends YjsMessage {}
 // ----------------------------------------------------------------------------
 
 export class YjsWebRTCServerOptions extends EventBasedWebRTCServerOptions {
+  override name: WebRTCServerName = WEBRTC_SERVER_NAMES.collab;
   pingTimeout: number = 30000;
 }
 

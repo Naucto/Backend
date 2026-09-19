@@ -35,6 +35,8 @@ describe("NotificationsService", () => {
     title: "Build complete",
     message: "Your build is ready.",
     type: "INFO" as const,
+    kind: "GENERIC" as const,
+    data: null,
     read: false,
     createdAt: new Date("2026-06-07T09:00:00.000Z")
   };
@@ -102,6 +104,8 @@ describe("NotificationsService", () => {
         title: "Build complete",
         message: "Your build is ready.",
         type: "INFO",
+        kind: "GENERIC",
+        data: null,
         read: false,
         createdAt: "2026-06-07T09:00:00.000Z"
       }
@@ -132,6 +136,8 @@ describe("NotificationsService", () => {
       title: "Build complete",
       message: "Your build is ready.",
       type: "INFO",
+      kind: "GENERIC",
+      data: null,
       read: false,
       createdAt: "2026-06-07T09:00:00.000Z"
     });
@@ -142,7 +148,8 @@ describe("NotificationsService", () => {
         userId: 42,
         title: "Build complete",
         message: "Your build is ready.",
-        type: "INFO"
+        type: "INFO",
+        kind: "GENERIC"
       }
     });
     expect(prisma.notification.deleteMany).toHaveBeenCalledWith({
@@ -154,6 +161,33 @@ describe("NotificationsService", () => {
       42,
       expect.objectContaining({ id: "7", userId: 42 })
     );
+  });
+
+  it("should persist the kind and data payload when provided", async () => {
+    prisma.notification.create.mockResolvedValue({
+      ...notificationRecord,
+      kind: "FRIEND_REQUEST",
+      data: { requestId: 3, fromUserId: 9 }
+    });
+    prisma.notification.findMany.mockResolvedValue([]);
+
+    const payload = await service.createNotification({
+      userId: 42,
+      title: "New friend request",
+      message: "x wants to be your friend",
+      type: "INFO",
+      kind: "FRIEND_REQUEST",
+      data: { requestId: 3, fromUserId: 9 }
+    });
+
+    expect(prisma.notification.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        kind: "FRIEND_REQUEST",
+        data: { requestId: 3, fromUserId: 9 }
+      })
+    });
+    expect(payload.kind).toBe("FRIEND_REQUEST");
+    expect(payload.data).toEqual({ requestId: 3, fromUserId: 9 });
   });
 
   it("should not prune when the user has no extra notifications", async () => {
@@ -184,6 +218,8 @@ describe("NotificationsService", () => {
       title: "Build complete",
       message: "Your build is ready.",
       type: "INFO",
+      kind: "GENERIC",
+      data: null,
       read: true,
       createdAt: "2026-06-07T09:00:00.000Z"
     });

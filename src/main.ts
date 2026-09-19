@@ -11,7 +11,7 @@ import { ConfigService } from "@nestjs/config";
 import express, { Request, Response, NextFunction } from "express";
 
 import { NestFactory } from "@nestjs/core";
-import { ValidationPipe } from "@nestjs/common";
+import { ViolationValidationPipe } from "@common/pipes/violation-validation.pipe";
 
 import { setupGracefulShutdown } from "@tygra/nestjs-graceful-shutdown";
 
@@ -29,6 +29,9 @@ if (isProduction) {
 
 (async () => {
   const expressApp = express();
+  // The API sits behind the deployment's reverse proxy on a private network, so the address of
+  // the reader is the one that proxy reports, not the proxy's own.
+  expressApp.set("trust proxy", "loopback, linklocal, uniquelocal");
 
   const app = await NestFactory.create<NestExpressApplication>(
     AppModule,
@@ -48,7 +51,7 @@ if (isProduction) {
   app.useLogger(["log", "error", "warn", "debug"]);
 
   app.useGlobalPipes(
-    new ValidationPipe({
+    new ViolationValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true

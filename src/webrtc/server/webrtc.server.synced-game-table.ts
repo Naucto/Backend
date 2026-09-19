@@ -4,7 +4,9 @@ import {
   WebRTCClientSocket,
   WebRTCServerAuthEvent,
   WebRTCServerEvent,
-  WebRTCServerSocket
+  WebRTCServerSocket,
+  WebRTCServerName,
+  WEBRTC_SERVER_NAMES
 } from "@webrtc/server/webrtc.server";
 import {
   EventBasedMessage,
@@ -74,7 +76,9 @@ type SyncedGameTableServerSocket = WebRTCServerSocket<{
   rooms: Map<string, SyncedGameTableRoom>;
 }>;
 
-export class SyncedGameTableWebRTCServerOptions extends EventBasedWebRTCServerOptions {}
+export class SyncedGameTableWebRTCServerOptions extends EventBasedWebRTCServerOptions {
+  override name: WebRTCServerName = WEBRTC_SERVER_NAMES.game;
+}
 
 // Host-authoritative relay for multiplayer game-table sync.
 export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGameTableWebRTCServerOptions> {
@@ -212,7 +216,12 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
 
       if (existingSlave && existingSlave !== socket) {
         existingSlave.close();
-      } else if (room.host) {
+      }
+
+      // Told on every accepted socket, a reconnection included: this is the host's only word that
+      // a player is there, and a socket that drops and comes back used to replace the old one in
+      // silence. The host went on trading signals with a player its game had never heard of.
+      if (room.host) {
         this.send(room.host, {
           type: SyncedGameTableControlType.PEER_JOINED,
           userId: socket.userId

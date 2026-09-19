@@ -21,7 +21,7 @@ export class CreateProjectDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(PROJECT_NAME_MAX_LENGTH)
-  name!: string;
+    name!: string;
 
   @ApiProperty({
     description: "A short description of the project",
@@ -30,7 +30,7 @@ export class CreateProjectDto {
   })
   @IsString()
   @MaxLength(PROJECT_SHORT_DESC_MAX_LENGTH)
-  shortDesc!: string;
+    shortDesc!: string;
 
   @ApiProperty({
     description: "URL to the project icon",
@@ -39,7 +39,7 @@ export class CreateProjectDto {
   })
   @IsUrl()
   @IsOptional()
-  iconUrl?: string;
+    iconUrl?: string;
 
   @ApiProperty({
     description: "Tags attached to the project",
@@ -50,5 +50,5 @@ export class CreateProjectDto {
   @IsArray()
   @IsString({ each: true })
   @IsOptional()
-  tags?: string[];
+    tags?: string[];
 }

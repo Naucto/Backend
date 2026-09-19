@@ -47,6 +47,11 @@ import { CreateGameSessionDto } from "./dto/create-game-session.dto";
 import { UpdateGameSessionDto } from "./dto/update-game-session.dto";
 import { JoinGameSessionDto } from "./dto/join-game-session.dto";
 import { JoinByCodeDto } from "./dto/join-by-code.dto";
+import { RefreshTicketDto } from "./dto/refresh-ticket.dto";
+import {
+  InviteToSessionDto,
+  SessionRosterResponseDto
+} from "./dto/session-roster.dto";
 import { GameSessionConnectionResponseDto } from "./dto/game-session-connection.dto";
 import {
   GameSessionListResponseDto,
@@ -109,20 +114,27 @@ export class MultiplayerController {
 
   @Get()
   @ApiOperation({
-    summary: "List game sessions for a project, from the caller's perspective"
+    summary: "List open game sessions from the caller's perspective, one game's or every game's"
   })
-  @ApiQuery({ name: "projectId", type: "number", required: true })
+  @ApiQuery({ name: "projectId", type: "number", required: false })
+  @ApiQuery({
+    name: "q",
+    type: "string",
+    required: false,
+    description: "Narrow to sessions whose room or game name holds this"
+  })
   @ApiResponse({ status: HttpStatus.OK, type: GameSessionListResponseDto })
   async list(
     @Req() req: RequestWithUser,
-    @Query("projectId", ParseIntPipe) projectId: number
+    @Query("projectId", new ParseIntPipe({ optional: true })) projectId?: number,
+    @Query("q") q?: string
   ): Promise<GameSessionListResponseDto> {
     let sessions: GameSessionEx[];
 
     try {
-      sessions = await this._multiplayerService.list(projectId, req.user.id);
+      sessions = await this._multiplayerService.list(projectId, req.user.id, q);
     } catch (error) {
-      this._rethrow(error, `list sessions for project ${projectId}`);
+      this._rethrow(error, `list sessions for project ${projectId ?? "any"}`);
     }
 
     const response = new GameSessionListResponseDto();
@@ -146,6 +158,36 @@ export class MultiplayerController {
       return this._toResponse(session);
     } catch (error) {
       this._rethrow(error, `get session ${sessionId}`);
+    }
+  }
+
+  @Get(":sessionId/players")
+  @ApiOperation({ summary: "Who is in a game session" })
+  @ApiResponse({ status: HttpStatus.OK, type: SessionRosterResponseDto })
+  async players(
+    @Req() req: RequestWithUser,
+    @Param("sessionId") sessionId: string
+  ): Promise<SessionRosterResponseDto> {
+    try {
+      return await this._multiplayerService.roster(sessionId, req.user.id);
+    } catch (error) {
+      this._rethrow(error, `roster for session ${sessionId}`);
+    }
+  }
+
+  @Post(":sessionId/invite")
+  @ApiOperation({ summary: "Invite someone to a session (host only)" })
+  @ApiBody({ type: InviteToSessionDto })
+  @ApiResponse({ status: HttpStatus.OK })
+  async invite(
+    @Req() req: RequestWithUser,
+    @Param("sessionId") sessionId: string,
+    @Body() dto: InviteToSessionDto
+  ): Promise<void> {
+    try {
+      await this._multiplayerService.invite(sessionId, req.user.id, dto.userId);
+    } catch (error) {
+      this._rethrow(error, `invite to session ${sessionId}`);
     }
   }
 
@@ -224,18 +266,21 @@ export class MultiplayerController {
   @ApiOperation({
     summary: "Mint a fresh connection ticket for the caller's session"
   })
+  @ApiBody({ type: RefreshTicketDto, required: false })
   @ApiResponse({
     status: HttpStatus.OK,
     type: GameSessionConnectionResponseDto
   })
   async refreshTicket(
     @Req() req: RequestWithUser,
-    @Param("sessionId") sessionId: string
+    @Param("sessionId") sessionId: string,
+    @Body() dto: RefreshTicketDto
   ): Promise<GameSessionConnectionResponseDto> {
     try {
       return await this._multiplayerService.refreshTicket(
         sessionId,
-        req.user.id
+        req.user.id,
+        dto.ticket
       );
     } catch (error) {
       this._rethrow(error, `refresh ticket for session ${sessionId}`);
@@ -255,6 +300,7 @@ export class MultiplayerController {
     if (session.host.nickname) {
       dto.hostNickname = session.host.nickname;
     }
+    dto.projectId = session.projectId;
     dto.projectName = session.project.name;
     dto.maxPlayers = session.maxPlayers;
     // Prefer the live connected count (includes editor self-joins); fall back to

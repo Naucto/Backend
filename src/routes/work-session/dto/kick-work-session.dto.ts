@@ -7,5 +7,5 @@ export class KickWorkSessionDto {
     example: 1
   })
   @IsNumber()
-  userId!: number;
+    userId!: number;
 }
