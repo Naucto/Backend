@@ -668,6 +668,77 @@ describe("MultiplayerService", () => {
         service.refreshTicket("session-uuid", 99)
       ).rejects.toBeInstanceOf(MultiplayerUserNotInSessionError);
     });
+
+    // A ticket is minted for a connection: the editor's test rig plays under a
+    // synthetic id its ticket alone remembers.
+    const RIG_TICKET = {
+      kind: "game-table",
+      sessionId: "session-uuid",
+      userId: 123456789,
+      role: "slave",
+      maxPlayers: 4
+    };
+
+    function mintedPayload(): { userId: number; role: string } {
+      return jwtService.sign.mock.calls[0]![0] as { userId: number; role: string };
+    }
+
+    it("keeps the rig client's synthetic id and slave role when it presents its ticket", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(makeSession({ hostId: 1 }));
+      jwtService.verify.mockReturnValueOnce(RIG_TICKET);
+
+      const result = await service.refreshTicket("session-uuid", 1, "old.ticket");
+
+      expect(jwtService.verify).toHaveBeenCalledWith("old.ticket", {
+        ignoreExpiration: true
+      });
+      expect(result.playerId).toBe(123456789);
+      expect(mintedPayload()).toMatchObject({ userId: 123456789, role: "slave" });
+    });
+
+    it("mints from the account when no ticket is given", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(makeSession({ hostId: 1 }));
+
+      const result = await service.refreshTicket("session-uuid", 1);
+
+      expect(jwtService.verify).not.toHaveBeenCalled();
+      expect(result.playerId).toBe(1);
+      expect(mintedPayload()).toMatchObject({ userId: 1, role: "host" });
+    });
+
+    it("ignores a ticket minted for another session", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(makeSession({ hostId: 1 }));
+      jwtService.verify.mockReturnValueOnce({
+        ...RIG_TICKET,
+        sessionId: "other-session"
+      });
+
+      const result = await service.refreshTicket("session-uuid", 1, "old.ticket");
+
+      expect(result.playerId).toBe(1);
+      expect(mintedPayload()).toMatchObject({ userId: 1, role: "host" });
+    });
+
+    it("ignores a ticket it cannot verify", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(makeSession({ hostId: 1 }));
+      jwtService.verify.mockImplementationOnce(() => {
+        throw new Error("invalid signature");
+      });
+
+      const result = await service.refreshTicket("session-uuid", 1, "forged");
+
+      expect(result.playerId).toBe(1);
+      expect(mintedPayload()).toMatchObject({ userId: 1, role: "host" });
+    });
+
+    it("still rejects a non-member holding a ticket", async () => {
+      gameSession.findFirst.mockResolvedValueOnce(makeSession({ hostId: 1 }));
+      jwtService.verify.mockReturnValueOnce(RIG_TICKET);
+
+      await expect(
+        service.refreshTicket("session-uuid", 99, "old.ticket")
+      ).rejects.toBeInstanceOf(MultiplayerUserNotInSessionError);
+    });
   });
 
   describe("endSession", () => {

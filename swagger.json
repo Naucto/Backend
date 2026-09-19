@@ -2071,6 +2071,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshTicketDto"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "",
@@ -5852,6 +5862,15 @@
           "editorTest": {
             "type": "boolean",
             "description": "Set by the game editor to allow a self-join for solo testing"
+          }
+        }
+      },
+      "RefreshTicketDto": {
+        "type": "object",
+        "properties": {
+          "ticket": {
+            "type": "string",
+            "description": "The ticket being replaced. When it was minted for this session, the fresh one keeps its player id and role; otherwise the caller's account decides both."
           }
         }
       },

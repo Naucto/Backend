@@ -1,6 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
-import { JwtService } from "@nestjs/jwt";
+import { JwtService, JwtVerifyOptions } from "@nestjs/jwt";
 import {
   GameSession,
   GameSessionVisibility,
@@ -512,14 +512,26 @@ export class MultiplayerService {
   }
 
   // Mint a fresh connection ticket for a member of the session (host or slave),
-  // so a client can reconnect after the short-lived ticket expires.
+  // so a client can reconnect after the short-lived ticket expires. The ticket
+  // being replaced carries the identity forward when it was minted for this
+  // session: an editor self-join plays under a synthetic id that no account
+  // lookup can recover, and re-minting from the account alone would hand that
+  // client the host's seat.
   async refreshTicket(
     sessionId: string,
-    userId: number
+    userId: number,
+    ticket?: string
   ): Promise<GameSessionConnectionResponseDto> {
     const session = await this._findSessionOrThrow(sessionId);
+    const accountRole = this._roleOf(session, userId);
+    const previous =
+      ticket === undefined
+        ? null
+        : this._replacedTicket(ticket, session.sessionId);
 
-    return this._buildConnection(session, userId, this._roleOf(session, userId));
+    return previous
+      ? this._buildConnection(session, previous.userId, previous.role)
+      : this._buildConnection(session, userId, accountRole);
   }
 
   async leave(sessionId: string, userId: number): Promise<void> {
@@ -685,9 +697,29 @@ export class MultiplayerService {
     });
   }
 
-  private _verifyTicket(raw: string): SyncedGameTableTicket {
-    const payload =
-      this._jwtService.verify<Partial<GameTableTicketPayload>>(raw);
+  // Expiry is what a refresh is for, so only the signature and the session are
+  // asked to match; anything else falls back to the caller's account.
+  private _replacedTicket(
+    raw: string,
+    sessionId: string
+  ): SyncedGameTableTicket | null {
+    try {
+      const ticket = this._verifyTicket(raw, { ignoreExpiration: true });
+
+      return ticket.sessionId === sessionId ? ticket : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private _verifyTicket(
+    raw: string,
+    options?: JwtVerifyOptions
+  ): SyncedGameTableTicket {
+    const payload = this._jwtService.verify<Partial<GameTableTicketPayload>>(
+      raw,
+      options
+    );
 
     if (
       payload.kind !== "game-table" ||

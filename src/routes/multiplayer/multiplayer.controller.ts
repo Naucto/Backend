@@ -47,6 +47,7 @@ import { CreateGameSessionDto } from "./dto/create-game-session.dto";
 import { UpdateGameSessionDto } from "./dto/update-game-session.dto";
 import { JoinGameSessionDto } from "./dto/join-game-session.dto";
 import { JoinByCodeDto } from "./dto/join-by-code.dto";
+import { RefreshTicketDto } from "./dto/refresh-ticket.dto";
 import {
   InviteToSessionDto,
   SessionRosterResponseDto
@@ -265,18 +266,21 @@ export class MultiplayerController {
   @ApiOperation({
     summary: "Mint a fresh connection ticket for the caller's session"
   })
+  @ApiBody({ type: RefreshTicketDto, required: false })
   @ApiResponse({
     status: HttpStatus.OK,
     type: GameSessionConnectionResponseDto
   })
   async refreshTicket(
     @Req() req: RequestWithUser,
-    @Param("sessionId") sessionId: string
+    @Param("sessionId") sessionId: string,
+    @Body() dto: RefreshTicketDto
   ): Promise<GameSessionConnectionResponseDto> {
     try {
       return await this._multiplayerService.refreshTicket(
         sessionId,
-        req.user.id
+        req.user.id,
+        dto.ticket
       );
     } catch (error) {
       this._rethrow(error, `refresh ticket for session ${sessionId}`);
