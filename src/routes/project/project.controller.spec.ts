@@ -1,3 +1,4 @@
+import { NotFoundException } from "@nestjs/common";
 import { Test, TestingModule } from "@nestjs/testing";
 import { ProjectController } from "./project.controller";
 import {
@@ -61,6 +62,19 @@ describe("ProjectController", () => {
 
   it("should be defined", () => {
     expect(controller).toBeDefined();
+  });
+
+  describe("getRelease", () => {
+    it("does not describe a project the hub does not carry", async () => {
+      jest.spyOn(projectService, "fetchRelease").mockResolvedValue({
+        id: 39,
+        publishedAt: null
+      } as unknown as Awaited<ReturnType<ProjectService["fetchRelease"]>>);
+
+      await expect(controller.getRelease("39")).rejects.toBeInstanceOf(
+        NotFoundException
+      );
+    });
   });
 
   describe("release routes", () => {

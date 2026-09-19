@@ -18,7 +18,8 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
-  HttpException
+  HttpException,
+  NotFoundException
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
@@ -292,6 +293,10 @@ export class ProjectController {
   })
   async getRelease(@Param("id") id: string): Promise<ProjectExResponseDto> {
     const projectRelease = await this.projectService.fetchRelease(Number(id));
+    // Public, so a draft's name and people are nobody's business until it is on the hub.
+    if (!projectRelease.publishedAt) {
+      throw new NotFoundException(`Published project with ID ${id} not found`);
+    }
 
     return projectRelease;
   }
