@@ -1,6 +1,8 @@
-import { ApiProperty } from "@nestjs/swagger";
+import { UserWithDetailsDto } from "@user/dto/user-with-details.dto";
+import { ApiExtraModels, ApiProperty, getSchemaPath } from "@nestjs/swagger";
 import { UserResponseDto } from "./user-response.dto";
 
+@ApiExtraModels(UserResponseDto, UserWithDetailsDto)
 export class UserSingleResponseDto {
   @ApiProperty({ description: "HTTP status code", example: 200 })
   statusCode!: number;
@@ -11,6 +13,6 @@ export class UserSingleResponseDto {
   })
   message!: string;
 
-  @ApiProperty({ description: "User data", type: UserResponseDto })
-  data!: UserResponseDto;
+  @ApiProperty({ description: "User data", oneOf: [{ $ref: getSchemaPath(UserResponseDto) }, { $ref: getSchemaPath(UserWithDetailsDto) }] })
+  data!: UserResponseDto | UserWithDetailsDto;
 }

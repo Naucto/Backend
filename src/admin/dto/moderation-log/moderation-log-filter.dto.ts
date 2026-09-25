@@ -10,9 +10,9 @@ import {
   IsOptional,
   IsString
 } from "class-validator";
-import { AdminPaginationDto } from "../admin-pagination.dto";
+import { PaginationDto } from "@common/dto/pagination.dto";
 
-export class ModerationLogFilterDto extends AdminPaginationDto {
+export class ModerationLogFilterDto extends PaginationDto {
   @ApiPropertyOptional()
   @IsOptional()
   @Transform(({ value }) => (value === undefined ? undefined : Number(value)))

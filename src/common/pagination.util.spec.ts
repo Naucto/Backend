@@ -4,16 +4,16 @@ import {
   buildOrderBy,
   paginated,
   resolvePage
-} from "./admin-pagination.util";
-import { AdminPaginationDto } from "./dto/admin-pagination.dto";
+} from "./pagination.util";
+import { PaginationDto } from "@common/dto/pagination.dto";
 
-// A bare object rather than `new AdminPaginationDto()`: the class carries
+// A bare object rather than `new PaginationDto()`: the class carries
 // property defaults, and these cases are about the util's own fallbacks.
-function filter(overrides: Partial<AdminPaginationDto> = {}): AdminPaginationDto {
-  return { ...overrides } as AdminPaginationDto;
+function filter(overrides: Partial<PaginationDto> = {}): PaginationDto {
+  return { ...overrides } as PaginationDto;
 }
 
-describe("admin pagination util", () => {
+describe("pagination util", () => {
   describe("resolvePage", () => {
     it("defaults to page 1 / limit 25", () => {
       expect(resolvePage(filter())).toEqual({

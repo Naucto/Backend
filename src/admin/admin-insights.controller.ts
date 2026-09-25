@@ -1,3 +1,4 @@
+import { Permission } from "@auth/permissions";
 import {
   Controller,
   DefaultValuePipe,
@@ -12,21 +13,21 @@ import {
   ApiQuery,
   ApiTags
 } from "@nestjs/swagger";
-import { Roles } from "@auth/decorators/roles.decorator";
-import { RolesGuard } from "@auth/guards/roles.guard";
-import { AdminCookieJwtGuard } from "./guards/admin-cookie-jwt.guard";
+import { Permissions } from "@auth/decorators/permissions.decorator";
+import { PermissionsGuard } from "@auth/guards/permissions.guard";
+import { StaffSessionGuard } from "@auth/guards/staff-session.guard";
 import { AdminInsightsService } from "./admin-insights.service";
 
 @ApiTags("admin-insights")
 @ApiCookieAuth("AdminCookie")
-@UseGuards(AdminCookieJwtGuard, RolesGuard)
-@Roles("Admin", "Moderator")
+@UseGuards(StaffSessionGuard, PermissionsGuard)
+@Permissions(Permission.VIEW_ACTIVITY)
 @Controller("admin/insights")
 export class AdminInsightsController {
   constructor(private readonly insightsService: AdminInsightsService) {}
 
   @Get("dashboard")
-  @Roles("Admin")
+  @Permissions(Permission.VIEW_INSIGHTS)
   @ApiOperation({ summary: "Full admin dashboard payload" })
   @ApiQuery({ name: "days", required: false, type: Number })
   async getDashboard(

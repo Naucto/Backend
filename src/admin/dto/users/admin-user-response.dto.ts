@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { AccountStatus } from "@prisma/client";
-import { PaginatedMetaDto } from "../admin-pagination.dto";
+import { PaginatedMetaDto } from "@common/dto/pagination.dto";
 
 export class AdminUserResponseDto {
   @ApiProperty() id!: number;

@@ -1,9 +1,9 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { AccountStatus } from "@prisma/client";
 import { IsEnum, IsIn, IsOptional, IsString } from "class-validator";
-import { AdminPaginationDto } from "../admin-pagination.dto";
+import { PaginationDto } from "@common/dto/pagination.dto";
 
-export class AdminUserFilterDto extends AdminPaginationDto {
+export class AdminUserFilterDto extends PaginationDto {
   @ApiPropertyOptional() @IsOptional() @IsString() email?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() username?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() nickname?: string;

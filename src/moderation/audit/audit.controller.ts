@@ -1,3 +1,4 @@
+import { Permission } from "@auth/permissions";
 import {
   Controller,
   Get,
@@ -15,13 +16,13 @@ import {
 } from "@nestjs/swagger";
 import { ModerationTargetType } from "@prisma/client";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
-import { RolesGuard } from "@auth/guards/roles.guard";
-import { Roles } from "@auth/decorators/roles.decorator";
-import { AdminPaginationDto } from "src/admin/dto/admin-pagination.dto";
+import { PermissionsGuard } from "@auth/guards/permissions.guard";
+import { Permissions } from "@auth/decorators/permissions.decorator";
+import { PaginationDto } from "@common/dto/pagination.dto";
 import {
   buildMeta,
   resolvePage
-} from "src/admin/admin-pagination.util";
+} from "@common/pagination.util";
 import { AuditService } from "./audit.service";
 import { AuditEntryDto, AuditLogResponseDto } from "./audit-entry.dto";
 
@@ -35,8 +36,8 @@ import { AuditEntryDto, AuditLogResponseDto } from "./audit-entry.dto";
 @ApiTags("moderation-log")
 @ApiBearerAuth("JWT-auth")
 @Controller("moderation-log")
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles("Admin", "Moderator")
+@UseGuards(JwtAuthGuard, PermissionsGuard)
+@Permissions(Permission.VIEW_AUDIT)
 export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 
@@ -48,7 +49,7 @@ export class AuditController {
   async historyOf(
     @Param("targetType") targetType: ModerationTargetType,
     @Param("targetId", ParseIntPipe) targetId: number,
-    @Query() pagination: AdminPaginationDto
+    @Query() pagination: PaginationDto
   ): Promise<AuditLogResponseDto> {
     const ref = { type: targetType, id: targetId };
     const page = resolvePage(pagination);

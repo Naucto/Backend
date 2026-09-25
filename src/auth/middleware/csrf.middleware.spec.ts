@@ -1,16 +1,16 @@
 import { ForbiddenException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { NextFunction, Request, Response } from "express";
-import { AdminCsrfMiddleware } from "./csrf.middleware";
+import { CookieCsrfMiddleware } from "./csrf.middleware";
 
 const ADMIN_URL = "https://admin.naucto.com";
 
-function makeMiddleware(): AdminCsrfMiddleware {
+function makeMiddleware(): CookieCsrfMiddleware {
   const config = {
     get: jest.fn().mockReturnValue(ADMIN_URL)
   } as unknown as ConfigService;
 
-  return new AdminCsrfMiddleware(config);
+  return new CookieCsrfMiddleware(config);
 }
 
 function makeRequest(overrides: {
@@ -28,14 +28,15 @@ function makeRequest(overrides: {
     method: overrides.method ?? "POST",
     path: overrides.path ?? "/admin/users/1/ban",
     headers,
+    query: { scope: "admin" },
     cookies: overrides.cookieToken
       ? { naucto_admin_csrf: overrides.cookieToken }
       : {}
   } as unknown as Request;
 }
 
-describe("AdminCsrfMiddleware", () => {
-  let middleware: AdminCsrfMiddleware;
+describe("CookieCsrfMiddleware", () => {
+  let middleware: CookieCsrfMiddleware;
   let next: NextFunction;
   const res = {} as Response;
 
@@ -105,7 +106,7 @@ describe("AdminCsrfMiddleware", () => {
     // Both run before the panel holds a CSRF cookie, so they are exempt from the
     // double-submit check -- but not from the origin check.
 
-    it.each(["/admin/auth/login", "/admin/auth/refresh"])(
+    it.each(["/auth/login", "/auth/refresh"])(
       "%s is exempt from the double-submit check",
       (path) => {
         middleware.use(makeRequest({ path }), res, next);
@@ -114,7 +115,7 @@ describe("AdminCsrfMiddleware", () => {
       }
     );
 
-    it.each(["/admin/auth/login", "/admin/auth/refresh"])(
+    it.each(["/auth/login", "/auth/refresh"])(
       "%s is still rejected from a foreign origin",
       (path) => {
         expect(() =>

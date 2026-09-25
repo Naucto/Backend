@@ -1,14 +1,14 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma, ReportStatus } from "@prisma/client";
 import { PrismaService } from "@ourPrisma/prisma.service";
-import { ModerationService } from "src/moderation/moderation.service";
-import { AuditService } from "src/moderation/audit";
+import { ModerationService } from "@moderation/moderation.service";
+import { AuditService } from "@moderation/audit";
 import { TargetLinkService } from "./services/target-link.service";
 import {
   buildMeta,
   buildOrderBy,
   resolvePage
-} from "./admin-pagination.util";
+} from "@common/pagination.util";
 import { AdminReportFilterDto } from "./dto/reports/admin-report-filter.dto";
 import {
   AdminReportDetailDto,

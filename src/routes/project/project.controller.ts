@@ -1,3 +1,5 @@
+import { Permission } from "@auth/permissions";
+import { DownloadService } from "@common/download/download.service";
 import {
   Body,
   ForbiddenException,
@@ -6,7 +8,6 @@ import {
   Get,
   HttpCode,
   HttpStatus,
-  Logger,
   Param,
   ParseIntPipe,
   ParseFilePipeBuilder,
@@ -68,13 +69,11 @@ import {
   ProjectsCountResponseDto,
   SignedUrlResponseDto
 } from "./dto/project-response.dto";
-import { Roles } from "@auth/decorators/roles.decorator";
-import { RolesGuard } from "@auth/guards/roles.guard";
+import { Permissions } from "@auth/decorators/permissions.decorator";
+import { PermissionsGuard } from "@auth/guards/permissions.guard";
 import { Actor, CurrentActor } from "@auth/actor";
-import { S3DownloadException } from "@s3/s3.error";
 import { S3Service } from "@s3/s3.service";
-import { DownloadedFile } from "@s3/s3.interface";
-import { CloudfrontService } from "src/routes/s3/edge.service";
+import { CloudfrontService } from "@s3/edge.service";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { Public } from "@auth/decorators/public.decorator";
 import { ImageUrlResponseDto } from "src/routes/common/dto/image-url-response.dto";
@@ -95,10 +94,9 @@ export class ProjectController {
     private readonly projectService: ProjectService,
     private readonly s3Service: S3Service,
     private readonly cloudfrontService: CloudfrontService,
-    private readonly prismaService: PrismaService
+    private readonly prismaService: PrismaService,
+    private readonly downloads: DownloadService
   ) {}
-
-  private readonly logger = new Logger(ProjectController.name);
 
   private parseOptionalInt(value?: string): number | undefined {
     return value ? parseInt(value, 10) : undefined;
@@ -155,60 +153,6 @@ export class ProjectController {
   }
 
   @Public()
-  /**
-   * Streams a stored project blob to the client. Every download endpoint goes
-   * through this so they cannot drift on headers or on how a missing object is
-   * reported.
-   *
-   * The stored `Content-Type` is deliberately NOT echoed. It originates from the
-   * client's multipart upload, so serving it back would let someone upload
-   * `text/html` and get script execution on this origin -- where a same-origin
-   * script can read the readable admin CSRF cookie and issue credentialed
-   * `/admin/*` calls. These endpoints all return opaque blobs the client decodes
-   * itself, so a fixed binary type plus `attachment` is both correct and inert.
-   */
-  private streamDownload(
-    res: Response,
-    file: DownloadedFile,
-    options: {
-      filename?: string;
-      extraHeaders?: Record<string, string | undefined>;
-    } = {}
-  ): void {
-    res.set({
-      "Content-Type": ProjectService.CONTENT_MIME_TYPE,
-      "Content-Length": String(file.contentLength ?? 0),
-      "X-Content-Type-Options": "nosniff",
-      ...(options.extraHeaders ?? {})
-    });
-
-    // `res.attachment` encodes the filename properly; interpolating a
-    // user-chosen checkpoint name into the header by hand would not.
-    res.attachment(options.filename ?? "project-content.bin");
-
-    file.body.pipe(res);
-  }
-
-  private failDownload(res: Response, error: unknown, context: string): void {
-    if (error instanceof S3DownloadException) {
-      this.logger.warn(`${context}: not found on storage (key: ${error.key})`);
-      if (!res.headersSent) {
-        res.status(404).json({ message: "File not found" });
-      }
-      return;
-    }
-
-    if (error instanceof Error) {
-      this.logger.error(`${context}: ${error.message}`, error.stack);
-    } else {
-      this.logger.error(`${context}: ${JSON.stringify(error)}`);
-    }
-
-    if (!res.headersSent) {
-      res.status(500).json({ message: "Internal server error" });
-    }
-  }
-
   @Get("releases")
   @ApiOperation({ summary: "Get all released projects" })
   @ApiResponse({
@@ -306,12 +250,7 @@ export class ProjectController {
     @Param("id") id: string,
     @Res() res: Response
   ): Promise<void> {
-    try {
-      const file = await this.projectService.fetchReleaseContent(Number(id));
-      this.streamDownload(res, file);
-    } catch (error) {
-      this.failDownload(res, error, `Release content for project ${id}`);
-    }
+    await this.downloads.send(res, () => this.projectService.fetchReleaseContent(Number(id)), `Release content for project ${id}`);
   }
 
   @Public()
@@ -368,7 +307,7 @@ export class ProjectController {
   ): Promise<PaginatedProjectsResponseDto> {
     // `scope=all` is the moderation listing: same resource, no ownership
     // clause. Refused to anyone else rather than served by a separate route.
-    if ((scope === "all" || hidden !== undefined) && !actor.isModerator) {
+    if ((scope === "all" || hidden !== undefined) && !actor.can(Permission.MODERATE_CONTENT)) {
       throw new ForbiddenException(
         "Listing every project requires a moderator"
       );
@@ -811,8 +750,8 @@ export class ProjectController {
   // a project under review is usually either not published yet or already
   // hidden -- both invisible to the public release endpoints above.
   @Get(":id/preview")
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles("Admin", "Moderator")
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions(Permission.MODERATE_CONTENT)
   @ApiOperation({
     summary: "Get any project's metadata for staff preview, published or not"
   })
@@ -831,8 +770,8 @@ export class ProjectController {
   }
 
   @Get(":id/preview/content")
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles("Admin", "Moderator")
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions(Permission.MODERATE_CONTENT)
   @ApiOperation({
     summary:
       "Get any project's playable content for staff preview: the published release when there is one, otherwise the latest save"
@@ -853,12 +792,7 @@ export class ProjectController {
     @Param("id") id: string,
     @Res() res: Response
   ): Promise<void> {
-    try {
-      const file = await this.projectService.fetchPreviewContent(Number(id));
-      this.streamDownload(res, file);
-    } catch (error) {
-      this.failDownload(res, error, `Preview content for project ${id}`);
-    }
+    await this.downloads.send(res, () => this.projectService.fetchPreviewContent(Number(id)), `Preview content for project ${id}`);
   }
 
   @Get(":id/fetchContent")
@@ -880,12 +814,7 @@ export class ProjectController {
     @Param("id") id: number,
     @Res() res: Response
   ): Promise<void> {
-    try {
-      const file = await this.projectService.fetchLastVersion(id);
-      this.streamDownload(res, file);
-    } catch (error) {
-      this.failDownload(res, error, `Content for project ${id}`);
-    }
+    await this.downloads.send(res, () => this.projectService.fetchLastVersion(id), `Content for project ${id}`);
   }
 
   @Post(":id/saveCheckpoint/:name")
@@ -1021,15 +950,7 @@ export class ProjectController {
     @Param("version") version: string,
     @Res() res: Response
   ): Promise<void> {
-    try {
-      const file = await this.projectService.fetchSavedVersion(
-        Number(id),
-        version
-      );
-      this.streamDownload(res, file);
-    } catch (error) {
-      this.failDownload(res, error, `Version ${version} of project ${id}`);
-    }
+    await this.downloads.send(res, () => this.projectService.fetchSavedVersion(Number(id), version), `Version ${version} of project ${id}`);
   }
 
   @Get(":id/checkpoints/:checkpoint")
@@ -1052,16 +973,13 @@ export class ProjectController {
     @Param("checkpoint") checkpoint: string,
     @Res() res: Response
   ): Promise<void> {
-    try {
-      const file = await this.projectService.fetchCheckpoint(
-        Number(id),
-        checkpoint
-      );
+    await this.downloads.send(res, async () => {
       const project = await this.projectService.findOne(id);
-
-      this.streamDownload(res, file, {
+      const file = await this.projectService.fetchCheckpoint(Number(id), checkpoint);
+      return {
+        ...file,
         filename: checkpoint,
-        extraHeaders: {
+        headers: {
           "Cache-Control": "no-cache, no-store, must-revalidate",
           Pragma: "no-cache",
           Expires: "0",
@@ -1069,10 +987,8 @@ export class ProjectController {
             ? `W/"${project.contentUploadedAt.getTime()}"`
             : undefined
         }
-      });
-    } catch (error) {
-      this.failDownload(res, error, `Checkpoint ${checkpoint} of project ${id}`);
-    }
+      };
+    }, `Checkpoint ${checkpoint} of project ${id}`);
   }
 
   @Post("releases/:id/like")

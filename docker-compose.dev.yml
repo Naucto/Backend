@@ -16,7 +16,6 @@ services:
     depends_on: !override
       db:
         condition: service_healthy
-    # Without !override compose appends, landing dev containers on `naucto` too.
     networks: !override
       - naucto-dev
     volumes:

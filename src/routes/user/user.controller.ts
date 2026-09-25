@@ -1,3 +1,6 @@
+import { UserWithDetailsDto } from "@user/dto/user-with-details.dto";
+import { stripPassword } from "@auth/auth.utils";
+import { Permission } from "@auth/permissions";
 import {
   Controller,
   ForbiddenException,
@@ -36,10 +39,10 @@ import {
 import { Request } from "@nestjs/common";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
 import { AccountWriteGuard } from "@auth/guards/account-write.guard";
-import { RolesGuard } from "@auth/guards/roles.guard";
+import { PermissionsGuard } from "@auth/guards/permissions.guard";
 import { Actor, CurrentActor } from "@auth/actor";
-import { ModerationService } from "src/moderation/moderation.service";
-import { Roles } from "@auth/decorators/roles.decorator";
+import { ModerationService } from "@moderation/moderation.service";
+import { Permissions } from "@auth/decorators/permissions.decorator";
 import { Prisma } from "@prisma/client";
 import { UserResponseDto } from "./dto/user-response.dto";
 import { UserListResponseDto } from "./dto/user-list-response.dto";
@@ -50,7 +53,7 @@ import { UserDto } from "@auth/dto/user.dto";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { Response } from "express";
 import { S3Service } from "@s3/s3.service";
-import { CloudfrontService } from "src/routes/s3/edge.service";
+import { CloudfrontService } from "@s3/edge.service";
 import { SignedCdnResourceDto } from "@common/dto/signed-cdn-resource.dto";
 import { UpdateUserProfileDto } from "./dto/update-user-profile.dto";
 import { PublicUserProfileResponseDto } from "./dto/public-user-profile-response.dto";
@@ -308,7 +311,7 @@ export class UserController {
 
     // Moderation filters answer "who is banned?", which is staff business.
     // Refusing them here is what lets one route serve both audiences.
-    if ((accountStatus || role) && !actor.isModerator) {
+    if ((accountStatus || role) && !actor.canAny(Permission.MODERATE_USERS, Permission.MANAGE_USERS, Permission.MANAGE_ROLES)) {
       throw new ForbiddenException(
         "Filtering by account status or role requires a moderator"
       );
@@ -347,7 +350,7 @@ export class UserController {
         orderBy,
         // Staff listings render roles and moderation state; ordinary callers
         // get neither, so the extra join is only paid when it is used.
-        ...(actor.isModerator ? { include: { roles: true } } : {})
+        ...(actor.canAny(Permission.MODERATE_USERS, Permission.MANAGE_USERS, Permission.MANAGE_ROLES) ? { include: { roles: true } } : {})
       }),
       this.userService.count(filter)
     ]);
@@ -383,11 +386,11 @@ export class UserController {
   async findOne(
     @Param("id", ParseIntPipe) id: number,
     @CurrentActor() actor: Actor
-  ): Promise<{ statusCode: number; message: string; data: UserDto }> {
+  ): Promise<{ statusCode: number; message: string; data: UserDto | UserWithDetailsDto }> {
     this.logger.debug(`Fetching user with ID: ${id}`);
-    const user = actor.isModerator
-      ? await this.userService.findOneForModeration(id)
-      : await this.userService.findOne(id);
+    const user = actor.canAny(Permission.MODERATE_USERS, Permission.MANAGE_USERS, Permission.MANAGE_ROLES)
+      ? await this.userService.findOneWithDetails(id)
+      : stripPassword(await this.userService.findOne(id));
 
     return {
       statusCode: HttpStatus.OK,
@@ -412,14 +415,15 @@ export class UserController {
     status: HttpStatus.FORBIDDEN,
     description: "Insufficient permissions"
   })
-  @UseGuards(JwtAuthGuard, AccountWriteGuard, RolesGuard)
-  @Roles("Admin")
+  @UseGuards(JwtAuthGuard, AccountWriteGuard, PermissionsGuard)
+  @Permissions(Permission.MANAGE_USERS)
   async update(
     @Param("id", ParseIntPipe) id: number,
-    @Body(ValidationPipe) updateUserDto: UpdateUserDto
+    @Body(ValidationPipe) updateUserDto: UpdateUserDto,
+    @CurrentActor() actor: Actor
   ): Promise<{ statusCode: number; message: string; data: UserDto }> {
     this.logger.debug(`Updating user with ID: ${id}`);
-    const user = await this.userService.update(id, updateUserDto);
+    const user = await this.moderationService.updateUser(id, actor, updateUserDto);
 
     return {
       statusCode: HttpStatus.OK,
@@ -449,8 +453,8 @@ export class UserController {
     status: HttpStatus.FORBIDDEN,
     description: "Insufficient permissions"
   })
-  @UseGuards(JwtAuthGuard, AccountWriteGuard, RolesGuard)
-  @Roles("Admin")
+  @UseGuards(JwtAuthGuard, AccountWriteGuard, PermissionsGuard)
+  @Permissions(Permission.MANAGE_USERS)
   async remove(
     @Param("id", ParseIntPipe) id: number,
     @CurrentActor() actor: Actor

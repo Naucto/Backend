@@ -1,8 +1,8 @@
+import { AuthSessionService } from "@auth/auth-session.service";
 import { PassportModule } from "@nestjs/passport";
 import { JwtModule } from "@nestjs/jwt";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { JwtStrategy } from "./strategies/jwt.strategy";
-import { AdminJwtStrategy } from "./strategies/admin-jwt.strategy";
 import { UserModule } from "@user/user.module";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import { RolesGuard } from "./guards/roles.guard";
@@ -14,7 +14,7 @@ import { GoogleAuthService } from "./providers/google-auth.service";
 import { GithubAuthService } from "./providers/github-auth.service";
 import { MicrosoftAuthService } from "./providers/microsoft-auth.service";
 import { Module, Logger } from "@nestjs/common";
-import { AnalyticsModule } from "src/analytics/analytics.module";
+import { AnalyticsModule } from "@analytics/analytics.module";
 
 type DurationString = `${number}${"s" | "m" | "h" | "d"}`;
 
@@ -67,16 +67,15 @@ function parseExpiresIn(v?: string): number | DurationString {
     })
   ],
   providers: [
+    AuthSessionService,
     JwtAuthGuard,
     RolesGuard,
     AccountWriteGuard,
     AuthService,
     GoogleAuthService,
     JwtStrategy,
-    AdminJwtStrategy,
     GithubAuthService,
-    MicrosoftAuthService,
-    JwtStrategy
+    MicrosoftAuthService
   ],
   exports: [JwtAuthGuard, RolesGuard, AccountWriteGuard, JwtModule, AuthService],
   controllers: [AuthController]

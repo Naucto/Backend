@@ -3,7 +3,7 @@ import {
   ModerationActionType,
   ModerationTargetType
 } from "@prisma/client";
-import { PaginatedMetaDto } from "../admin-pagination.dto";
+import { PaginatedMetaDto } from "@common/dto/pagination.dto";
 
 export class ModerationLogResponseDto {
   @ApiProperty() id!: number;

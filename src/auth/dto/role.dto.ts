@@ -1,4 +1,4 @@
-// dto/role.dto.ts
+import { Permission } from "@auth/permissions";
 import { ApiProperty } from "@nestjs/swagger";
 
 export class RoleDto {
@@ -7,4 +7,6 @@ export class RoleDto {
 
   @ApiProperty({ example: "admin", description: "Role name" })
   name!: string;
+  @ApiProperty({ enum: Permission, enumName: "Permission", isArray: true })
+  permissions!: string[];
 }

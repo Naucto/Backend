@@ -1,3 +1,4 @@
+import { permissionsFor } from "@auth/permissions";
 import { Test, TestingModule } from "@nestjs/testing";
 import { ForbiddenException, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
@@ -7,9 +8,9 @@ import { AccountStatus } from "@prisma/client";
 import { AuthService } from "@auth/auth.service";
 import { RequestWithUser } from "@auth/auth.types";
 import { UserService } from "@user/user.service";
-import { AdminAuthController } from "./admin-auth.controller";
-import { AdminCookieJwtGuard } from "./guards/admin-cookie-jwt.guard";
-import { AdminLoginDto } from "./dto/admin-login.dto";
+import { AuthSessionService } from "@auth/auth-session.service";
+import { StaffSessionGuard } from "@auth/guards/staff-session.guard";
+import { LoginDto } from "@auth/dto/login.dto";
 
 const ACCESS_COOKIE = "naucto_admin_access";
 const REFRESH_COOKIE = "naucto_admin_refresh";
@@ -20,7 +21,8 @@ const STAFF = {
   email: "mod@naucto.com",
   username: "mod",
   nickname: null,
-  accountStatus: AccountStatus.ACTIVE
+  accountStatus: AccountStatus.ACTIVE,
+  roles: [{ name: "Moderator", permissions: [] }]
 };
 
 const ADMIN_TOKENS = {
@@ -33,8 +35,8 @@ const ADMIN_TOKENS = {
 
 type AuthServiceMock = {
   validateUser: jest.Mock;
-  generateAdminTokens: jest.Mock;
-  refreshAdminTokens: jest.Mock;
+  login: jest.Mock;
+  refreshToken: jest.Mock;
   revokeRefreshToken: jest.Mock;
 };
 
@@ -68,16 +70,16 @@ function cookieCall(
   return call ? { value: call[1], options: call[2] } : undefined;
 }
 
-describe("AdminAuthController", () => {
-  let controller: AdminAuthController;
+describe("AuthSessionService", () => {
+  let controller: AuthSessionService;
   let authService: AuthServiceMock;
   let userService: UserServiceMock;
 
   beforeEach(async () => {
     authService = {
       validateUser: jest.fn().mockResolvedValue(STAFF),
-      generateAdminTokens: jest.fn().mockResolvedValue(ADMIN_TOKENS),
-      refreshAdminTokens: jest.fn().mockResolvedValue(ADMIN_TOKENS),
+      login: jest.fn().mockResolvedValue(ADMIN_TOKENS),
+      refreshToken: jest.fn().mockResolvedValue(ADMIN_TOKENS),
       revokeRefreshToken: jest.fn().mockResolvedValue(undefined)
     };
     userService = {
@@ -86,7 +88,7 @@ describe("AdminAuthController", () => {
     };
 
     const module: TestingModule = await Test.createTestingModule({
-      controllers: [AdminAuthController],
+      controllers: [AuthSessionService],
       providers: [
         { provide: AuthService, useValue: authService },
         { provide: UserService, useValue: userService },
@@ -95,18 +97,18 @@ describe("AdminAuthController", () => {
           useValue: { get: jest.fn().mockReturnValue(undefined) }
         },
         Reflector,
-        AdminCookieJwtGuard
+        StaffSessionGuard
       ]
     })
-      .overrideGuard(AdminCookieJwtGuard)
+      .overrideGuard(StaffSessionGuard)
       .useValue({ canActivate: (): boolean => true })
       .compile();
 
-    controller = module.get<AdminAuthController>(AdminAuthController);
+    controller = module.get<AuthSessionService>(AuthSessionService);
   });
 
-  const credentials = (): AdminLoginDto =>
-    ({ email: STAFF.email, password: "pw" }) as AdminLoginDto;
+  const credentials = (): LoginDto =>
+    ({ email: STAFF.email, password: "pw" }) as LoginDto;
 
   describe("login", () => {
     it("returns the staff identity for a moderator", async () => {
@@ -118,18 +120,18 @@ describe("AdminAuthController", () => {
         username: STAFF.username,
         nickname: null,
         accountStatus: AccountStatus.ACTIVE,
-        roles: ["Moderator"]
+        roles: ["Moderator"],
+        permissions: permissionsFor(STAFF.roles)
       });
     });
 
     it("rejects a user with no staff role", async () => {
-      userService.getUserRoles.mockResolvedValue(["User"]);
+      userService.findOne.mockResolvedValue({ ...STAFF, roles: [] });
       const res = makeResponse();
 
       await expect(controller.login(credentials(), res)).rejects.toThrow(
         ForbiddenException
       );
-      expect(authService.generateAdminTokens).not.toHaveBeenCalled();
       expect(res.cookie).not.toHaveBeenCalled();
     });
 
@@ -146,7 +148,7 @@ describe("AdminAuthController", () => {
       // Scoped to the refresh endpoint so it is not sent on every admin request.
       expect(cookieCall(res, REFRESH_COOKIE)?.options).toMatchObject({
         httpOnly: true,
-        path: "/admin/auth",
+        path: "/auth",
         maxAge: ADMIN_TOKENS.refresh_token_max_age_ms
       });
     });
@@ -162,7 +164,7 @@ describe("AdminAuthController", () => {
     });
 
     it("derives the cookie max-ages from the issued tokens", async () => {
-      authService.generateAdminTokens.mockResolvedValue({
+      authService.login.mockResolvedValue({
         ...ADMIN_TOKENS,
         access_token_max_age_ms: 111,
         refresh_token_max_age_ms: 222
@@ -184,7 +186,7 @@ describe("AdminAuthController", () => {
 
       await controller.refresh(makeRequest({ [REFRESH_COOKIE]: "old" }), res);
 
-      expect(authService.refreshAdminTokens).toHaveBeenCalledWith("old");
+      expect(authService.refreshToken).toHaveBeenCalledWith("old", "admin");
       expect(cookieCall(res, ACCESS_COOKIE)?.value).toBe("access");
       expect(cookieCall(res, REFRESH_COOKIE)?.value).toBe("refresh");
     });
@@ -201,11 +203,11 @@ describe("AdminAuthController", () => {
       await expect(
         controller.refresh(makeRequest(), makeResponse())
       ).rejects.toThrow(UnauthorizedException);
-      expect(authService.refreshAdminTokens).not.toHaveBeenCalled();
+      expect(authService.refreshToken).not.toHaveBeenCalled();
     });
 
     it("clears the cookies when staff access was revoked mid-session", async () => {
-      userService.getUserRoles.mockResolvedValue(["User"]);
+      userService.findOne.mockResolvedValue({ ...STAFF, roles: [] });
       const res = makeResponse();
 
       await expect(
@@ -255,7 +257,7 @@ describe("AdminAuthController", () => {
     });
 
     it("rejects a user whose staff role was revoked", async () => {
-      userService.getUserRoles.mockResolvedValue([]);
+      userService.findOne.mockResolvedValue({ ...STAFF, roles: [] });
       const req = { user: STAFF } as unknown as RequestWithUser;
 
       await expect(controller.me(req)).rejects.toThrow(ForbiddenException);

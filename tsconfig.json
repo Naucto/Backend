@@ -33,6 +33,9 @@
     "paths": {
         "src/*": ["./*"],
         "@util/*": ["util/*"],
+        "@admin/*": ["admin/*"],
+        "@moderation/*": ["moderation/*"],
+        "@analytics/*": ["analytics/*"],
         "@ourPrisma/*": ["prisma/*"],
         "@auth/*": ["auth/*"],
         "@project/*": ["routes/project/*"],

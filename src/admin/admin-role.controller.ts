@@ -1,3 +1,4 @@
+import { Permission } from "@auth/permissions";
 import {
   Body,
   Controller,
@@ -11,10 +12,10 @@ import {
   Post,
   UseGuards
 } from "@nestjs/common";
-import { ApiCookieAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import { Roles } from "@auth/decorators/roles.decorator";
-import { RolesGuard } from "@auth/guards/roles.guard";
-import { AdminCookieJwtGuard } from "./guards/admin-cookie-jwt.guard";
+import { ApiCookieAuth, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
+import { Permissions } from "@auth/decorators/permissions.decorator";
+import { PermissionsGuard } from "@auth/guards/permissions.guard";
+import { StaffSessionGuard } from "@auth/guards/staff-session.guard";
 import { AdminActor } from "./decorators/admin-actor.decorator";
 import { AdminRoleService } from "./admin-role.service";
 import {
@@ -26,19 +27,21 @@ import {
 
 @ApiTags("admin-roles")
 @ApiCookieAuth("AdminCookie")
-@UseGuards(AdminCookieJwtGuard, RolesGuard)
-@Roles("Admin")
+@UseGuards(StaffSessionGuard, PermissionsGuard)
+@Permissions(Permission.MANAGE_ROLES)
 @Controller("admin/roles")
 export class AdminRoleController {
   constructor(private readonly adminRoleService: AdminRoleService) {}
 
   @Get()
+  @ApiResponse({ status: 200, type: [AdminRoleResponseDto] })
   @ApiOperation({ summary: "List roles with user counts" })
   async list(): Promise<AdminRoleResponseDto[]> {
     return this.adminRoleService.list();
   }
 
   @Post()
+  @ApiResponse({ status: 201, type: AdminRoleResponseDto })
   @ApiOperation({ summary: "Create a new role" })
   async create(
     @Body() dto: CreateRoleDto,
@@ -48,7 +51,8 @@ export class AdminRoleController {
   }
 
   @Patch(":id")
-  @ApiOperation({ summary: "Rename a non-canonical role" })
+  @ApiResponse({ status: 200, type: AdminRoleResponseDto })
+  @ApiOperation({ summary: "Update a custom role name and permissions" })
   async rename(
     @Param("id", ParseIntPipe) id: number,
     @Body() dto: UpdateRoleDto,

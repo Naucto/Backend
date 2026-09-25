@@ -1,6 +1,8 @@
+import { UserWithDetailsDto } from "@user/dto/user-with-details.dto";
+import { stripPassword } from "@auth/auth.utils";
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "@ourPrisma/prisma.service";
-import { AuditService } from "src/moderation/audit";
+import { AuditService } from "@moderation/audit";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
 import { User, Prisma } from "@prisma/client";
@@ -112,18 +114,7 @@ export class UserService {
     return user.roles.map((role) => role.name);
   }
 
-  /**
-   * A user with the fields moderation needs: roles, and the counts the staff
-   * detail view shows. Same resource as {@link findOne}, just the staff view of
-   * it -- which is why it is here rather than behind a parallel admin service.
-   */
-  async findOneForModeration(id: number): Promise<User & {
-    roles: { name: string }[];
-    projectsCreatedCount: number;
-    commentsCount: number;
-    reportsFiledCount: number;
-    moderationActionsTakenCount: number;
-  }> {
+  async findOneWithDetails(id: number): Promise<UserWithDetailsDto> {
     const user = await this.prisma.user.findUnique({
       where: { id },
       include: { roles: true }
@@ -142,7 +133,7 @@ export class UserService {
       ]);
 
     return {
-      ...user,
+      ...stripPassword(user),
       projectsCreatedCount: projectsCreated,
       commentsCount: comments,
       reportsFiledCount: reportsFiled,

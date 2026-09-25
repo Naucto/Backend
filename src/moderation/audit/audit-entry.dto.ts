@@ -1,6 +1,6 @@
 import { ApiProperty } from "@nestjs/swagger";
 import { ModerationActionType, ModerationTargetType } from "@prisma/client";
-import { PaginatedMetaDto } from "src/admin/dto/admin-pagination.dto";
+import { PaginatedMetaDto } from "@common/dto/pagination.dto";
 import { AuditEntry } from "./audit.service";
 
 export class AuditEntryDto {

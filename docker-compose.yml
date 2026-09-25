@@ -18,13 +18,10 @@ services:
     env_file:
       - .env
     volumes:
-      # PGDATA itself -- mounting its parent persists nothing.
       - db-data:/var/lib/postgresql/data
     ports:
-      # Loopback only: never expose Postgres on a public interface.
       - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
     healthcheck:
-      # $$ defers expansion to the container, which has the env_file values.
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
       timeout: 5s
@@ -62,7 +59,6 @@ services:
       - .env
     environment:
       <<: *db-env
-      # The container always listens on 3000; BACKEND_PORT picks the host port.
       PORT: "3000"
     ports:
       - "${BACKEND_PORT:-3000}:3000"

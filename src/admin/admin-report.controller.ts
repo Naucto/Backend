@@ -1,3 +1,4 @@
+import { Permission } from "@auth/permissions";
 import {
   Body,
   Controller,
@@ -13,9 +14,9 @@ import {
 } from "@nestjs/common";
 import { ReportStatus } from "@prisma/client";
 import { ApiCookieAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import { Roles } from "@auth/decorators/roles.decorator";
-import { RolesGuard } from "@auth/guards/roles.guard";
-import { AdminCookieJwtGuard } from "./guards/admin-cookie-jwt.guard";
+import { Permissions } from "@auth/decorators/permissions.decorator";
+import { PermissionsGuard } from "@auth/guards/permissions.guard";
+import { StaffSessionGuard } from "@auth/guards/staff-session.guard";
 import { AdminActor } from "./decorators/admin-actor.decorator";
 import { AdminReportService } from "./admin-report.service";
 import { AdminReportFilterDto } from "./dto/reports/admin-report-filter.dto";
@@ -27,8 +28,8 @@ import {
 
 @ApiTags("admin-reports")
 @ApiCookieAuth("AdminCookie")
-@UseGuards(AdminCookieJwtGuard, RolesGuard)
-@Roles("Admin", "Moderator")
+@UseGuards(StaffSessionGuard, PermissionsGuard)
+@Permissions(Permission.MANAGE_REPORTS)
 @Controller("admin/reports")
 export class AdminReportController {
   constructor(private readonly adminReportService: AdminReportService) {}

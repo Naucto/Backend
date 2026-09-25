@@ -1,3 +1,4 @@
+import { PaginationDto } from "@common/dto/pagination.dto";
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { Transform, Type } from "class-transformer";
 import {
@@ -5,30 +6,13 @@ import {
   IsIn,
   IsInt,
   IsOptional,
-  Max,
-  Min
 } from "class-validator";
 
 const asBoolean = ({ value }: { value: unknown }): unknown =>
   value === "true" ? true : value === "false" ? false : value;
 
 /** Cross-project comment query. The moderation filters are staff-only. */
-export class CommentFilterDto {
-  @ApiPropertyOptional({ default: 1, minimum: 1 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page?: number;
-
-  @ApiPropertyOptional({ default: 25, minimum: 1, maximum: 100 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  limit?: number;
-
+export class CommentFilterDto extends PaginationDto {
   @ApiPropertyOptional({ description: "Only comments on this project" })
   @IsOptional()
   @Type(() => Number)
@@ -56,10 +40,6 @@ export class CommentFilterDto {
   @ApiPropertyOptional({ enum: ["id", "createdAt"] })
   @IsOptional()
   @IsIn(["id", "createdAt"])
-  sortBy?: string;
+  override sortBy?: string;
 
-  @ApiPropertyOptional({ enum: ["asc", "desc"], default: "desc" })
-  @IsOptional()
-  @IsIn(["asc", "desc"])
-  order?: "asc" | "desc";
 }

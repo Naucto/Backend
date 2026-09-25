@@ -1,70 +1,51 @@
-import { RoleDto } from "@auth/dto/role.dto";
+import { Permission, permissionsFor, RoleWithPermissions } from "@auth/permissions";
 
-export const ROLE_ADMIN = "Admin";
-export const ROLE_MODERATOR = "Moderator";
+export { ROLE_ADMIN, ROLE_MODERATOR } from "@auth/permissions";
 
-/** What a caller may do to a resource they do not own. */
-export type ModerationPower = "edit" | "delete" | "hide";
+type OwnedResource = { authorId?: number | null; userId?: number | null };
 
-/**
- * The authenticated caller, with their roles resolved.
- *
- * Exists so authorisation can be asked as a question inside a service
- * (`actor.canModerate()`) as well as declared on a controller (`@Roles`).
- * Without it, "may this caller touch someone else's comment?" has to be
- * re-derived from raw role strings at every call site.
- */
 export class Actor {
+  readonly permissions: readonly Permission[];
+
   constructor(
     readonly id: number,
-    readonly roles: readonly string[]
-  ) {}
-
-  static from(user: {
-    id: number;
-    roles?: RoleDto[] | { name: string }[] | undefined;
-  }): Actor {
-    return new Actor(user.id, (user.roles ?? []).map((role) => role.name));
+    readonly roles: readonly string[],
+    permissions: readonly Permission[] = permissionsFor(roles.map((name) => ({ name })))
+  ) {
+    this.permissions = permissions;
   }
 
-  get isAdmin(): boolean {
-    return this.roles.includes(ROLE_ADMIN);
+  static from(user: { id: number; roles?: readonly RoleWithPermissions[] | undefined }): Actor {
+    const roles = user.roles ?? [];
+    return new Actor(user.id, roles.map((role) => role.name), permissionsFor(roles));
   }
 
-  /** Admin implies moderator: an admin can do everything a moderator can. */
-  get isModerator(): boolean {
-    return this.isAdmin || this.roles.includes(ROLE_MODERATOR);
+  can(permission: Permission): boolean {
+    return this.permissions.includes(permission);
+  }
+
+  canAny(...permissions: Permission[]): boolean {
+    return permissions.some((permission) => this.can(permission));
   }
 
   get isStaff(): boolean {
-    return this.isModerator;
+    return this.permissions.length > 0;
   }
 
-  owns(resource: { authorId?: number | null; userId?: number | null }): boolean {
-    const ownerId = resource.authorId ?? resource.userId ?? null;
-
-    return ownerId !== null && ownerId === this.id;
+  get rank(): number {
+    if (this.can(Permission.MANAGE_ROLES) || this.can(Permission.MANAGE_USERS)) return 2;
+    return this.isStaff ? 1 : 0;
   }
 
-  /**
-   * Whether this actor may act on a resource they do not necessarily own.
-   *
-   * This is the whole point of the role system: a moderator edits or removes
-   * someone else's content through the ordinary route, rather than through a
-   * parallel set of admin endpoints.
-   */
-  canActOn(resource: {
-    authorId?: number | null;
-    userId?: number | null;
-  }): boolean {
-    return this.owns(resource) || this.isModerator;
+  owns(resource: OwnedResource): boolean {
+    return (resource.authorId ?? resource.userId) === this.id;
   }
 
-  /** True when the actor is acting on content that is not theirs. */
-  actsAsModeratorOn(resource: {
-    authorId?: number | null;
-    userId?: number | null;
-  }): boolean {
-    return !this.owns(resource) && this.isModerator;
+  canActOn(resource: OwnedResource): boolean {
+    return this.owns(resource) || this.can(Permission.MODERATE_CONTENT);
+  }
+
+  actsAsModeratorOn(resource: OwnedResource): boolean {
+    return !this.owns(resource) && this.can(Permission.MODERATE_CONTENT);
   }
 }

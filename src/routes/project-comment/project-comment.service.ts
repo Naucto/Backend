@@ -1,3 +1,5 @@
+import { Permission } from "@auth/permissions";
+import { buildMeta, buildOrderBy, resolvePage } from "@common/pagination.util";
 import {
   ForbiddenException,
   Injectable,
@@ -19,7 +21,7 @@ import {
   CommentResponseDto,
   PaginatedCommentsResponseDto
 } from "./dto/comment-response.dto";
-import { AnalyticsService } from "src/analytics/analytics.service";
+import { AnalyticsService } from "@analytics/analytics.service";
 import { Actor } from "@auth/actor";
 import { CommentFilterDto } from "./dto/comment-filter.dto";
 import { ModeratedCommentFieldsDto } from "./dto/comment-response.dto";
@@ -30,7 +32,7 @@ export type CommentListMeta = {
   total: number;
   totalPages: number;
 };
-import { AuditService, commentRef } from "src/moderation/audit";
+import { AuditService, commentRef } from "@moderation/audit";
 
 const AUTHOR_SELECT = {
   id: true,
@@ -249,7 +251,7 @@ export class ProjectCommentService {
   ): Promise<CommentResponseDto & ModeratedCommentFieldsDto> {
     const { content, hidden, moderationReason: reason } = patch;
 
-    if (hidden !== undefined && !actor.isModerator) {
+    if (hidden !== undefined && !actor.can(Permission.MODERATE_CONTENT)) {
       throw new ForbiddenException(
         "Only a moderator can change a comment's visibility"
       );
@@ -269,7 +271,7 @@ export class ProjectCommentService {
     }
     // A hidden comment is under moderation: its author cannot rewrite it, but a
     // moderator still can (that is how an offending line gets redacted).
-    if (comment.hidden && !actor.isModerator) {
+    if (comment.hidden && !actor.can(Permission.MODERATE_CONTENT)) {
       throw new ForbiddenException("Cannot edit a hidden comment");
     }
 
@@ -313,16 +315,16 @@ export class ProjectCommentService {
 
     // A moderator gets the staff shape back, so the response to a hide/restore
     // carries the field that changed. The author gets the public shape.
-    return actor.isModerator
+    return actor.can(Permission.MODERATE_CONTENT)
       ? this.mapModeratedComment(updated)
       : this.mapComment(updated);
   }
 
-  async findOneForModeration(
+  async findOne(
     id: number,
     actor: Actor
   ): Promise<CommentResponseDto & ModeratedCommentFieldsDto> {
-    if (!actor.isModerator) {
+    if (!actor.can(Permission.MODERATE_CONTENT)) {
       throw new ForbiddenException("Staff access required");
     }
 
@@ -341,25 +343,18 @@ export class ProjectCommentService {
     return this.mapModeratedComment(comment);
   }
 
-  /**
-   * Cross-project comment query for moderation.
-   *
-   * A query capability on the comment resource, not a second comment API: the
-   * moderation-only filters are simply refused for a non-moderator.
-   */
-  async findAllForModeration(
+  async findAll(
     filter: CommentFilterDto,
     actor: Actor
   ): Promise<{
     data: Array<CommentResponseDto & ModeratedCommentFieldsDto>;
     meta: CommentListMeta;
   }> {
-    if (!actor.isModerator) {
+    if (!actor.can(Permission.MODERATE_CONTENT)) {
       throw new ForbiddenException("Staff access required");
     }
 
-    const page = filter.page ?? 1;
-    const limit = filter.limit ?? 25;
+    const page = resolvePage(filter);
 
     const where: Prisma.CommentWhereInput = {};
     if (filter.projectId !== undefined) where.projectId = filter.projectId;
@@ -370,9 +365,11 @@ export class ProjectCommentService {
     const [comments, total] = await Promise.all([
       this.prisma.comment.findMany({
         where,
-        skip: (page - 1) * limit,
-        take: limit,
-        orderBy: { [filter.sortBy ?? "createdAt"]: filter.order ?? "desc" },
+        skip: page.skip,
+        take: page.take,
+        orderBy: buildOrderBy<Prisma.CommentOrderByWithRelationInput>(
+          filter, ["id", "createdAt"], "createdAt"
+        ),
         include: {
           author: { select: AUTHOR_SELECT },
           project: { select: { name: true, publishedName: true } }
@@ -383,12 +380,7 @@ export class ProjectCommentService {
 
     return {
       data: comments.map((comment) => this.mapModeratedComment(comment)),
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.max(1, Math.ceil(total / limit))
-      }
+      meta: buildMeta(total, page)
     };
   }
 

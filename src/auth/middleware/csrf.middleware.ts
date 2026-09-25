@@ -13,13 +13,13 @@ const CSRF_COOKIE = "naucto_admin_csrf";
 const CSRF_HEADER = "x-csrf-token";
 
 const CSRF_BYPASS_PATHS = new Set<string>([
-  "/admin/auth/login",
-  "/admin/auth/refresh"
+  "/auth/login",
+  "/auth/refresh"
 ]);
 
 @Injectable()
-export class AdminCsrfMiddleware implements NestMiddleware {
-  private readonly logger = new Logger(AdminCsrfMiddleware.name);
+export class CookieCsrfMiddleware implements NestMiddleware {
+  private readonly logger = new Logger(CookieCsrfMiddleware.name);
   private readonly allowedOrigins: Set<string>;
 
   constructor(@Inject(ConfigService) configService: ConfigService) {
@@ -37,10 +37,18 @@ export class AdminCsrfMiddleware implements NestMiddleware {
       return;
     }
 
-    const path = req.path ?? req.originalUrl ?? "";
-    const isBypass = Array.from(CSRF_BYPASS_PATHS).some((bypass) =>
-      path.endsWith(bypass)
-    );
+    const path = req.path;
+    if (path.startsWith("/auth/") && path !== "/auth/password" && req.query["scope"] !== "admin") {
+      next();
+      return;
+    }
+    const usesCookieSession = !req.headers.authorization && Boolean(req.cookies?.["naucto_admin_access"]);
+    const isStaffAuth = path.startsWith("/auth/") && req.query["scope"] === "admin";
+    if (!path.startsWith("/admin/") && !usesCookieSession && !isStaffAuth) {
+      next();
+      return;
+    }
+    const isBypass = CSRF_BYPASS_PATHS.has(path);
 
     const origin = req.headers["origin"];
     if (origin && !this.allowedOrigins.has(String(origin))) {

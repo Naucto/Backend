@@ -1,5 +1,11 @@
+import { AuthSessionService } from "@auth/auth-session.service";
+import { SessionQueryDto } from "@auth/dto/session-query.dto";
+import { SessionUserDto } from "@auth/dto/session-user.dto";
+import { StaffSessionGuard } from "@auth/guards/staff-session.guard";
 import {
   Controller,
+  Get,
+  Query,
   Post,
   Patch,
   Body,
@@ -22,6 +28,8 @@ import {
   ApiResponse,
   ApiTags,
   ApiBody,
+  ApiExtraModels,
+  getSchemaPath,
   ApiBearerAuth
 } from "@nestjs/swagger";
 import { Response, Request, CookieOptions } from "express";
@@ -33,11 +41,15 @@ import {
 } from "./refresh-cookie.crypto";
 
 @ApiTags("auth")
+@ApiExtraModels(SessionUserDto)
 @Controller("auth")
 export class AuthController {
   private readonly isProd = process.env["NODE_ENV"] === "production";
 
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly sessions: AuthSessionService
+  ) {}
 
   private getRefreshCookieOptions(): CookieOptions {
     return {
@@ -61,18 +73,20 @@ export class AuthController {
   @ApiResponse({
     status: 201,
     description: "User logged in successfully",
-    schema: {
+    schema: { oneOf: [{
       type: "object",
       properties: { access_token: { type: "string", example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." } },
       required: ["access_token"]
-    }
+    }, { $ref: getSchemaPath(SessionUserDto) }] }
   })
   @ApiResponse({ status: 400, description: "Bad request" })
   @ApiResponse({ status: 401, description: "Invalid credentials" })
   async login(
     @Body() loginDto: LoginDto,
-    @Res({ passthrough: true }) res: Response
-  ): Promise<{ access_token: string }> {
+    @Res({ passthrough: true }) res: Response,
+    @Query() query: SessionQueryDto = {}
+  ): Promise<{ access_token: string } | SessionUserDto> {
+    if (query.scope === "admin") return this.sessions.login(loginDto, res);
     const { access_token, refresh_token } = await this.authService.login(
       loginDto.email,
       loginDto.password
@@ -199,17 +213,19 @@ export class AuthController {
   @ApiResponse({
     status: 201,
     description: "Access token refreshed successfully",
-    schema: {
+    schema: { oneOf: [{
       type: "object",
       properties: { access_token: { type: "string", example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." } },
       required: ["access_token"]
-    }
+    }, { $ref: getSchemaPath(SessionUserDto) }] }
   })
   @ApiResponse({ status: 401, description: "Refresh token missing or invalid" })
   async refresh(
     @Req() req: Request,
-    @Res({ passthrough: true }) res: Response
-  ): Promise<{ access_token: string }> {
+    @Res({ passthrough: true }) res: Response,
+    @Query() query: SessionQueryDto = {}
+  ): Promise<{ access_token: string } | SessionUserDto> {
+    if (query.scope === "admin") return this.sessions.refresh(req, res);
     const refresh_cookie = req.cookies["refresh_token"];
     if (!refresh_cookie)
       throw new UnauthorizedException("Refresh token missing");
@@ -256,6 +272,14 @@ export class AuthController {
     return { success: true };
   }
 
+  @Get("me")
+  @UseGuards(StaffSessionGuard)
+  @ApiResponse({ status: 200, type: SessionUserDto })
+  @ApiOperation({ summary: "Return the current staff session and permissions" })
+  async me(@Req() req: RequestWithUser): Promise<SessionUserDto> {
+    return this.sessions.me(req);
+  }
+
   @Post("logout")
   @ApiOperation({ summary: "Remove refresh token cookie" })
   @ApiResponse({
@@ -265,18 +289,20 @@ export class AuthController {
   })
   async logout(
     @Req() req: Request,
-    @Res({ passthrough: true }) res: Response
+    @Res({ passthrough: true }) res: Response,
+    @Query() query: SessionQueryDto = {}
   ): Promise<{ success: boolean }> {
+    if (query.scope === "admin") return this.sessions.logout(req, res);
     const refresh_cookie = req.cookies["refresh_token"];
     if (refresh_cookie) {
+      res.clearCookie("refresh_token", this.getRefreshCookieOptions());
       try {
         await this.authService.revokeRefreshToken(
           decryptRefreshToken(refresh_cookie)
         );
       } catch {
-        // Ignore unreadable refresh cookies; logout should still clear them.
+        return { success: true };
       }
-      res.clearCookie("refresh_token", this.getRefreshCookieOptions());
     }
     return { success: true };
   }

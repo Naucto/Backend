@@ -1,8 +1,13 @@
+import { Permission } from "@auth/permissions";
 import { ApiProperty } from "@nestjs/swagger";
 import { Expose, Type } from "class-transformer";
 import { AccountStatus } from "@prisma/client";
 
 export class UserRoleDto {
+  @ApiProperty({ enum: Permission, enumName: "Permission", isArray: true })
+  @Expose()
+  permissions!: string[];
+
   @ApiProperty({ description: "Role ID", example: 1 })
   @Expose()
   id!: number;

@@ -1,17 +1,10 @@
-import {
-  MiddlewareConsumer,
-  Module,
-  NestModule,
-  RequestMethod
-} from "@nestjs/common";
+import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { AuthModule } from "@auth/auth.module";
 import { UserModule } from "@user/user.module";
 import { PrismaModule } from "@ourPrisma/prisma.module";
-import { ModerationModule } from "src/moderation/moderation.module";
-import { AnalyticsModule } from "src/analytics/analytics.module";
-import { AdminCsrfMiddleware } from "./middleware/csrf.middleware";
-import { AdminAuthController } from "./admin-auth.controller";
+import { ModerationModule } from "@moderation/moderation.module";
+import { AnalyticsModule } from "@analytics/analytics.module";
 import { AdminInsightsController } from "./admin-insights.controller";
 import { AdminInsightsService } from "./admin-insights.service";
 import { AdminUserController } from "./admin-user.controller";
@@ -33,7 +26,6 @@ import { TargetLinkService } from "./services/target-link.service";
     AnalyticsModule
   ],
   controllers: [
-    AdminAuthController,
     AdminInsightsController,
     AdminUserController,
     AdminReportController,
@@ -48,10 +40,4 @@ import { TargetLinkService } from "./services/target-link.service";
     TargetLinkService
   ]
 })
-export class AdminModule implements NestModule {
-  configure(consumer: MiddlewareConsumer): void {
-    consumer
-      .apply(AdminCsrfMiddleware)
-      .forRoutes({ path: "admin/*", method: RequestMethod.ALL });
-  }
-}
+export class AdminModule {}

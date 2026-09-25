@@ -1,3 +1,4 @@
+import { Permission } from "@auth/permissions";
 import {
   Controller,
   Get,
@@ -8,12 +9,12 @@ import {
   UseGuards
 } from "@nestjs/common";
 import { ApiCookieAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import { Roles } from "@auth/decorators/roles.decorator";
-import { RolesGuard } from "@auth/guards/roles.guard";
-import { AdminCookieJwtGuard } from "./guards/admin-cookie-jwt.guard";
-import { buildMeta, resolvePage } from "./admin-pagination.util";
+import { Permissions } from "@auth/decorators/permissions.decorator";
+import { PermissionsGuard } from "@auth/guards/permissions.guard";
+import { StaffSessionGuard } from "@auth/guards/staff-session.guard";
+import { buildMeta, resolvePage } from "@common/pagination.util";
 import { TargetLinkService } from "./services/target-link.service";
-import { AuditEntry, AuditService } from "src/moderation/audit";
+import { AuditEntry, AuditService } from "@moderation/audit";
 import { ModerationLogFilterDto } from "./dto/moderation-log/moderation-log-filter.dto";
 import {
   ModerationLogDetailDto,
@@ -23,8 +24,8 @@ import {
 
 @ApiTags("admin-moderation-log")
 @ApiCookieAuth("AdminCookie")
-@UseGuards(AdminCookieJwtGuard, RolesGuard)
-@Roles("Admin", "Moderator")
+@UseGuards(StaffSessionGuard, PermissionsGuard)
+@Permissions(Permission.VIEW_AUDIT)
 @Controller("admin/moderation-log")
 export class AdminModerationLogController {
   constructor(

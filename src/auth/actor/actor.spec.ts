@@ -1,22 +1,38 @@
+import { Permission } from "@auth/permissions";
 import { Actor } from "./actor";
 
 const user = (roles: string[]): Actor => new Actor(1, roles);
 
 describe("Actor", () => {
   describe("role interrogation", () => {
+    it("combines custom role permissions without granting unrelated access", () => {
+      const actor = Actor.from({ id: 7, roles: [
+        { name: "Content reviewer", permissions: [Permission.MODERATE_CONTENT] },
+        { name: "Auditor", permissions: [Permission.VIEW_AUDIT] }
+      ] });
+      expect(actor.can(Permission.MODERATE_CONTENT)).toBe(true);
+      expect(actor.can(Permission.VIEW_AUDIT)).toBe(true);
+      expect(actor.can(Permission.MANAGE_ROLES)).toBe(false);
+      expect(actor.can(Permission.MODERATE_USERS)).toBe(false);
+    });
+
+    it("does not grant access to arbitrary names or unknown permissions", () => {
+      expect(Actor.from({ id: 7, roles: [{ name: "constructor", permissions: ["ROOT"] }] }).isStaff).toBe(false);
+    });
+
     it("treats an admin as a moderator", () => {
       // Admin implies moderator, so no call site has to list both roles.
-      expect(user(["Admin"]).isModerator).toBe(true);
-      expect(user(["Admin"]).isAdmin).toBe(true);
+      expect(user(["Admin"]).can(Permission.MODERATE_CONTENT)).toBe(true);
+      expect(user(["Admin"]).can(Permission.MANAGE_ROLES)).toBe(true);
     });
 
     it("does not treat a moderator as an admin", () => {
-      expect(user(["Moderator"]).isModerator).toBe(true);
-      expect(user(["Moderator"]).isAdmin).toBe(false);
+      expect(user(["Moderator"]).can(Permission.MODERATE_CONTENT)).toBe(true);
+      expect(user(["Moderator"]).can(Permission.MANAGE_ROLES)).toBe(false);
     });
 
     it("treats a plain user as neither", () => {
-      expect(user([]).isModerator).toBe(false);
+      expect(user([]).can(Permission.MODERATE_CONTENT)).toBe(false);
       expect(user(["User"]).isStaff).toBe(false);
     });
 
@@ -24,11 +40,11 @@ describe("Actor", () => {
       const actor = Actor.from({ id: 7, roles: [{ name: "Moderator" }] });
 
       expect(actor.id).toBe(7);
-      expect(actor.isModerator).toBe(true);
+      expect(actor.can(Permission.MODERATE_CONTENT)).toBe(true);
     });
 
     it("builds from a user record with no roles loaded", () => {
-      expect(Actor.from({ id: 7 }).isModerator).toBe(false);
+      expect(Actor.from({ id: 7 }).can(Permission.MODERATE_CONTENT)).toBe(false);
     });
   });
 

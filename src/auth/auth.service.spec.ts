@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Test, TestingModule } from "@nestjs/testing";
 import { AuthService } from "./auth.service";
 import { UserService } from "@user/user.service";
@@ -96,8 +97,9 @@ describe("AuthService", () => {
     });
 
   const userService: jest.Mocked<
-    Pick<UserService, "findByEmail" | "findAll" | "create" | "createOAuthUser">
+    Pick<UserService, "findOne" | "findByEmail" | "findAll" | "create" | "createOAuthUser">
   > = {
+    findOne: jest.fn(),
     findByEmail: jest.fn(),
     findAll: jest.fn(),
     create: jest.fn(),
@@ -135,6 +137,8 @@ describe("AuthService", () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    userService.findOne.mockResolvedValue({ id: 7, email: "a@b.c", accountStatus: "ACTIVE", roles: [{ name: "Admin", permissions: [] }] } as never);
+    userService.findByEmail.mockResolvedValue({ id: 7, email: "a@b.c", accountStatus: "ACTIVE", password: "hashed" } as User);
     (jwtService.sign as jest.Mock).mockReturnValue("token123");
     (jwtService.decode as jest.Mock).mockReturnValue({
       sub: 1,
@@ -213,12 +217,12 @@ describe("AuthService", () => {
       jest.spyOn(authService, "validateUser").mockResolvedValue(mockUser);
 
       const result = await authService.login("test@example.com", "password");
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         access_token: "token123",
         refresh_token: "token123"
       });
       expect(jwtService.sign).toHaveBeenCalledWith(
-        { sub: mockUser.id, email: mockUser.email, scope: "user" },
+        { sub: mockUser.id, email: mockUser.email, scope: "user", tokenUse: "access" },
         expect.any(Object)
       );
     });
@@ -370,7 +374,7 @@ describe("AuthService", () => {
         googleUser.email,
         "Google_User"
       );
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         access_token: "google-token-abc",
         refresh_token: "google-token-abc"
       });
@@ -410,7 +414,7 @@ describe("AuthService", () => {
         "google-verifier"
       );
       expect(userService.create).not.toHaveBeenCalled();
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         access_token: "existing-token-xyz",
         refresh_token: "existing-token-xyz"
       });
@@ -499,7 +503,7 @@ describe("AuthService", () => {
       const svc = await buildModule(prisma);
 
       const result = await svc.refreshToken("valid-token");
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         access_token: "new-access-token",
         refresh_token: "new-access-token"
       });
@@ -517,7 +521,7 @@ describe("AuthService", () => {
       await svc.generateTokens({ sub: 7, email: "a@b.c" }, 7);
 
       expect(jwtService.sign).toHaveBeenCalledWith(
-        { sub: 7, email: "a@b.c", scope: "user" },
+        { sub: 7, email: "a@b.c", scope: "user", tokenUse: "access" },
         expect.any(Object)
       );
     });
@@ -526,10 +530,10 @@ describe("AuthService", () => {
       (jwtService.sign as jest.Mock).mockReturnValue("signed");
       const svc = await buildModule();
 
-      await svc.generateAdminTokens({ sub: 7, email: "a@b.c" }, 7);
+      await svc.login("a@b.c", "password", "admin");
 
       expect(jwtService.sign).toHaveBeenCalledWith(
-        { sub: 7, email: "a@b.c", scope: "admin" },
+        { sub: 7, email: "a@b.c", scope: "admin", tokenUse: "access" },
         expect.any(Object)
       );
     });
@@ -540,11 +544,11 @@ describe("AuthService", () => {
       const prisma = makePrisma();
       const svc = await buildModule(prisma);
 
-      await svc.generateAdminTokens({ sub: 7, email: "a@b.c" }, 7);
+      await svc.login("a@b.c", "password", "admin");
 
       // Stored plaintext would never match the bcrypt.compare in rotation,
       // which silently broke every admin refresh.
-      expect(bcrypt.hash).toHaveBeenCalledWith("admin-refresh", 10);
+      expect(bcrypt.hash).toHaveBeenCalledWith(createHash("sha256").update("admin-refresh").digest("hex"), 10);
       expect(prisma.refreshToken.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ token: "hashed_value", userId: 7 })
       });
@@ -554,10 +558,7 @@ describe("AuthService", () => {
       (jwtService.sign as jest.Mock).mockReturnValue("signed");
       const svc = await buildModule();
 
-      const tokens = await svc.generateAdminTokens(
-        { sub: 7, email: "a@b.c" },
-        7
-      );
+      const tokens = await svc.login("a@b.c", "password", "admin");
 
       expect(tokens.access_token_max_age_ms).toBe(30 * 60 * 1000);
       expect(tokens.refresh_token_max_age_ms).toBe(8 * 60 * 60 * 1000);
@@ -591,7 +592,7 @@ describe("AuthService", () => {
       });
       const svc = await buildModule(prisma);
 
-      await expect(svc.refreshAdminTokens("user-token")).rejects.toThrow(
+      await expect(svc.refreshToken("user-token", "admin")).rejects.toThrow(
         UnauthorizedException
       );
       // Rejected on the claim alone -- the DB is never consulted.
@@ -623,11 +624,11 @@ describe("AuthService", () => {
       });
       const svc = await buildModule(prisma);
 
-      await expect(svc.refreshToken("legacy-token")).resolves.toEqual({
+      await expect(svc.refreshToken("legacy-token")).resolves.toMatchObject({
         access_token: "new-token",
         refresh_token: "new-token"
       });
-      await expect(svc.refreshAdminTokens("legacy-token")).rejects.toThrow(
+      await expect(svc.refreshToken("legacy-token", "admin")).rejects.toThrow(
         UnauthorizedException
       );
     });
@@ -645,9 +646,9 @@ describe("AuthService", () => {
       });
       const svc = await buildModule(prisma);
 
-      const result = await svc.refreshAdminTokens("admin-refresh");
+      const result = await svc.refreshToken("admin-refresh", "admin");
 
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         access_token: "rotated",
         refresh_token: "rotated",
         access_token_max_age_ms: 30 * 60 * 1000,
@@ -655,7 +656,7 @@ describe("AuthService", () => {
         userId: 1
       });
       expect(jwtService.sign).toHaveBeenCalledWith(
-        { sub: 1, email: "staff@example.com", scope: "admin" },
+        { sub: 1, email: "staff@example.com", scope: "admin", tokenUse: "access" },
         expect.any(Object)
       );
     });

@@ -1,3 +1,4 @@
+import { Permission } from "@auth/permissions";
 import {
   BadRequestException,
   ForbiddenException,
@@ -16,7 +17,7 @@ import {
 } from "./dto/collaborator-project.dto";
 import { S3Service } from "@s3/s3.service";
 import { Actor } from "@auth/actor";
-import { AuditService, projectRef } from "src/moderation/audit";
+import { AuditService, projectRef } from "@moderation/audit";
 
 /**
  * Side effects a project going dark must trigger outside this module (ending
@@ -37,7 +38,7 @@ import {
 import { ConfigService } from "@nestjs/config";
 import { DownloadedFile } from "@s3/s3.interface";
 import { Readable } from "stream";
-import { AnalyticsService } from "src/analytics/analytics.service";
+import { AnalyticsService } from "@analytics/analytics.service";
 
 export const CREATOR_SELECT = {
   id: true,
@@ -507,7 +508,7 @@ export class ProjectService {
     const { hidden, moderationReason, ...patch } = updateProjectDto;
     const isModerationChange = hidden !== undefined;
 
-    if (isModerationChange && !actor.isModerator) {
+    if (isModerationChange && !actor.can(Permission.MODERATE_CONTENT)) {
       throw new ForbiddenException(
         "Only a moderator can change a project's visibility"
       );

@@ -22,13 +22,6 @@ import {
 } from "./dto/comment-response.dto";
 import { ProjectCommentService } from "./project-comment.service";
 
-/**
- * Cross-project comment queries.
- *
- * Lives on the comment resource rather than under `/admin` because it is the
- * same data as `/projects/:id/comments`, just not scoped to one project. The
- * service refuses the moderation filters for a non-moderator.
- */
 @ApiTags("comments")
 @ApiBearerAuth("JWT-auth")
 @Controller("comments")
@@ -44,7 +37,7 @@ export class CommentController {
     @Param("id", ParseIntPipe) id: number,
     @CurrentActor() actor: Actor
   ): Promise<CommentResponseDto & ModeratedCommentFieldsDto> {
-    return this.projectCommentService.findOneForModeration(id, actor);
+    return this.projectCommentService.findOne(id, actor);
   }
 
   @Get()
@@ -55,6 +48,6 @@ export class CommentController {
     @Query() filter: CommentFilterDto,
     @CurrentActor() actor: Actor
   ): Promise<CommentListResponseDto> {
-    return this.projectCommentService.findAllForModeration(filter, actor);
+    return this.projectCommentService.findAll(filter, actor);
   }
 }

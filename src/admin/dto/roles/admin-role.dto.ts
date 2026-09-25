@@ -1,6 +1,10 @@
+import { Permission } from "@auth/permissions";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import {
   IsNotEmpty,
+  IsArray,
+  IsEnum,
+  ArrayUnique,
   IsOptional,
   IsString,
   Length,
@@ -8,6 +12,14 @@ import {
 } from "class-validator";
 
 export class CreateRoleDto {
+
+  @ApiPropertyOptional({ enum: Permission, enumName: "Permission", isArray: true })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsEnum(Permission, { each: true })
+  permissions?: Permission[];
+
   @ApiProperty({ example: "Editor" })
   @IsString()
   @IsNotEmpty()
@@ -22,6 +34,14 @@ export class CreateRoleDto {
 }
 
 export class UpdateRoleDto {
+
+  @ApiPropertyOptional({ enum: Permission, enumName: "Permission", isArray: true })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsEnum(Permission, { each: true })
+  permissions?: Permission[];
+
   @ApiProperty({ example: "Senior Editor" })
   @IsString()
   @IsNotEmpty()
@@ -48,4 +68,6 @@ export class AdminRoleResponseDto {
   @ApiProperty() name!: string;
   @ApiProperty() userCount!: number;
   @ApiProperty() canonical!: boolean;
+  @ApiProperty({ enum: Permission, enumName: "Permission", isArray: true })
+  permissions!: Permission[];
 }

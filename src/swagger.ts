@@ -25,7 +25,7 @@ export function buildSwaggerDocument(app: INestApplication): OpenAPIObject {
         in: "cookie",
         name: "naucto_admin_access",
         description:
-          "Admin panel session — HTTP-only cookie set by /admin/auth/login"
+          "Admin panel session — HTTP-only cookie set by /auth/login?scope=admin"
       },
       "AdminCookie"
     )

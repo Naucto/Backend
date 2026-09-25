@@ -7,6 +7,8 @@ import {
 import { ModerationService } from "./moderation.service";
 import { AuditService } from "./audit";
 import { PrismaService } from "@ourPrisma/prisma.service";
+import { Actor } from "@auth/actor";
+import { Permission } from "@auth/permissions";
 
 type AnyFn = jest.Mock;
 
@@ -57,6 +59,25 @@ async function buildService(
 }
 
 describe("ModerationService", () => {
+  describe("custom account management", () => {
+    it("does not let account managers grant themselves roles", async () => {
+      const prisma = makePrismaMock();
+      const actor = Actor.from({ id: 7, roles: [{ name: "Support", permissions: [Permission.MANAGE_USERS] }] });
+      const service = await buildService(prisma);
+      await expect(service.updateUser(7, actor, { roles: ["Admin"] })).rejects.toThrow(ForbiddenException);
+      expect(prisma["user"]!["update"]).not.toHaveBeenCalled();
+    });
+
+    it("does not let an account manager reset an admin's password through the regular user route", async () => {
+      const prisma = makePrismaMock();
+      const roles = [{ name: "Support", permissions: [Permission.MANAGE_USERS] }];
+      prisma["user"]!["findUnique"]!.mockResolvedValueOnce({ roles }).mockResolvedValueOnce({ roles: [{ name: "Admin" }] });
+      const service = await buildService(prisma);
+      await expect(service.updateUser(1, Actor.from({ id: 7, roles }), { password: "replacement" })).rejects.toThrow(ForbiddenException);
+      expect(prisma["user"]!["update"]).not.toHaveBeenCalled();
+    });
+  });
+
   describe("setUserStatus", () => {
     it("updates account status and writes audit row", async () => {
       const prisma = makePrismaMock();

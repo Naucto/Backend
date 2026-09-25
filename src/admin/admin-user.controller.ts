@@ -1,5 +1,5 @@
+import { Permission } from "@auth/permissions";
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -17,11 +17,10 @@ import {
   ApiResponse,
   ApiTags
 } from "@nestjs/swagger";
-import { Roles } from "@auth/decorators/roles.decorator";
-import { RolesGuard } from "@auth/guards/roles.guard";
-import { AdminCookieJwtGuard } from "./guards/admin-cookie-jwt.guard";
+import { Permissions } from "@auth/decorators/permissions.decorator";
+import { PermissionsGuard } from "@auth/guards/permissions.guard";
+import { StaffSessionGuard } from "@auth/guards/staff-session.guard";
 import { AdminActor } from "./decorators/admin-actor.decorator";
-import { isStaffRole, STAFF_ROLES, StaffRole } from "./admin-roles";
 import { AdminUserService } from "./admin-user.service";
 import { CreateAdminUserDto } from "./dto/users/create-admin-user.dto";
 import { ResetPasswordDto } from "./dto/users/reset-password.dto";
@@ -32,14 +31,14 @@ import {
 
 @ApiTags("admin-users")
 @ApiCookieAuth("AdminCookie")
-@UseGuards(AdminCookieJwtGuard, RolesGuard)
-@Roles("Admin", "Moderator")
+@UseGuards(StaffSessionGuard, PermissionsGuard)
+@Permissions(Permission.MODERATE_USERS)
 @Controller("admin/users")
 export class AdminUserController {
   constructor(private readonly adminUserService: AdminUserService) {}
 
   @Post()
-  @Roles("Admin")
+  @Permissions(Permission.MANAGE_USERS, Permission.MANAGE_ROLES)
   @ApiOperation({ summary: "Create a new staff account" })
   async create(
     @Body() dto: CreateAdminUserDto,
@@ -100,10 +99,10 @@ export class AdminUserController {
   }
 
   @Post(":id/roles/:role")
-  @Roles("Admin")
+  @Permissions(Permission.MANAGE_ROLES)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Grant a staff role (Admin or Moderator)" })
-  @ApiParam({ name: "role", enum: STAFF_ROLES })
+  @ApiOperation({ summary: "Grant an existing role" })
+  @ApiParam({ name: "role", type: String })
   @ApiResponse({ status: HttpStatus.OK, type: AdminUserResponseDto })
   @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: "Unknown role" })
   async grantRole(
@@ -115,16 +114,16 @@ export class AdminUserController {
     return this.adminUserService.grantRole(
       id,
       actorId,
-      this.parseStaffRole(role),
+      role,
       body.reason
     );
   }
 
   @Delete(":id/roles/:role")
-  @Roles("Admin")
+  @Permissions(Permission.MANAGE_ROLES)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Revoke a staff role (Admin or Moderator)" })
-  @ApiParam({ name: "role", enum: STAFF_ROLES })
+  @ApiOperation({ summary: "Revoke an existing role" })
+  @ApiParam({ name: "role", type: String })
   @ApiResponse({ status: HttpStatus.OK, type: AdminUserResponseDto })
   @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: "Unknown role" })
   async revokeRole(
@@ -136,30 +135,13 @@ export class AdminUserController {
     return this.adminUserService.revokeRole(
       id,
       actorId,
-      this.parseStaffRole(role),
+      role,
       body.reason
     );
   }
 
-  /**
-   * Only staff roles can be granted through this route. Arbitrary role names go
-   * through `PATCH /admin/users/:id`, which replaces the whole set deliberately.
-   */
-  private parseStaffRole(role: string): StaffRole {
-    const normalized =
-      role.charAt(0).toUpperCase() + role.slice(1).toLowerCase();
-
-    if (!isStaffRole(normalized)) {
-      throw new BadRequestException(
-        `Unknown staff role "${role}". Expected one of: ${STAFF_ROLES.join(", ")}`
-      );
-    }
-
-    return normalized;
-  }
-
   @Post(":id/reset-password")
-  @Roles("Admin")
+  @Permissions(Permission.MANAGE_USERS)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Reset a user's password to a value chosen by an admin" })
   async resetPassword(

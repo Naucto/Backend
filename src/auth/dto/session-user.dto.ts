@@ -1,7 +1,8 @@
+import { Permission } from "@auth/permissions";
 import { ApiProperty } from "@nestjs/swagger";
 import { AccountStatus } from "@prisma/client";
 
-export class AdminMeDto {
+export class SessionUserDto {
   @ApiProperty({ example: 1 })
     id!: number;
 
@@ -19,4 +20,6 @@ export class AdminMeDto {
 
   @ApiProperty({ type: [String], example: ["Admin"] })
     roles!: string[];
+  @ApiProperty({ enum: Permission, enumName: "Permission", isArray: true })
+  permissions!: Permission[];
 }

@@ -7,9 +7,9 @@ import {
   IsInt,
   IsOptional
 } from "class-validator";
-import { AdminPaginationDto } from "../admin-pagination.dto";
+import { PaginationDto } from "@common/dto/pagination.dto";
 
-export class AdminReportFilterDto extends AdminPaginationDto {
+export class AdminReportFilterDto extends PaginationDto {
   @ApiPropertyOptional({ enum: ReportTargetType })
   @IsOptional()
   @IsEnum(ReportTargetType)

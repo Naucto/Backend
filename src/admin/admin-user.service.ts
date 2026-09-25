@@ -6,8 +6,8 @@ import {
 import * as bcrypt from "bcryptjs";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { UserService } from "@user/user.service";
-import { ModerationService } from "src/moderation/moderation.service";
-import { StaffRole } from "./admin-roles";
+import { ModerationService } from "@moderation/moderation.service";
+import { isStaffRole } from "./admin-roles";
 import { CreateAdminUserDto } from "./dto/users/create-admin-user.dto";
 import {
   AdminUserResponseDto
@@ -38,6 +38,8 @@ export class AdminUserService {
       throw new BadRequestException("Username already in use");
     }
 
+    for (const role of dto.roles) await this.ensureRoleSeeded(role);
+
     const created = await this.userService.create({
       email: dto.email,
       username: dto.username,
@@ -54,7 +56,7 @@ export class AdminUserService {
     await this.moderationService.recordStaffCreation(
       created.id,
       actorId,
-      withRoles,
+      withRoles ? { ...withRoles, password: null } : null,
       `Staff account created with roles: ${dto.roles.join(", ")}`
     );
 
@@ -85,7 +87,7 @@ export class AdminUserService {
   async grantRole(
     id: number,
     actorId: number,
-    role: StaffRole,
+    role: string,
     reason?: string
   ): Promise<AdminUserResponseDto> {
     const current = await this.getRoleNames(id);
@@ -108,7 +110,7 @@ export class AdminUserService {
   async revokeRole(
     id: number,
     actorId: number,
-    role: StaffRole,
+    role: string,
     reason?: string
   ): Promise<AdminUserResponseDto> {
     // Revoking your own Admin locks you out of every admin-only page. The last
@@ -197,11 +199,11 @@ export class AdminUserService {
   }
 
   private async ensureRoleSeeded(name: string): Promise<void> {
-    await this.prisma.role.upsert({
-      where: { name },
-      update: {},
-      create: { name }
-    });
+    if (isStaffRole(name)) {
+      await this.prisma.role.upsert({ where: { name }, update: {}, create: { name } });
+    } else if (!await this.prisma.role.findUnique({ where: { name } })) {
+      throw new BadRequestException(`Unknown role "${name}"`);
+    }
   }
 
   private toResponse(

@@ -1,3 +1,4 @@
+import { Permission } from "@auth/permissions";
 import {
   Injectable,
   CanActivate,
@@ -72,7 +73,7 @@ export class ProjectCollaboratorGuard implements CanActivate {
     const actor = Actor.from(user);
     const isCollaborator = project.collaborators.some((c) => c.id === actor.id);
 
-    if (!isCollaborator && !actor.isModerator) {
+    if (!isCollaborator && !actor.can(Permission.MODERATE_CONTENT)) {
       throw new ForbiddenException("No access to this project");
     }
 

@@ -45,6 +45,7 @@ model User {
 model Role {
   id   Int    @id @default(autoincrement())
   name String @unique
+  permissions String[] @default([])
 
   users User[] @relation("UserRoles")
 }

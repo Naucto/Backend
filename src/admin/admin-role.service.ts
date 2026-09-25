@@ -1,3 +1,4 @@
+import { permissionsFor } from "@auth/permissions";
 import {
   BadRequestException,
   ConflictException,
@@ -5,7 +6,7 @@ import {
   NotFoundException
 } from "@nestjs/common";
 import { PrismaService } from "@ourPrisma/prisma.service";
-import { ModerationService } from "src/moderation/moderation.service";
+import { ModerationService } from "@moderation/moderation.service";
 import {
   AdminRoleResponseDto,
   CreateRoleDto,
@@ -27,12 +28,7 @@ export class AdminRoleService {
       orderBy: { id: "asc" },
       include: { _count: { select: { users: true } } }
     });
-    return roles.map((role) => ({
-      id: role.id,
-      name: role.name,
-      userCount: role._count.users,
-      canonical: CANONICAL_ROLES.has(role.name)
-    }));
+    return roles.map((role) => this.toResponse(role));
   }
 
   async create(
@@ -50,19 +46,14 @@ export class AdminRoleService {
     if (existing) {
       throw new ConflictException(`Role '${dto.name}' already exists`);
     }
-    const created = await this.prisma.role.create({ data: { name: dto.name } });
+    const created = await this.prisma.role.create({ data: { name: dto.name, permissions: dto.permissions ?? [] } });
     await this.moderationService.recordRoleCreated(
       created.id,
       actorId,
       created,
       dto.reason
     );
-    return {
-      id: created.id,
-      name: created.name,
-      userCount: 0,
-      canonical: false
-    };
+    return this.toResponse({ ...created, _count: { users: 0 } });
   }
 
   async rename(
@@ -85,40 +76,26 @@ export class AdminRoleService {
         `Cannot rename a role to canonical name '${dto.name}'`
       );
     }
-    if (dto.name === before.name) {
-      return {
-        id: before.id,
-        name: before.name,
-        userCount: before._count.users,
-        canonical: false
-      };
-    }
-
     const conflict = await this.prisma.role.findUnique({
       where: { name: dto.name }
     });
-    if (conflict) {
+    if (conflict && conflict.id !== id) {
       throw new ConflictException(`Role '${dto.name}' already exists`);
     }
 
     const after = await this.prisma.role.update({
       where: { id },
-      data: { name: dto.name },
+      data: { name: dto.name, ...(dto.permissions !== undefined ? { permissions: dto.permissions } : {}) },
       include: { _count: { select: { users: true } } }
     });
     await this.moderationService.recordRoleRenamed(
       id,
       actorId,
-      { id: before.id, name: before.name },
-      { id: after.id, name: after.name },
+      { id: before.id, name: before.name, permissions: before.permissions },
+      { id: after.id, name: after.name, permissions: after.permissions },
       dto.reason
     );
-    return {
-      id: after.id,
-      name: after.name,
-      userCount: after._count.users,
-      canonical: false
-    };
+    return this.toResponse(after);
   }
 
   async remove(
@@ -150,4 +127,14 @@ export class AdminRoleService {
     await this.prisma.role.delete({ where: { id } });
     return { success: true };
   }
+  private toResponse(role: { id: number; name: string; permissions: string[]; _count: { users: number } }): AdminRoleResponseDto {
+    return {
+      id: role.id,
+      name: role.name,
+      permissions: permissionsFor([role]),
+      userCount: role._count.users,
+      canonical: CANONICAL_ROLES.has(role.name)
+    };
+  }
+
 }

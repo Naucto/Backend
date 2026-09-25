@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { Actor } from "@auth/actor";
 import {
   Injectable,
   ConflictException,
@@ -22,8 +24,8 @@ import { CreateUserDto } from "@user/dto/create-user.dto";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { ConfigService } from "@nestjs/config";
 import { parseExpiresIn, TimeSpan, timespanToMs } from "./auth.utils";
-import { AccountStatus, AnalyticsEventType } from "@prisma/client";
-import { AnalyticsService } from "src/analytics/analytics.service";
+import { AccountStatus, AnalyticsEventType, Prisma, Role } from "@prisma/client";
+import { AnalyticsService } from "@analytics/analytics.service";
 import { v4 as uuidv4 } from "uuid";
 
 const REFRESH_TOKEN_SALT_ROUNDS = 10;
@@ -85,7 +87,8 @@ export class AuthService {
   private async issueTokens(
     payload: JwtPayload,
     userId: number,
-    scope: TokenScope
+    scope: TokenScope,
+    db: Prisma.TransactionClient = this.prisma
   ): Promise<TokenBundle> {
     const ttl = this.getTokenTtls(scope);
     const scopedPayload: JwtPayload = {
@@ -94,16 +97,16 @@ export class AuthService {
       scope
     };
 
-    const access_token = this.jwtService.sign(scopedPayload, {
+    const access_token = this.jwtService.sign({ ...scopedPayload, tokenUse: "access" }, {
       expiresIn: ttl.access
     });
-    const refresh_token = this.jwtService.sign(scopedPayload, {
+    const refresh_token = this.jwtService.sign({ ...scopedPayload, tokenUse: "refresh", jti: uuidv4() }, {
       expiresIn: ttl.refresh
     });
 
-    await this.prisma.refreshToken.create({
+    await db.refreshToken.create({
       data: {
-        token: await bcrypt.hash(refresh_token, REFRESH_TOKEN_SALT_ROUNDS),
+        token: await bcrypt.hash(this.tokenDigest(refresh_token), REFRESH_TOKEN_SALT_ROUNDS),
         userId,
         expiresAt: new Date(Date.now() + timespanToMs(ttl.refresh))
       }
@@ -130,13 +133,6 @@ export class AuthService {
     return { access_token, refresh_token };
   }
 
-  async generateAdminTokens(
-    payload: JwtPayload,
-    userId: number
-  ): Promise<TokenBundle> {
-    return this.issueTokens(payload, userId, "admin");
-  }
-
   async validateUser(email: string, password: string): Promise<UserDto> {
     const user = await this.userService.findByEmail(email);
     if (!user) {
@@ -159,27 +155,23 @@ export class AuthService {
     return user;
   }
 
-  async login(email: string, password: string): Promise<AuthResponseDto> {
+  async login(
+    email: string,
+    password: string,
+    scope: TokenScope = "user"
+  ): Promise<TokenBundle & { userId: number }> {
     const user = await this.validateUser(email, password);
+    if (scope === "admin") await this.requireStaff(user.id);
+    const tokens = await this.issueTokens({ sub: user.id, email: user.email }, user.id, scope);
+    await this.analyticsService?.record(AnalyticsEventType.LOGIN, { userId: user.id });
+    return { ...tokens, userId: user.id };
+  }
 
-    return this.prisma.$transaction(async (tx) => {
-      await tx.refreshToken.deleteMany({ where: { userId: user.id } });
-
-      const payload: JwtPayload = { sub: user.id, email: user.email };
-      const { access_token, refresh_token } = await this.generateTokens(
-        payload,
-        user.id
-      );
-
-      await this.analyticsService?.record(AnalyticsEventType.LOGIN, {
-        userId: user.id
-      });
-
-      return {
-        access_token,
-        refresh_token
-      };
-    });
+  private async requireStaff(id: number): Promise<void> {
+    const user = await this.userService.findOne<{ roles: Role[] }>(id, { roles: true });
+    if (user.accountStatus !== AccountStatus.ACTIVE || !Actor.from(user).isStaff) {
+      throw new ForbiddenException("Active staff access required");
+    }
   }
 
   async register(createUserDto: CreateUserDto): Promise<AuthResponseDto> {
@@ -284,24 +276,11 @@ export class AuthService {
     return this.loginWithOAuth(email, name, "microsoft");
   }
 
-  async refreshToken(oldToken: string): Promise<AuthResponseDto> {
-    const { access_token, refresh_token } = await this.rotateTokens(
-      oldToken,
-      "user"
-    );
-
-    return { access_token, refresh_token };
-  }
-
-  /**
-   * Admin counterpart of {@link refreshToken}. Returns the rotated pair plus the
-   * user id, so the admin controller does not have to decode the JWT itself, and
-   * the cookie max-ages, so they cannot drift from the token TTLs.
-   */
-  async refreshAdminTokens(
-    oldToken: string
+  async refreshToken(
+    oldToken: string,
+    scope: TokenScope = "user"
   ): Promise<TokenBundle & { userId: number }> {
-    return this.rotateTokens(oldToken, "admin");
+    return this.rotateTokens(oldToken, scope);
   }
 
   private async rotateTokens(
@@ -325,7 +304,7 @@ export class AuthService {
 
     // Both scopes are signed with the same secret, so without this check an API
     // refresh token could be dropped into the admin cookie to mint admin tokens.
-    if ((payload.scope ?? "user") !== expectedScope) {
+    if ((payload.scope ?? "user") !== expectedScope || payload.tokenUse === "access") {
       throw new UnauthorizedException("Refresh token scope mismatch");
     }
 
@@ -336,7 +315,7 @@ export class AuthService {
 
     let storedToken = null;
     for (const tokenRecord of userTokens) {
-      if (await bcrypt.compare(oldToken, tokenRecord.token)) {
+      if (await bcrypt.compare(payload.tokenUse ? this.tokenDigest(oldToken) : oldToken, tokenRecord.token)) {
         storedToken = tokenRecord;
         break;
       }
@@ -352,19 +331,28 @@ export class AuthService {
     }
 
     const user = storedToken.user;
+    if (user.accountStatus === AccountStatus.BANNED) {
+      throw new UnauthorizedException("This account has been banned.");
+    }
+    if (expectedScope === "admin") await this.requireStaff(user.id);
     const consumedTokenId = storedToken.id;
 
     return this.prisma.$transaction(async (tx) => {
       const tokens = await this.issueTokens(
         { sub: user.id, email: user.email },
         user.id,
-        expectedScope
+        expectedScope,
+        tx
       );
 
       await tx.refreshToken.delete({ where: { id: consumedTokenId } });
 
       return { ...tokens, userId: user.id };
     });
+  }
+
+  private tokenDigest(token: string): string {
+    return createHash("sha256").update(token).digest("hex");
   }
 
   async revokeRefreshToken(token: string): Promise<void> {
@@ -377,7 +365,7 @@ export class AuthService {
       });
 
       for (const tokenRecord of userTokens) {
-        if (await bcrypt.compare(token, tokenRecord.token)) {
+        if (await bcrypt.compare(decoded.tokenUse ? this.tokenDigest(token) : token, tokenRecord.token)) {
           await this.prisma.refreshToken.delete({
             where: { id: tokenRecord.id }
           });

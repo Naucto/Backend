@@ -1,3 +1,9 @@
+import { Actor } from "@auth/actor";
+import { Permission } from "@auth/permissions";
+import { UpdateUserDto } from "@user/dto/update-user.dto";
+import { UserDto } from "@auth/dto/user.dto";
+import { stripPassword } from "@auth/auth.utils";
+import * as bcrypt from "bcryptjs";
 import {
   BadRequestException,
   ForbiddenException,
@@ -8,7 +14,6 @@ import {
   AccountStatus,
   ModerationActionType,
   ModerationTargetType,
-  Prisma,
   ReportStatus,
   ReportTargetType
 } from "@prisma/client";
@@ -22,8 +27,8 @@ type AuditInput = {
   targetId: number;
   action: ModerationActionType;
   reason?: string | null;
-  before?: Prisma.InputJsonValue;
-  after?: Prisma.InputJsonValue;
+  before?: unknown;
+  after?: unknown;
   reportId?: number | null;
 };
 
@@ -96,12 +101,6 @@ export class ModerationService {
     });
   }
 
-  /**
-   * Records a moderation action.
-   *
-   * Delegates to {@link AuditService} rather than writing the row itself: two
-   * write paths into the same table is how the shapes drift apart.
-   */
   async audit(input: AuditInput): Promise<void> {
     await this.auditService.record({
       ref: { type: input.targetType, id: input.targetId },
@@ -114,19 +113,6 @@ export class ModerationService {
     });
   }
 
-  private toJson(value: unknown): Prisma.InputJsonValue {
-    return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue;
-  }
-
-  // ─── Users ────────────────────────────────────────────────────────────────
-
-  /**
-   * Refuses a staff action aimed at a peer or a superior.
-   *
-   * Without it a moderator can ban another moderator -- or every admin -- and
-   * lock the platform's own staff out. Rank is strict: a moderator may act on
-   * ordinary users only; an admin may act on anyone but themselves.
-   */
   private async assertMayModerateAccount(
     targetId: number,
     actorId: number | null
@@ -144,11 +130,11 @@ export class ModerationService {
     const [actor, target] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: actorId },
-        select: { roles: { select: { name: true } } }
+        select: { roles: { select: { name: true, permissions: true } } }
       }),
       this.prisma.user.findUnique({
         where: { id: targetId },
-        select: { roles: { select: { name: true } } }
+        select: { roles: { select: { name: true, permissions: true } } }
       })
     ]);
 
@@ -156,15 +142,8 @@ export class ModerationService {
       return;
     }
 
-    const rank = (roles: { name: string }[]): number =>
-      roles.some((role) => role.name === "Admin")
-        ? 2
-        : roles.some((role) => role.name === "Moderator")
-          ? 1
-          : 0;
-
-    const actorRank = rank(actor.roles);
-    const targetRank = rank(target.roles);
+    const actorRank = Actor.from({ id: actorId, roles: actor.roles }).rank;
+    const targetRank = Actor.from({ id: targetId, roles: target.roles }).rank;
 
     if (targetRank === 0) {
       return;
@@ -179,12 +158,6 @@ export class ModerationService {
     }
   }
 
-  /**
-   * Refuses anything that would leave the platform with no usable admin.
-   *
-   * `assertNotLastAdmin` covers role removal; banning or suspending the last
-   * admin locks everyone out just as effectively.
-   */
   private async assertAdminsRemainReachable(
     targetId: number,
     nextStatus: AccountStatus
@@ -253,8 +226,8 @@ export class ModerationService {
             ? ModerationActionType.SUSPEND_USER
             : ModerationActionType.RESTORE_USER,
       reason: reason ?? null,
-      before: this.toJson(before),
-      after: this.toJson(after),
+      before,
+      after,
       reportId: reportId ?? null
     });
   }
@@ -268,7 +241,7 @@ export class ModerationService {
   ): Promise<void> {
     const before = await this.prisma.user.findUnique({
       where: { id: targetId },
-      include: { roles: true }
+      select: { id: true, username: true, email: true, accountStatus: true, roles: true }
     });
 
     if (!before) {
@@ -298,7 +271,7 @@ export class ModerationService {
 
     const after = await this.prisma.user.findUnique({
       where: { id: targetId },
-      include: { roles: true }
+      select: { id: true, username: true, email: true, accountStatus: true, roles: true }
     });
 
     await this.audit({
@@ -307,8 +280,8 @@ export class ModerationService {
       targetId,
       action: ModerationActionType.UPDATE_ROLES,
       reason: reason ?? null,
-      before: this.toJson(before),
-      after: this.toJson(after)
+      before,
+      after
     });
   }
 
@@ -349,9 +322,28 @@ export class ModerationService {
       targetId,
       action: ModerationActionType.EDIT_USER,
       reason: reason ?? null,
-      before: this.toJson(before),
-      after: this.toJson(after)
+      before,
+      after
     });
+  }
+
+  async updateUser(id: number, actor: Actor, dto: UpdateUserDto): Promise<UserDto> {
+    if (!actor.can(Permission.MANAGE_USERS)) {
+      throw new ForbiddenException("Managing users requires permission");
+    }
+    if (dto.roles && !actor.can(Permission.MANAGE_ROLES)) {
+      throw new ForbiddenException("Managing roles requires permission");
+    }
+    await this.assertMayModerateAccount(id, actor.id);
+    const { password, roles, ...profile } = dto;
+    if (Object.keys(profile).length) await this.editUser(id, actor.id, profile);
+    if (password !== undefined) {
+      await this.resetUserPassword(id, actor.id, await bcrypt.hash(password, 10));
+    }
+    if (roles) await this.updateUserRoles(id, actor.id, roles, []);
+    const user = await this.prisma.user.findUnique({ where: { id }, include: { roles: true } });
+    if (!user) throw new NotFoundException(`User with ID ${id} not found`);
+    return stripPassword(user);
   }
 
   async resetUserPassword(
@@ -392,7 +384,7 @@ export class ModerationService {
   ): Promise<void> {
     const before = await this.prisma.user.findUnique({
       where: { id: targetId },
-      include: { roles: true }
+      select: { id: true, username: true, email: true, accountStatus: true, roles: true }
     });
 
     if (!before) {
@@ -413,7 +405,7 @@ export class ModerationService {
       targetId,
       action: ModerationActionType.HARD_DELETE_USER,
       reason: reason ?? null,
-      before: this.toJson(before)
+      before
     });
 
     await this.prisma.user.delete({ where: { id: targetId } });
@@ -431,15 +423,9 @@ export class ModerationService {
       targetId,
       action: ModerationActionType.CREATE_STAFF_USER,
       reason: reason ?? null,
-      after: this.toJson(snapshot)
+      after: snapshot
     });
   }
-
-  // ─── Projects ─────────────────────────────────────────────────────────────
-
-  // ─── Comments ─────────────────────────────────────────────────────────────
-
-  // ─── Reports ──────────────────────────────────────────────────────────────
 
   async setReportStatus(
     reportId: number,
@@ -491,8 +477,8 @@ export class ModerationService {
               ? ModerationActionType.DISMISS_REPORT
               : ModerationActionType.UPDATE_REPORT,
       reason: resolutionNote ?? null,
-      before: this.toJson(before),
-      after: this.toJson(after),
+      before,
+      after,
       reportId
     });
   }
@@ -521,13 +507,11 @@ export class ModerationService {
       targetId: reportId,
       action: ModerationActionType.UPDATE_REPORT,
       reason: note ?? null,
-      before: this.toJson(before),
-      after: this.toJson(after),
+      before,
+      after,
       reportId
     });
   }
-
-  // ─── Roles ────────────────────────────────────────────────────────────────
 
   async recordRoleCreated(
     roleId: number,
@@ -541,7 +525,7 @@ export class ModerationService {
       targetId: roleId,
       action: ModerationActionType.CREATE_ROLE,
       reason: reason ?? null,
-      after: this.toJson(snapshot)
+      after: snapshot
     });
   }
 
@@ -558,8 +542,8 @@ export class ModerationService {
       targetId: roleId,
       action: ModerationActionType.RENAME_ROLE,
       reason: reason ?? null,
-      before: this.toJson(before),
-      after: this.toJson(after)
+      before,
+      after
     });
   }
 
@@ -575,11 +559,9 @@ export class ModerationService {
       targetId: roleId,
       action: ModerationActionType.DELETE_ROLE,
       reason: reason ?? null,
-      before: this.toJson(snapshot)
+      before: snapshot
     });
   }
-
-  // ─── Helpers ──────────────────────────────────────────────────────────────
 
   private async assertNotLastAdmin(
     targetUserId: number,
@@ -620,7 +602,9 @@ export class ModerationService {
         select: { id: true }
       });
       if (!exists) throw new NotFoundException("Reported user not found");
-      this.refuseSelfReport(exists.id === reporterId);
+      if (exists.id === reporterId) {
+        throw new BadRequestException("You cannot report your own content");
+      }
       return;
     }
 
@@ -630,7 +614,9 @@ export class ModerationService {
         select: { id: true, userId: true }
       });
       if (!exists) throw new NotFoundException("Reported project not found");
-      this.refuseSelfReport(exists.userId === reporterId);
+      if (exists.userId === reporterId) {
+        throw new BadRequestException("You cannot report your own content");
+      }
       return;
     }
 
@@ -639,17 +625,9 @@ export class ModerationService {
       select: { id: true, authorId: true }
     });
     if (!exists) throw new NotFoundException("Reported comment not found");
-    this.refuseSelfReport(exists.authorId === reporterId);
-  }
-
-  /**
-   * Reporting your own content only ever adds noise to the moderation queue --
-   * an author who wants their comment gone can delete it, and an owner who
-   * wants their project down can unpublish it.
-   */
-  private refuseSelfReport(isOwnContent: boolean): void {
-    if (isOwnContent) {
+    if (exists.authorId === reporterId) {
       throw new BadRequestException("You cannot report your own content");
     }
   }
+
 }
