@@ -50,3 +50,16 @@ export function timespanToMs(value: TimeSpan): number {
 
   return amount * multipliers[unit];
 }
+
+/**
+ * Blanks the password hash on a user record.
+ *
+ * `req.user` is handed to every guarded handler, and a handler that returns it
+ * directly would ship the bcrypt hash to the client. The field is kept (rather
+ * than deleted) so the value still satisfies `User` for downstream typing.
+ */
+export function stripPassword<T extends { password: string | null }>(
+  user: T
+): T {
+  return { ...user, password: null };
+}

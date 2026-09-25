@@ -1,6 +1,7 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { NotFoundException } from "@nestjs/common";
 import { UserService } from "./user.service";
+import { AuditService } from "src/moderation/audit";
 import { PrismaService } from "@ourPrisma/prisma.service";
 
 describe("UserService", () => {
@@ -16,6 +17,10 @@ describe("UserService", () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        {
+          provide: AuditService,
+          useValue: { countByActor: jest.fn().mockResolvedValue(0) }
+        },
         UserService,
         {
           provide: PrismaService,

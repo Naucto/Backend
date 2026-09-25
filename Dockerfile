@@ -1,19 +1,14 @@
 FROM node:22-alpine AS base
 
-ARG BACKEND_PORT=3000
-ARG POSTGRES_HOST
-ARG POSTGRES_PORT
-ARG POSTGRES_USER
-ARG POSTGRES_PASSWORD
-ARG POSTGRES_DB
-
 WORKDIR /app
 
 # If we need some dependencies that require native compilation (unlikely),
 # decomment this out:
 # RUN apk add --no-cache python3 make g++
 
-ENV DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}"
+# DATABASE_URL is supplied at runtime, not baked in: neither `prisma generate`
+# nor `nest build` needs a reachable database, and baking it would write the
+# Postgres password into an image layer.
 
 COPY package.json package-lock.json ./
 COPY prisma.config.ts ./
@@ -25,7 +20,8 @@ RUN npm ci
 RUN npx prisma generate
 
 FROM deps AS dev
-ENV PORT=${BACKEND_PORT}
+ENV PORT=3000
+EXPOSE 3000
 COPY . .
 CMD ["sh", "-c", "npx prisma migrate deploy && npm run start:dev"]
 
@@ -43,7 +39,8 @@ CMD ["npx", "prisma", "migrate", "deploy"]
 # compiled output -- no source or test assets. Migrations run via the `migrate`
 # stage above, not here.
 FROM base AS prod
-ENV PORT=${BACKEND_PORT}
+ENV PORT=3000
+EXPOSE 3000
 # Swagger UI is not served in production, so drop its bundled static assets.
 ENV ENABLE_SWAGGER=false
 # Keep optional peer deps so the Prisma CLI (an optional peer of @prisma/client)
@@ -56,5 +53,7 @@ RUN npm ci --omit=dev \
     && npm cache clean --force
 COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=build /app/dist ./dist
+# webrtc.service.ts reads <cwd>/config/webrtc.json. The glob keeps the config
+# folder optional; package.json is a second source so the target stays a dir.
 COPY package.json config* ./config/
 CMD ["npm", "run", "start:prod"]

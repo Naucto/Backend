@@ -1,5 +1,8 @@
+import { UserWithDetailsDto } from "@user/dto/user-with-details.dto";
+import { stripPassword } from "@auth/auth.utils";
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "@ourPrisma/prisma.service";
+import { AuditService } from "@moderation/audit";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
 import { User, Prisma } from "@prisma/client";
@@ -9,7 +12,10 @@ import { Role } from "@prisma/client";
 
 @Injectable()
 export class UserService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService
+  ) {}
   private static readonly BCRYPT_SALT_ROUNDS = 10;
 
   async findPublicProfile(id: number): Promise<{
@@ -108,13 +114,42 @@ export class UserService {
     return user.roles.map((role) => role.name);
   }
 
+  async findOneWithDetails(id: number): Promise<UserWithDetailsDto> {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      include: { roles: true }
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    const [projectsCreated, comments, reportsFiled, actionsTaken] =
+      await Promise.all([
+        this.prisma.project.count({ where: { userId: id } }),
+        this.prisma.comment.count({ where: { authorId: id } }),
+        this.prisma.report.count({ where: { reporterId: id } }),
+        this.auditService.countByActor(id)
+      ]);
+
+    return {
+      ...stripPassword(user),
+      projectsCreatedCount: projectsCreated,
+      commentsCount: comments,
+      reportsFiledCount: reportsFiled,
+      moderationActionsTakenCount: actionsTaken
+    };
+  }
+
   async create(createUserDto: CreateUserDto): Promise<User> {
     const hashedPassword = await bcrypt.hash(
       createUserDto.password,
       UserService.BCRYPT_SALT_ROUNDS
     );
 
-    const rolesToAssign: { id: number }[] = [];
+    const rolesToAssign = createUserDto.roles?.length
+      ? await this.findRolesByNames(createUserDto.roles)
+      : [];
 
     return this.prisma.user.create({
       data: {
@@ -123,7 +158,7 @@ export class UserService {
         nickname: createUserDto.nickname ?? null,
         password: hashedPassword,
         roles: {
-          connect: rolesToAssign
+          connect: rolesToAssign.map((role) => ({ id: role.id }))
         }
       }
     });
@@ -151,14 +186,21 @@ export class UserService {
     take?: number;
     where?: Prisma.UserWhereInput;
     orderBy?: Prisma.UserOrderByWithRelationInput;
+    include?: Prisma.UserInclude;
   }): Promise<User[]> {
     const query: Prisma.UserFindManyArgs = {};
     if (params?.skip !== undefined) query.skip = params.skip;
     if (params?.take !== undefined) query.take = params.take;
     if (params?.where !== undefined) query.where = params.where;
     if (params?.orderBy !== undefined) query.orderBy = params.orderBy;
+    if (params?.include !== undefined) query.include = params.include;
 
-    return this.prisma.user.findMany(query);
+    const users = await this.prisma.user.findMany(query);
+
+    // `GET /users` is open to any authenticated caller, so the rows must never
+    // carry the bcrypt hash. Blanked here rather than by a `select` so callers
+    // keep getting the full `User` shape (and their `include`s) as before.
+    return users.map((user) => ({ ...user, password: null }));
   }
 
   async count(where?: Prisma.UserWhereInput): Promise<number> {

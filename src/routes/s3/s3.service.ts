@@ -252,18 +252,26 @@ export class S3Service {
     }
   }
 
+  /**
+   * @param contentType Overrides the type carried by `file`. Pass it for
+   * anything derived from a client upload: `Express.Multer.File.mimetype` is
+   * whatever the client declared in its multipart part, and storing it verbatim
+   * lets a caller have their bytes served back as `text/html` later.
+   */
   async uploadFile({
     file,
     metadata,
     bucketName,
     keyName,
-    cacheControl
+    cacheControl,
+    contentType
   }: {
     file: Express.Multer.File | DownloadedFile;
     metadata?: Record<string, string>;
     bucketName?: string;
     keyName?: string;
     cacheControl?: string;
+    contentType?: string;
   }): Promise<void> {
     const resolvedBucketName = this.resolveBucket(bucketName);
 
@@ -276,7 +284,7 @@ export class S3Service {
           Bucket: resolvedBucketName,
           Key: keyName ?? file.originalname,
           Body: file.buffer,
-          ContentType: file.mimetype,
+          ContentType: contentType ?? file.mimetype,
           Metadata: metadata,
           CacheControl: cacheControl
         };
@@ -300,7 +308,7 @@ export class S3Service {
             Bucket: resolvedBucketName,
             Key: keyName,
             Body: file.body,
-            ContentType: file.contentType,
+            ContentType: contentType ?? file.contentType,
             Metadata: metadata,
             CacheControl: cacheControl
           }

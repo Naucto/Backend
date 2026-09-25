@@ -1,4 +1,5 @@
-import { Module } from "@nestjs/common";
+import { CookieCsrfMiddleware } from "@auth/middleware/csrf.middleware";
+import { MiddlewareConsumer, Module, NestModule, RequestMethod } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { S3Module } from "@s3/s3.module";
 import { UserModule } from "@user/user.module";
@@ -14,6 +15,11 @@ import { MultiplayerModule } from "@multiplayer/multiplayer.module";
 import { ProjectCommentModule } from "@project-comment/project-comment.module";
 import { NotificationsModule } from "src/notifications/notifications.module";
 import { AppConfig } from "src/app.config";
+import { AnalyticsModule } from "@analytics/analytics.module";
+import { ModerationModule } from "@moderation/moderation.module";
+import { AuditModule } from "@moderation/audit";
+import { AdminModule } from "@admin/admin.module";
+
 import {
   GracefulShutdownModule,
   IGracefulShutdownConfigOptions
@@ -35,6 +41,9 @@ import {
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
     PrismaModule,
+    AnalyticsModule,
+    AuditModule,
+    ModerationModule,
     AuthModule,
     S3Module,
     UserModule,
@@ -44,9 +53,14 @@ import {
     WebRTCModule,
     MultiplayerModule,
     ProjectCommentModule,
+    AdminModule,
     NotificationsModule
   ],
   providers: [AppConfig],
   exports: [AppConfig]
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(CookieCsrfMiddleware).forRoutes({ path: "{*path}", method: RequestMethod.ALL });
+  }
+}

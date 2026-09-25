@@ -20,7 +20,6 @@ import {
 import { WebRTCService } from "@webrtc/webrtc.service";
 
 import { IncomingMessage } from "http";
-import { Duplex } from "stream";
 
 export type SyncedGameTableRole = "host" | "slave";
 
@@ -107,9 +106,7 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
 
   @WebRTCServerAuthEvent()
   protected _internal_sgt_authenticate(
-    httpRequest: IncomingMessage,
-    _httpClientSocket: Duplex,
-    _head: Buffer
+    httpRequest: IncomingMessage
   ): boolean {
     try {
       const url = new URL(httpRequest.url ?? "", "http://localhost");
@@ -289,6 +286,7 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
         this.logger.verbose(
           `Failed to ping ${socket.remoteAddress}: ${err}`
         );
+        clearInterval(socket.pingChecker);
         socket.close();
       }
     }, SyncedGameTableWebRTCServer.PING_INTERVAL_MS);
@@ -441,7 +439,11 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
   public override shutdown(): void {
     const serverSocket = this.wss<SyncedGameTableServerSocket>();
 
-    serverSocket.rooms.forEach((room) => this._clearHostGrace(room));
+    serverSocket.rooms.forEach((room) => {
+      this._clearHostGrace(room);
+      if (room.host) clearInterval(room.host.pingChecker);
+      room.slaves.forEach((socket) => clearInterval(socket.pingChecker));
+    });
 
     super.shutdown();
   }

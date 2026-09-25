@@ -1,6 +1,8 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { ProjectService } from "./project.service";
 import { S3Service } from "@s3/s3.service";
+import { Actor } from "@auth/actor";
+import { AuditService } from "src/moderation/audit";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { ConfigService } from "@nestjs/config";
 import {
@@ -51,6 +53,7 @@ const mockProjects: ProjectWithCreatorAndCollaborators[] = [
     contentExtension: ".zip",
     contentUploadedAt: new Date(),
     forkedFromId: null,
+    hidden: false,
     creator: {
       id: 42,
       email: "creator@example.com",
@@ -90,6 +93,7 @@ const mockProjects: ProjectWithCreatorAndCollaborators[] = [
     contentExtension: ".zip",
     contentUploadedAt: new Date(),
     forkedFromId: null,
+    hidden: false,
     creator: {
       id: 42,
       email: "creator@example.com",
@@ -134,10 +138,23 @@ describe("ProjectService", () => {
     )
   };
 
+  const auditServiceMock = {
+    record: jest.fn().mockResolvedValue(undefined),
+    historyOf: jest.fn().mockResolvedValue([]),
+    lastActionOn: jest.fn().mockResolvedValue(null)
+  };
+
+  // A plain collaborator: no moderator powers, owns nothing special.
+  const ownerActor = new Actor(1, []);
+
   const s3ServiceMock = {
     deleteFile: jest.fn(),
     listObjects: jest.fn(),
-    deleteFiles: jest.fn()
+    deleteFiles: jest.fn(),
+    fileExists: jest.fn(),
+    downloadFile: jest.fn(),
+    uploadFile: jest.fn(),
+    setObjectPublicRead: jest.fn()
   };
 
   const configServiceMock = {
@@ -164,6 +181,10 @@ describe("ProjectService", () => {
         {
           provide: ConfigService,
           useValue: configServiceMock
+        },
+        {
+          provide: AuditService,
+          useValue: auditServiceMock
         }
       ]
     }).compile();
@@ -433,7 +454,7 @@ describe("ProjectService", () => {
         ...updateDto
       });
 
-      const result = await service.update(projectId, updateDto);
+      const result = await service.update(projectId, updateDto, ownerActor);
 
       expect(prismaMock.project.findUnique).toHaveBeenCalledWith({
         where: { id: projectId },
@@ -468,7 +489,7 @@ describe("ProjectService", () => {
         shortDesc: "Updated short desc"
       };
 
-      await expect(service.update(999, updateDto)).rejects.toThrow(
+      await expect(service.update(999, updateDto, ownerActor)).rejects.toThrow(
         NotFoundException
       );
     });
@@ -788,17 +809,17 @@ describe("ProjectService", () => {
       const result = await service.fetchPublishedGamesPaginated(2, 1);
 
       expect(prismaMock.project.count).toHaveBeenCalledWith({
-        where: { status: "COMPLETED" }
+        where: { status: "COMPLETED", hidden: false }
       });
       expect(prismaMock.project.findMany).toHaveBeenCalledWith({
-        where: { status: "COMPLETED" },
+        where: { status: "COMPLETED", hidden: false },
         include: {
           collaborators: { select: ProjectService.COLLABORATOR_SELECT },
           creator: { select: ProjectService.CREATOR_SELECT },
           _count: {
             select: {
               forks: true,
-              comments: { where: { deleted: false } }
+              comments: { where: { deleted: false, hidden: false } }
             }
           }
         },
@@ -835,6 +856,152 @@ describe("ProjectService", () => {
       );
       expect(result.page).toBe(1);
       expect(result.limit).toBe(100);
+    });
+  });
+
+  describe("removeReleaseArtifact", () => {
+    it("deletes the public release object for the project", async () => {
+      // clearAllMocks resets calls but not implementations, so an earlier
+      // rejection set on this shared mock would leak into this test.
+      s3ServiceMock.deleteFile.mockResolvedValue(undefined);
+
+      await service.removeReleaseArtifact(7);
+
+      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({
+        key: "release/7"
+      });
+    });
+  });
+
+  describe("fetchPreviewContent", () => {
+    it("serves the published release so staff test what players load", async () => {
+      prismaMock.project.findUnique.mockResolvedValue({
+        id: 7,
+        status: "COMPLETED"
+      });
+      s3ServiceMock.fileExists.mockResolvedValue(true);
+      s3ServiceMock.downloadFile.mockResolvedValue({ body: null });
+
+      await service.fetchPreviewContent(7);
+
+      expect(s3ServiceMock.downloadFile).toHaveBeenCalledWith({
+        key: "release/7"
+      });
+    });
+
+    it("falls back to the latest save for an unpublished project", async () => {
+      prismaMock.project.findUnique.mockResolvedValue({
+        id: 7,
+        status: "IN_PROGRESS"
+      });
+      const fallback = jest
+        .spyOn(service, "fetchLastVersion")
+        .mockResolvedValue({ body: null } as never);
+
+      await service.fetchPreviewContent(7);
+
+      expect(s3ServiceMock.fileExists).not.toHaveBeenCalled();
+      expect(fallback).toHaveBeenCalledWith(7);
+    });
+
+    it("falls back to the latest save when the release object is gone", async () => {
+      // Moderation removes the release object on hide/unpublish, so a project can
+      // read COMPLETED for a moment with no artifact behind it.
+      prismaMock.project.findUnique.mockResolvedValue({
+        id: 7,
+        status: "COMPLETED"
+      });
+      s3ServiceMock.fileExists.mockResolvedValue(false);
+      const fallback = jest
+        .spyOn(service, "fetchLastVersion")
+        .mockResolvedValue({ body: null } as never);
+
+      await service.fetchPreviewContent(7);
+
+      expect(fallback).toHaveBeenCalledWith(7);
+      expect(s3ServiceMock.downloadFile).not.toHaveBeenCalled();
+    });
+
+    it("throws NotFoundException for an unknown project", async () => {
+      prismaMock.project.findUnique.mockResolvedValue(null);
+
+      await expect(service.fetchPreviewContent(404)).rejects.toThrow(
+        NotFoundException
+      );
+    });
+  });
+
+  describe("fetchProjectPreview", () => {
+    it("returns an unpublished project the public endpoints hide", async () => {
+      prismaMock.project.findUnique.mockResolvedValue({
+        ...mockProjects[0],
+        id: 7,
+        status: "IN_PROGRESS",
+        hidden: false,
+        _count: { forks: 0, comments: 0 }
+      });
+
+      await expect(service.fetchProjectPreview(7)).resolves.toMatchObject({
+        id: 7,
+        status: "IN_PROGRESS"
+      });
+    });
+
+    it("returns a hidden project so staff can review what they took down", async () => {
+      prismaMock.project.findUnique.mockResolvedValue({
+        ...mockProjects[0],
+        id: 7,
+        status: "ARCHIVED",
+        hidden: true,
+        _count: { forks: 0, comments: 0 }
+      });
+
+      await expect(service.fetchProjectPreview(7)).resolves.toMatchObject({
+        id: 7,
+        hidden: true
+      });
+    });
+
+    it("throws NotFoundException for an unknown project", async () => {
+      prismaMock.project.findUnique.mockResolvedValue(null);
+
+      await expect(service.fetchProjectPreview(404)).rejects.toThrow(
+        NotFoundException
+      );
+    });
+  });
+
+  describe("stored content type", () => {
+    // The client's declared multipart mimetype must never reach S3: the release
+    // object is public-read and served straight off the CDN, outside this app's
+    // response headers.
+
+    it("save pins the stored type instead of trusting the upload", async () => {
+      s3ServiceMock.listObjects.mockResolvedValue([]);
+      prismaMock.project.update.mockResolvedValue({ id: 7 });
+
+      await service.save(7, {
+        mimetype: "text/html",
+        buffer: Buffer.from("<script>alert(1)</script>"),
+        originalname: "payload.html"
+      } as never);
+
+      expect(s3ServiceMock.uploadFile).toHaveBeenCalledWith(
+        expect.objectContaining({ contentType: "application/octet-stream" })
+      );
+    });
+
+    it("checkpoint pins the stored type", async () => {
+      s3ServiceMock.listObjects.mockResolvedValue([]);
+      jest
+        .spyOn(service, "fetchLastVersion")
+        .mockResolvedValue({ body: null, contentType: "text/html" } as never);
+
+      await service.checkpoint(7, "v1");
+
+      expect(s3ServiceMock.uploadFile).toHaveBeenCalledWith(
+        expect.objectContaining({ contentType: "application/octet-stream" })
+      );
     });
   });
 });

@@ -1,3 +1,4 @@
+import { AuthSessionService } from "@auth/auth-session.service";
 import { Test, TestingModule } from "@nestjs/testing";
 import { AuthController } from "./auth.controller";
 import { PrismaService } from "@ourPrisma/prisma.service";
@@ -22,6 +23,7 @@ describe("AuthController", () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AuthController],
       providers: [
+        { provide: AuthSessionService, useValue: {} },
         {
           provide: AuthService,
           useValue: {
@@ -131,6 +133,7 @@ describe("AuthController", () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AuthController],
       providers: [
+        { provide: AuthSessionService, useValue: {} },
         {
           provide: AuthService,
           useValue: authServiceWithRefresh
@@ -184,6 +187,7 @@ describe("AuthController", () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AuthController],
       providers: [
+        { provide: AuthSessionService, useValue: {} },
         {
           provide: AuthService,
           useValue: authServiceWithRevoke

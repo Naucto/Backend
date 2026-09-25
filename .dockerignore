@@ -1,8 +1,9 @@
+.git
 .idea
 .husky
 .github
 .prettierrc
-esling.config.js
+eslint.config.mjs
 README.md
 license.txt
 dist
@@ -13,3 +14,5 @@ test
 memories
 Session.vim
 .env
+.env.production
+*.pem

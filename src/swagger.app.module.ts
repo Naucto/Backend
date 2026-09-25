@@ -1,3 +1,5 @@
+import { DownloadService } from "@common/download/download.service";
+import { AuthSessionService } from "@auth/auth-session.service";
 /**
  * A lightweight AppModule used exclusively for Swagger JSON generation.
  * It includes all controllers (for full API documentation) but replaces
@@ -7,16 +9,32 @@
 
 import { ProjectController } from "@project/project.controller";
 import { ProjectCommentController } from "@project-comment/project-comment.controller";
+import { CommentController } from "@project-comment/comment.controller";
 import { MultiplayerController } from "src/routes/multiplayer/multiplayer.controller";
+import { ReportController } from "@moderation/report.controller";
+
+import { AdminInsightsController } from "@admin/admin-insights.controller";
+import { AdminUserController } from "@admin/admin-user.controller";
+import { AdminReportController } from "@admin/admin-report.controller";
+import { AdminModerationLogController } from "@admin/admin-moderation-log.controller";
+import { AdminRoleController } from "@admin/admin-role.controller";
 import { NotificationsController } from "src/notifications/notifications.controller";
 
 import { ProjectService } from "@project/project.service";
 import { S3Service } from "@s3/s3.service";
-import { CloudfrontService } from "src/routes/s3/edge.service";
+import { CloudfrontService } from "@s3/edge.service";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { S3Client } from "@aws-sdk/client-s3";
 import { MultiplayerService } from "src/routes/multiplayer/multiplayer.service";
 import { ProjectCommentService } from "@project-comment/project-comment.service";
+import { ModerationService } from "@moderation/moderation.service";
+import { ModerationModule } from "@moderation/moderation.module";
+import { AuditModule } from "@moderation/audit";
+import { AdminInsightsService } from "@admin/admin-insights.service";
+import { AdminUserService } from "@admin/admin-user.service";
+import { AdminReportService } from "@admin/admin-report.service";
+import { AdminRoleService } from "@admin/admin-role.service";
+import { TargetLinkService } from "@admin/services/target-link.service";
 import { NotificationsService } from "src/notifications/notifications.service";
 
 import { UserModule } from "@user/user.module";
@@ -43,6 +61,8 @@ const nullProvider = (token: InjectionToken): Provider => ({
 
 @Module({
   imports: [
+    AuditModule,
+    ModerationModule,
     GracefulShutdownModule.forRootAsync({
       imports: [WebRTCModule],
       inject: [WebRTCService],
@@ -66,9 +86,18 @@ const nullProvider = (token: InjectionToken): Provider => ({
     ProjectController,
     MultiplayerController,
     ProjectCommentController,
+    CommentController,
+    ReportController,
+    AdminInsightsController,
+    AdminUserController,
+    AdminReportController,
+    AdminModerationLogController,
+    AdminRoleController,
     NotificationsController
   ],
   providers: [
+    DownloadService,
+    { provide: AuthSessionService, useValue: {} },
     nullProvider(PrismaService),
     nullProvider(ProjectService),
     nullProvider(S3Client),
@@ -76,6 +105,12 @@ const nullProvider = (token: InjectionToken): Provider => ({
     nullProvider(CloudfrontService),
     nullProvider(MultiplayerService),
     nullProvider(ProjectCommentService),
+    nullProvider(ModerationService),
+    nullProvider(AdminInsightsService),
+    nullProvider(AdminUserService),
+    nullProvider(AdminReportService),
+    nullProvider(AdminRoleService),
+    nullProvider(TargetLinkService),
     nullProvider(NotificationsService)
   ]
 })

@@ -1,10 +1,12 @@
+import { DownloadService } from "@common/download/download.service";
 import { Test, TestingModule } from "@nestjs/testing";
 import { ProjectController } from "./project.controller";
 import { ProjectService } from "./project.service";
+import { AuditService } from "@moderation/audit";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { ConfigService } from "@nestjs/config";
 import { S3Service } from "@s3/s3.service";
-import { CloudfrontService } from "src/routes/s3/edge.service";
+import { CloudfrontService } from "@s3/edge.service";
 
 describe("ProjectController", () => {
   let controller: ProjectController;
@@ -13,6 +15,8 @@ describe("ProjectController", () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ProjectController],
       providers: [
+        DownloadService,
+        { provide: AuditService, useValue: { record: jest.fn() } },
         ProjectService,
         {
           provide: PrismaService,

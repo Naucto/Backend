@@ -18,6 +18,17 @@ export function buildSwaggerDocument(app: INestApplication): OpenAPIObject {
       },
       "JWT-auth"
     )
+    .addCookieAuth(
+      "naucto_admin_access",
+      {
+        type: "apiKey",
+        in: "cookie",
+        name: "naucto_admin_access",
+        description:
+          "Admin panel session — HTTP-only cookie set by /auth/login?scope=admin"
+      },
+      "AdminCookie"
+    )
     .build();
 
   return SwaggerModule.createDocument(app, config);

@@ -1,11 +1,14 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { UserController } from "./user.controller";
 import { UserService } from "./user.service";
+import { AuditService } from "src/moderation/audit";
+import { ModerationService } from "src/moderation/moderation.service";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { S3Service } from "@s3/s3.service";
 import { CloudfrontService } from "src/routes/s3/edge.service";
 import { ConfigService } from "@nestjs/config";
 import { HttpException, HttpStatus } from "@nestjs/common";
+import { RequestWithUser } from "@auth/auth.types";
 
 describe("UserController", () => {
   let controller: UserController;
@@ -14,6 +17,14 @@ describe("UserController", () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [UserController],
       providers: [
+        {
+          provide: ModerationService,
+          useValue: { hardDeleteUser: jest.fn().mockResolvedValue(undefined) }
+        },
+        {
+          provide: AuditService,
+          useValue: { countByActor: jest.fn().mockResolvedValue(0) }
+        },
         UserService,
         {
           provide: PrismaService,
@@ -68,8 +79,8 @@ describe("UserController", () => {
       try {
         await controller.uploadProfileBackground(
           222,
-          { originalname: "bg.png" } as any,
-          { user: { id: 111 } } as any
+          { originalname: "bg.png" } as Express.Multer.File,
+          { user: { id: 111 } } as RequestWithUser
         );
         throw new Error("Expected uploadProfileBackground to throw");
       } catch (err) {

@@ -1,9 +1,11 @@
-import { ExecutionContext, Injectable } from "@nestjs/common";
+import { CanActivate, ExecutionContext, Injectable } from "@nestjs/common";
 import { AuthGuard } from "@nestjs/passport";
 
 @Injectable()
 export class OptionalJwtAuthGuard extends AuthGuard("jwt") {
-  override canActivate(context: ExecutionContext) {
+  override canActivate(
+    context: ExecutionContext
+  ): ReturnType<CanActivate["canActivate"]> {
     return super.canActivate(context);
   }
 

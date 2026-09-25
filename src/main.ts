@@ -17,6 +17,7 @@ import { setupGracefulShutdown } from "@tygra/nestjs-graceful-shutdown";
 
 import * as dotenv from "dotenv";
 import cookieParser from "cookie-parser";
+import helmet from "helmet";
 import { format } from "date-fns-tz";
 
 const isProduction = process.env["NODE_ENV"] === "production";
@@ -43,8 +44,35 @@ if (isProduction) {
     "FRONTEND_URL",
     "http://localhost:3001"
   );
+  const adminPanelUrl = configService.get<string>(
+    "ADMIN_PANEL_URL",
+    "http://localhost:3002"
+  );
 
   app.use(cookieParser());
+  app.use(
+    helmet({
+      // Defence in depth for the few HTML responses this API serves (Swagger UI,
+      // framework error pages). Everything Swagger loads is same-origin, so
+      // "self" is enough; only its stylesheets are inline.
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", "data:", "https:"],
+          fontSrc: ["'self'", "data:"],
+          connectSrc: ["'self'"],
+          objectSrc: ["'none'"],
+          frameAncestors: ["'none'"],
+          baseUri: ["'self'"],
+          formAction: ["'self'"],
+          ...(isProduction ? { upgradeInsecureRequests: [] } : {})
+        }
+      },
+      crossOriginResourcePolicy: { policy: "cross-origin" }
+    })
+  );
   app.useLogger(["log", "error", "warn", "debug"]);
 
   app.useGlobalPipes(
@@ -55,11 +83,28 @@ if (isProduction) {
     })
   );
 
+  const allowedOrigins = new Set(
+    [frontendUrl, adminPanelUrl].filter((url): url is string => Boolean(url))
+  );
+
   app.enableCors({
-    origin: isProduction ? frontendUrl : true,
+    origin: isProduction
+      ? (
+        origin: string | undefined,
+        callback: (err: Error | null, allow?: boolean) => void
+      ) => {
+        if (!origin || allowedOrigins.has(origin)) {
+          callback(null, true);
+          return;
+        }
+
+        logger.warn(`CORS rejected request from origin: ${origin}`);
+        callback(new Error("CORS denied"));
+      }
+      : true,
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"]
+    allowedHeaders: ["Content-Type", "Authorization", "X-CSRF-Token"]
   });
 
   app.use((req: Request, res: Response, next: NextFunction) => {
