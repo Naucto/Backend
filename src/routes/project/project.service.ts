@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -36,6 +37,7 @@ import {
   ProjectNotPublishedException,
   ProjectTooLargeException
 } from "./project.error";
+import { recordSavedAiProvenance } from "src/routes/ai/ai-provenance";
 
 // What a project says about its people, on public routes as well as private ones: the id
 // and the name, never the address behind the account.
@@ -267,7 +269,8 @@ export class ProjectService {
       name: project.publishedName || project.name,
       shortDesc: project.publishedShortDesc || project.shortDesc,
       longDesc: project.publishedLongDesc ?? project.longDesc,
-      tags: publishedTags.length > 0 ? publishedTags : project.tags
+      tags: publishedTags.length > 0 ? publishedTags : project.tags,
+      aiCategories: project.publishedAiCategories
     };
   }
 
@@ -774,14 +777,22 @@ export class ProjectService {
    * inside the window, so a long session costs one slot per window rather than one per pause in
    * the typing. Past the window a new slot opens and the oldest go, keeping `max_history_version`.
    */
-  async save(projectId: number, file: Express.Multer.File): Promise<void> {
+  async save(projectId: number, file: Express.Multer.File, aiBarrierId?: string): Promise<void> {
+    const actual_time = Date.now();
+    const checkBarrier = async (): Promise<void> => {
+      const barrier = await this.prisma.aiBarrier.findUnique({ where: { projectId } });
+      if (aiBarrierId) {
+        if (barrier?.id !== aiBarrierId || barrier.status !== "COMMITTING") throw new ConflictException("AI commit changed");
+      } else if (barrier && (["PREPARING", "COMMITTING"].includes(barrier.status) || barrier.startedAt.getTime() >= actual_time)) {
+        throw new ConflictException("AI application in progress; retry saving after it completes");
+      }
+    };
+    await checkBarrier();
     const saves = (await this.listVersions(projectId)).sort(newestFirst);
+    await checkBarrier();
     const now = Date.now();
     const newest = saves[0];
-    const slot =
-      newest && now - Number(newest.name) < this.auto_save_delay
-        ? newest.name
-        : String(now);
+    const slot = newest && now - Number(newest.name) < this.auto_save_delay ? newest.name : String(now);
 
     if (slot !== newest?.name) {
       const kept = Math.max(this.max_history_version - 1, 0);
@@ -800,6 +811,7 @@ export class ProjectService {
 
     if (file.buffer) {
       await this.storeContentSize(projectId, computeContentSize(file.buffer));
+      await recordSavedAiProvenance(this.prisma, projectId, file.buffer);
     }
   }
 
@@ -926,7 +938,7 @@ export class ProjectService {
    */
   private async writeRelease(
     projectId: number,
-    snapshot: Pick<Project, "name" | "shortDesc" | "longDesc" | "tags">
+    snapshot: Pick<Project, "name" | "shortDesc" | "longDesc" | "tags" | "aiCategories">
   ): Promise<void> {
     const file = await this.assertWithinBudget(projectId);
     const releaseKey = `release/${projectId}`;
@@ -944,19 +956,22 @@ export class ProjectService {
         publishedName: snapshot.name,
         publishedShortDesc: snapshot.shortDesc,
         publishedLongDesc: snapshot.longDesc,
-        publishedTags: snapshot.tags
+        publishedTags: snapshot.tags,
+        publishedAiCategories: snapshot.aiCategories
       }
     });
   }
 
   async publish(projectId: number): Promise<void> {
+    await this.assertNoAiApplication(projectId);
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
       select: {
         name: true,
         shortDesc: true,
         longDesc: true,
-        tags: true
+        tags: true,
+        aiCategories: true
       }
     });
 
@@ -965,6 +980,13 @@ export class ProjectService {
     }
 
     await this.writeRelease(projectId, project);
+  }
+
+  private async assertNoAiApplication(projectId: number): Promise<void> {
+    const barrier = await this.prisma.aiBarrier.findUnique({ where: { projectId } });
+    if (barrier && ["PREPARING", "COMMITTING"].includes(barrier.status)) {
+      throw new ConflictException("Complete or cancel the AI application before publishing");
+    }
   }
 
   async unpublish(projectId: number): Promise<void> {
@@ -978,6 +1000,7 @@ export class ProjectService {
   }
 
   async updateRelease(projectId: number): Promise<void> {
+    await this.assertNoAiApplication(projectId);
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
       select: {
@@ -985,7 +1008,8 @@ export class ProjectService {
         name: true,
         shortDesc: true,
         longDesc: true,
-        tags: true
+        tags: true,
+        aiCategories: true
       }
     });
 
@@ -1547,6 +1571,7 @@ export class ProjectService {
     const newProject = await this.prisma.project.create({
       data: {
         name: `Fork of ${sourceProject.name}`,
+        aiCategories: sourceProject.publishedAiCategories,
         shortDesc: sourceProject.shortDesc,
         longDesc: sourceProject.longDesc,
         forkedFrom: { connect: { id: sourceProjectId } },

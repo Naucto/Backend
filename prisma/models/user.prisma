@@ -55,6 +55,7 @@ model User {
   refreshTokens RefreshToken[]
   notifications Notification[]
   featuredReleases FeaturedRelease[] @relation("FeaturedReleaseCurator")
+  aiKeys         AiKey[]
 }
 
 model Role {

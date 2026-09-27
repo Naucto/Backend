@@ -16,6 +16,9 @@ export class UserBasicInfoDto {
 }
 
 export class ProjectResponseDto {
+  @ApiProperty({ type: [String], description: "Historical AI-assisted categories; for public releases, the published snapshot", enum: ["CODE", "SPRITES", "MAPS", "MUSIC", "SFX"], isArray: true })
+    aiCategories!: string[];
+
   @ApiProperty({
     example: 1,
     description: "The unique identifier of the project"

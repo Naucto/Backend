@@ -12,6 +12,7 @@ import express, { Request, Response, NextFunction } from "express";
 
 import { NestFactory } from "@nestjs/core";
 import { ViolationValidationPipe } from "@common/pipes/violation-validation.pipe";
+import { aiJsonParser } from "src/routes/ai/ai-body";
 
 import { setupGracefulShutdown } from "@tygra/nestjs-graceful-shutdown";
 
@@ -32,6 +33,7 @@ if (isProduction) {
   // The API sits behind the deployment's reverse proxy on a private network, so the address of
   // the reader is the one that proxy reports, not the proxy's own.
   expressApp.set("trust proxy", "loopback, linklocal, uniquelocal");
+  expressApp.use("/ai", aiJsonParser);
 
   const app = await NestFactory.create<NestExpressApplication>(
     AppModule,

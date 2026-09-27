@@ -16,6 +16,16 @@ model Project {
   shortDesc    String
   longDesc     String?
   tags         String[]          @default([])
+  aiCategories String[]          @default([])
+  publishedAiCategories String[]  @default([])
+  aiConnections AiConnection[]
+  aiProposals AiProposal[]
+  aiContexts AiContext[]
+  aiEditors AiEditor[]
+  aiBarrier AiBarrier?
+  aiJobs AiJob[]
+  aiDeclarations AiDeclaration[]
+  aiKeyGrants AiKeyGrant[]
   publishedName      String?
   publishedShortDesc String?
   publishedLongDesc  String?

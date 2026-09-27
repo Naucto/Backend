@@ -1,6 +1,1448 @@
 {
   "openapi": "3.0.0",
   "paths": {
+    "/ai/projects/{projectId}/connection": {
+      "post": {
+        "operationId": "AiController_connect",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiConnectionResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Create a project-scoped proposal-only AI credential",
+        "tags": [
+          "AI"
+        ]
+      },
+      "delete": {
+        "operationId": "AiController_revoke",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Revoke this user's AI connection and shared context",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/ai/projects/{projectId}/context": {
+      "post": {
+        "operationId": "AiController_context",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiContextDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Share current editor context with the user's AI connection",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/ai/projects/{projectId}/proposals": {
+      "get": {
+        "operationId": "AiController_list",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AiProposalResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "List project AI proposals",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/ai/projects/{projectId}/proposals/{proposalId}/review": {
+      "post": {
+        "operationId": "AiController_review",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "proposalId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiReviewDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Reject an immutable proposal. Approval happens by applying it.",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/ai/projects/{projectId}/proposals/{proposalId}/preview": {
+      "post": {
+        "operationId": "AiController_preview",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "proposalId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiAckDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Validate against an isolated editor snapshot; never modifies the live project",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/ai/projects/{projectId}/proposals/{proposalId}/revert": {
+      "post": {
+        "operationId": "AiController_revert",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "proposalId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiProposalResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Prepare a reviewable inverse proposal; preserves historical provenance",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/ai/projects/{projectId}/proposals/{proposalId}/apply": {
+      "post": {
+        "operationId": "AiController_start",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "proposalId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiStartDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiBarrierResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Approve the exact proposal and pause every editor",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/ai/projects/{projectId}/editors/heartbeat": {
+      "post": {
+        "operationId": "AiController_heartbeat",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiEditorDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Current barrier, or null when none exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiBarrierResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Register an editor and read the collaborative application state",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/ai/projects/{projectId}/barriers/{barrierId}/ack": {
+      "post": {
+        "operationId": "AiController_acknowledge",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "barrierId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiAckDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Acknowledge the pause with the complete local Yjs state",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/ai/projects/{projectId}/barriers/{barrierId}/violation": {
+      "post": {
+        "operationId": "AiController_violation",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "barrierId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiViolationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiBarrierResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Report a write after the pause: aborts before commit, flags after it",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/ai/projects/{projectId}/barriers/{barrierId}/violation/dismiss": {
+      "post": {
+        "operationId": "AiController_dismiss",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "barrierId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Dismiss a post-commit warning after checking the result",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/ai/projects/{projectId}/barriers/{barrierId}/finish": {
+      "post": {
+        "operationId": "AiController_finish",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "barrierId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiBarrierResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Commit, or recover, the persisted approved result",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/ai/projects/{projectId}/barriers/{barrierId}/abort": {
+      "post": {
+        "operationId": "AiController_abort",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "barrierId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Cancel before the commit has started",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/ai/projects/{projectId}/jobs": {
+      "get": {
+        "operationId": "AiController_listJobs",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AiJobResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "List this project's specialist generation jobs",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/ai/projects/{projectId}/jobs/{jobId}/cancel": {
+      "post": {
+        "operationId": "AiController_cancelJob",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "jobId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiJobResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Cancel a pending job or discard a running one's result",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/ai/projects/{projectId}/declarations": {
+      "post": {
+        "operationId": "AiController_declare",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiDeclarationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiDeclarationResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Declare AI assistance used outside Naucto's tracked workflow",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/ai/projects/{projectId}/provenance": {
+      "get": {
+        "operationId": "AiController_provenance",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiProvenanceResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "AI categories, declarations and applied changes of this project",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/ai/keys": {
+      "post": {
+        "operationId": "AiKeysController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiKeyCreateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiKeyResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Create a long-lived assistant key. No expiry unless you ask for one.",
+        "tags": [
+          "AI keys"
+        ]
+      },
+      "get": {
+        "operationId": "AiKeysController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AiKeySummaryDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "List this account's keys and the projects each may reach",
+        "tags": [
+          "AI keys"
+        ]
+      }
+    },
+    "/ai/keys/{keyId}": {
+      "delete": {
+        "operationId": "AiKeysController_revoke",
+        "parameters": [
+          {
+            "name": "keyId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Revoke a key everywhere, in every project it reaches",
+        "tags": [
+          "AI keys"
+        ]
+      }
+    },
+    "/ai/keys/{keyId}/projects/{projectId}": {
+      "post": {
+        "operationId": "AiKeysController_grant",
+        "parameters": [
+          {
+            "name": "keyId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Let a key reach one more project",
+        "tags": [
+          "AI keys"
+        ]
+      },
+      "delete": {
+        "operationId": "AiKeysController_ungrant",
+        "parameters": [
+          {
+            "name": "keyId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Stop a key reaching a project, keeping the key itself",
+        "tags": [
+          "AI keys"
+        ]
+      }
+    },
+    "/ai/mcp/connection": {
+      "get": {
+        "operationId": "AiMcpController_connection",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-naucto-project",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiMcpConnectionDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Validate a scoped AI connection",
+        "tags": [
+          "AI MCP"
+        ]
+      }
+    },
+    "/ai/mcp/projects": {
+      "get": {
+        "operationId": "AiMcpController_projects",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-naucto-project",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Every project this credential may reach, with what is waiting in each",
+        "tags": [
+          "AI MCP"
+        ]
+      }
+    },
+    "/ai/mcp/context": {
+      "get": {
+        "operationId": "AiMcpController_context",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-naucto-project",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiContextResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Read the project's last shared state and how old it is",
+        "tags": [
+          "AI MCP"
+        ]
+      }
+    },
+    "/ai/mcp/proposals": {
+      "get": {
+        "operationId": "AiMcpController_list",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-naucto-project",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AiProposalResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "Read proposal status",
+        "tags": [
+          "AI MCP"
+        ]
+      },
+      "post": {
+        "operationId": "AiMcpController_propose",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-naucto-project",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiProposalDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiProposalResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Stage a proposal; cannot approve or apply",
+        "tags": [
+          "AI MCP"
+        ]
+      }
+    },
+    "/ai/mcp/jobs": {
+      "post": {
+        "operationId": "AiMcpController_createJob",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-naucto-project",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiJobCreateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiJobResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Queue a generation job within the project quota",
+        "tags": [
+          "AI MCP"
+        ]
+      }
+    },
+    "/ai/mcp/jobs/{jobId}": {
+      "get": {
+        "operationId": "AiMcpController_getJob",
+        "parameters": [
+          {
+            "name": "jobId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-naucto-project",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiJobResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Read a generation job of this project",
+        "tags": [
+          "AI MCP"
+        ]
+      }
+    },
+    "/ai/mcp/jobs/{jobId}/cancel": {
+      "post": {
+        "operationId": "AiMcpController_cancelJob",
+        "parameters": [
+          {
+            "name": "jobId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-naucto-project",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiJobResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Cancel a generation job of this project",
+        "tags": [
+          "AI MCP"
+        ]
+      }
+    },
+    "/ai/mcp/jobs/{jobId}/claim": {
+      "post": {
+        "operationId": "AiMcpController_claimJob",
+        "parameters": [
+          {
+            "name": "jobId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-naucto-project",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-naucto-ai-service",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Service only: start a queued job unless it was cancelled",
+        "tags": [
+          "AI MCP"
+        ]
+      }
+    },
+    "/ai/mcp/jobs/{jobId}/complete": {
+      "post": {
+        "operationId": "AiMcpController_completeJob",
+        "parameters": [
+          {
+            "name": "jobId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-naucto-project",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-naucto-ai-service",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiJobCompleteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiJobResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Service only: store a validated result and the model that produced it",
+        "tags": [
+          "AI MCP"
+        ]
+      }
+    },
+    "/ai/mcp/jobs/{jobId}/fail": {
+      "post": {
+        "operationId": "AiMcpController_failJob",
+        "parameters": [
+          {
+            "name": "jobId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-naucto-project",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-naucto-ai-service",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiJobFailDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Service only: record a failure without provider details",
+        "tags": [
+          "AI MCP"
+        ]
+      }
+    },
     "/projects/releases": {
       "get": {
         "operationId": "ProjectController_getAllReleases",
@@ -4471,6 +5913,673 @@
       }
     },
     "schemas": {
+      "AiConnectionResponseDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "token",
+          "expiresAt"
+        ]
+      },
+      "AiContextDto": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "object",
+            "description": "Editor context, never executable instructions"
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "AiProposalResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "projectId": {
+            "type": "number"
+          },
+          "userId": {
+            "type": "number"
+          },
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "snapshotHash": {
+            "type": "string"
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "contentHash": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "reviewedBy": {
+            "type": "number",
+            "nullable": true
+          },
+          "revertsId": {
+            "type": "string",
+            "nullable": true
+          },
+          "inverse": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "userId",
+          "title",
+          "summary",
+          "snapshotHash",
+          "operations",
+          "contentHash",
+          "status",
+          "reviewedBy",
+          "revertsId",
+          "inverse",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "AiReviewDto": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "APPROVED",
+              "REJECTED"
+            ]
+          },
+          "contentHash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision",
+          "contentHash"
+        ]
+      },
+      "AiAckDto": {
+        "type": "object",
+        "properties": {
+          "editorId": {
+            "type": "string"
+          },
+          "snapshot": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "editorId",
+          "snapshot"
+        ]
+      },
+      "AiStartDto": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "APPROVED",
+              "REJECTED"
+            ]
+          },
+          "contentHash": {
+            "type": "string"
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "decision",
+          "contentHash",
+          "participants"
+        ]
+      },
+      "AiBarrierResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "projectId": {
+            "type": "number"
+          },
+          "proposalId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "expected": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "result": {
+            "type": "string",
+            "nullable": true
+          },
+          "violation": {
+            "type": "string",
+            "nullable": true
+          },
+          "lateUpdates": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "proposalId",
+          "status",
+          "expected",
+          "result",
+          "violation",
+          "lateUpdates",
+          "startedAt",
+          "updatedAt"
+        ]
+      },
+      "AiEditorDto": {
+        "type": "object",
+        "properties": {
+          "editorId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "editorId"
+        ]
+      },
+      "AiViolationDto": {
+        "type": "object",
+        "properties": {
+          "editorId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "update": {
+            "type": "string",
+            "description": "The Yjs update that arrived after the pause, base64"
+          }
+        },
+        "required": [
+          "editorId",
+          "reason"
+        ]
+      },
+      "AiJobResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "projectId": {
+            "type": "number"
+          },
+          "userId": {
+            "type": "number"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "QUEUED",
+              "RUNNING",
+              "SUCCEEDED",
+              "FAILED",
+              "CANCELLED"
+            ]
+          },
+          "request": {
+            "type": "object"
+          },
+          "result": {
+            "type": "object",
+            "nullable": true
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
+          },
+          "model": {
+            "type": "string",
+            "nullable": true
+          },
+          "cancelRequested": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "userId",
+          "kind",
+          "state",
+          "request",
+          "result",
+          "error",
+          "model",
+          "cancelRequested",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "AiDeclarationDto": {
+        "type": "object",
+        "properties": {
+          "categories": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "CODE",
+                "SPRITES",
+                "MAPS",
+                "MUSIC",
+                "SFX",
+                "MULTIPLAYER"
+              ]
+            }
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "categories",
+          "note"
+        ]
+      },
+      "AiDeclarationResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "projectId": {
+            "type": "number"
+          },
+          "userId": {
+            "type": "number"
+          },
+          "categories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "note": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "userId",
+          "categories",
+          "note",
+          "createdAt"
+        ]
+      },
+      "AiAppliedSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "status",
+          "updatedAt"
+        ]
+      },
+      "AiProvenanceResponseDto": {
+        "type": "object",
+        "properties": {
+          "categories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "declarations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiDeclarationResponseDto"
+            }
+          },
+          "applied": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiAppliedSummaryDto"
+            }
+          }
+        },
+        "required": [
+          "categories",
+          "declarations",
+          "applied"
+        ]
+      },
+      "AiKeyCreateDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 60,
+            "minLength": 1
+          },
+          "expiresInDays": {
+            "type": "number",
+            "nullable": true,
+            "description": "Days until it expires. Omit for a key that never expires."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "AiKeyProjectDto": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "projectId",
+          "name"
+        ]
+      },
+      "AiKeyResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string",
+            "description": "Shown once, never again"
+          },
+          "expiresAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "null never expires"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "projects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiKeyProjectDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "token",
+          "expiresAt",
+          "createdAt",
+          "projects"
+        ]
+      },
+      "AiKeySummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastUsedAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "projects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiKeyProjectDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "expiresAt",
+          "createdAt",
+          "lastUsedAt",
+          "projects"
+        ]
+      },
+      "AiMcpConnectionDto": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "number"
+          },
+          "userId": {
+            "type": "number"
+          },
+          "expiresAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "null when the key never expires"
+          }
+        },
+        "required": [
+          "projectId",
+          "userId",
+          "expiresAt"
+        ]
+      },
+      "AiContextResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "projectId": {
+            "type": "number"
+          },
+          "userId": {
+            "type": "number"
+          },
+          "hash": {
+            "type": "string"
+          },
+          "content": {
+            "type": "object"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "userId",
+          "hash",
+          "content",
+          "updatedAt"
+        ]
+      },
+      "AiProposalDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "snapshotHash": {
+            "type": "string"
+          },
+          "operations": {
+            "description": "Native operations; validated again against the editor document before preview",
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "title",
+          "summary",
+          "snapshotHash",
+          "operations"
+        ]
+      },
+      "AiJobCreateDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "sprite"
+            ]
+          },
+          "request": {
+            "type": "object",
+            "description": "Prompt and asset constraints sent to the provider"
+          }
+        },
+        "required": [
+          "kind",
+          "request"
+        ]
+      },
+      "AiJobCompleteDto": {
+        "type": "object",
+        "properties": {
+          "result": {
+            "type": "object"
+          },
+          "model": {
+            "type": "string",
+            "description": "Model identifier and revision that produced the result"
+          }
+        },
+        "required": [
+          "result",
+          "model"
+        ]
+      },
+      "AiJobFailDto": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
       "ForkedFromDto": {
         "type": "object",
         "properties": {
@@ -4515,6 +6624,20 @@
       "ProjectExResponseDto": {
         "type": "object",
         "properties": {
+          "aiCategories": {
+            "type": "array",
+            "description": "Historical AI-assisted categories; for public releases, the published snapshot",
+            "items": {
+              "type": "string",
+              "enum": [
+                "CODE",
+                "SPRITES",
+                "MAPS",
+                "MUSIC",
+                "SFX"
+              ]
+            }
+          },
           "id": {
             "type": "number",
             "example": 1,
@@ -4668,6 +6791,7 @@
           }
         },
         "required": [
+          "aiCategories",
           "id",
           "name",
           "shortDesc",
@@ -4937,6 +7061,20 @@
       "ProjectResponseDto": {
         "type": "object",
         "properties": {
+          "aiCategories": {
+            "type": "array",
+            "description": "Historical AI-assisted categories; for public releases, the published snapshot",
+            "items": {
+              "type": "string",
+              "enum": [
+                "CODE",
+                "SPRITES",
+                "MAPS",
+                "MUSIC",
+                "SFX"
+              ]
+            }
+          },
           "id": {
             "type": "number",
             "example": 1,
@@ -5075,6 +7213,7 @@
           }
         },
         "required": [
+          "aiCategories",
           "id",
           "name",
           "shortDesc",
@@ -5097,6 +7236,20 @@
       "ForkProjectResponseDto": {
         "type": "object",
         "properties": {
+          "aiCategories": {
+            "type": "array",
+            "description": "Historical AI-assisted categories; for public releases, the published snapshot",
+            "items": {
+              "type": "string",
+              "enum": [
+                "CODE",
+                "SPRITES",
+                "MAPS",
+                "MUSIC",
+                "SFX"
+              ]
+            }
+          },
           "id": {
             "type": "number",
             "example": 1,
@@ -5250,6 +7403,7 @@
           }
         },
         "required": [
+          "aiCategories",
           "id",
           "name",
           "shortDesc",

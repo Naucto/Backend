@@ -1,0 +1,61 @@
+import { ConflictException } from "@nestjs/common";
+import * as Y from "yjs";
+import { type Operation, prepareAsset } from "./ai-assets";
+import { prepareNetPermissions } from "./ai-net";
+
+export const OPERATION_KINDS = ["code", "pixels", "tiles", "catalog", "sound", "delete_sound", "create_map", "delete_map", "resize_map", "net_permissions"] as const;
+
+export interface Commit {
+  /** Full Yjs state of the merged snapshots with the proposal applied, base64. */
+  result: string;
+  /** Operations that would undo exactly these writes, in the order to submit them. */
+  inverse: Operation[];
+  categories: string[];
+}
+
+/** Merge frozen editor states, validate a complete native batch, then create one immutable result. */
+export function commitSnapshots(snapshots: string[], operations: unknown, proposalId: string, isInverse = false): Commit {
+  const doc = new Y.Doc();
+  try {
+    for (const snapshot of snapshots) Y.applyUpdate(doc, Buffer.from(snapshot, "base64"));
+    if (doc.getMap("ai.applied").has(proposalId)) throw new ConflictException("Already applied");
+    if (!Array.isArray(operations) || !operations.length || operations.length > 100) throw new ConflictException("Invalid operations");
+    const writes: (() => void)[] = [];
+    const inverse: Operation[] = [];
+    const categories = new Set<string>();
+    const touched = new Set<string>();
+    const touch = (key: string): void => {
+      if (touched.has(key)) throw new ConflictException("Overlapping operations");
+      touched.add(key);
+    };
+    for (const raw of operations as unknown[]) {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new ConflictException("Invalid operation");
+      const op = raw as Operation;
+      if (!OPERATION_KINDS.includes(op["kind"] as typeof OPERATION_KINDS[number])) throw new ConflictException("Unsupported operation");
+      if (op["kind"] !== "code") {
+        // Multiplayer declarations are their own document map, not an asset, so they get their own
+        // preparation rather than a case inside the asset switch.
+        const asset = op["kind"] === "net_permissions" ? prepareNetPermissions(doc, op, touch, isInverse) : prepareAsset(doc, op, touch);
+        writes.push(...asset.writes);
+        inverse.unshift(...asset.inverse);
+        if (asset.category) categories.add(asset.category);
+        continue;
+      }
+      const id = op["fileId"], before = op["before"], after = op["after"];
+      if (typeof id !== "string" || typeof before !== "string" || typeof after !== "string" || after.length > 100000) throw new ConflictException("Invalid code operation");
+      if (before === after) throw new ConflictException("Proposal contains no-op code changes");
+      const file = doc.getMap("code.files").get(id);
+      const text = file instanceof Y.Map ? file.get("text") : null;
+      if (!(text instanceof Y.Text) || text.toString() !== before) throw new ConflictException("Code changed: review a fresh proposal");
+      touch(`code:${id}`);
+      writes.push(() => { text.delete(0, text.length); text.insert(0, after); });
+      inverse.unshift({ kind: "code", fileId: id, before: after, after: before });
+      categories.add("CODE");
+    }
+    doc.transact(() => {
+      for (const write of writes) write();
+      doc.getMap("ai.applied").set(proposalId, { categories: [...categories] });
+    });
+    return { result: Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64"), inverse, categories: [...categories] };
+  } finally { doc.destroy(); }
+}

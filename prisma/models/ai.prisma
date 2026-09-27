@@ -1,0 +1,109 @@
+// AI assistance: scoped MCP credentials, shared editor context, reviewable proposals, the
+// collaborative application barrier, specialist generation jobs and provenance declarations.
+
+model AiConnection {
+  id        String   @id @default(uuid())
+  tokenHash String   @unique
+  projectId Int
+  userId    Int
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, userId])
+}
+
+model AiContext {
+  id        String   @id @default(uuid())
+  projectId Int
+  userId    Int
+  hash      String
+  content   Json
+  updatedAt DateTime @updatedAt
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+}
+
+model AiProposal {
+  id           String   @id @default(uuid())
+  projectId    Int
+  userId       Int
+  title        String
+  summary      String
+  snapshotHash String
+  operations   Json
+  contentHash  String
+  status       String   @default("PENDING")
+  reviewedBy   Int?
+  revertsId    String?
+  // Native operations that undo this proposal, captured from the merged state at commit.
+  inverse      Json?
+  // How old the shared state this was written against was. An assistant may work on a project
+  // nobody has open, so the person applying this is told how far back it reaches rather than
+  // being left to assume it is current.
+  baseContextAgeMs Int @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+}
+
+model AiEditor {
+  id        String   @id
+  projectId Int
+  userId    Int
+  lastSeen  DateTime @default(now())
+  frozenId  String?
+  snapshot  String?
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, lastSeen])
+}
+
+model AiBarrier {
+  projectId  Int      @id
+  id         String   @unique @default(uuid())
+  proposalId String
+  status     String
+  expected   String[]
+  result     String?
+  // Set when a participant reported a write that the frozen snapshots could not contain.
+  violation  String?
+  // Yjs updates editors received after pausing; each must already be inside the frozen snapshots.
+  lateUpdates String[] @default([])
+  startedAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model AiJob {
+  id              String   @id @default(uuid())
+  projectId       Int
+  userId          Int
+  kind            String
+  state           String   @default("QUEUED")
+  request         Json
+  result          Json?
+  error           String?
+  model           String?
+  cancelRequested Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+}
+
+model AiDeclaration {
+  id         String   @id @default(uuid())
+  projectId  Int
+  userId     Int
+  categories String[]
+  note       String
+  createdAt  DateTime @default(now())
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+}

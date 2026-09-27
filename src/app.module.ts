@@ -18,6 +18,7 @@ import { PresenceModule } from "src/presence/presence.module";
 import { CurationModule } from "@curation/curation.module";
 import { FeaturesModule } from "src/routes/features/features.module";
 import { AppConfig } from "src/app.config";
+import { AiModule } from "src/routes/ai/ai.module";
 import {
   GracefulShutdownModule,
   IGracefulShutdownConfigOptions
@@ -53,6 +54,7 @@ import {
     PresenceModule,
     CurationModule,
     FeaturesModule
+    , AiModule
   ],
   providers: [AppConfig],
   exports: [AppConfig]

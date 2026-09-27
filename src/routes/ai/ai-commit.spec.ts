@@ -1,0 +1,80 @@
+import * as Y from "yjs";
+import { commitSnapshots } from "./ai-commit";
+
+const commitCodeSnapshots = (...args: Parameters<typeof commitSnapshots>): string => commitSnapshots(...args).result;
+import { createHash } from "node:crypto";
+
+const encode = (doc: Y.Doc): string => Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64");
+function fixture(): Y.Doc {
+  const doc = new Y.Doc();
+  const file = new Y.Map<unknown>();
+  doc.getMap("code.files").set("main", file);
+  file.set("text", new Y.Text("old"));
+  return doc;
+}
+const code = (doc: Y.Doc): string => (doc.getMap<Y.Map<Y.Text>>("code.files").get("main")!.get("text")!).toString();
+
+describe("collaborative AI commit", () => {
+  it("creates a second level without changing the first map", () => {
+    const doc = fixture();
+    doc.getMap("map.tiles").set("0,0", 3);
+    const id = "12345678-1234-1234-1234-123456789abc";
+    const result = commitCodeSnapshots([encode(doc)], [{ kind: "create_map", id, name: "Second", width: 2, height: 2, assets: [null, null, null, null], description: "Another level", profile: "top-down" }], "level");
+    const after = new Y.Doc();
+    Y.applyUpdate(after, Buffer.from(result, "base64"));
+    expect(after.getMap("map.tiles").get("0,0")).toBe(3);
+    expect(after.getMap("map.maps").size).toBe(2);
+    expect(after.getMap("ai.levels").get(id)).toMatchObject({ name: "Second", gameplayValidated: false });
+    expect(() => commitCodeSnapshots([Buffer.from(Y.encodeStateAsUpdate(after)).toString("base64")], [{ kind: "create_map", id, name: "Again", width: 1, height: 1, assets: [null], description: "", profile: "visual" }], "duplicate")).toThrow("occupied");
+    doc.destroy(); after.destroy();
+  });
+  it("resolves catalog tiles and rejects stale asset references", () => {
+    const doc = fixture();
+    doc.getMap("gfx.sprites").set("8,0", 3);
+    const pixels = new Uint8Array(64); pixels[0] = 3;
+    const catalog = doc.getMap("ai.catalog");
+    catalog.set("grass", { kind: "tile", resourceId: "0", x: 8, y: 0, width: 8, height: 8, contentHash: createHash("sha256").update(pixels).digest("hex") });
+    const ops = [{ kind: "tiles", mapId: "0", changes: [{ x: 0, y: 0, before: 0, assetId: "grass" }] }];
+    const result = new Y.Doc();
+    Y.applyUpdate(result, Buffer.from(commitCodeSnapshots([encode(doc)], ops, "tiles"), "base64"));
+    expect(result.getMap("map.tiles").get("0,0")).toBe(1);
+    doc.getMap("gfx.sprites").set("8,0", 4);
+    expect(() => commitCodeSnapshots([encode(doc)], ops, "other")).toThrow("Catalog tile changed");
+    result.destroy(); doc.destroy();
+  });
+
+  it("applies pixels only within bounds and preserves rejected input", () => {
+    const doc = fixture();
+    expect(() => commitCodeSnapshots([encode(doc)], [{ kind: "pixels", sheetId: "0", changes: [{ x: 128, y: 0, before: 0, after: 3 }] }], "bad")).toThrow("Invalid asset");
+    expect(doc.getMap("gfx.sprites").size).toBe(0);
+    const result = new Y.Doc();
+    Y.applyUpdate(result, Buffer.from(commitCodeSnapshots([encode(doc)], [{ kind: "pixels", sheetId: "0", changes: [{ x: 1, y: 2, before: 0, after: 3 }] }], "pixels"), "base64"));
+    expect(result.getMap("gfx.sprites").get("1,2")).toBe(3);
+    result.destroy(); doc.destroy();
+  });
+  it("merges every frozen editor before testing preconditions", () => {
+    const a = fixture(), b = new Y.Doc();
+    Y.applyUpdate(b, Y.encodeStateAsUpdate(a));
+    b.getMap<Y.Map<Y.Text>>("code.files").get("main")!.get("text")!.insert(0, "human ");
+    expect(() => commitCodeSnapshots([encode(a), encode(b)], [{ kind: "code", fileId: "main", before: "old", after: "new" }], "p")).toThrow("Code changed");
+    expect(code(a)).toBe("old");
+    expect(code(b)).toBe("human old");
+  });
+
+  it("preserves unrelated concurrent work and records the proposal once", () => {
+    const a = fixture(), b = new Y.Doc();
+    Y.applyUpdate(b, Y.encodeStateAsUpdate(a));
+    b.getMap("gfx.sprites").set("0,0", 5);
+    const result = commitCodeSnapshots([encode(a), encode(b)], [{ kind: "code", fileId: "main", before: "old", after: "new" }], "p");
+    Y.applyUpdate(a, Buffer.from(result, "base64"));
+    Y.applyUpdate(a, Buffer.from(result, "base64"));
+    expect(code(a)).toBe("new");
+    expect(a.getMap("gfx.sprites").get("0,0")).toBe(5);
+    expect(a.getMap("ai.applied").size).toBe(1);
+    expect(() => commitCodeSnapshots([encode(a)], [{ kind: "code", fileId: "main", before: "new", after: "oops" }], "p")).toThrow("Already applied");
+  });
+
+  it("does not silently accept non-code mutations", () => {
+    expect(() => commitCodeSnapshots([encode(fixture())], [{ kind: "opaqueUpdate" }], "p")).toThrow("Unsupported operation");
+  });
+});

@@ -44,6 +44,8 @@ const mockProjects: ProjectWithCreatorAndCollaborators[] = [
     publishedShortDesc: null,
     publishedLongDesc: null,
     publishedTags: [],
+    aiCategories: [],
+    publishedAiCategories: [],
     status: ProjectStatus.IN_PROGRESS,
     iconUrl: "https://example.com/icon-a.png",
     monetization: MonetizationType.ADS,
@@ -83,6 +85,8 @@ const mockProjects: ProjectWithCreatorAndCollaborators[] = [
     publishedShortDesc: "Short B",
     publishedLongDesc: "Long B",
     publishedTags: ["Shooter", "Adventure"],
+    aiCategories: [],
+    publishedAiCategories: [],
     status: ProjectStatus.COMPLETED,
     iconUrl: "https://example.com/icon-b.png",
     monetization: MonetizationType.PAID,
@@ -122,6 +126,7 @@ describe("ProjectService", () => {
       count: jest.fn(),
       create: jest.fn()
     },
+    aiBarrier: { findUnique: jest.fn().mockResolvedValue(null) },
     project: {
       aggregate: jest.fn(),
       count: jest.fn(),

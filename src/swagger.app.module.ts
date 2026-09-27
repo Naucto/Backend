@@ -48,6 +48,10 @@ import { ConfigModule } from "@nestjs/config";
 import { ScheduleModule } from "@nestjs/schedule";
 
 import { AuthModule } from "@auth/auth.module";
+import { AiController, AiKeysController, AiMcpController } from "src/routes/ai/ai.controller";
+import { AiService } from "src/routes/ai/ai.service";
+import { AiBarrierService } from "src/routes/ai/ai-barrier.service";
+import { AiJobsService } from "src/routes/ai/ai-jobs.service";
 
 const nullProvider = (token: InjectionToken): Provider => ({
   provide: token,
@@ -76,6 +80,9 @@ const nullProvider = (token: InjectionToken): Provider => ({
     WebRTCModule
   ],
   controllers: [
+    AiController,
+    AiKeysController,
+    AiMcpController,
     ProjectController,
     MultiplayerController,
     ProjectCommentController,
@@ -88,6 +95,9 @@ const nullProvider = (token: InjectionToken): Provider => ({
     AdminFeaturedReleaseController
   ],
   providers: [
+    nullProvider(AiService),
+    nullProvider(AiBarrierService),
+    nullProvider(AiJobsService),
     nullProvider(PrismaService),
     nullProvider(ProjectService),
     nullProvider(S3Client),
