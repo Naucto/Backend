@@ -25,11 +25,19 @@ describe("the list of operations that cannot be undone", () => {
 
   it("covers the two operations that record no inverse", () => {
     // Both remove something the document no longer holds a description of. Putting them back would
-    // mean inventing the content, so `prepare*` returns an empty inverse for them.
+    // mean inventing the content, so `prepare*` returns an empty inverse for them — checked against
+    // the code rather than against the list, so the list cannot vouch for itself.
     const sound = fixture();
     sound.getMap<string>("sound.sfx").set("3", "[]");
     expect(commitSnapshots([encode(sound)], [{ kind: "delete_sound", category: "SFX", slot: 3, slotValue: "[]", instruments: [], patterns: [], samples: [] }], "d").inverse).toEqual([]);
     expect(NON_INVERTIBLE_KINDS.has("delete_sound")).toBe(true);
+
+    // A level is created and then removed, since a removal needs one to remove and the first map
+    // cannot be taken.
+    const id = "12345678-1234-1234-1234-123456789abc";
+    const created = commitSnapshots([encode(fixture())], [{ kind: "create_map", id, name: "Two", width: 2, height: 2, assets: [null, null, null, null], description: "", profile: "visual" }], "level");
+    const removed = commitSnapshots([created.result], created.inverse, "gone");
+    expect(removed.inverse).toEqual([]);
     expect(NON_INVERTIBLE_KINDS.has("delete_map")).toBe(true);
   });
 

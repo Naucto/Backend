@@ -277,8 +277,12 @@ export class AiService {
     // A proposal that deleted a level or a sound cannot be undone as a whole, and reverting it
     // anyway would restore the parts it could while quietly leaving the rest — with nothing in the
     // revert's operations to say so. Version history has what is needed; a partial undo does not.
-    const applied = Array.isArray(original.operations) ? (original.operations as Record<string, unknown>[]) : [];
-    const lost = [...new Set(applied.filter((operation) => operation && typeof operation === "object").map((operation) => String(operation["kind"])).filter((kind) => NON_INVERTIBLE_KINDS.has(kind)))];
+    // Not a list is refused rather than read as an empty one. Reading it as empty would say "nothing
+    // here cannot be undone" about a row whose operations cannot be read at all, and the revert would
+    // then restore what it could while saying nothing about the rest.
+    if (!Array.isArray(original.operations)) throw new ConflictException("This change's record cannot be read; restore it from version history");
+    const applied = (original.operations as unknown[]).filter((operation) => operation !== null && typeof operation === "object");
+    const lost = [...new Set(applied.map((operation) => String((operation as Record<string, unknown>)["kind"])).filter((kind) => NON_INVERTIBLE_KINDS.has(kind)))];
     if (lost.length) throw new ConflictException(`This change removed something that cannot be put back automatically (${lost.join(", ")}); restore it from version history`);
     const operations = stored;
     const open = await this.prisma.aiProposal.findFirst({ where: { projectId, revertsId: id, status: "PENDING" } });

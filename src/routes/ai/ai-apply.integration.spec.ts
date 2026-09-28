@@ -327,6 +327,41 @@ integration("AI application PostgreSQL integration", () => {
     actual.destroy();
   });
 
+  it("stages a revert against the same state, and says so when that state is old", async () => {
+    const doc = new Y.Doc();
+    doc.getMap("net.permissions").set("gate", { flags: 3 });
+    const state = Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64");
+    const context = await ai.context(projectId, userId, { run: randomUUID() });
+    const removed = await ai.propose(connection, {
+      title: "close a path",
+      summary: "x",
+      snapshotHash: context.hash,
+      operations: [{ kind: "net_permissions", path: "gate", remove: true, expect: { flags: 3 } }],
+    });
+    await apply.apply(projectId, userId, removed.id, removed.contentHash, state);
+    const revert = await ai.proposeRevert(projectId, userId, removed.id);
+
+    // A revert is written against the state the change it undoes was written against, so it reports
+    // the same age rather than the column's default of zero — which would tell a person they are
+    // looking at something that reaches back no further than the moment it was staged.
+    expect(revert.baseContextAgeMs).toBe(removed.baseContextAgeMs);
+    expect(revert.snapshotHash).toBe(removed.snapshotHash);
+    doc.destroy();
+  });
+
+  it("refuses a proposal whose operations cannot be read, rather than reverting part of it", async () => {
+    // Only `propose` writes operations and it always writes a list, so this needs a hand-edited row.
+    // Reverting one anyway would restore whatever it could and say nothing about the rest, which is
+    // the failure the non-invertible check exists to prevent — so the shape is refused as well.
+    const stored = await prisma.aiProposal.create({ data: {
+      projectId, userId, title: "odd operations", summary: "x", snapshotHash: "0".repeat(64), contentHash: "2".repeat(64), status: "APPLIED",
+      operations: { kind: "delete_map" } as never,
+      inverse: [{ kind: "code", fileId: "main", before: "new", after: "old" }],
+    } });
+    await expect(ai.proposeRevert(projectId, userId, stored.id)).rejects.toThrow("record cannot be read");
+    await prisma.aiProposal.delete({ where: { id: stored.id } });
+  });
+
   it("enforces the job quota, the service secret, and discards late cancelled results", async () => {
     const first = await jobs.create(connection, "sprite", { prompt: "gem" });
     const second = await jobs.create(connection, "sprite", { prompt: "tree" });

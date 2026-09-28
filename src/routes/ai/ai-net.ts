@@ -88,7 +88,10 @@ export function prepareNetPermissions(doc: Y.Doc, op: Operation, touch: (key: st
     const want = op["expect"];
     if (want === undefined) throw new ConflictException("A multiplayer declaration must state what it expects to find");
     if (want === null) {
-      if (map.has(target)) throw new ConflictException("Declaration changed since this was applied");
+      // Absent by the same test the rest of this function uses. `map.has` would count an entry a peer
+      // stored as `undefined` as a declaration, while everything below reads it as absent — the same
+      // path, reported as changed one way and as empty the other.
+      if (map.get(target) !== undefined) throw new ConflictException("Declaration changed since this was applied");
       return;
     }
     // Anything that is not a declaration — an array, a string, a number, an object without `flags` —
