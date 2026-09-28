@@ -16,7 +16,12 @@ import { CREATOR_SELECT, COLLABORATOR_SELECT } from "./project.service";
 import { ProjectStatus, MonetizationType, Prisma } from "@prisma/client";
 import * as Y from "yjs";
 import { Readable } from "stream";
-import { GAME_KEYS, PROJECT_CONTENT_MAX_BYTES } from "./content-size";
+import {
+  GAME_KEYS,
+  computeContentSizeFromDoc,
+  PROJECT_BLOB_MAX_BYTES,
+  PROJECT_CONTENT_MAX_BYTES
+} from "./content-size";
 import {
   ProjectNotPublishedException,
   ProjectTooLargeException
@@ -833,6 +838,50 @@ describe("ProjectService", () => {
 
     // Every save reads the slot, merges into it, and writes it back, so what is stored is only ever
     // as whole as the last write. These two are about what happens when that is not good enough.
+    it("merges into a stored blob far larger than the content budget", async () => {
+      // The content budget is for the game's logical content, and a CRDT update is far larger than
+      // the content it carries — it holds the history too. Bounding the blob by the content budget
+      // read a perfectly ordinary project's stored state as "too large to merge", which switched
+      // merging off and left last-writer-wins in place for exactly the projects large enough to hit
+      // it. A map repainted a few times is tens of kilobytes of content and megabytes of blob.
+      saves([1_000]);
+      const doc = new Y.Doc();
+      const map = doc.getMap<number>("game.map");
+      for (let pass = 0; pass < 40; pass += 1) {
+        for (let i = 0; i < 4096; i += 1) map.set(`t${pass}:${i}`, pass * 7 + i);
+      }
+      const fat = Buffer.from(Y.encodeStateAsUpdate(doc));
+      expect(fat.length).toBeGreaterThan(PROJECT_CONTENT_MAX_BYTES);
+      expect(computeContentSizeFromDoc(doc).total).toBeLessThan(PROJECT_CONTENT_MAX_BYTES);
+
+      s3ServiceMock.getFileMetadataOrNull.mockResolvedValue({ ContentLength: fat.length });
+      s3ServiceMock.downloadFile.mockResolvedValue({ body: Readable.from([fat]) });
+      s3ServiceMock.uploadFile.mockResolvedValue(undefined);
+
+      await service.save(1, { ...file, buffer: stateOf("alpha") } as Express.Multer.File);
+
+      // Merged, not replaced: both the stored history and the incoming change are in what was
+      // written. Replacing would have kept only "alpha" and dropped every painted tile.
+      const written = s3ServiceMock.uploadFile.mock.calls[0]![0]!.file.buffer;
+      const after = new Y.Doc();
+      Y.applyUpdate(after, written);
+      expect(after.getText("body").toString()).toContain("alpha");
+      expect(after.getMap<number>("game.map").size).toBe(4096 * 40);
+    });
+
+    it("refuses a save whose merge would grow the blob past the ceiling", async () => {
+      // Merging only ever grows a document, so a slot can creep past the ceiling across a window
+      // and then be read as too large to merge — and replaced, not merged, by every save after.
+      saves([1_000]);
+      s3ServiceMock.getFileMetadataOrNull.mockResolvedValue({ ContentLength: 100 });
+
+      await expect(
+        service.save(1, { ...file, buffer: stateOf("x".repeat(PROJECT_BLOB_MAX_BYTES + 1)) } as Express.Multer.File)
+      ).rejects.toThrow(/maximum size for a save/);
+
+      expect(s3ServiceMock.uploadFile).not.toHaveBeenCalled();
+    });
+
     it("does not write over a slot it could not read", async () => {
       // Reading failed for a reason that says nothing about whether anything is stored: throttled,
       // a dropped connection, a 503. Treating that as an empty slot made the save that followed

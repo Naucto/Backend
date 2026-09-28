@@ -1,3 +1,4 @@
+import { NodeHttpHandler } from "@smithy/node-http-handler";
 import { Inject, Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
@@ -88,7 +89,11 @@ export class S3Service {
         accessKeyId: accessKeyId!,
         secretAccessKey: secretAccessKey!
       },
-      forcePathStyle: true
+      forcePathStyle: true,
+      // A hung request has to end. Saves are serialised per project, so one call that never returns
+      // holds that project's lock and every later save queues behind it forever; the editor has no
+      // idea, and keeps asking.
+      requestHandler: s3RequestHandler(configService)
     });
   }
 
@@ -443,4 +448,16 @@ function isNotImplemented(error: unknown): boolean {
     "name" in error &&
     (error as { name?: unknown }).name === "NotImplemented"
   );
+}
+
+/**
+ * An HTTP handler with deadlines on both connecting and answering, so a request to the object store
+ * that never completes fails instead of waiting. Configuring it here rather than at each call site
+ * is the point: every operation on the store goes through the client, so this covers the listing,
+ * the existence check, the upload and the deletes, not just the body read that has its own deadline.
+ */
+function s3RequestHandler(configService: ConfigService): NodeHttpHandler {
+  const connectionTimeout = Number(configService.get<string>("S3_CONNECTION_TIMEOUT_MS") ?? 5000);
+  const requestTimeout = Number(configService.get<string>("S3_REQUEST_TIMEOUT_MS") ?? 30000);
+  return new NodeHttpHandler({ connectionTimeout, requestTimeout });
 }

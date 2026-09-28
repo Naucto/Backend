@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { MulterModule } from "@nestjs/platform-express";
 import { ConfigModule, ConfigService } from "@nestjs/config";
+import { NodeHttpHandler } from "@smithy/node-http-handler";
 import { S3Client } from "@aws-sdk/client-s3";
 import { S3Service } from "./s3.service";
 import { CloudfrontService } from "./edge.service";
@@ -42,7 +43,13 @@ import { S3ConfigurationException } from "./s3.error";
           credentials: {
             accessKeyId: accessKeyId!,
             secretAccessKey: secretAccessKey!
-          }
+          },
+          // Deadlines, as in S3Service. A hung request here would hold a project's save lock and
+          // queue every later save behind it.
+          requestHandler: new NodeHttpHandler({
+            connectionTimeout: Number(configService.get<string>("S3_CONNECTION_TIMEOUT_MS") ?? 5000),
+            requestTimeout: Number(configService.get<string>("S3_REQUEST_TIMEOUT_MS") ?? 30000)
+          })
         });
       },
       inject: [ConfigService]

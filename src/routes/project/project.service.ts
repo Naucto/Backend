@@ -5,7 +5,8 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
-  NotFoundException
+  NotFoundException,
+  PayloadTooLargeException
 } from "@nestjs/common";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { CreateProjectDto } from "./dto/create-project.dto";
@@ -850,7 +851,13 @@ export class ProjectService {
     // on a whole blob, so whichever landed second would erase the first, and an applied change the
     // database records as applied would be missing from the project. Merging is what a CRDT is for.
     const stored = await this.storedSave(projectId, slot, newest?.name);
+    // The merged result is bounded too. Merging only ever grows a document, so a slot can creep
+    // past the ceiling over a window and then be read as "too large to merge" — replaced, not
+    // merged, by every save after that. Failing here instead leaves the slot as it was.
     const buffer = file.buffer ? await mergeStates(stored, file.buffer) : undefined;
+    if (buffer && buffer.length > PROJECT_BLOB_MAX_BYTES) {
+      throw new PayloadTooLargeException("The merged document is past the maximum size for a save");
+    }
 
     await this.s3Service.uploadFile({
       file: buffer ? { ...file, buffer, size: buffer.length } : file,
@@ -882,10 +889,15 @@ export class ProjectService {
     if (!metadata) return null;
 
     // Bounded on both axes. The length comes from the object itself, so a stream that never ends
-    // cannot pin the request open, and a body larger than the content budget is not this build's
-    // document and is replaced rather than merged.
+    // cannot pin the request open, and a body past the blob ceiling is not something to merge.
+    //
+    // The blob ceiling, not the content budget: a CRDT update is far larger than the content it
+    // carries, because it holds the history that content came from. A map repainted a handful of
+    // times is tens of kilobytes of content and megabytes of blob, so bounding the blob by the
+    // content budget switched merging off for ordinary projects — quietly, and only for the ones
+    // big enough to reach it, which is the last thing a data-loss guard should do.
     const declared = Number(metadata.ContentLength ?? 0);
-    if (declared > PROJECT_CONTENT_MAX_BYTES) return null;
+    if (declared > PROJECT_BLOB_MAX_BYTES) return null;
     let bytes: Buffer;
     try {
       bytes = Buffer.concat(await this.readStoredBody(key));
@@ -920,7 +932,7 @@ export class ProjectService {
       for await (const chunk of body as Readable) {
         const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string);
         total += buf.length;
-        if (total > PROJECT_CONTENT_MAX_BYTES) throw new StoredSaveTooLargeError();
+        if (total > PROJECT_BLOB_MAX_BYTES) throw new StoredSaveTooLargeError();
         chunks.push(buf);
       }
       return chunks;
