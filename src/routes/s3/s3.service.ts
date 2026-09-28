@@ -213,8 +213,10 @@ export class S3Service {
       const contentLength = head.ContentLength;
 
       const missingFields = [];
-      if (!contentType) missingFields.push("ContentType");
-      if (!contentLength) missingFields.push("ContentLength");
+      // Undefined, not falsy: a zero-length object is a real thing to have stored, and treating 0
+      // as missing made every save against it fail, for as long as the slot stayed open.
+      if (contentType === undefined) missingFields.push("ContentType");
+      if (contentLength === undefined) missingFields.push("ContentLength");
 
       if (missingFields.length > 0) {
         throw new S3MissingMetadataException(

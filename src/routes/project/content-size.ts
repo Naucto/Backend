@@ -208,16 +208,26 @@ export function isContentSizeBreakdown(
  */
 export function mergeStates(stored: Buffer | null, next: Buffer): Buffer {
   if (!stored?.length) return next;
+  // The two sides are probed apart, because they fail for different reasons and only one of them
+  // can be replaced. Bytes that are not a document at all are one cause, and an old format is
+  // another, and the two are not interchangeable: what is stored is a blob that can be discarded
+  // because the incoming save replaces it, whereas an unreadable *incoming* save is bytes from
+  // nowhere, and writing them over a good document would trade a recoverable state for an
+  // unrecoverable one.
   const doc = new Y.Doc();
   try {
-    Y.applyUpdate(doc, stored);
+    try {
+      Y.applyUpdate(doc, stored);
+    } catch {
+      // Not a document this build can read — an older format, or bytes that are not a save at all.
+      // The incoming save is the whole truth, and replacing is the honest thing to do rather than
+      // keeping a blob nothing can open.
+      return next;
+    }
+    // Outside the catch above, so a bad incoming save is refused rather than taking the stored
+    // document down with it.
     Y.applyUpdate(doc, next);
     return Buffer.from(Y.encodeStateAsUpdate(doc));
-  } catch {
-    // What is stored is not a document this build can read — an older format, or bytes that are not
-    // a save at all. The incoming save is the whole truth, and replacing is the honest thing to do
-    // rather than keeping a blob nothing can open.
-    return next;
   } finally {
     doc.destroy();
   }

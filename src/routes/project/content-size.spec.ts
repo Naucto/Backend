@@ -161,4 +161,13 @@ describe("mergeStates", () => {
     // keeping it would leave a file nothing can open.
     expect(mergeStates(Buffer.from("not a document at all"), next)).toEqual(next);
   });
+
+  it("refuses an incoming save that cannot be read, rather than writing it over a good one", () => {
+    // The two sides fail for the same reason and mean opposite things. What is stored can be
+    // discarded because the incoming save replaces it; an incoming save that is not a document is
+    // bytes from nowhere, and keeping it would trade a recoverable state for an unrecoverable one —
+    // the stored document is gone and the slot now holds something nothing can open.
+    const stored = Buffer.from(Y.encodeStateAsUpdate(docWith("-- a real document\n")));
+    expect(() => mergeStates(stored, Buffer.from("not a document at all"))).toThrow();
+  });
 });
