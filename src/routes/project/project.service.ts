@@ -6,7 +6,8 @@ import {
   InternalServerErrorException,
   Logger,
   NotFoundException,
-  PayloadTooLargeException
+  PayloadTooLargeException,
+  ServiceUnavailableException
 } from "@nestjs/common";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { CreateProjectDto } from "./dto/create-project.dto";
@@ -206,8 +207,11 @@ export class ProjectService {
 
   private readonly max_history_version;
   private readonly stored_save_timeout_ms: number;
+  private readonly max_pending_saves: number;
   /** The tail of each project's save queue, so saves to one project run in the order they arrived. */
   private readonly saving = new Map<number, Promise<void>>();
+  /** How many saves are queued or running per project, to keep a slow store from accumulating them. */
+  private readonly pending = new Map<number, number>();
   private readonly max_checkpoints;
   private readonly auto_save_delay;
   private readonly view_secret: string;
@@ -229,6 +233,14 @@ export class ProjectService {
     // forever; failing lets the editor retry against a slot that is still intact.
     this.stored_save_timeout_ms = Number(
       configService.get<string>("S3_STORED_SAVE_TIMEOUT_MS") ?? 10000
+    );
+    // How many saves may queue on one project's lock. The editor sends a whole state on every pause
+    // with no check for a save already in flight, so a slow store would otherwise pile up requests,
+    // each holding its own copy of the document. Refusing the newest past this is better than
+    // growing without bound: the state it carried is still in the document, and the next save sends
+    // it again.
+    this.max_pending_saves = Number(
+      configService.get<string>("S3_MAX_PENDING_SAVES") ?? 4
     );
     this.max_checkpoints = Number(
       configService.get<string>("S3_MAX_CHECKPOINTS") ?? 20
@@ -811,7 +823,23 @@ export class ProjectService {
     // Held per project, so unrelated projects never queue behind each other. This covers the
     // requests one process receives; a second Backend instance would need a lock the store itself
     // enforces, which is a larger change than this and is not claimed here.
+    // Counted before queueing, so the limit covers waiting and running together.
+    const queued = this.pending.get(projectId) ?? 0;
+    if (queued >= this.max_pending_saves) {
+      throw new ServiceUnavailableException("Too many saves are already waiting for this project");
+    }
+    this.pending.set(projectId, queued + 1);
     const previous = this.saving.get(projectId) ?? Promise.resolve();
+    try {
+      await this.enqueueSave(projectId, previous, file);
+    } finally {
+      const left = (this.pending.get(projectId) ?? 1) - 1;
+      if (left <= 0) this.pending.delete(projectId);
+      else this.pending.set(projectId, left);
+    }
+  }
+
+  private async enqueueSave(projectId: number, previous: Promise<void>, file: Express.Multer.File): Promise<void> {
     let release!: () => void;
     const held = new Promise<void>(resolve => {
       release = resolve;
@@ -835,6 +863,12 @@ export class ProjectService {
     const newest = saves[0];
     const slot = newest && now - Number(newest.name) < this.auto_save_delay ? newest.name : String(now);
 
+    // Read before pruning, because the newest slot is what a new window merges into and the prune
+    // can include it: `kept` is one less than the history size, so a history of one would have
+    // deleted the very slot being carried forward.
+    const stored = slot === newest?.name ? await this.storedSave(projectId, slot) : null;
+    const carried = slot === newest?.name ? null : await this.storedSave(projectId, newest?.name ?? "");
+
     if (slot !== newest?.name) {
       const kept = Math.max(this.max_history_version - 1, 0);
       for (const stale of saves.slice(kept)) {
@@ -850,11 +884,25 @@ export class ProjectService {
     // change is applied, say — with neither having seen the other's latest keystrokes. Last writer wins
     // on a whole blob, so whichever landed second would erase the first, and an applied change the
     // database records as applied would be missing from the project. Merging is what a CRDT is for.
-    const stored = await this.storedSave(projectId, slot, newest?.name);
+    // A new window merges the previous one's state rather than starting from nothing. Every save in
+    // a window rewrites one slot, so the state anyone loads is the newest slot — and starting a new
+    // one from whichever writer arrived first drops everything the previous window held that this
+    // save's author had not seen. Two editors in a partition is where that shows: each becomes host,
+    // each saves, and the one whose save opened the window decides what everyone else loads.
+    const base = stored ?? carried;
     // The merged result is bounded too. Merging only ever grows a document, so a slot can creep
     // past the ceiling over a window and then be read as "too large to merge" — replaced, not
     // merged, by every save after that. Failing here instead leaves the slot as it was.
-    const buffer = file.buffer ? await mergeStates(stored, file.buffer) : undefined;
+    let buffer: Buffer | undefined;
+    if (file.buffer) {
+      try {
+        buffer = await mergeStates(base, file.buffer);
+      } catch {
+        // Bytes that are not a document. Refused rather than stored: they would be written as the
+        // newest slot, and opening the project would then fail, with no editor open to repair it.
+        throw new BadRequestException("The uploaded file is not a game document");
+      }
+    }
     if (buffer && buffer.length > PROJECT_BLOB_MAX_BYTES) {
       throw new PayloadTooLargeException("The merged document is past the maximum size for a save");
     }
@@ -882,8 +930,8 @@ export class ProjectService {
    * the save, which the editor retries: losing a keystroke is recoverable, losing an applied change
    * is not.
    */
-  private async storedSave(projectId: number, slot: string, newestName: string | undefined): Promise<Buffer | null> {
-    if (newestName !== slot) return null;
+  private async storedSave(projectId: number, slot: string): Promise<Buffer | null> {
+    if (!slot) return null;
     const key = `save/${projectId}/${slot}`;
     const metadata = await this.s3Service.getFileMetadataOrNull(key);
     if (!metadata) return null;

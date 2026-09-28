@@ -46,9 +46,12 @@ import { S3ConfigurationException } from "./s3.error";
           },
           // Deadlines, as in S3Service. A hung request here would hold a project's save lock and
           // queue every later save behind it.
+          // throwOnRequestTimeout, because without it requestTimeout only logs and the request
+          // stays pending. Same reason and same effect as in S3Service.
           requestHandler: new NodeHttpHandler({
             connectionTimeout: Number(configService.get<string>("S3_CONNECTION_TIMEOUT_MS") ?? 5000),
-            requestTimeout: Number(configService.get<string>("S3_REQUEST_TIMEOUT_MS") ?? 30000)
+            requestTimeout: Number(configService.get<string>("S3_REQUEST_TIMEOUT_MS") ?? 30000),
+            throwOnRequestTimeout: true
           })
         });
       },

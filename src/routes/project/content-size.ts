@@ -206,7 +206,27 @@ export function isContentSizeBreakdown(
  * that lands second keeps the other's work instead of erasing it, which is what writing one state
  * over the other would do.
  */
+/** Whether these bytes are a document this build can read, which is the only kind worth merging. */
+function isDocument(bytes: Uint8Array): boolean {
+  if (!bytes.length) return false;
+  const probe = new Y.Doc();
+  try {
+    Y.applyUpdate(probe, bytes);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    probe.destroy();
+  }
+}
+
 export function mergeStates(stored: Buffer | null, next: Buffer): Buffer {
+  // The incoming save is checked on every path, not only the one that merges. A new window, a
+  // legacy blob and an oversized blob all reach "return next" unchanged, and bytes that are not a
+  // document would be written as the newest slot — after which the project no longer opens, and
+  // there is no editor open to repair it. Checked first, so the answer does not depend on what
+  // happens to be stored.
+  if (!isDocument(next)) throw new Error("The incoming save is not a game document");
   if (!stored?.length) return next;
   // The two sides are probed apart, because they fail for different reasons and only one of them
   // can be replaced. Bytes that are not a document at all are one cause, and an old format is

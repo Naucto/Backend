@@ -812,6 +812,11 @@ describe("ProjectService", () => {
       doc.destroy();
       return bytes;
     };
+    const docWith = (text: string): Y.Doc => {
+      const doc = new Y.Doc();
+      doc.getText("body").insert(0, text);
+      return doc;
+    };
     let docA: Buffer;
     let docB: Buffer;
 
@@ -838,6 +843,71 @@ describe("ProjectService", () => {
 
     // Every save reads the slot, merges into it, and writes it back, so what is stored is only ever
     // as whole as the last write. These two are about what happens when that is not good enough.
+    it("carries the previous window's state into a new slot", async () => {
+      // Every save in a window rewrites one slot, so what anyone loads is the newest slot. A new
+      // window that started from nothing would keep only the state its first writer happened to
+      // have — and two editors in a partition each become host, so that writer is arbitrary, and
+      // the other's work, or an applied change only they held, would not be in what loads next.
+      saves([700_000]); // an open slot, then the window elapses
+      const previous = (await service.listVersions(1))[0]!.name;
+      let stored: Buffer | null = Buffer.from(Y.encodeStateAsUpdate(docWith("beta")));
+      s3ServiceMock.getFileMetadataOrNull.mockImplementation(async () => ({
+        ContentLength: stored ? stored.length : 0,
+      }));
+      s3ServiceMock.downloadFile.mockImplementation(async () => {
+        return { body: Readable.from([stored ?? Buffer.alloc(0)]) };
+      });
+      s3ServiceMock.uploadFile.mockImplementation(async ({ file: f }: { file: { buffer: Buffer } }) => {
+        stored = f.buffer;
+        return undefined;
+      });
+
+      // The window has passed, so this save opens a new slot.
+      await service.save(1, { ...file, buffer: docA } as Express.Multer.File);
+
+      const key = s3ServiceMock.uploadFile.mock.calls[0]![0]!.keyName as string;
+      expect(key).not.toBe(`save/1/${previous}`);
+      expect(s3ServiceMock.downloadFile).toHaveBeenCalledWith({ key: `save/1/${previous}` });
+      // Both survived the boundary.
+      const after = new Y.Doc();
+      Y.applyUpdate(after, stored!);
+      const text = after.getText("body").toString();
+      expect(text).toContain("alpha");
+      expect(text).toContain("beta");
+    });
+
+    it("refuses to queue more saves for a project than the store can be expected to absorb", async () => {
+      // The editor sends a whole state on every pause without checking for one already in flight, so
+      // a slow store would otherwise accumulate requests, each holding its own copy of the document.
+      saves([1_000]);
+      s3ServiceMock.getFileMetadataOrNull.mockResolvedValue({ ContentLength: 0 });
+      s3ServiceMock.downloadFile.mockImplementation(
+        async () => ({ body: new Readable({ read() { /* held open until released below */ } }) }),
+      );
+      let release!: () => void;
+      const held = new Promise<void>(resolve => {
+        release = resolve;
+      });
+      s3ServiceMock.downloadFile.mockImplementation(async () => {
+        await held;
+        return { body: Readable.from([]) };
+      });
+
+      const first = service.save(1, { ...file, buffer: docA } as Express.Multer.File);
+      const queued = [1, 2, 3, 4, 5, 6].map(() =>
+        service.save(1, { ...file, buffer: docA } as Express.Multer.File).catch((e: Error) => e),
+      );
+      release();
+      const outcomes = await Promise.all(queued);
+      await first;
+
+      const refused = outcomes.filter(o => o instanceof Error);
+      expect(refused.length).toBeGreaterThan(0);
+      expect(String(refused[0])).toMatch(/Too many saves/);
+      // And the ones that were refused did not corrupt the queue: the rest went through.
+      expect(s3ServiceMock.uploadFile).toHaveBeenCalled();
+    });
+
     it("merges into a stored blob far larger than the content budget", async () => {
       // The content budget is for the game's logical content, and a CRDT update is far larger than
       // the content it carries — it holds the history too. Bounding the blob by the content budget
