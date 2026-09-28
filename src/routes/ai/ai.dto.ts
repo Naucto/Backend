@@ -84,13 +84,19 @@ export class AiAcceptDto extends AiSnapshotDto {
 }
 
 export class AiApplyDto {
-  @ApiProperty({ description: "A Yjs update carrying the accepted change, for the caller to apply" })
+  @ApiProperty({ description: "The document as the accepting editor had it, with the change merged in: a whole Yjs state rather than a difference, because a difference is only valid for the client whose state vector it was cut against. Applied with Y.applyUpdate; merges with whatever the recipient already has." })
   @IsString()
     update!: string;
   @ApiProperty({ type: [String], description: "What the change touched, for the receipt" })
   @IsArray()
   @IsString({ each: true })
     categories!: string[];
+}
+
+export class AiPreviewDto {
+  @ApiProperty({ description: "The document with the change merged in, for the person to look at. Written, never stored: the same merge a real apply would do, and nothing is kept." })
+  @IsString()
+    result!: string;
 }
 
 export class AiMcpProjectDto {

@@ -5,7 +5,7 @@ import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
 import { Public } from "@auth/decorators/public.decorator";
 import { UserDto } from "@auth/dto/user.dto";
 import { AiContext, AiDeclaration, AiJob, AiProposal } from "@prisma/client";
-import { AiConnectionResponseDto, AiContextDto, AiDeclarationDto, AiJobCompleteDto, AiJobCreateDto, AiJobFailDto, AiProposalDto, AiReviewDto, AiKeyCreateDto, AiKeyResponseDto, AiKeySummaryDto, AiMcpConnectionDto, AiMcpProjectDto, AiAcceptDto, AiApplyDto, AiSnapshotDto } from "./ai.dto";
+import { AiConnectionResponseDto, AiContextDto, AiDeclarationDto, AiJobCompleteDto, AiJobCreateDto, AiJobFailDto, AiProposalDto, AiReviewDto, AiKeyCreateDto, AiKeyResponseDto, AiKeySummaryDto, AiMcpConnectionDto, AiMcpProjectDto, AiAcceptDto, AiApplyDto, AiPreviewDto, AiSnapshotDto } from "./ai.dto";
 import {
   AiContextResponseDto,
   AiDeclarationResponseDto,
@@ -105,8 +105,9 @@ export class AiController {
   }
 
   @Post("proposals/:proposalId/preview")
-  @ApiOperation({ summary: "Validate against the caller's own document; never modifies anything" })
-  preview(@Param("projectId", ParseIntPipe) id: number, @Param("proposalId") proposalId: string, @Req() req: Request, @Body() dto: AiSnapshotDto): Promise<{ result: string }> {
+  @ApiResponse({ status: 201, type: AiPreviewDto })
+  @ApiOperation({ summary: "Validate against the caller's own document and return the merged result; never modifies anything" })
+  preview(@Param("projectId", ParseIntPipe) id: number, @Param("proposalId") proposalId: string, @Req() req: Request, @Body() dto: AiSnapshotDto): Promise<AiPreviewDto> {
     return this.applyService.preview(id, userOf(req), proposalId, dto.snapshot);
   }
 

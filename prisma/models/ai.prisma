@@ -39,9 +39,9 @@ model AiProposal {
   revertsId    String?
   // Native operations that undo this proposal, captured from the merged state at commit.
   inverse      Json?
-  // How old the shared state this was written against was. An assistant may work on a project
-  // nobody has open, so the person applying this is told how far back it reaches rather than
-  // being left to assume it is current.
+  // How old the shared state this was written against was, so a person applying a change nobody
+  // made today can see how far back it reaches instead of assuming it is current. Carried to a
+  // revert, which is written against the same state.
   baseContextAgeMs Int @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

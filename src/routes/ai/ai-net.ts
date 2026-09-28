@@ -89,13 +89,15 @@ export function prepareNetPermissions(doc: Y.Doc, op: Operation, touch: (key: st
     if (want === undefined) throw new ConflictException("A multiplayer declaration must state what it expects to find");
     if (want === null) {
       if (map.has(target)) throw new ConflictException("Declaration changed since this was applied");
-    } else if (typeof want !== "object") {
-      throw new ConflictException("Invalid multiplayer expectation");
-    } else {
-      const now = map.get(target);
-      const same = now !== undefined && now.flags === (want as Declaration)["flags"] && ((now as Declaration).default ?? null) === ((want as Declaration).default ?? null);
-      if (!same) throw new ConflictException("Declaration changed since this was applied");
+      return;
     }
+    // Anything that is not a declaration — an array, a string, a number, an object without `flags` —
+    // compares unequal to what is there, so it lands in the same refusal rather than needing a shape
+    // check of its own.
+    const now = map.get(target);
+    const wanted = want as Declaration;
+    const same = typeof wanted === "object" && now !== undefined && now.flags === wanted["flags"] && ((now as Declaration).default ?? null) === (wanted["default"] ?? null);
+    if (!same) throw new ConflictException("Declaration changed since this was applied");
   };
 
   const raw = map.get(target);

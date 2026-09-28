@@ -1,5 +1,5 @@
 import * as Y from "yjs";
-import { commitSnapshots } from "./ai-commit";
+import { NON_INVERTIBLE_KINDS, OPERATION_KINDS, commitSnapshots } from "./ai-commit";
 
 import { createHash } from "node:crypto";
 
@@ -14,6 +14,30 @@ function fixture(): Y.Doc {
   return doc;
 }
 const code = (doc: Y.Doc): string => (doc.getMap<Y.Map<Y.Text>>("code.files").get("main")!.get("text")!).toString();
+
+describe("the list of operations that cannot be undone", () => {
+  // `NON_INVERTIBLE_KINDS` is written by hand, and `proposeRevert` trusts it: a kind that records
+  // no inverse and is not on the list would be offered as a partial undo that restores what it can
+  // and says nothing about what stayed gone.
+  it("names only kinds the union actually has, so a rename cannot leave a stale entry", () => {
+    for (const kind of NON_INVERTIBLE_KINDS) expect(OPERATION_KINDS).toContain(kind as (typeof OPERATION_KINDS)[number]);
+  });
+
+  it("covers the two operations that record no inverse", () => {
+    // Both remove something the document no longer holds a description of. Putting them back would
+    // mean inventing the content, so `prepare*` returns an empty inverse for them.
+    const sound = fixture();
+    sound.getMap<string>("sound.sfx").set("3", "[]");
+    expect(commitSnapshots([encode(sound)], [{ kind: "delete_sound", category: "SFX", slot: 3, slotValue: "[]", instruments: [], patterns: [], samples: [] }], "d").inverse).toEqual([]);
+    expect(NON_INVERTIBLE_KINDS.has("delete_sound")).toBe(true);
+    expect(NON_INVERTIBLE_KINDS.has("delete_map")).toBe(true);
+  });
+
+  it("does not list a kind that does record one", () => {
+    expect(NON_INVERTIBLE_KINDS.has("code")).toBe(false);
+    expect(commitSnapshots([encode(fixture())], [{ kind: "code", fileId: "main", before: "old", after: "new" }], "c").inverse.length).toBeGreaterThan(0);
+  });
+});
 
 describe("collaborative AI commit", () => {
   it("creates a second level without changing the first map", () => {

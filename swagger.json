@@ -222,7 +222,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiPreviewDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -230,7 +237,7 @@
             "JWT-auth": []
           }
         ],
-        "summary": "Validate against the caller's own document; never modifies anything",
+        "summary": "Validate against the caller's own document and return the merged result; never modifies anything",
         "tags": [
           "AI"
         ]
@@ -5785,6 +5792,18 @@
           "snapshot"
         ]
       },
+      "AiPreviewDto": {
+        "type": "object",
+        "properties": {
+          "result": {
+            "type": "string",
+            "description": "The document with the change merged in, for the person to look at. Written, never stored: the same merge a real apply would do, and nothing is kept."
+          }
+        },
+        "required": [
+          "result"
+        ]
+      },
       "AiAcceptDto": {
         "type": "object",
         "properties": {
@@ -5813,7 +5832,7 @@
         "properties": {
           "update": {
             "type": "string",
-            "description": "A Yjs update carrying the accepted change, for the caller to apply"
+            "description": "The document as the accepting editor had it, with the change merged in: a whole Yjs state rather than a difference, because a difference is only valid for the client whose state vector it was cut against. Applied with Y.applyUpdate; merges with whatever the recipient already has."
           },
           "categories": {
             "description": "What the change touched, for the receipt",

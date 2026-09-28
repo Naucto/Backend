@@ -278,7 +278,7 @@ export class AiService {
     // anyway would restore the parts it could while quietly leaving the rest — with nothing in the
     // revert's operations to say so. Version history has what is needed; a partial undo does not.
     const applied = Array.isArray(original.operations) ? (original.operations as Record<string, unknown>[]) : [];
-    const lost = [...new Set(applied.map((operation) => String(operation["kind"])).filter((kind) => NON_INVERTIBLE_KINDS.has(kind)))];
+    const lost = [...new Set(applied.filter((operation) => operation && typeof operation === "object").map((operation) => String(operation["kind"])).filter((kind) => NON_INVERTIBLE_KINDS.has(kind)))];
     if (lost.length) throw new ConflictException(`This change removed something that cannot be put back automatically (${lost.join(", ")}); restore it from version history`);
     const operations = stored;
     const open = await this.prisma.aiProposal.findFirst({ where: { projectId, revertsId: id, status: "PENDING" } });
@@ -288,6 +288,9 @@ export class AiService {
     const snapshotHash = original.snapshotHash;
     return this.prisma.aiProposal.create({ data: {
       projectId, userId, title, summary, snapshotHash, operations: json(operations), revertsId: id,
+      // A revert is written against the original's snapshot, so it reaches back just as far.
+      // Defaulting to 0 would report a week-old base as current.
+      baseContextAgeMs: original.baseContextAgeMs,
       contentHash: hash(JSON.stringify({ title, summary, snapshotHash, operations }))
     } });
   }

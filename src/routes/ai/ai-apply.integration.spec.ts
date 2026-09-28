@@ -295,6 +295,38 @@ integration("AI application PostgreSQL integration", () => {
     await expect(ai.proposeRevert(projectId, userId, mixed.id)).rejects.toThrow("cannot be put back automatically");
   });
 
+  it("previews a revert the way it will be applied, so the two cannot disagree", async () => {
+    // A revert restores a declaration to the state it had before, which committed as an ordinary
+    // proposal reads as a no-op and is refused. `preview` and `apply` both commit a staged revert as
+    // the inverse it was recorded as; if only one of them did, a person would be shown a diff and
+    // then refused, or refused with no explanation.
+    const doc = new Y.Doc();
+    doc.getMap("net.permissions").set("secrets", { flags: 3 });
+    const state = Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64");
+    const removed = await ai.propose(connection, {
+      title: "close a path",
+      summary: "x",
+      snapshotHash: (await ai.context(projectId, userId, { run: randomUUID() })).hash,
+      operations: [{ kind: "net_permissions", path: "secrets", remove: true, expect: { flags: 3 } }],
+    });
+    const applied = await apply.apply(projectId, userId, removed.id, removed.contentHash, state);
+    const revert = await ai.proposeRevert(projectId, userId, removed.id);
+
+    // The preview shows the declaration coming back, so the accept is not going to be refused.
+    const previewed = new Y.Doc();
+    Y.applyUpdate(previewed, Buffer.from((await apply.preview(projectId, userId, revert.id, applied.update)).result, "base64"));
+    expect(previewed.getMap("net.permissions").get("secrets")).toEqual({ flags: 3 });
+
+    // And applying what was previewed produces the same state.
+    const appliedRevert = await apply.apply(projectId, userId, revert.id, revert.contentHash, applied.update);
+    const actual = new Y.Doc();
+    Y.applyUpdate(actual, Buffer.from(appliedRevert.update, "base64"));
+    expect(actual.getMap("net.permissions").get("secrets")).toEqual({ flags: 3 });
+    doc.destroy();
+    previewed.destroy();
+    actual.destroy();
+  });
+
   it("enforces the job quota, the service secret, and discards late cancelled results", async () => {
     const first = await jobs.create(connection, "sprite", { prompt: "gem" });
     const second = await jobs.create(connection, "sprite", { prompt: "tree" });
