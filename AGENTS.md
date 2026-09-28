@@ -89,7 +89,7 @@ bucket named by `S3_BUCKET_NAME` and makes it anonymously readable; set the five
 | `src/auth/` | JWT auth, passport strategy, guards, `@Public()`/`@Roles()` decorators, OAuth providers (Google/GitHub/Microsoft), refresh-token crypto |
 | `src/routes/<feature>/` | One folder per HTTP feature: `*.controller.ts`, `*.service.ts`, `*.module.ts`, `*.error.ts`, `dto/`, `entities/`, co-located `*.spec.ts` |
 | `src/routes/{user,project,curation,project-comment,work-session,multiplayer,s3}/` | The feature areas (`curation` = featured release / game of the week, admin-only writes via `@AdminOnly()`) |
-| `src/routes/ai/` | AI assistance: project-scoped MCP credentials (`/ai/mcp/*`, `@Public()` + opaque token), proposals, applying a proposal to the accepting editor's own snapshot and handing back the difference (`ai-apply.service.ts`), native operation validation and inverses (`ai-commit.ts`, `ai-assets.ts`, `ai-sound.ts`), generation job ledger and provenance (`ai-jobs.service.ts`). See `Naucto-AI/README.md` |
+| `src/routes/ai/` | AI assistance: project-scoped MCP credentials (`/ai/mcp/*`, `@Public()` + opaque token), proposals, applying a proposal to the accepting editor's own snapshot and handing back the merged state (`ai-apply.service.ts`), native operation validation and inverses (`ai-commit.ts`, `ai-assets.ts`, `ai-sound.ts`), generation job ledger and provenance (`ai-jobs.service.ts`). See `Naucto-AI/README.md` |
 | `src/webrtc/` | `ws` + Yjs real-time multiplayer server (`server/`); `WebRTCService` allocates one port per server and advertises its public URL (see *WebSocket servers* below) |
 | `src/tasks/` | Scheduled jobs (`@nestjs/schedule` cron) |
 | `src/prisma/` | `PrismaService` + module (the `@ourPrisma` alias) |

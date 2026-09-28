@@ -126,7 +126,6 @@ describe("ProjectService", () => {
       count: jest.fn(),
       create: jest.fn()
     },
-    aiBarrier: { findUnique: jest.fn().mockResolvedValue(null) },
     project: {
       aggregate: jest.fn(),
       count: jest.fn(),

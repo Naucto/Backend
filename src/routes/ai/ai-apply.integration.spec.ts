@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { Logger } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { ModuleRef } from "@nestjs/core";
 import { PrismaService } from "@ourPrisma/prisma.service";
@@ -68,23 +69,13 @@ integration("AI application PostgreSQL integration", () => {
     const { update, categories } = await apply.apply(projectId, userId, proposalId, contentHash, before);
     expect(categories).toEqual(["CODE"]);
 
-    // Two colleagues, and the update has to be right for both.
-    //
-    // The acceptor typed at the end of the file before pressing accept, and this colleague never
-    // received those keystrokes. A `code` commit is a delete and a reinsert, so an update cut
-    // against the acceptor's state vector gives this peer a delete it can apply and a replacement
-    // whose origin it does not have. The file then reads as empty — the AI's text is in
-    // `store.pendingStructs`, not in the document.
+    // The peer that matters: it never received the keystrokes the acceptor made before pressing
+    // accept, and it has unsent edits of its own. A `code` commit is a delete and a reinsert, so an
+    // update cut against the acceptor's state vector gives this peer a delete it can apply and a
+    // replacement whose origin it does not have — the file then reads as empty, or as the peer's own
+    // text with the AI's gone, with the replacement in `store.pendingStructs`. A state carries its
+    // own dependencies, so it lands whole and combines with what they had.
     const peerState = Buffer.from(Y.encodeStateAsUpdate(document)).toString("base64");
-    const behind = new Y.Doc();
-    Y.applyUpdate(behind, Buffer.from(peerState, "base64"));
-    Y.applyUpdate(behind, Buffer.from(update, "base64"));
-    expect((behind.getMap<Y.Map<Y.Text>>("code.files").get("main")!.get("text")!).toString()).toBe("new");
-    behind.destroy();
-
-    // The same, for a colleague that is behind *and* holding unsent edits of its own. Here the
-    // difference loses the AI's text and keeps only the colleague's; a state carries both. Yjs
-    // applies updates rather than replacing, which is the property this relies on.
     const acceptor = new Y.Doc();
     Y.applyUpdate(acceptor, Buffer.from(peerState, "base64"));
     const acceptorText = acceptor.getMap<Y.Map<Y.Text>>("code.files").get("main")!.get("text")!;
@@ -147,12 +138,50 @@ integration("AI application PostgreSQL integration", () => {
     await expect(apply.apply(projectId, userId, proposal.id, proposal.contentHash, state)).rejects.toThrow("S3 unavailable");
 
     // The change is not in the project, so it must not be recorded as applied, and it must still be
-    // possible to accept once storage recovers.
+    // possible to accept once storage recovers. The inverse goes too: a proposal that was never
+    // applied has nothing to revert, and a row claiming otherwise is a dead end somebody reads as
+    // real.
     const stored = await prisma.aiProposal.findUniqueOrThrow({ where: { id: proposal.id } });
     expect(stored.status).toBe("PENDING");
     expect(stored.reviewedBy).toBeNull();
+    expect(stored.inverse).toBeNull();
     save.mockImplementation(async () => undefined);
     await expect(apply.apply(projectId, userId, proposal.id, proposal.contentHash, state)).resolves.toMatchObject({ categories: ["CODE"] });
+  });
+
+  it("says so when storage fails and the claim cannot be released", async () => {
+    // `save` uploads and then writes, so it can fail with the blob already stored. The claim is then
+    // released anyway, and if that release cannot be confirmed the proposal is left recorded as
+    // applied with nothing behind it: it can neither be applied again nor reverted. Silent, that is
+    // a state nobody finds until somebody needs the undo.
+    const context = await ai.context(projectId, userId, { run: randomUUID() });
+    const proposal = await ai.propose(connection, { title: "unreleasable", summary: "x", snapshotHash: context.hash, operations: [{ kind: "code", fileId: "main", before: "new", after: "never stored" }] });
+    const state = Buffer.from(Y.encodeStateAsUpdate(document)).toString("base64");
+    const logged: string[] = [];
+    const logger = jest.spyOn(Logger.prototype, "error").mockImplementation((message: unknown) => {
+      logged.push(String(message));
+    });
+    // The first save fails, and the release that follows fails with it. The claim is a different
+    // `updateMany` — a rejected one there would stop the call before `save` is ever reached — so
+    // only the release is made to fail.
+    save.mockImplementationOnce(async () => {
+      throw new Error("S3 unavailable");
+    });
+    const real = prisma.aiProposal.updateMany.bind(prisma.aiProposal);
+    const failure = jest.spyOn(prisma.aiProposal, "updateMany").mockImplementation((async (args: never) => {
+      const releasing = (args as { data?: { status?: string } }).data?.status === "PENDING";
+      if (releasing) throw new Error("database gone");
+      return real(args);
+    }) as never);
+    try {
+      await expect(apply.apply(projectId, userId, proposal.id, proposal.contentHash, state)).rejects.toThrow("S3 unavailable");
+      expect(logged.join(" ")).toContain("recorded as applied but its document was not stored");
+      expect((await prisma.aiProposal.findUniqueOrThrow({ where: { id: proposal.id } })).status).toBe("APPLIED");
+    } finally {
+      failure.mockRestore();
+      logger.mockRestore();
+      save.mockImplementation(async () => undefined);
+    }
   });
 
   it("previews without touching anything", async () => {
@@ -174,6 +203,52 @@ integration("AI application PostgreSQL integration", () => {
     expect(applied.inverse).toEqual([{ kind: "code", fileId: "main", before: "new", after: "old" }]);
     const revert = await ai.proposeRevert(projectId, userId, proposalId);
     expect(await ai.proposeRevert(projectId, userId, proposalId)).toMatchObject({ id: revert.id });
+  });
+
+  it("applies a revert, including one that restores a declaration to the open state", async () => {
+    // Reverting a removal re-adds a declaration that was open and carried no starting value, which
+    // is what most declarations look like. Committed as an ordinary proposal that is a no-op and is
+    // refused; a revert has to be committed as the inverse it was recorded as.
+    const doc = new Y.Doc();
+    doc.getMap("net.permissions").set("secrets", { flags: 3 });
+    const state = Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64");
+    const removed = await ai.propose(connection, {
+      title: "close a path",
+      summary: "x",
+      snapshotHash: (await ai.context(projectId, userId, { run: randomUUID() })).hash,
+      operations: [{ kind: "net_permissions", path: "secrets", remove: true, expect: { flags: 3 } }],
+    });
+    const first = await apply.apply(projectId, userId, removed.id, removed.contentHash, state);
+    const closed = new Y.Doc();
+    Y.applyUpdate(closed, Buffer.from(first.update, "base64"));
+    expect(closed.getMap("net.permissions").get("secrets")).toBeUndefined();
+
+    const revert = await ai.proposeRevert(projectId, userId, removed.id);
+    const restored = await apply.apply(projectId, userId, revert.id, revert.contentHash, first.update);
+    const back = new Y.Doc();
+    Y.applyUpdate(back, Buffer.from(restored.update, "base64"));
+    // Open again: both bits set, which is what an undeclared path resolves to.
+    expect(back.getMap("net.permissions").get("secrets")).toEqual({ flags: 3 });
+    doc.destroy();
+    closed.destroy();
+    back.destroy();
+  });
+
+  it("still offers a revert of a declaration recorded before the expectation was required", async () => {
+    // Operations were recorded in `inverse` before a declaration had to state what it expects to
+    // find. Re-offered verbatim, such a revert shows a diff, then fails the moment it is accepted,
+    // and the open revert is returned as-is so it can never be re-staged. The expectation is derived
+    // from the forward operation instead, so the change stays revertible.
+    const stored = await prisma.aiProposal.create({ data: {
+      projectId, userId, title: "legacy", summary: "x", snapshotHash: "0".repeat(64), contentHash: "1".repeat(64), status: "APPLIED",
+      // Deliberately no `expect`, and no `expect` on the forward operation's own inverse either.
+      operations: [{ kind: "net_permissions", path: "legacy.path", clientWrite: false }] as never,
+      inverse: [{ kind: "net_permissions", path: "legacy.path", expect: null, clientRead: true, clientWrite: true, default: null }],
+    } });
+    const revert = await ai.proposeRevert(projectId, userId, stored.id);
+    const operations = (revert.operations ?? []) as Record<string, unknown>[];
+    expect(operations[0]).toMatchObject({ kind: "net_permissions", path: "legacy.path", expect: null });
+    await prisma.aiProposal.delete({ where: { id: stored.id } });
   });
 
   it("enforces the job quota, the service secret, and discards late cancelled results", async () => {

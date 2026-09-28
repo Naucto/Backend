@@ -10,15 +10,21 @@ import { AiService } from "./ai.service";
  * Applying a proposal, without stopping anybody.
  *
  * The person who accepts sends the document as they have it, the operations are merged into that,
- * and the merged result is handed back as a Yjs update. Their unsaved work is in the base, so it is
- * respected rather than reconstructed, and every operation is still checked against the real text
- * before it is written — a change to something that moved underneath is refused, not merged over.
+ * and the merged result is handed back as a Yjs update. Their unsaved work is in the base, so a
+ * proposal written against an older state is refused as changed rather than applied over what they
+ * have in front of them, and every operation is still checked against the real text before it is
+ * written. Note that this is a refusal, not a merge: a `code` operation replaces the whole file, so
+ * a proposal that was written before their last keystroke is one they have to re-read and have the
+ * assistant redo against the state they are looking at.
  *
  * This replaced a barrier that froze every editor, collected their snapshots, and replaced the
  * whole document in each browser. That bought atomicity across a project at the cost of the editor
  * disappearing mid-change, which is a poor trade for a document that is a CRDT. What is given up is
  * this: two people editing the same region at the same instant now merge, where before the second
- * one's work was held back and replayed.
+ * one's work was held back and replayed. And the stored blob is the acceptor's own state plus the
+ * change, where the barrier stored the union of everybody's frozen snapshots, so an edit that has
+ * not yet been relayed to the acceptor is not in it — it reaches the next autosave from the
+ * colleague's own document, and the acceptor's save lands in the same version slot.
  */
 @Injectable()
 export class AiApplyService {
@@ -30,7 +36,7 @@ export class AiApplyService {
     await this.ai.authorize(projectId, userId);
     const proposal = await this.prisma.aiProposal.findFirst({ where: { id: proposalId, projectId } });
     if (!proposal) throw new ConflictException("Proposal unavailable");
-    return { result: commitSnapshots([snapshot], proposal.operations, `preview:${proposal.id}`).result };
+    return { result: commitSnapshots([snapshot], proposal.operations, `preview:${proposal.id}`, proposal.revertsId !== null).result };
   }
 
   /**
@@ -52,10 +58,16 @@ export class AiApplyService {
     if (proposal.status !== "PENDING") throw new ConflictException("Proposal was already reviewed");
     if (proposal.contentHash !== contentHash) throw new ConflictException("Proposal changed; review it again");
 
-    const commit = commitSnapshots([snapshot], proposal.operations, proposal.id);
-    // A commit that moves nothing is a proposal that no longer describes this document. Compared
-    // against the snapshot, because a full state is never empty of itself.
-    if (commit.result === snapshot) throw new ConflictException("That change no longer applies to this project");
+    // A staged revert is committed as an inverse. `proposeRevert` re-offers the operations an
+    // application recorded, and those were written for the inverse flag: without it, restoring a
+    // declaration to the open state it had before any declaration existed is refused as a no-op,
+    // which is the shape most declarations have.
+    const commit = commitSnapshots([snapshot], proposal.operations, proposal.id, proposal.revertsId !== null);
+    // No "did anything change" check here: every commit writes an `ai.applied` receipt, so the
+    // result is never equal to the snapshot and such a test would never fire. What actually refuses
+    // a proposal that no longer describes the document is each operation's own validation — a
+    // `code` operation whose `before` no longer matches the text, a declaration that moved on, a
+    // no-op — all of which raise before anything is written.
 
     // Claim the proposal before touching storage. The status is what makes acceptance single-use,
     // and two people can reach this at once, so the write is a compare-and-swap on PENDING rather
@@ -73,13 +85,15 @@ export class AiApplyService {
     try {
       await project.save(projectId, { buffer, originalname: "ai.yjs", mimetype: "application/octet-stream", size: buffer.length } as Express.Multer.File);
     } catch (error) {
-      // The upload is the first thing `save` does and the most likely thing to fail; its two writes
-      // after it can also throw, and then the blob is stored while the proposal is not. Reverting is
-      // right for the common case, and wrong for that one, so a revert that cannot be confirmed is
-      // reported rather than swallowed: a proposal left APPLIED with nothing stored is a dead end
-      // (it cannot be applied again, and `proposeRevert` only looks at APPLIED rows).
+      // `save` uploads first and then writes a size and a provenance receipt, so it can fail after
+      // the blob is stored. Releasing the claim is right for the common case, where nothing was
+      // written, and wrong for that one, where the change is in the project but the proposal says
+      // otherwise. It cannot be told apart from here, so the release is confirmed and logged when
+      // it does not happen: a proposal left applied with nothing stored cannot be applied again
+      // (the receipt in the document stops it) nor reverted (that needs an applied proposal), which
+      // is a dead end somebody has to notice and settle by hand.
       const released = await this.prisma.aiProposal
-        .updateMany({ where: { id: proposal.id, status: "APPLIED", reviewedBy: userId }, data: { status: "PENDING", reviewedBy: null } })
+        .updateMany({ where: { id: proposal.id, status: "APPLIED", reviewedBy: userId }, data: { status: "PENDING", reviewedBy: null, inverse: Prisma.DbNull } })
         .catch(() => null);
       if (!released || released.count !== 1) {
         this.logger.error(`Proposal ${proposal.id} is recorded as applied but its document was not stored; it needs a manual decision.`, error instanceof Error ? error.stack : undefined);

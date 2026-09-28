@@ -23,6 +23,10 @@ jobs:
     env:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/testdb
       NODE_ENV: test
+      # The AI application suite needs a real database, and this job already has one and already
+      # applies the migrations above. Without this it skips, and the tests guarding how a proposal is
+      # merged into somebody's document never run.
+      AI_INTEGRATION: '1'
     steps:
       - uses: actions/checkout@v5
         with: { fetch-depth: 0 }

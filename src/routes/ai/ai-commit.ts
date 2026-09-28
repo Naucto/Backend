@@ -1,4 +1,4 @@
-import { ConflictException } from "@nestjs/common";
+import { BadRequestException, ConflictException } from "@nestjs/common";
 import * as Y from "yjs";
 import { type Operation, prepareAsset } from "./ai-assets";
 import { prepareNetPermissions } from "./ai-net";
@@ -17,7 +17,15 @@ export interface Commit {
 export function commitSnapshots(snapshots: string[], operations: unknown, proposalId: string, isInverse = false): Commit {
   const doc = new Y.Doc();
   try {
-    for (const snapshot of snapshots) Y.applyUpdate(doc, Buffer.from(snapshot, "base64"));
+    try {
+      for (const snapshot of snapshots) Y.applyUpdate(doc, Buffer.from(snapshot, "base64"));
+    } catch {
+      // A snapshot is whatever the caller sent, decoded from base64 by a DTO that can only check the
+      // alphabet. Bytes that are not a Yjs update raise here, and an unhandled error in a controller
+      // is a 500 — this is the only path to a mutation, so it is the wrong place to be unkind about
+      // a malformed request.
+      throw new BadRequestException("Snapshot is not a readable document");
+    }
     if (doc.getMap("ai.applied").has(proposalId)) throw new ConflictException("Already applied");
     if (!Array.isArray(operations) || !operations.length || operations.length > 100) throw new ConflictException("Invalid operations");
     const writes: (() => void)[] = [];

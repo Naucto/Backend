@@ -174,3 +174,28 @@ export function prepareNetPermissions(doc: Y.Doc, op: Operation, touch: (key: st
 function declarationFields(value: Declaration): Record<string, unknown> {
   return { clientRead: (value.flags & CLIENT_READ) !== 0, clientWrite: (value.flags & CLIENT_WRITE) !== 0, default: value.default ?? null };
 }
+
+/**
+ * The expectation a stored declaration operation is missing, worked out from the forward operation
+ * that produced the state it meets.
+ *
+ * `expect` became mandatory after some operations were already recorded in `AiProposal.inverse`, and
+ * an inverse is re-offered verbatim by `proposeRevert`. Re-offering one without it leaves a proposal
+ * that shows a diff, sits pending forever, and fails at the moment somebody tries to accept it — a
+ * dead end with no way to re-stage it, since the open revert is returned as-is. Deriving it here
+ * keeps those recorded changes revertible: an operation that removes a path meets an empty path, and
+ * one that restores a declaration meets what the forward operation wrote.
+ */
+export function deriveExpectation(forward: unknown, inverse: Operation): Record<string, unknown> {
+  if (inverse["kind"] !== "net_permissions" || inverse["expect"] !== undefined) return inverse;
+  const op = inverse as unknown as Record<string, unknown>;
+  // A removal restores a declaration by putting the path back, so it meets nothing.
+  if (op["remove"] === true) return { ...op, expect: null };
+  const before = forward as Record<string, unknown> | undefined;
+  const read = before?.["clientRead"];
+  const write = before?.["clientWrite"];
+  const flags = (read === false ? 0 : CLIENT_READ) | (write === false ? 0 : CLIENT_WRITE);
+  const declaration: Record<string, unknown> = { flags };
+  if (before && "default" in before && before["default"] !== null) declaration["default"] = before["default"];
+  return { ...op, expect: declaration };
+}

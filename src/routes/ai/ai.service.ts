@@ -3,7 +3,9 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException, 
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { Prisma, AiConnection, AiContext, AiProposal } from "@prisma/client";
 import { AiConnectionResponseDto, AiMcpProjectDto, AiProposalDto, AiReviewDto } from "./ai.dto";
+import type { Operation } from "./ai-assets";
 import { OPERATION_KINDS } from "./ai-commit";
+import { deriveExpectation } from "./ai-net";
 
 export interface AiKeyResponse { id: string; name: string; token: string; expiresAt: Date | null; createdAt: Date; projects: { projectId: number; name: string }[] }
 export interface AiKeySummary { id: string; name: string; expiresAt: Date | null; createdAt: Date; lastUsedAt: Date | null; projects: { projectId: number; name: string }[] }
@@ -272,8 +274,13 @@ export class AiService {
     // The inverse was captured from the merged state at commit, so it names exactly what the
     // proposal replaced. It is a new proposal: reviewed, applied to the accepting editor's own
     // state, and refused if anyone has since edited what it would restore.
-    const operations = original.inverse;
-    if (!Array.isArray(operations) || !operations.length) throw new ConflictException("This change has no recorded inverse; restore it from version history");
+    const stored = original.inverse;
+    if (!Array.isArray(stored) || !stored.length) throw new ConflictException("This change has no recorded inverse; restore it from version history");
+    // Inverses recorded before a declaration had to say what it expects to find are re-offered with
+    // the expectation worked out from the forward operation, so an applied change that declared
+    // something stays revertible rather than leaving a proposal that can never be accepted.
+    const forward = Array.isArray(original.operations) ? (original.operations as unknown[]) : [];
+    const operations = stored.map((operation, index) => deriveExpectation(forward[index], operation as Operation));
     const open = await this.prisma.aiProposal.findFirst({ where: { projectId, revertsId: id, status: "PENDING" } });
     if (open) return open;
     const title = `Revert: ${original.title}`.slice(0, 160);

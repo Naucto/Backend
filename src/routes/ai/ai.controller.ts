@@ -1,4 +1,4 @@
-import { BadRequestException, Body, ConflictException, Controller, Delete, Get, Headers, Param, ParseIntPipe, Post, Req, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, ConflictException, Controller, Delete, Get, Headers, HttpCode, Param, ParseIntPipe, Post, Req, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { Request } from "express";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
@@ -118,6 +118,7 @@ export class AiController {
   }
 
   @Post("proposals/:proposalId/apply")
+  @HttpCode(200)
   @ApiResponse({ status: 200, type: AiApplyDto })
   @ApiOperation({ summary: "Accept the proposal against the caller's own document and return the merged state" })
   apply(@Param("projectId", ParseIntPipe) id: number, @Param("proposalId") proposalId: string, @Req() req: Request, @Body() dto: AiAcceptDto): Promise<AiApplyDto> {
