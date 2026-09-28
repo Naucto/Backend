@@ -162,6 +162,7 @@ describe("ProjectService", () => {
     listObjects: jest.fn(),
     deleteFiles: jest.fn(),
     downloadFile: jest.fn(),
+    getFileMetadataOrNull: jest.fn(),
     uploadFile: jest.fn(),
     setObjectPublicRead: jest.fn()
   };
@@ -179,6 +180,8 @@ describe("ProjectService", () => {
       if (key === "S3_MAX_AUTO_HISTORY_VERSION") return "5";
       if (key === "S3_AUTO_HISTORY_DELAY") return "10";
       if (key === "S3_MAX_CHECKPOINTS") return "5";
+      // Short, so the stalled-read test does not sit out the production ten seconds.
+      if (key === "S3_STORED_SAVE_TIMEOUT_MS") return "150";
       return undefined;
     })
   };
@@ -796,10 +799,24 @@ describe("ProjectService", () => {
       );
     };
 
+    // Two states that share no text, so a merge that keeps only one of them is obvious.
+    const stateOf = (text: string): Buffer => {
+      const doc = new Y.Doc();
+      doc.getText("body").insert(0, text);
+      const bytes = Buffer.from(Y.encodeStateAsUpdate(doc));
+      doc.destroy();
+      return bytes;
+    };
+    let docA: Buffer;
+    let docB: Buffer;
+
     beforeEach(() => {
+      docA = stateOf("alpha");
+      docB = stateOf("beta");
       jest.spyOn(service, "updateLastTimeUpdate").mockResolvedValue(undefined);
       s3ServiceMock.uploadFile.mockResolvedValue(undefined);
       s3ServiceMock.deleteFile.mockResolvedValue(undefined);
+      s3ServiceMock.getFileMetadataOrNull.mockResolvedValue(null);
     });
 
     it("rewrites the open slot while the window lasts", async () => {
@@ -812,6 +829,76 @@ describe("ProjectService", () => {
       expect(s3ServiceMock.uploadFile).toHaveBeenCalledWith(
         expect.objectContaining({ keyName: `save/1/${newest}` })
       );
+    });
+
+    // Every save reads the slot, merges into it, and writes it back, so what is stored is only ever
+    // as whole as the last write. These two are about what happens when that is not good enough.
+    it("does not write over a slot it could not read", async () => {
+      // Reading failed for a reason that says nothing about whether anything is stored: throttled,
+      // a dropped connection, a 503. Treating that as an empty slot made the save that followed
+      // overwrite whatever was really there, with a state missing all of it.
+      saves([1_000]);
+      const slot = (await service.listVersions(1))[0]!.name;
+      s3ServiceMock.getFileMetadataOrNull.mockResolvedValue({ ContentLength: 10 });
+      s3ServiceMock.downloadFile.mockRejectedValue(new Error("S3DownloadException: SlowDown"));
+
+      await expect(service.save(1, file)).rejects.toThrow(/SlowDown/);
+
+      expect(s3ServiceMock.uploadFile).not.toHaveBeenCalled();
+      // And the slot it would have clobbered is still there for the next attempt.
+      expect(s3ServiceMock.downloadFile).toHaveBeenCalledWith({ key: `save/1/${slot}` });
+    });
+
+    it("reads the slot again only after the save that merged into it has written", async () => {
+      // Two saves arriving together used to read the same stored state, each merge only its own view
+      // into it, and the second write drop the first's work — the loss merging exists to prevent.
+      saves([1_000]);
+      const order: string[] = [];
+      let stored: Buffer | null = null;
+      s3ServiceMock.getFileMetadataOrNull.mockImplementation(async () => ({
+        ContentLength: stored ? stored.length : 0
+      }));
+      s3ServiceMock.downloadFile.mockImplementation(async () => {
+        order.push("read");
+        return { body: Readable.from([stored ?? Buffer.alloc(0)]) };
+      });
+      s3ServiceMock.uploadFile.mockImplementation(async ({ file: f }: { file: { buffer: Buffer } }) => {
+        order.push("write");
+        stored = f.buffer;
+        return undefined;
+      });
+
+      const first = { ...file, buffer: docA } as Express.Multer.File;
+      const second = { ...file, buffer: docB } as Express.Multer.File;
+      await Promise.all([service.save(1, first), service.save(1, second)]);
+
+      expect(order).toEqual(["read", "write", "read", "write"]);
+      // And the work of both is in what ended up stored.
+      const doc = new Y.Doc();
+      Y.applyUpdate(doc, stored!);
+      expect(doc.getText("body").toString()).toContain("alpha");
+      expect(doc.getText("body").toString()).toContain("beta");
+    });
+
+    it("fails a save whose stored slot never arrives instead of waiting on it", async () => {
+      // A merge needs the whole stored state, so a body that stops arriving would hold the request
+      // open for good. Failing leaves the slot intact and lets the editor retry against it.
+      saves([1_000]);
+      s3ServiceMock.getFileMetadataOrNull.mockResolvedValue({ ContentLength: 10 });
+      // Opens, sends nothing, and never ends: the shape of a read that has stalled.
+      s3ServiceMock.downloadFile.mockImplementation(async () => ({
+        body: new Readable({
+          read() {
+            // deliberately empty
+          }
+        })
+      }));
+
+      await expect(
+        service.save(1, { ...file, buffer: docA } as Express.Multer.File)
+      ).rejects.toThrow(/could not be read in time/);
+
+      expect(s3ServiceMock.uploadFile).not.toHaveBeenCalled();
     });
 
     it("opens a new slot past the window and lets the oldest go", async () => {

@@ -23,6 +23,22 @@ import { ConfigService } from "@nestjs/config";
 import { DownloadedFile } from "@s3/s3.interface";
 import { Readable } from "stream";
 import * as Y from "yjs";
+
+/** The stored slot is larger than a document this build accepts, so it is replaced, not merged. */
+class StoredSaveTooLargeError extends Error {
+  constructor() {
+    super("The stored autosave is larger than this build can read");
+    this.name = "StoredSaveTooLargeError";
+  }
+}
+
+/** The stored slot did not arrive in time. The slot is untouched; the save is retried. */
+class StoredSaveUnreadableError extends Error {
+  constructor() {
+    super("The stored autosave could not be read in time");
+    this.name = "StoredSaveUnreadableError";
+  }
+}
 import { streamToBuffer } from "@util/stream.util";
 import {
   ContentSizeBreakdown,
@@ -188,6 +204,9 @@ export class ProjectService {
   private readonly logger = new Logger(ProjectService.name);
 
   private readonly max_history_version;
+  private readonly stored_save_timeout_ms: number;
+  /** The tail of each project's save queue, so saves to one project run in the order they arrived. */
+  private readonly saving = new Map<number, Promise<void>>();
   private readonly max_checkpoints;
   private readonly auto_save_delay;
   private readonly view_secret: string;
@@ -203,6 +222,12 @@ export class ProjectService {
     // a named version is a checkpoint, kept apart and never pruned.
     this.max_history_version = Number(
       configService.get<string>("S3_MAX_AUTO_HISTORY_VERSION") ?? 4
+    );
+    // How long reading a stored slot may take before the save is failed rather than left waiting. A
+    // merge needs the whole stored state, so a body that stops arriving holds the request open
+    // forever; failing lets the editor retry against a slot that is still intact.
+    this.stored_save_timeout_ms = Number(
+      configService.get<string>("S3_STORED_SAVE_TIMEOUT_MS") ?? 10000
     );
     this.max_checkpoints = Number(
       configService.get<string>("S3_MAX_CHECKPOINTS") ?? 20
@@ -779,6 +804,31 @@ export class ProjectService {
    * the typing. Past the window a new slot opens and the oldest go, keeping `max_history_version`.
    */
   async save(projectId: number, file: Express.Multer.File): Promise<void> {
+    // Read, merge, write — so a second save arriving while the first is mid-flight has to wait for
+    // it. Otherwise both read the same stored state, each merges only its own view into it, and the
+    // write that lands second drops the other's work: exactly the loss merging was added to prevent.
+    // Held per project, so unrelated projects never queue behind each other. This covers the
+    // requests one process receives; a second Backend instance would need a lock the store itself
+    // enforces, which is a larger change than this and is not claimed here.
+    const previous = this.saving.get(projectId) ?? Promise.resolve();
+    let release!: () => void;
+    const held = new Promise<void>(resolve => {
+      release = resolve;
+    });
+    const queue = previous.then(() => held);
+    this.saving.set(projectId, queue);
+    await previous;
+    try {
+      await this.saveNow(projectId, file);
+    } finally {
+      release();
+      // Drop the entry once nothing is queued behind it, so the map does not grow with every project
+      // ever saved to.
+      if (this.saving.get(projectId) === queue) this.saving.delete(projectId);
+    }
+  }
+
+  private async saveNow(projectId: number, file: Express.Multer.File): Promise<void> {
     const saves = (await this.listVersions(projectId)).sort(newestFirst);
     const now = Date.now();
     const newest = saves[0];
@@ -817,29 +867,76 @@ export class ProjectService {
    * The bytes already stored for this slot, or null when there are none, or when what is there is
    * not a document this build can read — an older format, say. A legacy blob is replaced rather than
    * merged, because there is nothing in it to merge with.
+   *
+   * "None" is decided by asking whether the object exists, not by whether reading it worked. A read
+   * that fails for any other reason — the bucket throttling, a dropped connection, a 503 — is not
+   * evidence of an empty slot, and treating it as one made the save that followed overwrite the slot
+   * with a state missing whatever the failed read was about to return. Those now propagate and fail
+   * the save, which the editor retries: losing a keystroke is recoverable, losing an applied change
+   * is not.
    */
   private async storedSave(projectId: number, slot: string, newestName: string | undefined): Promise<Buffer | null> {
     if (newestName !== slot) return null;
+    const key = `save/${projectId}/${slot}`;
+    const metadata = await this.s3Service.getFileMetadataOrNull(key);
+    if (!metadata) return null;
+
+    // Bounded on both axes. The length comes from the object itself, so a stream that never ends
+    // cannot pin the request open, and a body larger than the content budget is not this build's
+    // document and is replaced rather than merged.
+    const declared = Number(metadata.ContentLength ?? 0);
+    if (declared > PROJECT_CONTENT_MAX_BYTES) return null;
+    let bytes: Buffer;
     try {
-      const chunks: Buffer[] = [];
-      for await (const chunk of (await this.s3Service.downloadFile({ key: `save/${projectId}/${slot}` })).body) {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string));
-      }
-      const bytes = Buffer.concat(chunks);
-      // A Yjs update that is not one fails to parse, which is how a legacy format is recognised.
-      const probe = new Y.Doc();
-      try {
-        Y.applyUpdate(probe, bytes);
-        return bytes;
-      } catch {
-        return null;
-      } finally {
-        probe.destroy();
-      }
+      bytes = Buffer.concat(await this.readStoredBody(key));
+    } catch (error) {
+      // Too large to be this build's document, so there is nothing in it worth merging. Anything
+      // else — a timeout, a dropped connection — leaves the slot intact and fails the save.
+      if (error instanceof StoredSaveTooLargeError) return null;
+      throw error;
+    }
+    // A Yjs update that is not one fails to parse, which is how a legacy format is recognised.
+    const probe = new Y.Doc();
+    try {
+      Y.applyUpdate(probe, bytes);
+      return bytes;
     } catch {
-      // Nothing there yet, or it cannot be read. Either way there is nothing to merge with, and the
-      // incoming save is the whole truth.
       return null;
+    } finally {
+      probe.destroy();
+    }
+  }
+
+  /**
+   * The stored bytes, read under a deadline and a size cap. A stream that stalls with no more data
+   * arriving would otherwise hold the request open indefinitely, since a merge cannot start until the
+   * whole stored state is in hand.
+   */
+  private async readStoredBody(key: string): Promise<Buffer[]> {
+    const { body } = await this.s3Service.downloadFile({ key });
+    const read = (async (): Promise<Buffer[]> => {
+      const chunks: Buffer[] = [];
+      let total = 0;
+      for await (const chunk of body as Readable) {
+        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string);
+        total += buf.length;
+        if (total > PROJECT_CONTENT_MAX_BYTES) throw new StoredSaveTooLargeError();
+        chunks.push(buf);
+      }
+      return chunks;
+    })();
+    // Losing the race must not leave the connection reading: the loser destroys the stream, so the
+    // slot is not held open by a body nobody is waiting for.
+    let timer: NodeJS.Timeout | undefined;
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new StoredSaveUnreadableError()), this.stored_save_timeout_ms);
+      timer.unref?.();
+    });
+    try {
+      return await Promise.race([read, deadline]);
+    } finally {
+      if (timer) clearTimeout(timer);
+      (body as Readable).destroy?.();
     }
   }
 
