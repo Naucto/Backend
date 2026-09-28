@@ -3,6 +3,7 @@ import {
   GAME_KEYS,
   LEGACY_GAME_KEYS,
   computeContentSize,
+  mergeStates,
   isContentSizeBreakdown
 } from "./content-size";
 
@@ -107,5 +108,57 @@ describe("isContentSizeBreakdown", () => {
     ).toBe(true);
     expect(isContentSizeBreakdown(null)).toBe(false);
     expect(isContentSizeBreakdown({ total: 1 })).toBe(false);
+  });
+});
+
+describe("mergeStates", () => {
+  const docWith = (text: string): Y.Doc => {
+    const doc = new Y.Doc();
+    doc.getMap("code.files").set("main", new Y.Map());
+    (doc.getMap("code.files").get("main") as Y.Map<Y.Text>).set("text", new Y.Text(text));
+    return doc;
+  };
+  const read = (blob: Buffer): string => {
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, blob);
+    const text = (doc.getMap("code.files").get("main") as Y.Map<Y.Text>).get("text") as Y.Text;
+    const value = text.toString();
+    doc.destroy();
+    return value;
+  };
+
+  it("keeps both editors' work when two saves land in the same slot", () => {
+    // The case this exists for: a save is one editor's view, and two can be written in the same
+    // instant with neither having seen the other's latest keystrokes. Writing one over the other
+    // would erase the first writer's work entirely.
+    const host = docWith("local player = {}\n");
+    const assistant = new Y.Doc();
+    Y.applyUpdate(assistant, Y.encodeStateAsUpdate(host));
+    (assistant.getMap("code.files").get("main") as Y.Map<Y.Text>).get("text")!.insert(0, "-- from the assistant\n");
+
+    const stored = Buffer.from(Y.encodeStateAsUpdate(host));
+    const incoming = Buffer.from(Y.encodeStateAsUpdate(assistant));
+    const merged = mergeStates(stored, incoming);
+    expect(read(merged)).toContain("-- from the assistant");
+    expect(read(merged)).toContain("local player");
+  });
+
+  it("does not care which of the two is newer", () => {
+    const first = docWith("one\n");
+    const second = new Y.Doc();
+    Y.applyUpdate(second, Y.encodeStateAsUpdate(first));
+    (second.getMap("code.files").get("main") as Y.Map<Y.Text>).get("text")!.insert(0, "two\n");
+    const a = Buffer.from(Y.encodeStateAsUpdate(first));
+    const b = Buffer.from(Y.encodeStateAsUpdate(second));
+    expect(read(mergeStates(a, b))).toBe(read(mergeStates(b, a)));
+  });
+
+  it("takes the incoming save when there is nothing stored, or what is stored cannot be read", () => {
+    const next = Buffer.from(Y.encodeStateAsUpdate(docWith("only\n")));
+    expect(mergeStates(null, next)).toEqual(next);
+    expect(mergeStates(Buffer.alloc(0), next)).toEqual(next);
+    // A blob from an older format is replaced, not merged: there is nothing in it to merge with, and
+    // keeping it would leave a file nothing can open.
+    expect(mergeStates(Buffer.from("not a document at all"), next)).toEqual(next);
   });
 });

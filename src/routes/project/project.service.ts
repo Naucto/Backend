@@ -22,6 +22,7 @@ import { Prisma, Project, User } from "@prisma/client";
 import { ConfigService } from "@nestjs/config";
 import { DownloadedFile } from "@s3/s3.interface";
 import { Readable } from "stream";
+import * as Y from "yjs";
 import { streamToBuffer } from "@util/stream.util";
 import {
   ContentSizeBreakdown,
@@ -37,6 +38,7 @@ import {
   ProjectTooLargeException
 } from "./project.error";
 import { recordSavedAiProvenance } from "src/routes/ai/ai-provenance";
+import { mergeStates } from "./content-size";
 
 // What a project says about its people, on public routes as well as private ones: the id
 // and the name, never the address behind the account.
@@ -792,14 +794,52 @@ export class ProjectService {
     }
 
     await this.updateLastTimeUpdate(projectId);
+    // Merged into what is already stored rather than written over it. A save is one editor's view of
+    // a CRDT, and two of them can be written in the same instant — the host saving while an assistant
+    // change is applied, say — with neither having seen the other's latest keystrokes. Last writer wins
+    // on a whole blob, so whichever landed second would erase the first, and an applied change the
+    // database records as applied would be missing from the project. Merging is what a CRDT is for.
+    const stored = await this.storedSave(projectId, slot, newest?.name);
+    const buffer = file.buffer ? await mergeStates(stored, file.buffer) : undefined;
+
     await this.s3Service.uploadFile({
-      file,
+      file: buffer ? { ...file, buffer, size: buffer.length } : file,
       keyName: `save/${projectId}/${slot}`
     });
 
-    if (file.buffer) {
-      await this.storeContentSize(projectId, computeContentSize(file.buffer));
-      await recordSavedAiProvenance(this.prisma, projectId, file.buffer);
+    if (buffer) {
+      await this.storeContentSize(projectId, computeContentSize(buffer));
+      await recordSavedAiProvenance(this.prisma, projectId, buffer);
+    }
+  }
+
+  /**
+   * The bytes already stored for this slot, or null when there are none, or when what is there is
+   * not a document this build can read — an older format, say. A legacy blob is replaced rather than
+   * merged, because there is nothing in it to merge with.
+   */
+  private async storedSave(projectId: number, slot: string, newestName: string | undefined): Promise<Buffer | null> {
+    if (newestName !== slot) return null;
+    try {
+      const chunks: Buffer[] = [];
+      for await (const chunk of (await this.s3Service.downloadFile({ key: `save/${projectId}/${slot}` })).body) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string));
+      }
+      const bytes = Buffer.concat(chunks);
+      // A Yjs update that is not one fails to parse, which is how a legacy format is recognised.
+      const probe = new Y.Doc();
+      try {
+        Y.applyUpdate(probe, bytes);
+        return bytes;
+      } catch {
+        return null;
+      } finally {
+        probe.destroy();
+      }
+    } catch {
+      // Nothing there yet, or it cannot be read. Either way there is nothing to merge with, and the
+      // incoming save is the whole truth.
+      return null;
     }
   }
 

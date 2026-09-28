@@ -197,3 +197,28 @@ export function isContentSizeBreakdown(
     (key) => typeof record[key] === "number"
   );
 }
+
+/**
+ * Two states of the same document, as one, or `next` on its own when there is nothing to merge with.
+ *
+ * Order does not matter and neither does who is newer: a CRDT converges on the union of what both
+ * sides have seen. That is what makes it safe for two editors to save in the same instant — the one
+ * that lands second keeps the other's work instead of erasing it, which is what writing one state
+ * over the other would do.
+ */
+export function mergeStates(stored: Buffer | null, next: Buffer): Buffer {
+  if (!stored?.length) return next;
+  const doc = new Y.Doc();
+  try {
+    Y.applyUpdate(doc, stored);
+    Y.applyUpdate(doc, next);
+    return Buffer.from(Y.encodeStateAsUpdate(doc));
+  } catch {
+    // What is stored is not a document this build can read — an older format, or bytes that are not
+    // a save at all. The incoming save is the whole truth, and replacing is the honest thing to do
+    // rather than keeping a blob nothing can open.
+    return next;
+  } finally {
+    doc.destroy();
+  }
+}
