@@ -65,6 +65,34 @@ export class AiKeyCreateDto {
     expiresInDays?: number | null;
 }
 
+/** The document as the caller has it, which is what an accept is merged into. */
+export class AiSnapshotDto {
+  @ApiProperty()
+  @IsString()
+  @MaxLength(22400000)
+  @Matches(/^[A-Za-z0-9+/]+={0,2}$/)
+    snapshot!: string;
+}
+
+export class AiAcceptDto extends AiSnapshotDto {
+  @ApiProperty({ enum: ["APPROVED", "REJECTED"] })
+  @IsIn(["APPROVED", "REJECTED"])
+    decision!: "APPROVED" | "REJECTED";
+  @ApiProperty()
+  @Matches(/^[a-f0-9]{64}$/)
+    contentHash!: string;
+}
+
+export class AiApplyDto {
+  @ApiProperty({ description: "A Yjs update carrying the accepted change, for the caller to apply" })
+  @IsString()
+    update!: string;
+  @ApiProperty({ type: [String], description: "What the change touched, for the receipt" })
+  @IsArray()
+  @IsString({ each: true })
+    categories!: string[];
+}
+
 export class AiMcpProjectDto {
   @ApiProperty() projectId!: number;
   @ApiProperty() userId!: number;
@@ -108,43 +136,6 @@ export class AiKeySummaryDto {
   @ApiProperty({ type: "string", format: "date-time" }) createdAt!: Date;
   @ApiProperty({ nullable: true, type: "string", format: "date-time" }) lastUsedAt!: Date | null;
   @ApiProperty({ type: [AiKeyProjectDto] }) projects!: AiKeyProjectDto[];
-}
-
-export class AiEditorDto {
-  @ApiProperty()
-  @Matches(/^[a-f0-9-]{36}$/)
-    editorId!: string;
-}
-
-export class AiStartDto extends AiReviewDto {
-  @ApiProperty({ type: [String] })
-  @IsArray()
-  @ArrayMinSize(1)
-  @ArrayMaxSize(32)
-  @Matches(/^[a-f0-9-]{36}$/, { each: true })
-    participants!: string[];
-}
-
-export class AiAckDto extends AiEditorDto {
-  @ApiProperty()
-  @IsString()
-  @MaxLength(22400000)
-  @Matches(/^[A-Za-z0-9+/]+={0,2}$/)
-    snapshot!: string;
-}
-
-export class AiViolationDto extends AiEditorDto {
-  @ApiProperty()
-  @IsString()
-  @MaxLength(300)
-    reason!: string;
-
-  @ApiProperty({ required: false, description: "The Yjs update that arrived after the pause, base64" })
-  @IsOptional()
-  @IsString()
-  @MaxLength(1400000)
-  @Matches(/^[A-Za-z0-9+/]+={0,2}$/)
-    update?: string;
 }
 
 export class AiJobCreateDto {

@@ -21,8 +21,6 @@ model Project {
   aiConnections AiConnection[]
   aiProposals AiProposal[]
   aiContexts AiContext[]
-  aiEditors AiEditor[]
-  aiBarrier AiBarrier?
   aiJobs AiJob[]
   aiDeclarations AiDeclaration[]
   aiKeyGrants AiKeyGrant[]

@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -777,19 +776,8 @@ export class ProjectService {
    * inside the window, so a long session costs one slot per window rather than one per pause in
    * the typing. Past the window a new slot opens and the oldest go, keeping `max_history_version`.
    */
-  async save(projectId: number, file: Express.Multer.File, aiBarrierId?: string): Promise<void> {
-    const actual_time = Date.now();
-    const checkBarrier = async (): Promise<void> => {
-      const barrier = await this.prisma.aiBarrier.findUnique({ where: { projectId } });
-      if (aiBarrierId) {
-        if (barrier?.id !== aiBarrierId || barrier.status !== "COMMITTING") throw new ConflictException("AI commit changed");
-      } else if (barrier && (["PREPARING", "COMMITTING"].includes(barrier.status) || barrier.startedAt.getTime() >= actual_time)) {
-        throw new ConflictException("AI application in progress; retry saving after it completes");
-      }
-    };
-    await checkBarrier();
+  async save(projectId: number, file: Express.Multer.File): Promise<void> {
     const saves = (await this.listVersions(projectId)).sort(newestFirst);
-    await checkBarrier();
     const now = Date.now();
     const newest = saves[0];
     const slot = newest && now - Number(newest.name) < this.auto_save_delay ? newest.name : String(now);
@@ -963,7 +951,6 @@ export class ProjectService {
   }
 
   async publish(projectId: number): Promise<void> {
-    await this.assertNoAiApplication(projectId);
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
       select: {
@@ -982,13 +969,6 @@ export class ProjectService {
     await this.writeRelease(projectId, project);
   }
 
-  private async assertNoAiApplication(projectId: number): Promise<void> {
-    const barrier = await this.prisma.aiBarrier.findUnique({ where: { projectId } });
-    if (barrier && ["PREPARING", "COMMITTING"].includes(barrier.status)) {
-      throw new ConflictException("Complete or cancel the AI application before publishing");
-    }
-  }
-
   async unpublish(projectId: number): Promise<void> {
     // The row first: a blob nobody points at is harmless, a row pointing at a deleted blob is not.
     await this.prisma.project.update({
@@ -1000,7 +980,6 @@ export class ProjectService {
   }
 
   async updateRelease(projectId: number): Promise<void> {
-    await this.assertNoAiApplication(projectId);
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
       select: {

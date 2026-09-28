@@ -255,7 +255,7 @@ export class AiService {
   async review(projectId: number, userId: number, id: string, dto: AiReviewDto): Promise<void> {
     await this.authorize(projectId, userId);
     // Approving is applying: a separate "approved but not applied" state would let provenance and
-    // the application barrier disagree about what the person actually agreed to.
+    // the document disagree about what the person actually agreed to.
     if (dto.decision !== "REJECTED") throw new BadRequestException("Approve a proposal by applying it");
     const updated = await this.prisma.aiProposal.updateMany({
       where: { id, projectId, contentHash: dto.contentHash, status: "PENDING" },
@@ -270,8 +270,8 @@ export class AiService {
     const original = await this.prisma.aiProposal.findFirst({ where: { id, projectId, status: "APPLIED" } });
     if (!original) throw new ConflictException("Applied proposal unavailable");
     // The inverse was captured from the merged state at commit, so it names exactly what the
-    // proposal replaced. It is a new proposal: reviewed, applied under the barrier, and refused if
-    // anyone has since edited what it would restore.
+    // proposal replaced. It is a new proposal: reviewed, applied to the accepting editor's own
+    // state, and refused if anyone has since edited what it would restore.
     const operations = original.inverse;
     if (!Array.isArray(operations) || !operations.length) throw new ConflictException("This change has no recorded inverse; restore it from version history");
     const open = await this.prisma.aiProposal.findFirst({ where: { projectId, revertsId: id, status: "PENDING" } });

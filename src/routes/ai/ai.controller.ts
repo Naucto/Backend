@@ -4,10 +4,9 @@ import { Request } from "express";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
 import { Public } from "@auth/decorators/public.decorator";
 import { UserDto } from "@auth/dto/user.dto";
-import { AiBarrier, AiContext, AiDeclaration, AiJob, AiProposal } from "@prisma/client";
-import { AiAckDto, AiConnectionResponseDto, AiContextDto, AiDeclarationDto, AiEditorDto, AiJobCompleteDto, AiJobCreateDto, AiJobFailDto, AiProposalDto, AiReviewDto, AiStartDto, AiViolationDto, AiKeyCreateDto, AiKeyResponseDto, AiKeySummaryDto, AiMcpConnectionDto, AiMcpProjectDto } from "./ai.dto";
+import { AiContext, AiDeclaration, AiJob, AiProposal } from "@prisma/client";
+import { AiConnectionResponseDto, AiContextDto, AiDeclarationDto, AiJobCompleteDto, AiJobCreateDto, AiJobFailDto, AiProposalDto, AiReviewDto, AiKeyCreateDto, AiKeyResponseDto, AiKeySummaryDto, AiMcpConnectionDto, AiMcpProjectDto, AiAcceptDto, AiApplyDto, AiSnapshotDto } from "./ai.dto";
 import {
-  AiBarrierResponseDto,
   AiContextResponseDto,
   AiDeclarationResponseDto,
   AiJobResponseDto,
@@ -15,7 +14,7 @@ import {
   AiProvenanceResponseDto
 } from "./ai-response.dto";
 import { AiKeyResponse, AiKeySummary, AiService } from "./ai.service";
-import { AiBarrierService } from "./ai-barrier.service";
+import { AiApplyService } from "./ai-apply.service";
 import { AiJobsService } from "./ai-jobs.service";
 
 const userOf = (req: Request): number => (req.user as UserDto).id;
@@ -69,7 +68,7 @@ export class AiKeysController {
 @UseGuards(JwtAuthGuard)
 @Controller("ai/projects/:projectId")
 export class AiController {
-  constructor(private readonly service: AiService, private readonly barriers: AiBarrierService, private readonly jobs: AiJobsService) {}
+  constructor(private readonly service: AiService, private readonly jobs: AiJobsService, private readonly applyService: AiApplyService) {}
 
   @Post("connection")
   @ApiOperation({ summary: "Create a project-scoped proposal-only AI credential" })
@@ -106,9 +105,9 @@ export class AiController {
   }
 
   @Post("proposals/:proposalId/preview")
-  @ApiOperation({ summary: "Validate against an isolated editor snapshot; never modifies the live project" })
-  preview(@Param("projectId", ParseIntPipe) id: number, @Param("proposalId") proposalId: string, @Req() req: Request, @Body() dto: AiAckDto): Promise<{ result: string }> {
-    return this.barriers.preview(id, userOf(req), proposalId, dto.snapshot);
+  @ApiOperation({ summary: "Validate against the caller's own document; never modifies anything" })
+  preview(@Param("projectId", ParseIntPipe) id: number, @Param("proposalId") proposalId: string, @Req() req: Request, @Body() dto: AiSnapshotDto): Promise<{ result: string }> {
+    return this.applyService.preview(id, userOf(req), proposalId, dto.snapshot);
   }
 
   @Post("proposals/:proposalId/revert")
@@ -119,53 +118,11 @@ export class AiController {
   }
 
   @Post("proposals/:proposalId/apply")
-  @ApiResponse({ status: 201, type: AiBarrierResponseDto })
-  @ApiOperation({ summary: "Approve the exact proposal and pause every editor" })
-  start(@Param("projectId", ParseIntPipe) id: number, @Param("proposalId") proposalId: string, @Req() req: Request, @Body() dto: AiStartDto): Promise<AiBarrier> {
-    if (dto.decision !== "APPROVED") throw new BadRequestException("Application requires approval");
-    return this.barriers.start(id, userOf(req), proposalId, dto.contentHash, dto.participants);
-  }
-
-  @Post("editors/heartbeat")
-  @ApiResponse({ status: 201, type: AiBarrierResponseDto, description: "Current barrier, or null when none exists" })
-  @ApiOperation({ summary: "Register an editor and read the collaborative application state" })
-  heartbeat(@Param("projectId", ParseIntPipe) id: number, @Req() req: Request, @Body() dto: AiEditorDto): Promise<AiBarrier | null> {
-    return this.barriers.heartbeat(id, userOf(req), dto.editorId);
-  }
-
-  @Post("barriers/:barrierId/ack")
-  @ApiOperation({ summary: "Acknowledge the pause with the complete local Yjs state" })
-  async acknowledge(@Param("projectId", ParseIntPipe) id: number, @Param("barrierId") barrierId: string, @Req() req: Request, @Body() dto: AiAckDto): Promise<{ acknowledged: boolean }> {
-    await this.barriers.acknowledge(id, userOf(req), dto.editorId, barrierId, dto.snapshot);
-    return { acknowledged: true };
-  }
-
-  @Post("barriers/:barrierId/violation")
-  @ApiResponse({ status: 201, type: AiBarrierResponseDto })
-  @ApiOperation({ summary: "Report a write after the pause: aborts before commit, flags after it" })
-  violation(@Param("projectId", ParseIntPipe) id: number, @Param("barrierId") barrierId: string, @Req() req: Request, @Body() dto: AiViolationDto): Promise<AiBarrier> {
-    return this.barriers.violation(id, userOf(req), dto.editorId, barrierId, dto.reason, dto.update);
-  }
-
-  @Post("barriers/:barrierId/violation/dismiss")
-  @ApiOperation({ summary: "Dismiss a post-commit warning after checking the result" })
-  async dismiss(@Param("projectId", ParseIntPipe) id: number, @Param("barrierId") barrierId: string, @Req() req: Request): Promise<{ dismissed: boolean }> {
-    await this.barriers.acknowledgeViolation(id, userOf(req), barrierId);
-    return { dismissed: true };
-  }
-
-  @Post("barriers/:barrierId/finish")
-  @ApiResponse({ status: 201, type: AiBarrierResponseDto })
-  @ApiOperation({ summary: "Commit, or recover, the persisted approved result" })
-  finish(@Param("projectId", ParseIntPipe) id: number, @Param("barrierId") barrierId: string, @Req() req: Request): Promise<AiBarrier> {
-    return this.barriers.finish(id, userOf(req), barrierId);
-  }
-
-  @Post("barriers/:barrierId/abort")
-  @ApiOperation({ summary: "Cancel before the commit has started" })
-  async abort(@Param("projectId", ParseIntPipe) id: number, @Param("barrierId") barrierId: string, @Req() req: Request): Promise<{ aborted: boolean }> {
-    await this.barriers.abort(id, userOf(req), barrierId);
-    return { aborted: true };
+  @ApiResponse({ status: 201, type: AiApplyDto })
+  @ApiOperation({ summary: "Accept the proposal against the caller's own document and return the difference" })
+  apply(@Param("projectId", ParseIntPipe) id: number, @Param("proposalId") proposalId: string, @Req() req: Request, @Body() dto: AiAcceptDto): Promise<AiApplyDto> {
+    if (dto.decision !== "APPROVED") throw new BadRequestException("Applying requires approval");
+    return this.applyService.apply(id, userOf(req), proposalId, dto.contentHash, dto.snapshot);
   }
 
   @Get("jobs")

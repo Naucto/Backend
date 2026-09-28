@@ -18,19 +18,6 @@ export class AiProposalResponseDto {
   @ApiProperty() updatedAt!: Date;
 }
 
-export class AiBarrierResponseDto {
-  @ApiProperty() id!: string;
-  @ApiProperty() projectId!: number;
-  @ApiProperty() proposalId!: string;
-  @ApiProperty() status!: string;
-  @ApiProperty({ type: [String] }) expected!: string[];
-  @ApiProperty({ type: String, nullable: true }) result!: string | null;
-  @ApiProperty({ type: String, nullable: true }) violation!: string | null;
-  @ApiProperty({ type: [String] }) lateUpdates!: string[];
-  @ApiProperty() startedAt!: Date;
-  @ApiProperty() updatedAt!: Date;
-}
-
 export class AiContextResponseDto {
   @ApiProperty() id!: string;
   @ApiProperty() projectId!: number;

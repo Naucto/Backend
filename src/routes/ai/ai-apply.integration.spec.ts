@@ -4,21 +4,22 @@ import { ModuleRef } from "@nestjs/core";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import * as Y from "yjs";
 import { AiService } from "./ai.service";
-import { AiBarrierService } from "./ai-barrier.service";
+import { AiApplyService } from "./ai-apply.service";
 import { recordSavedAiProvenance } from "./ai-provenance";
 import { AiJobsService } from "./ai-jobs.service";
 import { ConfigService } from "@nestjs/config";
 import { AiConnection } from "@prisma/client";
 
 const integration = process.env["AI_INTEGRATION"] === "1" ? describe : describe.skip;
-integration("AI barrier PostgreSQL integration", () => {
+integration("AI application PostgreSQL integration", () => {
   let prisma: PrismaService;
   let ai: AiService;
-  let barriers: AiBarrierService;
+  let apply: AiApplyService;
   let userId: number;
   let projectId: number;
-  const save = jest.fn();
-  const a = randomUUID(), b = randomUUID();
+  const save = jest.fn(async (id: number, file: { buffer: Buffer }) => {
+    await recordSavedAiProvenance(prisma, id, file.buffer);
+  });
   const document = new Y.Doc();
   let proposalId: string;
   let contentHash: string;
@@ -37,10 +38,10 @@ integration("AI barrier PostgreSQL integration", () => {
     projectId = project.id;
     ai = new AiService(prisma);
     const module = await Test.createTestingModule({ providers: [
-      AiBarrierService, { provide: AiService, useValue: ai }, { provide: PrismaService, useValue: prisma },
+      AiApplyService, { provide: AiService, useValue: ai }, { provide: PrismaService, useValue: prisma },
       { provide: ModuleRef, useValue: { get: (): { save: typeof save } => ({ save }) } }
     ] }).compile();
-    barriers = module.get(AiBarrierService);
+    apply = module.get(AiApplyService);
     const file = new Y.Map<unknown>();
     document.getMap("code.files").set("main", file);
     file.set("text", new Y.Text("old"));
@@ -62,90 +63,85 @@ integration("AI barrier PostgreSQL integration", () => {
     document.destroy();
   });
 
-  it("requires all frozen snapshots and recovers a failed save without replaying edits", async () => {
-    await barriers.heartbeat(projectId, userId, a);
-    await barriers.heartbeat(projectId, userId, b);
-    await expect(barriers.start(projectId, userId, proposalId, contentHash, [a])).rejects.toThrow("membership");
-    const barrier = await barriers.start(projectId, userId, proposalId, contentHash, [a, b]);
-    const encode = (): string => Buffer.from(Y.encodeStateAsUpdate(document)).toString("base64");
-    await barriers.acknowledge(projectId, userId, a, barrier.id, encode());
-    await expect(barriers.finish(projectId, userId, barrier.id)).rejects.toThrow("Waiting");
-    document.getMap("gfx.sprites").set("0,0", 4);
-    await barriers.acknowledge(projectId, userId, b, barrier.id, encode());
-    save.mockRejectedValueOnce(new Error("storage unavailable"));
-    await expect(barriers.finish(projectId, userId, barrier.id)).rejects.toThrow("storage unavailable");
-    const persisted = await prisma.aiBarrier.findUniqueOrThrow({ where: { projectId } });
-    expect(persisted.status).toBe("COMMITTING");
-    await expect(barriers.abort(projectId, userId, barrier.id)).rejects.toThrow("Commit has started");
-    save.mockImplementation(async (id: number, file: Express.Multer.File) => {
-      await recordSavedAiProvenance(prisma, id, file.buffer);
-    });
-    const done = await barriers.finish(projectId, userId, barrier.id);
-    expect(done.result).toBe(persisted.result);
-    expect(done.status).toBe("APPLIED");
-    const result = new Y.Doc();
-    Y.applyUpdate(result, Buffer.from(done.result!, "base64"));
-    expect(result.getMap<Y.Map<Y.Text>>("code.files").get("main")!.get("text")!.toString()).toBe("new");
-    expect(result.getMap("gfx.sprites").get("0,0")).toBe(4);
-    expect((await prisma.project.findUniqueOrThrow({ where: { id: projectId } })).aiCategories).toEqual(["CODE"]);
-    const revert = await ai.proposeRevert(projectId, userId, proposalId);
-    expect(revert.revertsId).toBe(proposalId);
-    expect(revert.status).toBe("PENDING");
-    result.destroy();
+  it("applies to the caller's own document and hands back only the difference", async () => {
+    const before = Buffer.from(Y.encodeStateAsUpdate(document)).toString("base64");
+    const { update, categories } = await apply.apply(projectId, userId, proposalId, contentHash, before);
+    expect(categories).toEqual(["CODE"]);
+
+    // The update is a difference, not the document. Handing over a whole state would replace work
+    // the recipient has not sent yet, so a colleague's own edit must survive applying it.
+    const colleague = new Y.Doc();
+    Y.applyUpdate(colleague, Buffer.from(before, "base64"));
+    colleague.getMap("gfx.sprites").set("1,1", 3);
+    Y.applyUpdate(colleague, Buffer.from(update, "base64"));
+    expect((colleague.getMap<Y.Map<Y.Text>>("code.files").get("main")!.get("text")!).toString()).toBe("new");
+    expect(colleague.getMap("gfx.sprites").get("1,1")).toBe(3);
+    colleague.destroy();
+
+    Y.applyUpdate(document, Buffer.from(update, "base64"));
+    expect((document.getMap<Y.Map<Y.Text>>("code.files").get("main")!.get("text")!).toString()).toBe("new");
+    expect((await prisma.aiProposal.findUniqueOrThrow({ where: { id: proposalId } })).status).toBe("APPLIED");
   });
 
-  it("stores the inverse at commit so the revert is a reviewed proposal", async () => {
+  it("refuses a proposal whose content moved after it was reviewed, and one already taken", async () => {
+    const state = Buffer.from(Y.encodeStateAsUpdate(document)).toString("base64");
+    const context = await ai.context(projectId, userId, { run: randomUUID() });
+    const fresh = await ai.propose(connection, { title: "stale hash", summary: "x", snapshotHash: context.hash, operations: [{ kind: "code", fileId: "main", before: "new", after: "newer" }] });
+    // The exact proposal that was reviewed is what gets applied; anything else is a different
+    // document, and accepting it would apply a change nobody looked at.
+    await expect(apply.apply(projectId, userId, fresh.id, "f".repeat(64), state)).rejects.toThrow("review it again");
+    // The same proposal cannot be taken twice.
+    await expect(apply.apply(projectId, userId, proposalId, contentHash, state)).rejects.toThrow("already reviewed");
+  });
+
+  it("refuses a change to code that moved underneath, instead of merging over it", async () => {
+    save.mockImplementation(async () => undefined);
+    const context = await ai.context(projectId, userId, { run: randomUUID() });
+    const proposal = await ai.propose(connection, { title: "stale", summary: "x", snapshotHash: context.hash, operations: [{ kind: "code", fileId: "main", before: "something else entirely", after: "newer" }] });
+    // The document has moved on since the proposal was written, so the operation's `before` no
+    // longer matches. This is what the old barrier existed to catch, and it is caught here.
+    await expect(apply.apply(projectId, userId, proposal.id, proposal.contentHash, Buffer.from(Y.encodeStateAsUpdate(document)).toString("base64"))).rejects.toThrow("Code changed");
+    expect((await prisma.aiProposal.findUniqueOrThrow({ where: { id: proposal.id } })).status).toBe("PENDING");
+  });
+
+  it("hands the proposal back when storage refuses the write, instead of reporting it applied", async () => {
+    const context = await ai.context(projectId, userId, { run: randomUUID() });
+    const proposal = await ai.propose(connection, { title: "save fails", summary: "x", snapshotHash: context.hash, operations: [{ kind: "code", fileId: "main", before: "new", after: "written anyway?" }] });
+    const state = Buffer.from(Y.encodeStateAsUpdate(document)).toString("base64");
+
+    save.mockImplementationOnce(async () => {
+      throw new Error("S3 unavailable");
+    });
+    await expect(apply.apply(projectId, userId, proposal.id, proposal.contentHash, state)).rejects.toThrow("S3 unavailable");
+
+    // The change is not in the project, so it must not be recorded as applied, and it must still be
+    // possible to accept once storage recovers.
+    const stored = await prisma.aiProposal.findUniqueOrThrow({ where: { id: proposal.id } });
+    expect(stored.status).toBe("PENDING");
+    expect(stored.reviewedBy).toBeNull();
+    save.mockImplementation(async () => undefined);
+    await expect(apply.apply(projectId, userId, proposal.id, proposal.contentHash, state)).resolves.toMatchObject({ categories: ["CODE"] });
+  });
+
+  it("previews without touching anything", async () => {
+    const context = await ai.context(projectId, userId, { run: randomUUID() });
+    const proposal = await ai.propose(connection, { title: "preview", summary: "x", snapshotHash: context.hash, operations: [{ kind: "code", fileId: "main", before: "new", after: "previewed" }] });
+    const current = (document.getMap<Y.Map<Y.Text>>("code.files").get("main")!.get("text")!).toString();
+    const { result } = await apply.preview(projectId, userId, proposal.id, Buffer.from(Y.encodeStateAsUpdate(document)).toString("base64"));
+    const shown = new Y.Doc();
+    Y.applyUpdate(shown, Buffer.from(result, "base64"));
+    expect((shown.getMap<Y.Map<Y.Text>>("code.files").get("main")!.get("text")!).toString()).toBe("previewed");
+    // Nothing was written: the document on the client and the proposal are both as they were.
+    expect((document.getMap<Y.Map<Y.Text>>("code.files").get("main")!.get("text")!).toString()).toBe(current);
+    expect((await prisma.aiProposal.findUniqueOrThrow({ where: { id: proposal.id } })).status).toBe("PENDING");
+    shown.destroy();
+  });
+
+  it("stores the inverse when accepting, so the revert is a reviewed proposal", async () => {
     const applied = await prisma.aiProposal.findUniqueOrThrow({ where: { id: proposalId } });
     expect(applied.inverse).toEqual([{ kind: "code", fileId: "main", before: "new", after: "old" }]);
     const revert = await ai.proposeRevert(projectId, userId, proposalId);
     expect(await ai.proposeRevert(projectId, userId, proposalId)).toMatchObject({ id: revert.id });
-  });
-
-  it("aborts before commit when a participant reports a late write", async () => {
-    const context = await ai.context(projectId, userId, { code: "second" });
-    const proposal = await ai.propose(connection, { title: "second", summary: "x", snapshotHash: context.hash, operations: [{ kind: "code", fileId: "main", before: "new", after: "newer" }] });
-    await barriers.heartbeat(projectId, userId, a);
-    await barriers.heartbeat(projectId, userId, b);
-    const barrier = await barriers.start(projectId, userId, proposal.id, proposal.contentHash, [a, b]);
-    await barriers.acknowledge(projectId, userId, a, barrier.id, Buffer.from(Y.encodeStateAsUpdate(document)).toString("base64"));
-    const reported = await barriers.violation(projectId, userId, a, barrier.id, "update after pause");
-    expect(reported.status).toBe("ABORTED");
-    expect((await prisma.aiProposal.findUniqueOrThrow({ where: { id: proposal.id } })).status).toBe("PENDING");
-    await expect(barriers.finish(projectId, userId, barrier.id)).rejects.toThrow("update after pause");
-  });
-
-  it("ignores late updates a snapshot already holds and aborts on one none holds", async () => {
-    const encode = (doc: Y.Doc): string => Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64");
-    const run = async (late: (base: Y.Doc) => string): Promise<string> => {
-      const text = (document.getMap<Y.Map<Y.Text>>("code.files").get("main")!.get("text")!).toString();
-      const context = await ai.context(projectId, userId, { run: randomUUID() });
-      const proposal = await ai.propose(connection, { title: "late", summary: "x", snapshotHash: context.hash, operations: [{ kind: "code", fileId: "main", before: text, after: `${text}!` }] });
-      await barriers.heartbeat(projectId, userId, a);
-      await barriers.heartbeat(projectId, userId, b);
-      const barrier = await barriers.start(projectId, userId, proposal.id, proposal.contentHash, [a, b]);
-      await barriers.acknowledge(projectId, userId, a, barrier.id, encode(document));
-      await barriers.acknowledge(projectId, userId, b, barrier.id, encode(document));
-      await barriers.violation(projectId, userId, a, barrier.id, "update after pause", late(document));
-      try {
-        return (await barriers.finish(projectId, userId, barrier.id)).status;
-      } catch (error) {
-        return (error as Error).message;
-      }
-    };
-    // Snapshots store the text at the ack; apply the committed result to our copy for the next run.
-    save.mockImplementation(async () => undefined);
-    expect(await run(doc => encode(doc))).toBe("APPLIED");
-    const state = await prisma.aiBarrier.findUniqueOrThrow({ where: { projectId } });
-    Y.applyUpdate(document, Buffer.from(state.result!, "base64"));
-    const detached = (): string => {
-      const other = new Y.Doc();
-      Y.applyUpdate(other, Y.encodeStateAsUpdate(document));
-      other.getMap("gfx.sprites").set("1,1", 2);
-      const update = Buffer.from(Y.encodeStateAsUpdate(other, Y.encodeStateVector(document))).toString("base64");
-      other.destroy();
-      return update;
-    };
-    expect(await run(() => detached())).toContain("no snapshot contains");
   });
 
   it("enforces the job quota, the service secret, and discards late cancelled results", async () => {
