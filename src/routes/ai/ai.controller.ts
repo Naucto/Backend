@@ -118,8 +118,8 @@ export class AiController {
   }
 
   @Post("proposals/:proposalId/apply")
-  @ApiResponse({ status: 201, type: AiApplyDto })
-  @ApiOperation({ summary: "Accept the proposal against the caller's own document and return the difference" })
+  @ApiResponse({ status: 200, type: AiApplyDto })
+  @ApiOperation({ summary: "Accept the proposal against the caller's own document and return the merged state" })
   apply(@Param("projectId", ParseIntPipe) id: number, @Param("proposalId") proposalId: string, @Req() req: Request, @Body() dto: AiAcceptDto): Promise<AiApplyDto> {
     if (dto.decision !== "APPROVED") throw new BadRequestException("Applying requires approval");
     return this.applyService.apply(id, userOf(req), proposalId, dto.contentHash, dto.snapshot);

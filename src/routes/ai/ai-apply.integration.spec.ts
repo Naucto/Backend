@@ -63,20 +63,52 @@ integration("AI application PostgreSQL integration", () => {
     document.destroy();
   });
 
-  it("applies to the caller's own document and hands back only the difference", async () => {
+  it("applies to the caller's own document without costing anyone else their work", async () => {
     const before = Buffer.from(Y.encodeStateAsUpdate(document)).toString("base64");
     const { update, categories } = await apply.apply(projectId, userId, proposalId, contentHash, before);
     expect(categories).toEqual(["CODE"]);
 
-    // The update is a difference, not the document. Handing over a whole state would replace work
-    // the recipient has not sent yet, so a colleague's own edit must survive applying it.
-    const colleague = new Y.Doc();
-    Y.applyUpdate(colleague, Buffer.from(before, "base64"));
-    colleague.getMap("gfx.sprites").set("1,1", 3);
-    Y.applyUpdate(colleague, Buffer.from(update, "base64"));
-    expect((colleague.getMap<Y.Map<Y.Text>>("code.files").get("main")!.get("text")!).toString()).toBe("new");
-    expect(colleague.getMap("gfx.sprites").get("1,1")).toBe(3);
-    colleague.destroy();
+    // Two colleagues, and the update has to be right for both.
+    //
+    // The acceptor typed at the end of the file before pressing accept, and this colleague never
+    // received those keystrokes. A `code` commit is a delete and a reinsert, so an update cut
+    // against the acceptor's state vector gives this peer a delete it can apply and a replacement
+    // whose origin it does not have. The file then reads as empty — the AI's text is in
+    // `store.pendingStructs`, not in the document.
+    const peerState = Buffer.from(Y.encodeStateAsUpdate(document)).toString("base64");
+    const behind = new Y.Doc();
+    Y.applyUpdate(behind, Buffer.from(peerState, "base64"));
+    Y.applyUpdate(behind, Buffer.from(update, "base64"));
+    expect((behind.getMap<Y.Map<Y.Text>>("code.files").get("main")!.get("text")!).toString()).toBe("new");
+    behind.destroy();
+
+    // The same, for a colleague that is behind *and* holding unsent edits of its own. Here the
+    // difference loses the AI's text and keeps only the colleague's; a state carries both. Yjs
+    // applies updates rather than replacing, which is the property this relies on.
+    const acceptor = new Y.Doc();
+    Y.applyUpdate(acceptor, Buffer.from(peerState, "base64"));
+    const acceptorText = acceptor.getMap<Y.Map<Y.Text>>("code.files").get("main")!.get("text")!;
+    acceptorText.insert(acceptorText.length, " ACCEPTOR TYPED");
+    const acceptorState = Buffer.from(Y.encodeStateAsUpdate(acceptor)).toString("base64");
+
+    const second = await ai.propose(connection, {
+      title: "colleague behind",
+      summary: "x",
+      snapshotHash: (await ai.context(projectId, userId, { run: randomUUID() })).hash,
+      operations: [{ kind: "code", fileId: "main", before: acceptorText.toString(), after: "AI final" }],
+    });
+    const { update: secondUpdate } = await apply.apply(projectId, userId, second.id, second.contentHash, acceptorState);
+
+    const peer = new Y.Doc();
+    Y.applyUpdate(peer, Buffer.from(peerState, "base64"));
+    peer.getMap<Y.Map<Y.Text>>("code.files").get("main")!.get("text")!.insert(0, "PEER ");
+    Y.applyUpdate(peer, Buffer.from(secondUpdate, "base64"));
+    const peerText = (peer.getMap<Y.Map<Y.Text>>("code.files").get("main")!.get("text")!).toString();
+    expect(peerText).toContain("AI final");
+    expect(peerText).toContain("PEER");
+    expect(peerText).not.toBe("");
+    peer.destroy();
+    acceptor.destroy();
 
     Y.applyUpdate(document, Buffer.from(update, "base64"));
     expect((document.getMap<Y.Map<Y.Text>>("code.files").get("main")!.get("text")!).toString()).toBe("new");

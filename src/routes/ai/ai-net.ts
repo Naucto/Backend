@@ -77,21 +77,26 @@ export function prepareNetPermissions(doc: Y.Doc, op: Operation, touch: (key: st
   // would leave the default of both bits set, which is the open state. Say what to send instead.
   if ("flags" in op) throw new ConflictException("Use clientRead and clientWrite, not flags");
 
-  // A revert must not overwrite what someone did since. Every other kind carries the value it
-  // expects to find, and a declaration that has moved on is a conflict rather than a silent
-  // clobber — the alternative is a "Revert" button that quietly undoes an afternoon.
-  if (op["expect"] !== undefined) {
+  // A declaration must say what it expects to find, or nothing else does. Every other kind carries
+  // the value it expects, and a declaration that has moved on is a conflict rather than a silent
+  // clobber — the alternative is a change that quietly undoes somebody's afternoon. Reverts always
+  // brought one; a fresh proposal did not, which meant it took whatever the accepting document
+  // happened to hold and wrote over it. `Naucto-AI` fills this in from the state it read, the same
+  // way it fills `snapshotHash`. Checked after the operation's own fields, so that a mistyped path
+  // or a bound that does not fit is still reported as itself.
+  const checkExpectation = (): void => {
     const want = op["expect"];
+    if (want === undefined) throw new ConflictException("A multiplayer declaration must state what it expects to find");
     if (want === null) {
       if (map.has(target)) throw new ConflictException("Declaration changed since this was applied");
-    } else if (typeof want !== "object" || want === null) {
+    } else if (typeof want !== "object") {
       throw new ConflictException("Invalid multiplayer expectation");
     } else {
       const now = map.get(target);
       const same = now !== undefined && now.flags === (want as Declaration)["flags"] && ((now as Declaration).default ?? null) === ((want as Declaration).default ?? null);
       if (!same) throw new ConflictException("Declaration changed since this was applied");
     }
-  }
+  };
 
   const raw = map.get(target);
   // `net.permissions` is a collaborative map, so any peer can have put anything in it. A value that
@@ -106,10 +111,12 @@ export function prepareNetPermissions(doc: Y.Doc, op: Operation, touch: (key: st
     if (op["clientRead"] !== undefined || op["clientWrite"] !== undefined || op["default"] !== undefined)
       throw new ConflictException("remove cannot be combined with other changes");
     if (before === undefined) throw new ConflictException("No such declaration");
+    checkExpectation();
     return {
       category: "MULTIPLAYER",
       writes: [() => { map.delete(target); }],
-      inverse: [{ kind: "net_permissions", path: target, ...declarationFields(before) }],
+      // Restoring the declaration meets an empty path, which is what it has to expect to find.
+      inverse: [{ kind: "net_permissions", path: target, expect: null, ...declarationFields(before) }],
     };
   }
 
@@ -146,6 +153,10 @@ export function prepareNetPermissions(doc: Y.Doc, op: Operation, touch: (key: st
     if (before === undefined && next.flags === (CLIENT_READ | CLIENT_WRITE) && next.default === undefined)
       throw new ConflictException("Proposal contains no-op multiplayer changes");
   }
+
+  // Last, once the operation is known to be well-formed, so a mistake in the operation itself is
+  // reported as that and not as a missing expectation.
+  checkExpectation();
 
   return {
     category: "MULTIPLAYER",

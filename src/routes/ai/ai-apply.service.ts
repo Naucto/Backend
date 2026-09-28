@@ -1,9 +1,8 @@
-import { ConflictException, Injectable } from "@nestjs/common";
+import { ConflictException, Injectable, Logger } from "@nestjs/common";
 import { ModuleRef } from "@nestjs/core";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { Prisma } from "@prisma/client";
 import { ProjectService } from "@project/project.service";
-import * as Y from "yjs";
 import { commitSnapshots } from "./ai-commit";
 import { AiService } from "./ai.service";
 
@@ -11,7 +10,7 @@ import { AiService } from "./ai.service";
  * Applying a proposal, without stopping anybody.
  *
  * The person who accepts sends the document as they have it, the operations are merged into that,
- * and the difference is handed back as a Yjs update. Their unsaved work is in the base, so it is
+ * and the merged result is handed back as a Yjs update. Their unsaved work is in the base, so it is
  * respected rather than reconstructed, and every operation is still checked against the real text
  * before it is written — a change to something that moved underneath is refused, not merged over.
  *
@@ -23,6 +22,7 @@ import { AiService } from "./ai.service";
  */
 @Injectable()
 export class AiApplyService {
+  private readonly logger = new Logger(AiApplyService.name);
   constructor(private readonly prisma: PrismaService, private readonly ai: AiService, private readonly modules: ModuleRef) {}
 
   /** What applying would do, for the diff a person decides on. Written, never stored. */
@@ -34,10 +34,16 @@ export class AiApplyService {
   }
 
   /**
-   * Applies the proposal to the accepting editor's own state and returns only the difference.
+   * Applies the proposal to the accepting editor's own state and returns the merged document.
    *
-   * A delta rather than a whole document: everyone else in the session is still editing, and
-   * handing them the merged state would replace work they have not sent yet.
+   * The whole state, not a difference from the acceptor's. Yjs merges on apply, so a full state does
+   * not overwrite a colleague who has unsent work — it combines with it. A difference does not have
+   * that property: it only makes sense to the one client whose state vector it was cut against. The
+   * update leaves this server and reaches every tab in the session, and `code` commits are a
+   * delete-and-reinsert, so a colleague still missing the acceptor's own edits would apply that
+   * delete and park the replacement as a struct whose origin they do not have — an empty file until
+   * the missing chunk happens to arrive. A state carries its own dependencies, so it is correct for
+   * every recipient regardless of what they have.
    */
   async apply(projectId: number, userId: number, proposalId: string, contentHash: string, snapshot: string): Promise<{ update: string; categories: string[] }> {
     await this.ai.authorize(projectId, userId);
@@ -47,9 +53,9 @@ export class AiApplyService {
     if (proposal.contentHash !== contentHash) throw new ConflictException("Proposal changed; review it again");
 
     const commit = commitSnapshots([snapshot], proposal.operations, proposal.id);
-    const update = difference(snapshot, commit.result);
-    // A commit that would move nothing is a proposal that no longer describes this document.
-    if (!update) throw new ConflictException("That change no longer applies to this project");
+    // A commit that moves nothing is a proposal that no longer describes this document. Compared
+    // against the snapshot, because a full state is never empty of itself.
+    if (commit.result === snapshot) throw new ConflictException("That change no longer applies to this project");
 
     // Claim the proposal before touching storage. The status is what makes acceptance single-use,
     // and two people can reach this at once, so the write is a compare-and-swap on PENDING rather
@@ -67,30 +73,20 @@ export class AiApplyService {
     try {
       await project.save(projectId, { buffer, originalname: "ai.yjs", mimetype: "application/octet-stream", size: buffer.length } as Express.Multer.File);
     } catch (error) {
-      // Storage refused, so nothing was written and the claim has to go back: leaving it APPLIED
-      // would report a change that does not exist in the project. Best effort — if the revert
-      // itself fails the proposal stays claimed, which is the safer of the two bad outcomes.
-      await this.prisma.aiProposal
+      // The upload is the first thing `save` does and the most likely thing to fail; its two writes
+      // after it can also throw, and then the blob is stored while the proposal is not. Reverting is
+      // right for the common case, and wrong for that one, so a revert that cannot be confirmed is
+      // reported rather than swallowed: a proposal left APPLIED with nothing stored is a dead end
+      // (it cannot be applied again, and `proposeRevert` only looks at APPLIED rows).
+      const released = await this.prisma.aiProposal
         .updateMany({ where: { id: proposal.id, status: "APPLIED", reviewedBy: userId }, data: { status: "PENDING", reviewedBy: null } })
-        .catch(() => undefined);
+        .catch(() => null);
+      if (!released || released.count !== 1) {
+        this.logger.error(`Proposal ${proposal.id} is recorded as applied but its document was not stored; it needs a manual decision.`, error instanceof Error ? error.stack : undefined);
+      }
       throw error;
     }
 
-    return { update, categories: commit.categories };
-  }
-}
-
-/** The Yjs update that carries `after` to someone already holding `before`, or null if it is empty. */
-function difference(before: string, after: string): string | null {
-  const held = new Y.Doc();
-  const merged = new Y.Doc();
-  try {
-    Y.applyUpdate(held, Buffer.from(before, "base64"));
-    Y.applyUpdate(merged, Buffer.from(after, "base64"));
-    const update = Buffer.from(Y.encodeStateAsUpdate(merged, Y.encodeStateVector(held))).toString("base64");
-    return update.length > 0 ? update : null;
-  } finally {
-    held.destroy();
-    merged.destroy();
+    return { update: commit.result, categories: commit.categories };
   }
 }

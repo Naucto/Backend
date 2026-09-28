@@ -312,7 +312,7 @@
           }
         },
         "responses": {
-          "201": {
+          "200": {
             "description": "",
             "content": {
               "application/json": {
@@ -328,7 +328,7 @@
             "JWT-auth": []
           }
         ],
-        "summary": "Accept the proposal against the caller's own document and return the difference",
+        "summary": "Accept the proposal against the caller's own document and return the merged state",
         "tags": [
           "AI"
         ]

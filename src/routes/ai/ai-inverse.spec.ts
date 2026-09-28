@@ -115,7 +115,7 @@ describe("multiplayer declarations round-trip", () => {
     const doc = fixture();
     doc.getMap("net.permissions").set("players.score", { flags: 3, default: 0 });
     const { applied, reverted } = roundTrip(doc, [
-      { kind: "net_permissions", path: "players.score", clientWrite: false, default: 100 }
+      { kind: "net_permissions", path: "players.score", clientWrite: false, default: 100, expect: { flags: 3, default: 0 } }
     ]);
     expect(perms(applied)["players.score"]).toEqual({ flags: 1, default: 100 });
     expect(perms(reverted)["players.score"]).toEqual({ flags: 3, default: 0 });
@@ -123,12 +123,12 @@ describe("multiplayer declarations round-trip", () => {
 
   it("removes a declaration it introduced, and restores one it deleted", () => {
     const doc = fixture();
-    const added = roundTrip(doc, [{ kind: "net_permissions", path: "room.theme", clientWrite: false }]);
+    const added = roundTrip(doc, [{ kind: "net_permissions", path: "room.theme", clientWrite: false, expect: null }]);
     expect(perms(added.applied)["room.theme"]).toEqual({ flags: 1 });
     expect(perms(added.reverted)["room.theme"]).toBeUndefined();
 
     doc.getMap("net.permissions").set("secrets", { flags: 0 });
-    const removed = roundTrip(doc, [{ kind: "net_permissions", path: "secrets", remove: true }]);
+    const removed = roundTrip(doc, [{ kind: "net_permissions", path: "secrets", remove: true, expect: { flags: 0 } }]);
     expect(perms(removed.applied)["secrets"]).toBeUndefined();
     expect(perms(removed.reverted)["secrets"]).toEqual({ flags: 0 });
   });
@@ -136,7 +136,7 @@ describe("multiplayer declarations round-trip", () => {
   it("refuses to revert over something a person changed afterwards", () => {
     const doc = fixture();
     doc.getMap("net.permissions").set("secrets", { flags: 0, default: 1 });
-    const forward = commitSnapshots([encode(doc)], [{ kind: "net_permissions", path: "secrets", clientWrite: true }], "f");
+    const forward = commitSnapshots([encode(doc)], [{ kind: "net_permissions", path: "secrets", clientWrite: true, expect: { flags: 0, default: 1 } }], "f");
     // Somebody edits the declaration after the change was applied, and a revert that ignored this
     // would undo their afternoon without saying so.
     const after = load(forward.result);
@@ -147,9 +147,27 @@ describe("multiplayer declarations round-trip", () => {
     expect(commitSnapshots([encode(clean)], forward.inverse, "i2", true).inverse).toBeDefined();
   });
 
+  it("refuses a declaration with no expectation, rather than writing over whatever is there", () => {
+    // The operation used to be able to arrive with no `expect` at all, in which case it took
+    // whatever the document held and wrote over it. A colleague's declaration, made after the
+    // proposal was written, vanished with nothing said. Failing closed is the point: `Naucto-AI`
+    // fills the expectation in from the state it read.
+    const doc = fixture();
+    doc.getMap("net.permissions").set("players.score", { flags: 1 });
+    expect(() => commitSnapshots([encode(doc)], [{ kind: "net_permissions", path: "players.score", clientWrite: true }], "x")).toThrow("must state what it expects");
+
+    // Stating the declaration that has actually moved on is a conflict, and naming the one that is
+    // really there applies cleanly.
+    const stale = { kind: "net_permissions", path: "players.score", clientWrite: true, expect: { flags: 0 } };
+    expect(() => commitSnapshots([encode(doc)], [stale], "y")).toThrow("changed since");
+    expect(commitSnapshots([encode(doc)], [{ ...stale, expect: { flags: 1 } }], "z").inverse).toBeDefined();
+    // And a declaration that is expected to be absent but is not, is the same conflict.
+    expect(() => commitSnapshots([encode(doc)], [{ kind: "net_permissions", path: "players.score", clientWrite: true, expect: null }], "w")).toThrow("changed since");
+  });
+
   it("records the category, so the receipt says the game changed for more than code", () => {
     const doc = fixture();
-    const commit = commitSnapshots([encode(doc)], [{ kind: "net_permissions", path: "players.score", default: 0 }], "c");
+    const commit = commitSnapshots([encode(doc)], [{ kind: "net_permissions", path: "players.score", default: 0, expect: null }], "c");
     expect(commit.categories).toEqual(["MULTIPLAYER"]);
   });
 });
@@ -193,7 +211,7 @@ describe("a path is a path", () => {
       doc.getMap("net.permissions").set("secrets", bad as never);
       // A peer can put anything in a collaborative map. Reading `null.flags` is a 500, and
       // treating the entry as absent would report the path as open when the host does not.
-      expect(() => commitSnapshots([encode(doc)], [{ kind: "net_permissions", path: "secrets", clientWrite: true }], "x")).toThrow("malformed");
+      expect(() => commitSnapshots([encode(doc)], [{ kind: "net_permissions", path: "secrets", clientWrite: true, expect: { flags: 0, default: 1 } }], "x")).toThrow("malformed");
     }
   });
 
@@ -217,11 +235,11 @@ describe("a path is a path", () => {
   it("accepts the shapes a game actually uses", () => {
     const doc = fixture();
     const commit = commitSnapshots([encode(doc)], [
-      { kind: "net_permissions", path: "players.score", default: 0 },
-      { kind: "net_permissions", path: "room_theme2", clientWrite: false },
-      { kind: "net_permissions", path: "secrets", clientRead: false, clientWrite: false },
-      { kind: "net_permissions", path: "title", default: "Pip" },
-      { kind: "net_permissions", path: "ready", default: true },
+      { kind: "net_permissions", path: "players.score", default: 0, expect: null },
+      { kind: "net_permissions", path: "room_theme2", clientWrite: false, expect: null },
+      { kind: "net_permissions", path: "secrets", clientRead: false, clientWrite: false, expect: null },
+      { kind: "net_permissions", path: "title", default: "Pip", expect: null },
+      { kind: "net_permissions", path: "ready", default: true, expect: null },
     ], "ok");
     const written = (commit.result, load(commit.result).getMap("net.permissions").toJSON() as Record<string, unknown>);
     expect(written).toEqual({
