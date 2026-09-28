@@ -18,7 +18,7 @@ export async function recordSavedAiProvenance(prisma: PrismaService, projectId: 
   if (ids.length > 10000) throw new Error("Too many AI receipts");
   await prisma.$transaction(async tx => {
     const proposals = await tx.aiProposal.findMany({
-      where: { projectId, id: { in: ids }, status: { in: ["APPROVED", "APPLIED"] } }
+      where: { projectId, id: { in: ids }, status: "APPLIED" }
     });
     const categories = new Set<string>();
     for (const proposal of proposals) {
@@ -49,10 +49,6 @@ export async function recordSavedAiProvenance(prisma: PrismaService, projectId: 
         data: { aiCategories: { push: category } }
       });
     }
-    await tx.aiProposal.updateMany({
-      where: { projectId, id: { in: proposals.map(p => p.id) }, status: "APPROVED" },
-      data: { status: "APPLIED" }
-    });
     const reverted = proposals.flatMap(proposal => proposal.revertsId ? [proposal.revertsId] : []);
     if (reverted.length) await tx.aiProposal.updateMany({
       where: { projectId, id: { in: reverted }, status: "APPLIED" },

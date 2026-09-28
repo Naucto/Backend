@@ -14,6 +14,8 @@ export class AiProposalResponseDto {
   @ApiProperty({ type: Number, nullable: true }) reviewedBy!: number | null;
   @ApiProperty({ type: String, nullable: true }) revertsId!: string | null;
   @ApiProperty({ type: [Object], nullable: true }) inverse!: Prisma.JsonValue | null;
+  @ApiProperty({ description: "How old the shared state this proposal was written against was, in milliseconds. An assistant may work on a project nobody has open, so this is what says how far back it reaches." })
+  baseContextAgeMs!: number;
   @ApiProperty() createdAt!: Date;
   @ApiProperty() updatedAt!: Date;
 }

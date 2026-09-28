@@ -1,5 +1,5 @@
 // AI assistance: scoped MCP credentials, shared editor context, reviewable proposals, the
-// collaborative application barrier, specialist generation jobs and provenance declarations.
+// proposals, how a proposal is applied, specialist generation jobs and provenance declarations.
 
 model AiConnection {
   id        String   @id @default(uuid())

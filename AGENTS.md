@@ -33,11 +33,9 @@ published as `@naucto/api-client` on GitHub Packages from `client/` (see `client
    typecheck, build, Jest against a real Postgres, and the swagger contract drift check on every
    push/PR to `main` and must pass. A husky pre-commit hook runs `eslint --fix` on staged files and
    `commit-msg` enforces the `[PART] [TYPE] Message` format.
-3. **Run the feedback loop before finishing:** `npm run lint`, `npm run build`, and
-   `npm run test`. CI (`.github/workflows/jest.yml`) runs the build + tests against a real
-   Postgres on every push/PR to `main` and must pass. `.github/workflows/docker.yml` builds the
-   production image on PRs and publishes it to `ghcr.io/naucto/backend:{main,sha-<sha>,<tag>}`
-   on `main` / `v*` tags (consumed by the Frontend's full e2e run).
+   `.github/workflows/docker.yml` builds the production image on PRs and publishes it to
+   `ghcr.io/naucto/backend:{main,sha-<sha>,<tag>}` on `main` / `v*` tags (consumed by the Frontend's
+   full e2e run).
 4. **Ask the user when a decision is non-obvious** — especially architectural ones (new
    dependencies, schema/migration changes, cross-cutting structure). Prefer asking over assuming.
 5. **Never hand-edit generated code** — `swagger.json` (committed, regenerated with

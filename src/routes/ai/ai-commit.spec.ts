@@ -1,8 +1,9 @@
 import * as Y from "yjs";
 import { commitSnapshots } from "./ai-commit";
 
-const commitCodeSnapshots = (...args: Parameters<typeof commitSnapshots>): string => commitSnapshots(...args).result;
 import { createHash } from "node:crypto";
+
+const commitCodeSnapshots = (...args: Parameters<typeof commitSnapshots>): string => commitSnapshots(...args).result;
 
 const encode = (doc: Y.Doc): string => Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64");
 function fixture(): Y.Doc {

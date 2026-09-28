@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Logger } from "@nestjs/common";
+import { BadRequestException, Logger } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { ModuleRef } from "@nestjs/core";
 import { PrismaService } from "@ourPrisma/prisma.service";
@@ -9,7 +9,7 @@ import { AiApplyService } from "./ai-apply.service";
 import { recordSavedAiProvenance } from "./ai-provenance";
 import { AiJobsService } from "./ai-jobs.service";
 import { ConfigService } from "@nestjs/config";
-import { AiConnection } from "@prisma/client";
+import { AiConnection, AiProposal } from "@prisma/client";
 
 const integration = process.env["AI_INTEGRATION"] === "1" ? describe : describe.skip;
 integration("AI application PostgreSQL integration", () => {
@@ -18,8 +18,23 @@ integration("AI application PostgreSQL integration", () => {
   let apply: AiApplyService;
   let userId: number;
   let projectId: number;
-  const save = jest.fn(async (id: number, file: { buffer: Buffer }) => {
+  /** What `ProjectService.save` does as far as this suite is concerned: store it, and record it. */
+  const storeAndRecord = async (id: number, file: { buffer: Buffer }): Promise<void> => {
     await recordSavedAiProvenance(prisma, id, file.buffer);
+  };
+  const save = jest.fn(storeAndRecord);
+  const documentState = (): string => Buffer.from(Y.encodeStateAsUpdate(document)).toString("base64");
+  const currentText = (): string => (document.getMap<Y.Map<Y.Text>>("code.files").get("main")!.get("text")!).toString();
+  /** A code proposal against whatever the document holds right now, so tests stand on their own. */
+  const stageCode = async (title: string, after: string): Promise<AiProposal> => {
+    const context = await ai.context(projectId, userId, { run: randomUUID() });
+    return ai.propose(connection, { title, summary: "x", snapshotHash: context.hash, operations: [{ kind: "code", fileId: "main", before: currentText(), after }] });
+  };
+  // Every test starts from the real behaviour. Overriding it and leaving the override behind makes
+  // the next test's provenance assertions depend on receipts an earlier one happened to write.
+  afterEach(() => {
+    save.mockReset();
+    save.mockImplementation(storeAndRecord);
   });
   const document = new Y.Doc();
   let proposalId: string;
@@ -27,6 +42,13 @@ integration("AI application PostgreSQL integration", () => {
   let connection: AiConnection;
   let jobs: AiJobsService;
   const extraUserIds: number[] = [];
+  /** Every project this suite made, so it can clean up after itself and nothing else. */
+  const createdProjectIds: number[] = [];
+  const newProject = async (name: string, ownerId = userId): Promise<number> => {
+    const project = await prisma.project.create({ data: { name, shortDesc: "test", userId: ownerId } });
+    createdProjectIds.push(project.id);
+    return project.id;
+  };
 
   beforeAll(async () => {
     const host = new URL(process.env["DATABASE_URL"] ?? "").hostname;
@@ -35,8 +57,7 @@ integration("AI application PostgreSQL integration", () => {
     const nonce = randomUUID();
     const user = await prisma.user.create({ data: { email: `${nonce}@example.invalid`, username: nonce } });
     userId = user.id;
-    const project = await prisma.project.create({ data: { name: "AI integration", shortDesc: "test", userId } });
-    projectId = project.id;
+    projectId = await newProject("AI integration");
     ai = new AiService(prisma);
     const module = await Test.createTestingModule({ providers: [
       AiApplyService, { provide: AiService, useValue: ai }, { provide: PrismaService, useValue: prisma },
@@ -56,9 +77,12 @@ integration("AI application PostgreSQL integration", () => {
   });
 
   afterAll(async () => {
-    // Extra projects and users made by a test own rows the cascade below would trip over.
-    await prisma.project.deleteMany({});
-    await prisma.aiKey.deleteMany({});
+    // Only what this suite created. The host guard above admits a developer's own development
+    // database, which is populated and worth keeping, and CI now sets AI_INTEGRATION — so a blanket
+    // `deleteMany` here would empty whichever database was pointed at.
+    await prisma.project.deleteMany({ where: { id: { in: createdProjectIds } } });
+    // Keys belong to the people this suite made, not to a project, so they are scoped by user.
+    await prisma.aiKey.deleteMany({ where: { userId: { in: [userId, ...extraUserIds] } } });
     await prisma.user.deleteMany({ where: { OR: [{ id: userId }, { id: { in: extraUserIds } }] } });
     await prisma?.$disconnect();
     document.destroy();
@@ -107,14 +131,15 @@ integration("AI application PostgreSQL integration", () => {
   });
 
   it("refuses a proposal whose content moved after it was reviewed, and one already taken", async () => {
-    const state = Buffer.from(Y.encodeStateAsUpdate(document)).toString("base64");
-    const context = await ai.context(projectId, userId, { run: randomUUID() });
-    const fresh = await ai.propose(connection, { title: "stale hash", summary: "x", snapshotHash: context.hash, operations: [{ kind: "code", fileId: "main", before: "new", after: "newer" }] });
+    const state = documentState();
+    const fresh = await stageCode("stale hash", `${currentText()} -- newer`);
     // The exact proposal that was reviewed is what gets applied; anything else is a different
     // document, and accepting it would apply a change nobody looked at.
     await expect(apply.apply(projectId, userId, fresh.id, "f".repeat(64), state)).rejects.toThrow("review it again");
-    // The same proposal cannot be taken twice.
-    await expect(apply.apply(projectId, userId, proposalId, contentHash, state)).rejects.toThrow("already reviewed");
+    // The same proposal cannot be taken twice: apply it once, then offer it again.
+    const once = await stageCode("taken once", `${currentText()} -- once`);
+    await apply.apply(projectId, userId, once.id, once.contentHash, state);
+    await expect(apply.apply(projectId, userId, once.id, once.contentHash, state)).rejects.toThrow("already reviewed");
   });
 
   it("refuses a change to code that moved underneath, instead of merging over it", async () => {
@@ -128,9 +153,8 @@ integration("AI application PostgreSQL integration", () => {
   });
 
   it("hands the proposal back when storage refuses the write, instead of reporting it applied", async () => {
-    const context = await ai.context(projectId, userId, { run: randomUUID() });
-    const proposal = await ai.propose(connection, { title: "save fails", summary: "x", snapshotHash: context.hash, operations: [{ kind: "code", fileId: "main", before: "new", after: "written anyway?" }] });
-    const state = Buffer.from(Y.encodeStateAsUpdate(document)).toString("base64");
+    const proposal = await stageCode("save fails", `${currentText()} -- written anyway?`);
+    const state = documentState();
 
     save.mockImplementationOnce(async () => {
       throw new Error("S3 unavailable");
@@ -154,9 +178,8 @@ integration("AI application PostgreSQL integration", () => {
     // released anyway, and if that release cannot be confirmed the proposal is left recorded as
     // applied with nothing behind it: it can neither be applied again nor reverted. Silent, that is
     // a state nobody finds until somebody needs the undo.
-    const context = await ai.context(projectId, userId, { run: randomUUID() });
-    const proposal = await ai.propose(connection, { title: "unreleasable", summary: "x", snapshotHash: context.hash, operations: [{ kind: "code", fileId: "main", before: "new", after: "never stored" }] });
-    const state = Buffer.from(Y.encodeStateAsUpdate(document)).toString("base64");
+    const proposal = await stageCode("unreleasable", `${currentText()} -- never stored`);
+    const state = documentState();
     const logged: string[] = [];
     const logger = jest.spyOn(Logger.prototype, "error").mockImplementation((message: unknown) => {
       logged.push(String(message));
@@ -185,10 +208,9 @@ integration("AI application PostgreSQL integration", () => {
   });
 
   it("previews without touching anything", async () => {
-    const context = await ai.context(projectId, userId, { run: randomUUID() });
-    const proposal = await ai.propose(connection, { title: "preview", summary: "x", snapshotHash: context.hash, operations: [{ kind: "code", fileId: "main", before: "new", after: "previewed" }] });
-    const current = (document.getMap<Y.Map<Y.Text>>("code.files").get("main")!.get("text")!).toString();
-    const { result } = await apply.preview(projectId, userId, proposal.id, Buffer.from(Y.encodeStateAsUpdate(document)).toString("base64"));
+    const current = currentText();
+    const proposal = await stageCode("preview", "previewed");
+    const { result } = await apply.preview(projectId, userId, proposal.id, documentState());
     const shown = new Y.Doc();
     Y.applyUpdate(shown, Buffer.from(result, "base64"));
     expect((shown.getMap<Y.Map<Y.Text>>("code.files").get("main")!.get("text")!).toString()).toBe("previewed");
@@ -199,10 +221,12 @@ integration("AI application PostgreSQL integration", () => {
   });
 
   it("stores the inverse when accepting, so the revert is a reviewed proposal", async () => {
-    const applied = await prisma.aiProposal.findUniqueOrThrow({ where: { id: proposalId } });
-    expect(applied.inverse).toEqual([{ kind: "code", fileId: "main", before: "new", after: "old" }]);
-    const revert = await ai.proposeRevert(projectId, userId, proposalId);
-    expect(await ai.proposeRevert(projectId, userId, proposalId)).toMatchObject({ id: revert.id });
+    const mine = await stageCode("inverse", `${currentText()} -- inverse`);
+    await apply.apply(projectId, userId, mine.id, mine.contentHash, documentState());
+    const applied = await prisma.aiProposal.findUniqueOrThrow({ where: { id: mine.id } });
+    expect(applied.inverse).toEqual([{ kind: "code", fileId: "main", before: `${currentText()} -- inverse`, after: currentText() }]);
+    const revert = await ai.proposeRevert(projectId, userId, mine.id);
+    expect(await ai.proposeRevert(projectId, userId, mine.id)).toMatchObject({ id: revert.id });
   });
 
   it("applies a revert, including one that restores a declaration to the open state", async () => {
@@ -234,21 +258,41 @@ integration("AI application PostgreSQL integration", () => {
     back.destroy();
   });
 
-  it("still offers a revert of a declaration recorded before the expectation was required", async () => {
-    // Operations were recorded in `inverse` before a declaration had to state what it expects to
-    // find. Re-offered verbatim, such a revert shows a diff, then fails the moment it is accepted,
-    // and the open revert is returned as-is so it can never be re-staged. The expectation is derived
-    // from the forward operation instead, so the change stays revertible.
-    const stored = await prisma.aiProposal.create({ data: {
-      projectId, userId, title: "legacy", summary: "x", snapshotHash: "0".repeat(64), contentHash: "1".repeat(64), status: "APPLIED",
-      // Deliberately no `expect`, and no `expect` on the forward operation's own inverse either.
-      operations: [{ kind: "net_permissions", path: "legacy.path", clientWrite: false }] as never,
-      inverse: [{ kind: "net_permissions", path: "legacy.path", expect: null, clientRead: true, clientWrite: true, default: null }],
-    } });
-    const revert = await ai.proposeRevert(projectId, userId, stored.id);
-    const operations = (revert.operations ?? []) as Record<string, unknown>[];
-    expect(operations[0]).toMatchObject({ kind: "net_permissions", path: "legacy.path", expect: null });
-    await prisma.aiProposal.delete({ where: { id: stored.id } });
+  it("answers a snapshot that is not a document with a 400, not a crash", async () => {
+    // The snapshot arrives from the client and the DTO can only check the base64 alphabet, so bytes
+    // that are not a Yjs update get this far. This is the only path to a mutation, so an unhandled
+    // throw here is a 500 on somebody else's malformed request. Its own proposal, so the assertion
+    // is about this call and does not lean on an earlier test having run.
+    const proposal = await stageCode("junk snapshot", `${currentText()} -- written anyway?`);
+    for (const junk of ["AQID", "AQ==", "not base64 at all !!!!"]) {
+      // The type is the point, not the wording: a plain Error reaching the controller is a 500 on
+      // somebody else's malformed request, whatever it is called.
+      const thrown = await apply.apply(projectId, userId, proposal.id, proposal.contentHash, junk).then(() => null, (error: unknown) => error);
+      expect(thrown).toBeInstanceOf(BadRequestException);
+      expect((thrown as BadRequestException).getStatus()).toBe(400);
+    }
+    // Nothing was claimed, so it is still available once a real document is sent.
+    expect((await prisma.aiProposal.findUniqueOrThrow({ where: { id: proposal.id } })).status).toBe("PENDING");
+  });
+
+  it("refuses to revert a change that removed something with no inverse, rather than half of it", async () => {
+    // `delete_map` and `delete_sound` record no inverse, because putting back a level would mean
+    // inventing its content. A revert of a proposal containing one would restore the rest and leave
+    // that behind, and its operations would not mention it.
+    const mixed = await ai.propose(connection, {
+      title: "mixed change",
+      summary: "x",
+      snapshotHash: (await ai.context(projectId, userId, { run: randomUUID() })).hash,
+      operations: [
+        { kind: "code", fileId: "main", before: currentText(), after: `${currentText()} -- newer` },
+        { kind: "delete_sound", id: "slot-3" },
+      ],
+    });
+    await prisma.aiProposal.update({ where: { id: mixed.id }, data: { status: "APPLIED", inverse: [{ kind: "code", fileId: "main", before: "newer", after: "new" }] } });
+    await expect(ai.proposeRevert(projectId, userId, mixed.id)).rejects.toThrow("cannot be put back automatically");
+    // A change with no inverse at all is still its own, plainer refusal.
+    await prisma.aiProposal.update({ where: { id: mixed.id }, data: { operations: [{ kind: "delete_sound", id: "slot-3" }] } });
+    await expect(ai.proposeRevert(projectId, userId, mixed.id)).rejects.toThrow("cannot be put back automatically");
   });
 
   it("enforces the job quota, the service secret, and discards late cancelled results", async () => {
@@ -285,16 +329,16 @@ integration("AI application PostgreSQL integration", () => {
     expect(resolved.expiresAt.getTime()).toBeGreaterThan(Date.now());
 
     // A project it was not linked to stays out of reach, even named explicitly.
-    const other = await prisma.project.create({ data: { name: "Other", shortDesc: "test", userId } });
-    await expect(ai.connection(auth, String(other.id))).rejects.toThrow("not linked");
+    const other = await newProject("Other");
+    await expect(ai.connection(auth, String(other))).rejects.toThrow("not linked");
 
     // Two linked projects need the header: guessing one would read the wrong game.
-    await ai.grantKey(userId, made.id, other.id);
+    await ai.grantKey(userId, made.id, other);
     await expect(ai.connection(auth)).rejects.toThrow("several projects");
-    expect((await ai.connection(auth, String(other.id))).projectId).toBe(other.id);
+    expect((await ai.connection(auth, String(other))).projectId).toBe(other);
 
     // Unlinking one project is enough to stop it.
-    await ai.revokeGrant(userId, made.id, other.id);
+    await ai.revokeGrant(userId, made.id, other);
     expect((await ai.connection(auth)).projectId).toBe(projectId);
 
     // Revoking the key kills it everywhere at once.
@@ -313,20 +357,20 @@ integration("AI application PostgreSQL integration", () => {
   });
 
   it("still refuses a key belonging to someone else", async () => {
-    const other = await prisma.user.create({ data: { email: `${randomUUID()}@example.invalid`, username: randomUUID() } });
-    extraUserIds.push(other.id);
-    const theirs = await ai.createKey(other.id, "Theirs");
+    const stranger = await prisma.user.create({ data: { email: `${randomUUID()}@example.invalid`, username: randomUUID() } });
+    extraUserIds.push(stranger.id);
+    const theirs = await ai.createKey(stranger.id, "Theirs");
     await expect(ai.revokeKey(userId, theirs.id)).rejects.toThrow("No such key");
     await expect(ai.grantKey(userId, theirs.id, projectId)).rejects.toThrow("No such key");
   });
 
   it("refuses a project hint that contradicts the 8-hour token", async () => {
     const { token } = await ai.connect(projectId, userId);
-    const other = await prisma.project.create({ data: { name: "Other", shortDesc: "test", userId } });
+    const other = await newProject("Other");
     const auth = `Bearer ${token}`;
     // The token names one project, so a hint naming another is a mistake: answering with the
     // token's own project is how a client ends up reading the wrong game without being told.
-    await expect(ai.connection(auth, String(other.id))).rejects.toThrow();
+    await expect(ai.connection(auth, String(other))).rejects.toThrow();
     await expect(ai.connection(auth, "1, 2")).rejects.toThrow();
     await expect(ai.connection(auth, "01")).rejects.toThrow();
     expect((await ai.connection(auth)).projectId).toBe(projectId);
@@ -339,23 +383,23 @@ integration("AI application PostgreSQL integration", () => {
     extraUserIds.push(owner.id);
     const host = await prisma.user.create({ data: { email: `${randomUUID()}@example.invalid`, username: randomUUID() } });
     extraUserIds.push(host.id);
-    const kept = await prisma.project.create({ data: { name: "Kept", shortDesc: "test", userId: host.id } });
-    const theirs = await prisma.project.create({ data: { name: "Theirs", shortDesc: "test", userId: host.id } });
-    for (const id of [kept.id, theirs.id])
+    const kept = await newProject("Kept", host.id);
+    const theirs = await newProject("Theirs", host.id);
+    for (const id of [kept, theirs])
       await prisma.project.update({ where: { id }, data: { collaborators: { connect: [{ id: owner.id }] } } });
 
     const made = await ai.createKey(owner.id, "Shared");
-    await ai.grantKey(owner.id, made.id, kept.id);
-    await ai.grantKey(owner.id, made.id, theirs.id);
+    await ai.grantKey(owner.id, made.id, kept);
+    await ai.grantKey(owner.id, made.id, theirs);
     const auth = `Bearer ${made.token}`;
     await expect(ai.connection(auth)).rejects.toThrow("several projects");
 
     // Removing the owner from that project leaves the grant behind. It must stop counting: the
     // key resolves to the one project still open rather than demanding a header forever, and the
     // access does not return if the owner is added back.
-    await prisma.project.update({ where: { id: theirs.id }, data: { collaborators: { disconnect: [{ id: owner.id }] } } });
-    expect((await ai.connection(auth)).projectId).toBe(kept.id);
-    await prisma.project.update({ where: { id: theirs.id }, data: { collaborators: { connect: [{ id: owner.id }] } } });
+    await prisma.project.update({ where: { id: theirs }, data: { collaborators: { disconnect: [{ id: owner.id }] } } });
+    expect((await ai.connection(auth)).projectId).toBe(kept);
+    await prisma.project.update({ where: { id: theirs }, data: { collaborators: { connect: [{ id: owner.id }] } } });
     await expect(ai.connection(auth)).rejects.toThrow("several projects");
   });
 
@@ -371,10 +415,21 @@ integration("AI application PostgreSQL integration", () => {
   });
 
   it("declarations only add categories", async () => {
+    // Applies its own change rather than reading a receipt an earlier test happened to write, and
+    // compares before and after rather than an exact list, because the project's provenance is
+    // shared by every test in this file.
+    const context = await ai.context(projectId, userId, { run: randomUUID() });
+    const state = Buffer.from(Y.encodeStateAsUpdate(document)).toString("base64");
+    const current = (document.getMap<Y.Map<Y.Text>>("code.files").get("main")!.get("text")!).toString();
+    const applied = await ai.propose(connection, { title: "receipt", summary: "x", snapshotHash: context.hash, operations: [{ kind: "code", fileId: "main", before: current, after: `${current} -- receipted` }] });
+    await apply.apply(projectId, userId, applied.id, applied.contentHash, state);
+
+    const before = (await jobs.provenance(projectId, userId)).categories;
     await jobs.declare(projectId, userId, ["SPRITES"], "Background painted with an external tool");
     const provenance = await jobs.provenance(projectId, userId);
-    expect(provenance.categories.sort()).toEqual(["CODE", "SPRITES"]);
+    // A declaration adds its own category and leaves everything already there alone.
+    expect(provenance.categories.sort()).toEqual([...new Set([...before, "SPRITES"])].sort());
     expect(provenance.declarations).toHaveLength(1);
-    expect(provenance.applied.some(item => item.id === proposalId)).toBe(true);
+    expect(provenance.applied.some(item => item.id === applied.id)).toBe(true);
   });
 });

@@ -5724,6 +5724,10 @@
               "type": "object"
             }
           },
+          "baseContextAgeMs": {
+            "type": "number",
+            "description": "How old the shared state this proposal was written against was, in milliseconds. An assistant may work on a project nobody has open, so this is what says how far back it reaches."
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
@@ -5746,6 +5750,7 @@
           "reviewedBy",
           "revertsId",
           "inverse",
+          "baseContextAgeMs",
           "createdAt",
           "updatedAt"
         ]

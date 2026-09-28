@@ -48,7 +48,7 @@ describe("AI scoped proposals", () => {
     });
   });
 
-  it("approves only by applying under the barrier", async () => {
+  it("approves only by applying", async () => {
     prisma.project.findFirst.mockResolvedValue({ id: 1 });
     await expect(service.review(1, 2, "proposal", { decision: "APPROVED", contentHash: "b".repeat(64) })).rejects.toThrow("applying");
     expect(prisma.aiProposal.updateMany).not.toHaveBeenCalled();

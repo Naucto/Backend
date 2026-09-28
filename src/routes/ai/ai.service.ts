@@ -3,9 +3,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException, 
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { Prisma, AiConnection, AiContext, AiProposal } from "@prisma/client";
 import { AiConnectionResponseDto, AiMcpProjectDto, AiProposalDto, AiReviewDto } from "./ai.dto";
-import type { Operation } from "./ai-assets";
-import { OPERATION_KINDS } from "./ai-commit";
-import { deriveExpectation } from "./ai-net";
+import { NON_INVERTIBLE_KINDS, OPERATION_KINDS } from "./ai-commit";
 
 export interface AiKeyResponse { id: string; name: string; token: string; expiresAt: Date | null; createdAt: Date; projects: { projectId: number; name: string }[] }
 export interface AiKeySummary { id: string; name: string; expiresAt: Date | null; createdAt: Date; lastUsedAt: Date | null; projects: { projectId: number; name: string }[] }
@@ -276,11 +274,13 @@ export class AiService {
     // state, and refused if anyone has since edited what it would restore.
     const stored = original.inverse;
     if (!Array.isArray(stored) || !stored.length) throw new ConflictException("This change has no recorded inverse; restore it from version history");
-    // Inverses recorded before a declaration had to say what it expects to find are re-offered with
-    // the expectation worked out from the forward operation, so an applied change that declared
-    // something stays revertible rather than leaving a proposal that can never be accepted.
-    const forward = Array.isArray(original.operations) ? (original.operations as unknown[]) : [];
-    const operations = stored.map((operation, index) => deriveExpectation(forward[index], operation as Operation));
+    // A proposal that deleted a level or a sound cannot be undone as a whole, and reverting it
+    // anyway would restore the parts it could while quietly leaving the rest — with nothing in the
+    // revert's operations to say so. Version history has what is needed; a partial undo does not.
+    const applied = Array.isArray(original.operations) ? (original.operations as Record<string, unknown>[]) : [];
+    const lost = [...new Set(applied.map((operation) => String(operation["kind"])).filter((kind) => NON_INVERTIBLE_KINDS.has(kind)))];
+    if (lost.length) throw new ConflictException(`This change removed something that cannot be put back automatically (${lost.join(", ")}); restore it from version history`);
+    const operations = stored;
     const open = await this.prisma.aiProposal.findFirst({ where: { projectId, revertsId: id, status: "PENDING" } });
     if (open) return open;
     const title = `Revert: ${original.title}`.slice(0, 160);

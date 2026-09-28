@@ -165,6 +165,17 @@ describe("multiplayer declarations round-trip", () => {
     expect(() => commitSnapshots([encode(doc)], [{ kind: "net_permissions", path: "players.score", clientWrite: true, expect: null }], "w")).toThrow("changed since");
   });
 
+  it("refuses a removal that expected a different declaration, rather than deleting the new one", () => {
+    // The remove branch is where this is easiest to lose: a removal deletes a key, so an expectation
+    // that does not match means somebody re-declared that path since, and deleting it would take
+    // their declaration with it.
+    const doc = fixture();
+    doc.getMap("net.permissions").set("secrets", { flags: 1, default: 7 });
+    expect(() => commitSnapshots([encode(doc)], [{ kind: "net_permissions", path: "secrets", remove: true, expect: { flags: 0 } }], "x")).toThrow("changed since");
+    // Removing a path that is not there is a no-op, refused on its own terms.
+    expect(() => commitSnapshots([encode(doc)], [{ kind: "net_permissions", path: "absent", remove: true, expect: null }], "y")).toThrow("No such declaration");
+  });
+
   it("records the category, so the receipt says the game changed for more than code", () => {
     const doc = fixture();
     const commit = commitSnapshots([encode(doc)], [{ kind: "net_permissions", path: "players.score", default: 0, expect: null }], "c");

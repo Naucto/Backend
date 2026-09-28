@@ -5,6 +5,16 @@ import { prepareNetPermissions } from "./ai-net";
 
 export const OPERATION_KINDS = ["code", "pixels", "tiles", "catalog", "sound", "delete_sound", "create_map", "delete_map", "resize_map", "net_permissions"] as const;
 
+/**
+ * Operations that record no inverse, so a change containing one cannot be undone as a whole.
+ *
+ * A deletion removes something the document no longer holds a description of, so putting it back
+ * would mean inventing content. Reverting a proposal that contained one would restore the parts it
+ * could and quietly leave the rest, and a reviewer reading the revert's operations would have no way
+ * to see the half that stays. `proposeRevert` refuses those instead.
+ */
+export const NON_INVERTIBLE_KINDS = new Set(["delete_map", "delete_sound"]);
+
 export interface Commit {
   /** Full Yjs state of the merged snapshots with the proposal applied, base64. */
   result: string;
