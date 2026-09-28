@@ -84,10 +84,16 @@ export class AiApplyService {
     // person to open the project would load a blob carrying a whole-file delete from that moment and
     // push it to every peer, silently undoing everything typed since.
     //
-    // The accepting editor persists it instead: applying marks their document dirty, so their own
-    // autosave writes the change within seconds — and only once they actually hold it. If they close
-    // the tab immediately the change does not happen, which is recoverable and honest; the reverse
-    // is not.
+    // The accepting editor persists it instead: applying marks their document dirty, so an autosave
+    // writes the change within seconds — and only once they actually hold it. If they close the tab
+    // immediately the change does not happen, which is recoverable and honest; the reverse is not.
+    //
+    // The client saves at once rather than waiting for the autosave, and retries, because "their own
+    // autosave" is not enough on its own: any collaborator can accept, a non-host's autosave never
+    // runs, and a single save that failed would otherwise leave the change in that tab alone while
+    // this row says APPLIED. If it cannot be stored at all, this proposal is APPLIED and nothing
+    // holds the change — recoverable only by re-proposing it, since the status is no longer PENDING
+    // and the inverse's `before` no longer matches anything. That gap is real and is not closed here.
     return { update: commit.result, categories: commit.categories };
   }
 }

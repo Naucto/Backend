@@ -17,6 +17,7 @@ import {
   RemoveCollaboratorDto
 } from "./dto/collaborator-project.dto";
 import { S3Service } from "@s3/s3.service";
+import { positiveNumber } from "@s3/s3-numbers";
 import { ModuleRef } from "@nestjs/core";
 import { NotificationsService } from "src/notifications/notifications.service";
 import { WorkSessionService } from "@work-session/work-session.service";
@@ -225,29 +226,26 @@ export class ProjectService {
     // Four slots, because an author looking for a state they were in reaches for the last few
     // and never for the tenth: the ones worth keeping past that are the ones somebody named, and
     // a named version is a checkpoint, kept apart and never pruned.
-    this.max_history_version = Number(
-      configService.get<string>("S3_MAX_AUTO_HISTORY_VERSION") ?? 4
+    this.max_history_version = positiveNumber(
+      configService.get<string>("S3_MAX_AUTO_HISTORY_VERSION"),
+      4
     );
     // How long reading a stored slot may take before the save is failed rather than left waiting. A
     // merge needs the whole stored state, so a body that stops arriving holds the request open
     // forever; failing lets the editor retry against a slot that is still intact.
-    this.stored_save_timeout_ms = Number(
-      configService.get<string>("S3_STORED_SAVE_TIMEOUT_MS") ?? 10000
+    this.stored_save_timeout_ms = positiveNumber(
+      configService.get<string>("S3_STORED_SAVE_TIMEOUT_MS"),
+      10000
     );
     // How many saves may queue on one project's lock. The editor sends a whole state on every pause
     // with no check for a save already in flight, so a slow store would otherwise pile up requests,
     // each holding its own copy of the document. Refusing the newest past this is better than
     // growing without bound: the state it carried is still in the document, and the next save sends
     // it again.
-    this.max_pending_saves = Number(
-      configService.get<string>("S3_MAX_PENDING_SAVES") ?? 4
-    );
-    this.max_checkpoints = Number(
-      configService.get<string>("S3_MAX_CHECKPOINTS") ?? 20
-    );
+    this.max_pending_saves = positiveNumber(configService.get<string>("S3_MAX_PENDING_SAVES"), 4);
+    this.max_checkpoints = positiveNumber(configService.get<string>("S3_MAX_CHECKPOINTS"), 20);
     // Minutes in the environment; a slot stays open this long.
-    this.auto_save_delay =
-      Number(configService.get<string>("S3_AUTO_HISTORY_DELAY") ?? 10) * 60000;
+    this.auto_save_delay = positiveNumber(configService.get<string>("S3_AUTO_HISTORY_DELAY"), 10) * 60000;
     this.view_secret =
       configService.get<string>("VIEW_HASH_SECRET") ??
       configService.get<string>("JWT_SECRET") ??
@@ -826,7 +824,12 @@ export class ProjectService {
     // Counted before queueing, so the limit covers waiting and running together.
     const queued = this.pending.get(projectId) ?? 0;
     if (queued >= this.max_pending_saves) {
-      throw new ServiceUnavailableException("Too many saves are already waiting for this project");
+      // Retry-After, because the client cannot guess: a save refused for a busy queue is not the
+      // same as one that was turned down, and treating them alike is what turned a transient limit
+      // into a lost change.
+      const refused = new ServiceUnavailableException("Too many saves are already waiting for this project");
+      (refused.getResponse() as { setHeader?: (k: string, v: string) => void }).setHeader?.("Retry-After", "5");
+      throw refused;
     }
     this.pending.set(projectId, queued + 1);
     const previous = this.saving.get(projectId) ?? Promise.resolve();
@@ -869,15 +872,9 @@ export class ProjectService {
     const stored = slot === newest?.name ? await this.storedSave(projectId, slot) : null;
     const carried = slot === newest?.name ? null : await this.storedSave(projectId, newest?.name ?? "");
 
-    if (slot !== newest?.name) {
-      const kept = Math.max(this.max_history_version - 1, 0);
-      for (const stale of saves.slice(kept)) {
-        await this.s3Service.deleteFile({
-          key: `save/${projectId}/${stale.name}`
-        });
-      }
-    }
-
+    // The prune is deferred until the upload has landed — see below. Deleting first meant a save
+    // that then failed took the old slots with it, and with a short history the newest slot was
+    // among them, so one failed save could leave the project with no save at all.
     await this.updateLastTimeUpdate(projectId);
     // Merged into what is already stored rather than written over it. A save is one editor's view of
     // a CRDT, and two of them can be written in the same instant — the host saving while an assistant
@@ -898,9 +895,9 @@ export class ProjectService {
       try {
         buffer = await mergeStates(base, file.buffer);
       } catch {
-        // Bytes that are not a document. Refused rather than stored: they would be written as the
-        // newest slot, and opening the project would then fail, with no editor open to repair it.
-        throw new BadRequestException("The uploaded file is not a game document");
+        // Refused rather than stored: bytes that are not a document would be written as the newest
+        // slot, and opening the project would then fail, with no editor open to repair it.
+        throw new BadRequestException("The uploaded file cannot be read as a game document");
       }
     }
     if (buffer && buffer.length > PROJECT_BLOB_MAX_BYTES) {
@@ -911,6 +908,17 @@ export class ProjectService {
       file: buffer ? { ...file, buffer, size: buffer.length } : file,
       keyName: `save/${projectId}/${slot}`
     });
+
+    // Now that the new slot exists, the old ones can go. Ordered after every step that can fail, so
+    // a save that was refused or that timed out leaves the history it found rather than a gap.
+    if (slot !== newest?.name) {
+      const kept = Math.max(this.max_history_version - 1, 0);
+      for (const stale of saves.slice(kept)) {
+        await this.s3Service.deleteFile({
+          key: `save/${projectId}/${stale.name}`
+        });
+      }
+    }
 
     if (buffer) {
       await this.storeContentSize(projectId, computeContentSize(buffer));
@@ -1001,6 +1009,14 @@ export class ProjectService {
   }
 
   // ─── Content size budget ────────────────────────────────────────────
+
+  /** The save-window and queue bounds, for a caller that has to reason about them. */
+  autoSaveWindowMs(): number {
+    return this.auto_save_delay;
+  }
+  maxPendingSaves(): number {
+    return this.max_pending_saves;
+  }
 
   getLimits(): ProjectLimits {
     return {

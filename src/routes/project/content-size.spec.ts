@@ -162,6 +162,15 @@ describe("mergeStates", () => {
     expect(mergeStates(Buffer.from("not a document at all"), next)).toEqual(next);
   });
 
+  it("refuses an incoming save that cannot be read even when there is nothing stored", () => {
+    // "Nothing to merge with" is reached by a new window, a legacy blob and an oversized one, and
+    // the check used to live only on the path that merges. So bytes that were not a document could
+    // be written as the newest slot — after which the project no longer opens, and there is no
+    // editor open to repair it. Checked first, so the answer does not depend on what is stored.
+    expect(() => mergeStates(null, Buffer.from("not a document at all"))).toThrow();
+    expect(() => mergeStates(Buffer.alloc(0), Buffer.from("not a document at all"))).toThrow();
+  });
+
   it("refuses an incoming save that cannot be read, rather than writing it over a good one", () => {
     // The two sides fail for the same reason and mean opposite things. What is stored can be
     // discarded because the incoming save replaces it; an incoming save that is not a document is

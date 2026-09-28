@@ -1,4 +1,5 @@
 import { NodeHttpHandler } from "@smithy/node-http-handler";
+import { positiveNumber } from "./s3-numbers";
 import { Inject, Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
@@ -459,8 +460,8 @@ function isNotImplemented(error: unknown): boolean {
  * the existence check, the upload and the deletes, not just the body read that has its own deadline.
  */
 function s3RequestHandler(configService: ConfigService): NodeHttpHandler {
-  const connectionTimeout = Number(configService.get<string>("S3_CONNECTION_TIMEOUT_MS") ?? 5000);
-  const requestTimeout = Number(configService.get<string>("S3_REQUEST_TIMEOUT_MS") ?? 30000);
+  const connectionTimeout = positiveNumber(configService.get<string>("S3_CONNECTION_TIMEOUT_MS"), 5000);
+  const requestTimeout = positiveNumber(configService.get<string>("S3_REQUEST_TIMEOUT_MS"), 30000);
   // throwOnRequestTimeout, because without it `requestTimeout` only logs. A deadline that warns is
   // not a deadline: the request stays pending, so a stalled store still held the project's save lock
   // and every later save queued behind it. Verified against a server that accepts and never answers.

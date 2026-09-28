@@ -701,8 +701,14 @@ export class ProjectController {
   })
   @ApiParam({ name: "id", type: "number" })
   @ApiResponse({ status: 201, description: "File uploaded successfully" })
+  @ApiResponse({ status: 400, description: "The uploaded bytes are not a game document" })
   @ApiResponse({ status: 403, description: "Forbidden" })
+  @ApiResponse({ status: 413, description: "The merged document is past the maximum save size" })
   @ApiResponse({ status: 422, description: "File validation failed" })
+  @ApiResponse({
+    status: 503,
+    description: "Too many saves are already queued for this project; Retry-After says when to try again"
+  })
   @HttpCode(HttpStatus.CREATED)
   async saveProjectContent(
     @Param("id", ParseIntPipe) id: number,

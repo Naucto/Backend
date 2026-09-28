@@ -187,6 +187,9 @@ describe("ProjectService", () => {
       if (key === "S3_MAX_CHECKPOINTS") return "5";
       // Short, so the stalled-read test does not sit out the production ten seconds.
       if (key === "S3_STORED_SAVE_TIMEOUT_MS") return "150";
+      if (key === "S3_MAX_PENDING_SAVES") return "4";
+      // Blank, exactly as `cp .env.example .env` leaves it.
+      if (key === "S3_AUTO_HISTORY_DELAY") return "";
       return undefined;
     })
   };
@@ -793,6 +796,21 @@ describe("ProjectService", () => {
     });
   });
 
+  describe("a configuration key copied from .env.example and left blank", () => {
+    it("keeps a window rather than opening a new slot for every save", () => {
+      // A blank value is not an absent one. `Number("")` is 0 and `0 ?? 10` is 0, so a slot window
+      // of zero meant every save opened a new slot, and the previous window's state — which the
+      // save now merges into — was never the slot it wrote to.
+      expect(service.autoSaveWindowMs()).toBe(10 * 60000);
+    });
+
+    it("keeps a queue depth rather than refusing every save", () => {
+      // The same shape, with a much worse consequence: a bound of zero refuses every save, so a
+      // project saves nothing at all.
+      expect(service.maxPendingSaves()).toBe(4);
+    });
+  });
+
   describe("save", () => {
     const file = { originalname: "game.bin" } as Express.Multer.File;
     const saves = (ages: number[]): void => {
@@ -843,6 +861,23 @@ describe("ProjectService", () => {
 
     // Every save reads the slot, merges into it, and writes it back, so what is stored is only ever
     // as whole as the last write. These two are about what happens when that is not good enough.
+    it("keeps the history it found when the save it is pruning for fails", async () => {
+      // Pruning before the upload meant a save that then failed took the old slots with it. With a
+      // history of one — which is what a blank S3_MAX_AUTO_HISTORY_VERSION used to produce — the
+      // newest slot was among the ones deleted, so one failed save left the project with no save at
+      // all, and the change the failure was about was gone from storage.
+      saves([660_000, 1_400_000]);
+      const history = (await service.listVersions(1))[0]!.name;
+      s3ServiceMock.getFileMetadataOrNull.mockResolvedValue({ ContentLength: 0 });
+      s3ServiceMock.downloadFile.mockResolvedValue({ body: Readable.from([]) });
+      s3ServiceMock.uploadFile.mockRejectedValue(new Error("RequestTimeout: the store stalled"));
+
+      await expect(service.save(1, { ...file, buffer: docA } as Express.Multer.File)).rejects.toThrow(/stalled/);
+
+      expect(s3ServiceMock.deleteFile).not.toHaveBeenCalled();
+      expect(s3ServiceMock.deleteFile).not.toHaveBeenCalledWith({ key: `save/1/${history}` });
+    });
+
     it("carries the previous window's state into a new slot", async () => {
       // Every save in a window rewrites one slot, so what anyone loads is the newest slot. A new
       // window that started from nothing would keep only the state its first writer happened to

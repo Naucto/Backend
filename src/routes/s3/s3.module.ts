@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { MulterModule } from "@nestjs/platform-express";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
+import { positiveNumber } from "./s3-numbers";
 import { S3Client } from "@aws-sdk/client-s3";
 import { S3Service } from "./s3.service";
 import { CloudfrontService } from "./edge.service";
@@ -49,8 +50,8 @@ import { S3ConfigurationException } from "./s3.error";
           // throwOnRequestTimeout, because without it requestTimeout only logs and the request
           // stays pending. Same reason and same effect as in S3Service.
           requestHandler: new NodeHttpHandler({
-            connectionTimeout: Number(configService.get<string>("S3_CONNECTION_TIMEOUT_MS") ?? 5000),
-            requestTimeout: Number(configService.get<string>("S3_REQUEST_TIMEOUT_MS") ?? 30000),
+            connectionTimeout: positiveNumber(configService.get<string>("S3_CONNECTION_TIMEOUT_MS"), 5000),
+            requestTimeout: positiveNumber(configService.get<string>("S3_REQUEST_TIMEOUT_MS"), 30000),
             throwOnRequestTimeout: true
           })
         });
