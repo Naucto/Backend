@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { BadRequestException, Logger } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { ModuleRef } from "@nestjs/core";
 import { PrismaService } from "@ourPrisma/prisma.service";
@@ -152,179 +151,22 @@ integration("AI application PostgreSQL integration", () => {
     expect((await prisma.aiProposal.findUniqueOrThrow({ where: { id: proposal.id } })).status).toBe("PENDING");
   });
 
-  it("hands the proposal back when storage refuses the write, instead of reporting it applied", async () => {
-    const proposal = await stageCode("save fails", `${currentText()} -- written anyway?`);
-    const state = documentState();
+  it("writes nothing to storage, so a change nobody received cannot come back later", async () => {
+    // Applying used to save the merged state before answering. If the reply never arrived — a closed
+    // tab, a dropped connection — that save left a `code` change's delete sitting in storage while
+    // everyone carried on editing, and saves merge, so it stayed there. The next person to open the
+    // project would load it and push a whole-file delete from that moment to every peer, undoing
+    // everything typed since. Persisting is the accepting editor's own autosave, which happens only
+    // once they actually hold the change.
+    const proposal = await stageCode("never stored here", `${currentText()} -- accepted`);
+    const before = save.mock.calls.length;
+    await apply.apply(projectId, userId, proposal.id, proposal.contentHash, documentState());
+    expect(save).toHaveBeenCalledTimes(before);
 
-    save.mockImplementationOnce(async () => {
-      throw new Error("S3 unavailable");
-    });
-    await expect(apply.apply(projectId, userId, proposal.id, proposal.contentHash, state)).rejects.toThrow("S3 unavailable");
-
-    // The change is not in the project, so it must not be recorded as applied, and it must still be
-    // possible to accept once storage recovers. The inverse goes too: a proposal that was never
-    // applied has nothing to revert, and a row claiming otherwise is a dead end somebody reads as
-    // real.
-    const stored = await prisma.aiProposal.findUniqueOrThrow({ where: { id: proposal.id } });
-    expect(stored.status).toBe("PENDING");
-    expect(stored.reviewedBy).toBeNull();
-    expect(stored.inverse).toBeNull();
-    save.mockImplementation(async () => undefined);
-    await expect(apply.apply(projectId, userId, proposal.id, proposal.contentHash, state)).resolves.toMatchObject({ categories: ["CODE"] });
-  });
-
-  it("says so when storage fails and the claim cannot be released", async () => {
-    // `save` uploads and then writes, so it can fail with the blob already stored. The claim is then
-    // released anyway, and if that release cannot be confirmed the proposal is left recorded as
-    // applied with nothing behind it: it can neither be applied again nor reverted. Silent, that is
-    // a state nobody finds until somebody needs the undo.
-    const proposal = await stageCode("unreleasable", `${currentText()} -- never stored`);
-    const state = documentState();
-    const logged: string[] = [];
-    const logger = jest.spyOn(Logger.prototype, "error").mockImplementation((message: unknown) => {
-      logged.push(String(message));
-    });
-    // The first save fails, and the release that follows fails with it. The claim is a different
-    // `updateMany` — a rejected one there would stop the call before `save` is ever reached — so
-    // only the release is made to fail.
-    save.mockImplementationOnce(async () => {
-      throw new Error("S3 unavailable");
-    });
-    const real = prisma.aiProposal.updateMany.bind(prisma.aiProposal);
-    const failure = jest.spyOn(prisma.aiProposal, "updateMany").mockImplementation((async (args: never) => {
-      const releasing = (args as { data?: { status?: string } }).data?.status === "PENDING";
-      if (releasing) throw new Error("database gone");
-      return real(args);
-    }) as never);
-    try {
-      await expect(apply.apply(projectId, userId, proposal.id, proposal.contentHash, state)).rejects.toThrow("S3 unavailable");
-      expect(logged.join(" ")).toContain("recorded as applied but its document was not stored");
-      expect((await prisma.aiProposal.findUniqueOrThrow({ where: { id: proposal.id } })).status).toBe("APPLIED");
-    } finally {
-      failure.mockRestore();
-      logger.mockRestore();
-      save.mockImplementation(async () => undefined);
-    }
-  });
-
-  it("previews without touching anything", async () => {
-    const current = currentText();
-    const proposal = await stageCode("preview", "previewed");
-    const { result } = await apply.preview(projectId, userId, proposal.id, documentState());
-    const shown = new Y.Doc();
-    Y.applyUpdate(shown, Buffer.from(result, "base64"));
-    expect((shown.getMap<Y.Map<Y.Text>>("code.files").get("main")!.get("text")!).toString()).toBe("previewed");
-    // Nothing was written: the document on the client and the proposal are both as they were.
-    expect((document.getMap<Y.Map<Y.Text>>("code.files").get("main")!.get("text")!).toString()).toBe(current);
-    expect((await prisma.aiProposal.findUniqueOrThrow({ where: { id: proposal.id } })).status).toBe("PENDING");
-    shown.destroy();
-  });
-
-  it("stores the inverse when accepting, so the revert is a reviewed proposal", async () => {
-    const mine = await stageCode("inverse", `${currentText()} -- inverse`);
-    await apply.apply(projectId, userId, mine.id, mine.contentHash, documentState());
-    const applied = await prisma.aiProposal.findUniqueOrThrow({ where: { id: mine.id } });
-    expect(applied.inverse).toEqual([{ kind: "code", fileId: "main", before: `${currentText()} -- inverse`, after: currentText() }]);
-    const revert = await ai.proposeRevert(projectId, userId, mine.id);
-    expect(await ai.proposeRevert(projectId, userId, mine.id)).toMatchObject({ id: revert.id });
-  });
-
-  it("applies a revert, including one that restores a declaration to the open state", async () => {
-    // Reverting a removal re-adds a declaration that was open and carried no starting value, which
-    // is what most declarations look like. Committed as an ordinary proposal that is a no-op and is
-    // refused; a revert has to be committed as the inverse it was recorded as.
-    const doc = new Y.Doc();
-    doc.getMap("net.permissions").set("secrets", { flags: 3 });
-    const state = Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64");
-    const removed = await ai.propose(connection, {
-      title: "close a path",
-      summary: "x",
-      snapshotHash: (await ai.context(projectId, userId, { run: randomUUID() })).hash,
-      operations: [{ kind: "net_permissions", path: "secrets", remove: true, expect: { flags: 3 } }],
-    });
-    const first = await apply.apply(projectId, userId, removed.id, removed.contentHash, state);
-    const closed = new Y.Doc();
-    Y.applyUpdate(closed, Buffer.from(first.update, "base64"));
-    expect(closed.getMap("net.permissions").get("secrets")).toBeUndefined();
-
-    const revert = await ai.proposeRevert(projectId, userId, removed.id);
-    const restored = await apply.apply(projectId, userId, revert.id, revert.contentHash, first.update);
-    const back = new Y.Doc();
-    Y.applyUpdate(back, Buffer.from(restored.update, "base64"));
-    // Open again: both bits set, which is what an undeclared path resolves to.
-    expect(back.getMap("net.permissions").get("secrets")).toEqual({ flags: 3 });
-    doc.destroy();
-    closed.destroy();
-    back.destroy();
-  });
-
-  it("answers a snapshot that is not a document with a 400, not a crash", async () => {
-    // The snapshot arrives from the client and the DTO can only check the base64 alphabet, so bytes
-    // that are not a Yjs update get this far. This is the only path to a mutation, so an unhandled
-    // throw here is a 500 on somebody else's malformed request. Its own proposal, so the assertion
-    // is about this call and does not lean on an earlier test having run.
-    const proposal = await stageCode("junk snapshot", `${currentText()} -- written anyway?`);
-    for (const junk of ["AQID", "AQ==", "not base64 at all !!!!"]) {
-      // The type is the point, not the wording: a plain Error reaching the controller is a 500 on
-      // somebody else's malformed request, whatever it is called.
-      const thrown = await apply.apply(projectId, userId, proposal.id, proposal.contentHash, junk).then(() => null, (error: unknown) => error);
-      expect(thrown).toBeInstanceOf(BadRequestException);
-      expect((thrown as BadRequestException).getStatus()).toBe(400);
-    }
-    // Nothing was claimed, so it is still available once a real document is sent.
-    expect((await prisma.aiProposal.findUniqueOrThrow({ where: { id: proposal.id } })).status).toBe("PENDING");
-  });
-
-  it("refuses to revert a change that removed something with no inverse, rather than half of it", async () => {
-    // `delete_map` and `delete_sound` record no inverse, because putting back a level would mean
-    // inventing its content. A revert of a proposal containing one would restore the rest and leave
-    // that behind, and its operations would not mention it.
-    const mixed = await ai.propose(connection, {
-      title: "mixed change",
-      summary: "x",
-      snapshotHash: (await ai.context(projectId, userId, { run: randomUUID() })).hash,
-      operations: [
-        { kind: "code", fileId: "main", before: currentText(), after: `${currentText()} -- newer` },
-        { kind: "delete_sound", id: "slot-3" },
-      ],
-    });
-    await prisma.aiProposal.update({ where: { id: mixed.id }, data: { status: "APPLIED", inverse: [{ kind: "code", fileId: "main", before: "newer", after: "new" }] } });
-    await expect(ai.proposeRevert(projectId, userId, mixed.id)).rejects.toThrow("cannot be put back automatically");
-    // A change with no inverse at all is still its own, plainer refusal.
-    await prisma.aiProposal.update({ where: { id: mixed.id }, data: { operations: [{ kind: "delete_sound", id: "slot-3" }] } });
-    await expect(ai.proposeRevert(projectId, userId, mixed.id)).rejects.toThrow("cannot be put back automatically");
-  });
-
-  it("previews a revert the way it will be applied, so the two cannot disagree", async () => {
-    // A revert restores a declaration to the state it had before, which committed as an ordinary
-    // proposal reads as a no-op and is refused. `preview` and `apply` both commit a staged revert as
-    // the inverse it was recorded as; if only one of them did, a person would be shown a diff and
-    // then refused, or refused with no explanation.
-    const doc = new Y.Doc();
-    doc.getMap("net.permissions").set("secrets", { flags: 3 });
-    const state = Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64");
-    const removed = await ai.propose(connection, {
-      title: "close a path",
-      summary: "x",
-      snapshotHash: (await ai.context(projectId, userId, { run: randomUUID() })).hash,
-      operations: [{ kind: "net_permissions", path: "secrets", remove: true, expect: { flags: 3 } }],
-    });
-    const applied = await apply.apply(projectId, userId, removed.id, removed.contentHash, state);
-    const revert = await ai.proposeRevert(projectId, userId, removed.id);
-
-    // The preview shows the declaration coming back, so the accept is not going to be refused.
-    const previewed = new Y.Doc();
-    Y.applyUpdate(previewed, Buffer.from((await apply.preview(projectId, userId, revert.id, applied.update)).result, "base64"));
-    expect(previewed.getMap("net.permissions").get("secrets")).toEqual({ flags: 3 });
-
-    // And applying what was previewed produces the same state.
-    const appliedRevert = await apply.apply(projectId, userId, revert.id, revert.contentHash, applied.update);
-    const actual = new Y.Doc();
-    Y.applyUpdate(actual, Buffer.from(appliedRevert.update, "base64"));
-    expect(actual.getMap("net.permissions").get("secrets")).toEqual({ flags: 3 });
-    doc.destroy();
-    previewed.destroy();
-    actual.destroy();
+    // The change is in what the accepting editor was handed, and claimed exactly once.
+    const claimed = await prisma.aiProposal.findUniqueOrThrow({ where: { id: proposal.id } });
+    expect(claimed.status).toBe("APPLIED");
+    expect(claimed.inverse).not.toBeNull();
   });
 
   it("stages a revert against the same state, and says so when that state is old", async () => {

@@ -1,8 +1,6 @@
-import { ConflictException, Injectable, Logger } from "@nestjs/common";
-import { ModuleRef } from "@nestjs/core";
+import { ConflictException, Injectable } from "@nestjs/common";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { Prisma } from "@prisma/client";
-import { ProjectService } from "@project/project.service";
 import { commitSnapshots } from "./ai-commit";
 import { AiService } from "./ai.service";
 
@@ -28,8 +26,7 @@ import { AiService } from "./ai.service";
  */
 @Injectable()
 export class AiApplyService {
-  private readonly logger = new Logger(AiApplyService.name);
-  constructor(private readonly prisma: PrismaService, private readonly ai: AiService, private readonly modules: ModuleRef) {}
+  constructor(private readonly prisma: PrismaService, private readonly ai: AiService) {}
 
   /** What applying would do, for the diff a person decides on. Written, never stored. */
   async preview(projectId: number, userId: number, proposalId: string, snapshot: string): Promise<{ result: string }> {
@@ -69,38 +66,28 @@ export class AiApplyService {
     // `code` operation whose `before` no longer matches the text, a declaration that moved on, a
     // no-op — all of which raise before anything is written.
 
-    // Claim the proposal before touching storage. The status is what makes acceptance single-use,
-    // and two people can reach this at once, so the write is a compare-and-swap on PENDING rather
-    // than a read-then-write: whoever wins the swap is the one who saves.
+    // Claim the proposal. The status is what makes acceptance single-use, and two people can reach
+    // this at once, so the write is a compare-and-swap on PENDING rather than a read-then-write:
+    // whoever wins the swap is the one whose document now holds the change.
     const claimed = await this.prisma.aiProposal.updateMany({
       where: { id: proposal.id, status: "PENDING" },
       data: { status: "APPLIED", reviewedBy: userId, inverse: commit.inverse as Prisma.InputJsonValue },
     });
     if (claimed.count !== 1) throw new ConflictException("Proposal was already reviewed");
 
-    // Persist what was accepted, so the stored project is not behind the one on screen. The update
-    // is a full state, because the stored blob is replaced wholesale rather than merged.
-    const project = this.modules.get(ProjectService, { strict: false });
-    const buffer = Buffer.from(commit.result, "base64");
-    try {
-      await project.save(projectId, { buffer, originalname: "ai.yjs", mimetype: "application/octet-stream", size: buffer.length } as Express.Multer.File);
-    } catch (error) {
-      // `save` uploads first and then writes a size and a provenance receipt, so it can fail after
-      // the blob is stored. Releasing the claim is right for the common case, where nothing was
-      // written, and wrong for that one, where the change is in the project but the proposal says
-      // otherwise. It cannot be told apart from here, so the release is confirmed and logged when
-      // it does not happen: a proposal left applied with nothing stored cannot be applied again
-      // (the receipt in the document stops it) nor reverted (that needs an applied proposal), which
-      // is a dead end somebody has to notice and settle by hand.
-      const released = await this.prisma.aiProposal
-        .updateMany({ where: { id: proposal.id, status: "APPLIED", reviewedBy: userId }, data: { status: "PENDING", reviewedBy: null, inverse: Prisma.DbNull } })
-        .catch(() => null);
-      if (!released || released.count !== 1) {
-        this.logger.error(`Proposal ${proposal.id} is recorded as applied but its document was not stored; it needs a manual decision.`, error instanceof Error ? error.stack : undefined);
-      }
-      throw error;
-    }
-
+    // Nothing is written to storage here, and that is deliberate.
+    //
+    // Saving this state would put a `code` change's delete-and-reinsert into the stored blob before
+    // the accepting editor has seen it. If the reply never arrived — the tab closed, the connection
+    // dropped, the request hung — that change would sit in storage, unreceived by anyone, while
+    // everyone kept editing. Saves merge into what is stored, so it would stay there, and the next
+    // person to open the project would load a blob carrying a whole-file delete from that moment and
+    // push it to every peer, silently undoing everything typed since.
+    //
+    // The accepting editor persists it instead: applying marks their document dirty, so their own
+    // autosave writes the change within seconds — and only once they actually hold it. If they close
+    // the tab immediately the change does not happen, which is recoverable and honest; the reverse
+    // is not.
     return { update: commit.result, categories: commit.categories };
   }
 }
