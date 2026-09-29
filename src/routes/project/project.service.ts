@@ -923,9 +923,12 @@ export class ProjectService {
         // decoded once per save instead of twice.
         buffer = base ? mergeInto(base.doc, file.buffer) : mergeStates(null, file.buffer);
         base?.doc.destroy();
-      } catch {
+      } catch (error) {
         // Refused rather than stored: bytes that are not a document would be written as the newest
-        // slot, and opening the project would then fail, with no editor open to repair it.
+        // slot, and opening the project would then fail, with no editor open to repair it. A file
+        // belonging to another project keeps its own reason, since that is a different mistake with
+        // a different fix and a generic message would send whoever hit it looking in the wrong place.
+        if (error instanceof BadRequestException) throw error;
         throw new BadRequestException("The uploaded file cannot be read as a game document");
       }
     }
