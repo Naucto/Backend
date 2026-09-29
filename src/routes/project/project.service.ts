@@ -84,7 +84,14 @@ import {
   ProjectTooLargeException
 } from "./project.error";
 import { recordSavedAiProvenance } from "src/routes/ai/ai-provenance";
-import { documentIdFor, DOC_ID_KEY, GAME_KEYS, mergeInto, mergeStates } from "./content-size";
+import {
+  documentIdFor,
+  DOC_ID_KEY,
+  GAME_KEYS,
+  mergeInto,
+  mergeStates,
+  WrongProjectError
+} from "./content-size";
 
 // What a project says about its people, on public routes as well as private ones: the id
 // and the name, never the address behind the account.
@@ -928,7 +935,11 @@ export class ProjectService {
         // slot, and opening the project would then fail, with no editor open to repair it. A file
         // belonging to another project keeps its own reason, since that is a different mistake with
         // a different fix and a generic message would send whoever hit it looking in the wrong place.
-        if (error instanceof BadRequestException) throw error;
+        if (error instanceof WrongProjectError) {
+          throw new BadRequestException(
+            "That file belongs to a different project. Export it from there, or open this project and save again.",
+          );
+        }
         throw new BadRequestException("The uploaded file cannot be read as a game document");
       }
     }

@@ -5,6 +5,7 @@ import {
   computeContentSize,
   documentIdFor,
   mergeStates,
+  WrongProjectError,
   isContentSizeBreakdown
 } from "./content-size";
 
@@ -174,8 +175,8 @@ describe("mergeStates", () => {
     };
     const mine = identified("alpha", "mine");
     const yours = identified("beta", "yours");
-    expect(() => mergeStates(mine, yours)).toThrow(/different project/);
-    expect(() => mergeStates(yours, mine)).toThrow(/different project/);
+    expect(() => mergeStates(mine, yours)).toThrow(WrongProjectError);
+    expect(() => mergeStates(yours, mine)).toThrow(WrongProjectError);
     // The same identity merges as before — two independent editors' writes at the same offset, so
     // only one of them is visible in the text; both are in the document either way.
     const merged = read(mergeStates(identified("alpha", "one"), identified("alpha", "two")));

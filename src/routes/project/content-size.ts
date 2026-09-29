@@ -248,6 +248,20 @@ export function documentIdOf(doc: Y.Doc): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
+/**
+ * A file that declares a different project than the one it was uploaded to.
+ *
+ * Its own type, so the caller can report it as what it is. It is not a corrupt file and not an
+ * unreadable one: the file is a perfectly good document that went to the wrong place, and saying
+ * otherwise would send whoever hit it looking at the wrong thing.
+ */
+export class WrongProjectError extends Error {
+  constructor(readonly declared: string | null, readonly expected: string) {
+    super(`That file belongs to project ${declared ?? "(unnamed)"}, not ${expected}`);
+    this.name = "WrongProjectError";
+  }
+}
+
 /** Whether these bytes are a document this build can read, which is the only kind worth merging. */
 function isDocument(bytes: Uint8Array): boolean {
   if (!bytes.length) return false;
@@ -296,7 +310,7 @@ export function mergeInto(base: Y.Doc, next: Buffer): Buffer {
   // key existed — is not compared, because "no identity" is not evidence of a mismatch.
   const storedId = documentIdOf(base);
   const nextId = documentIdOf(decode(next));
-  if (storedId && nextId && storedId !== nextId) throw new Error("That file belongs to a different project");
+  if (storedId && nextId && storedId !== nextId) throw new WrongProjectError(nextId, storedId);
 
   // An unreadable *incoming* save is bytes from nowhere, and writing them over a good document would
   // trade a recoverable state for an unrecoverable one. Checked above, so the answer does not depend
