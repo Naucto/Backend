@@ -49,6 +49,14 @@ export async function recordSavedAiProvenance(prisma: PrismaService, projectId: 
         data: { aiCategories: { push: category } }
       });
     }
+    // The receipt was in the bytes, so this change is now in storage — which is the fact that
+    // distinguishes a committed change from a committed claim. Without it the two are the same row,
+    // and a proposal whose reply was lost looks exactly like one a person is looking at.
+    // Scoped to APPLIED: a receipt is also written by a revert, and a reverted change is settled.
+    await tx.aiProposal.updateMany({
+      where: { projectId, id: { in: ids }, status: "APPLIED", storedAt: null },
+      data: { storedAt: new Date() }
+    });
     const reverted = proposals.flatMap(proposal => proposal.revertsId ? [proposal.revertsId] : []);
     if (reverted.length) await tx.aiProposal.updateMany({
       where: { projectId, id: { in: reverted }, status: "APPLIED" },

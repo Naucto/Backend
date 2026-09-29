@@ -2,8 +2,11 @@ import { createHash, randomBytes } from "node:crypto";
 import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { Prisma, AiConnection, AiContext, AiProposal } from "@prisma/client";
+import { Readable } from "stream";
+import { S3Service } from "@s3/s3.service";
 import { AiConnectionResponseDto, AiMcpProjectDto, AiProposalDto, AiReviewDto } from "./ai.dto";
 import { NON_INVERTIBLE_KINDS, OPERATION_KINDS } from "./ai-commit";
+import { hasReceipt } from "./ai-receipt";
 
 export interface AiKeyResponse { id: string; name: string; token: string; expiresAt: Date | null; createdAt: Date; projects: { projectId: number; name: string }[] }
 export interface AiKeySummary { id: string; name: string; expiresAt: Date | null; createdAt: Date; lastUsedAt: Date | null; projects: { projectId: number; name: string }[] }
@@ -15,7 +18,38 @@ const json = (value: unknown): Prisma.InputJsonValue => JSON.parse(JSON.stringif
 
 @Injectable()
 export class AiService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly s3: S3Service) {}
+
+  /**
+   * The bytes of the most recent autosave slot, or null when the project has never been saved.
+   *
+   * Read to answer "does storage hold this yet?" — a question a row cannot answer on its own, since
+   * whether a change reached storage depends on whether a save carrying it has happened, not on
+   * anything recorded at the moment it was claimed.
+   */
+  async newestStoredSave(projectId: number): Promise<Buffer | null> {
+    const slots = await this.s3.listObjects({ prefix: `save/${projectId}/` });
+    // By last-modified, not by name: a slot is named for the moment it opened, so the newest name is
+    // the newest slot only while windows do not overlap.
+    const newest = slots
+      .filter((o) => o.Key)
+      .sort((a, b) => (b.LastModified?.getTime() ?? 0) - (a.LastModified?.getTime() ?? 0))[0];
+    if (!newest?.Key) return null;
+    try {
+      const { body } = await this.s3.downloadFile({ key: newest.Key });
+      const chunks: Buffer[] = [];
+      for await (const chunk of body as Readable) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string));
+      }
+      return Buffer.concat(chunks);
+    } catch {
+      // Unreadable is not evidence that the change is absent, and the caller's question is whether
+      // it is absent. Saying "cannot tell" is not something this can express, so it refuses to
+      // re-apply instead: a change that is stored but unreadable is far better off than one applied
+      // twice.
+      return null;
+    }
+  }
 
   async authorize(projectId: number, userId: number): Promise<void> {
     const project = await this.prisma.project.findFirst({
@@ -269,6 +303,14 @@ export class AiService {
     await this.authorize(projectId, userId);
     const original = await this.prisma.aiProposal.findFirst({ where: { id, projectId, status: "APPLIED" } });
     if (!original) throw new ConflictException("Applied proposal unavailable");
+    // A change that was claimed but never stored cannot be reverted: there is nothing to take back
+    // out, so the inverse's `before` will not match anything and the revert would fail later, in a
+    // way that reads as a conflict with somebody's edit rather than as "this never happened". The
+    // receipt is the evidence — it is in the document only if the change reached it.
+    const held = (await this.newestStoredSave(projectId)) ?? null;
+    if (original.storedAt === null && !hasReceipt(held ?? Buffer.alloc(0), id)) {
+      throw new ConflictException("This change was applied but never saved, so there is nothing to revert. Apply it again instead.");
+    }
     // The inverse was captured from the merged state at commit, so it names exactly what the
     // proposal replaced. It is a new proposal: reviewed, applied to the accepting editor's own
     // state, and refused if anyone has since edited what it would restore.

@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
 import { Test } from "@nestjs/testing";
 import { ModuleRef } from "@nestjs/core";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import * as Y from "yjs";
+import { S3Service } from "@s3/s3.service";
 import { AiService } from "./ai.service";
 import { AiApplyService } from "./ai-apply.service";
 import { recordSavedAiProvenance } from "./ai-provenance";
@@ -14,6 +16,7 @@ const integration = process.env["AI_INTEGRATION"] === "1" ? describe : describe.
 integration("AI application PostgreSQL integration", () => {
   let prisma: PrismaService;
   let ai: AiService;
+  let s3: jest.Mocked<S3Service>;
   let apply: AiApplyService;
   let userId: number;
   let projectId: number;
@@ -57,9 +60,13 @@ integration("AI application PostgreSQL integration", () => {
     const user = await prisma.user.create({ data: { email: `${nonce}@example.invalid`, username: nonce } });
     userId = user.id;
     projectId = await newProject("AI integration");
-    ai = new AiService(prisma);
+    // A store that holds nothing, so "is this change in storage" answers no unless a test says
+    // otherwise — which is the answer a proposal whose reply was lost needs.
+    s3 = { listObjects: jest.fn().mockResolvedValue([]), downloadFile: jest.fn() } as unknown as jest.Mocked<S3Service>;
+    ai = new AiService(prisma, s3);
     const module = await Test.createTestingModule({ providers: [
       AiApplyService, { provide: AiService, useValue: ai }, { provide: PrismaService, useValue: prisma },
+      { provide: S3Service, useValue: s3 },
       { provide: ModuleRef, useValue: { get: (): { save: typeof save } => ({ save }) } }
     ] }).compile();
     apply = module.get(AiApplyService);
@@ -85,6 +92,76 @@ integration("AI application PostgreSQL integration", () => {
     await prisma.user.deleteMany({ where: { OR: [{ id: userId }, { id: { in: extraUserIds } }] } });
     await prisma?.$disconnect();
     document.destroy();
+  });
+
+  /**
+   * Do what the accepting editor does next: save. Applying writes nothing, so a change is not in
+   * storage until a save carries it, and the tests that go on to revert one have to say so.
+   */
+  const confirmStored = async (id: string): Promise<void> => {
+    const held = new Y.Doc();
+    Y.applyUpdate(held, new Uint8Array(Buffer.from(Y.encodeStateAsUpdate(document))));
+    (held.getMap("ai.applied") as Y.Map<unknown>).set(id, { kind: "code" });
+    s3.listObjects.mockResolvedValue([{ Key: `save/${projectId}/${Date.now()}`, LastModified: new Date() }]);
+    s3.downloadFile.mockResolvedValue({ body: Readable.from([Buffer.from(Y.encodeStateAsUpdate(held))]) });
+    await recordSavedAiProvenance(prisma, projectId, Y.encodeStateAsUpdate(held));
+  };
+
+  // Its own proposal: the tests below apply one more than once, and the shared one is spent by
+  // whichever test runs first.
+  const ownProposal = async (): Promise<{ id: string; contentHash: string }> => {
+    const context = await ai.context(projectId, userId, { code: "old" });
+    const made = await ai.propose(connection, {
+      title: "twice", summary: "applied more than once",
+      snapshotHash: context.hash,
+      operations: [{ kind: "code", fileId: "main", before: "old", after: "new" }],
+    });
+    return { id: made.id, contentHash: made.contentHash };
+  };
+
+  it("applies a change again when the first application was never stored", async () => {
+    // The whole point of `storedAt`. Nothing is written on apply, so a lost reply leaves the row
+    // APPLIED and no document anywhere holding the change — which used to be a dead end: not PENDING,
+    // so not applicable, and its inverse would not match anything, so not revertable either. The
+    // change was simply gone, under a title that looked like a change somebody had made.
+    const mine = await ownProposal();
+    const before = Buffer.from(Y.encodeStateAsUpdate(document)).toString("base64");
+    await apply.apply(projectId, userId, mine.id, mine.contentHash, before);
+
+    // Straight away it is refused, because the first acceptance may yet be saved.
+    await expect(apply.apply(projectId, userId, mine.id, mine.contentHash, before)).rejects.toThrow(/already reviewed/);
+    await expect(ai.proposeRevert(projectId, userId, mine.id)).rejects.toThrow(/never saved/);
+
+    // Once the claim is old enough and still nothing holds it, it may be applied again.
+    await prisma.aiProposal.update({ where: { id: mine.id }, data: { appliedAt: new Date(Date.now() - 60_000) } });
+    const again = await apply.apply(projectId, userId, mine.id, mine.contentHash, before);
+    const landed = new Y.Doc();
+    Y.applyUpdate(landed, new Uint8Array(Buffer.from(again.update, "base64")));
+    const text = (landed.getMap("code.files").get("main") as Y.Map<Y.Text>).get("text")!;
+    expect(text.toString()).toBe("new");
+  });
+
+  it("refuses to apply a stored change again, however old the claim is", async () => {
+    // A `code` operation replaces the whole file, so a second application concatenates it rather
+    // than merging cleanly. Stored means final.
+    const mine = await ownProposal();
+    const before = Buffer.from(Y.encodeStateAsUpdate(document)).toString("base64");
+    await apply.apply(projectId, userId, mine.id, mine.contentHash, before);
+    // A save whose bytes carry this proposal's receipt is what records that storage has it.
+    const held = new Y.Doc();
+    Y.applyUpdate(held, new Uint8Array(Buffer.from(before, "base64")));
+    (held.getMap("ai.applied") as Y.Map<unknown>).set(mine.id, { kind: "code" });
+    s3.listObjects.mockResolvedValue([{ Key: `save/${projectId}/${Date.now()}`, LastModified: new Date() }]);
+    s3.downloadFile.mockResolvedValue({ body: Readable.from([Buffer.from(Y.encodeStateAsUpdate(held))]) });
+    await recordSavedAiProvenance(prisma, projectId, Y.encodeStateAsUpdate(held));
+
+    await prisma.aiProposal.update({ where: { id: mine.id }, data: { appliedAt: new Date(Date.now() - 60_000) } });
+    const row = await prisma.aiProposal.findUnique({ where: { id: mine.id } });
+    expect(row!.storedAt).not.toBeNull();
+
+    await expect(apply.apply(projectId, userId, mine.id, mine.contentHash, before)).rejects.toThrow(/already reviewed/);
+    // And the revert is offered, because there is now something to take back out.
+    await expect(ai.proposeRevert(projectId, userId, mine.id)).resolves.toMatchObject({ revertsId: mine.id });
   });
 
   it("applies to the caller's own document without costing anyone else their work", async () => {
@@ -181,6 +258,10 @@ integration("AI application PostgreSQL integration", () => {
       operations: [{ kind: "net_permissions", path: "gate", remove: true, expect: { flags: 3 } }],
     });
     await apply.apply(projectId, userId, removed.id, removed.contentHash, state);
+    // Applying writes nothing, so the change is not in storage until the accepting editor saves.
+    // Without that there is nothing to take back out, and the revert is refused rather than staged
+    // against a document that never had the change.
+    await confirmStored(removed.id);
     const revert = await ai.proposeRevert(projectId, userId, removed.id);
 
     // A revert is written against the state the change it undoes was written against, so it reports
@@ -200,6 +281,7 @@ integration("AI application PostgreSQL integration", () => {
       operations: { kind: "delete_map" } as never,
       inverse: [{ kind: "code", fileId: "main", before: "new", after: "old" }],
     } });
+    await confirmStored(stored.id);
     await expect(ai.proposeRevert(projectId, userId, stored.id)).rejects.toThrow("record cannot be read");
     await prisma.aiProposal.delete({ where: { id: stored.id } });
   });

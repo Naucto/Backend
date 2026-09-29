@@ -2,6 +2,8 @@ import { ConflictException, Injectable } from "@nestjs/common";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { Prisma } from "@prisma/client";
 import { commitSnapshots } from "./ai-commit";
+import { AiProposal } from "@prisma/client";
+import { hasReceipt } from "./ai-receipt";
 import { AiService } from "./ai.service";
 
 /**
@@ -52,8 +54,23 @@ export class AiApplyService {
     await this.ai.authorize(projectId, userId);
     const proposal = await this.prisma.aiProposal.findUnique({ where: { id: proposalId } });
     if (!proposal || proposal.projectId !== projectId) throw new ConflictException("Proposal unavailable");
-    if (proposal.status !== "PENDING") throw new ConflictException("Proposal was already reviewed");
     if (proposal.contentHash !== contentHash) throw new ConflictException("Proposal changed; review it again");
+
+    // A claim that never reached storage can be applied again, and one that did cannot.
+    //
+    // Nothing is written here, so the change exists only in the accepting editor's document. If that
+    // reply is lost, or the tab closes before its first save, the row says APPLIED and no document
+    // anywhere holds it — the change is simply gone, while looking exactly like one a person is
+    // reading the title of. `storedAt` is the difference: it is set by the first save whose bytes
+    // carry this proposal's `ai.applied` receipt, so a null beside APPLIED means nothing was stored.
+    //
+    // A stored change is never re-applied. A `code` operation replaces the whole file, so applying
+    // one twice concatenates it — and a client that is merely behind, holding an older document,
+    // would pass the "no receipt" test while storage already has the change. Hence the receipt is
+    // checked against the newest stored slot as well as against the submitted snapshot, and the
+    // claim has to be old enough that a save in flight cannot still be about to confirm it.
+    const reApply = await this.unstoredReapply(projectId, proposal, snapshot);
+    if (proposal.status !== "PENDING" && !reApply) throw new ConflictException("Proposal was already reviewed");
 
     // A staged revert is committed as an inverse. `proposeRevert` re-offers the operations an
     // application recorded, and those were written for the inverse flag: without it, restoring a
@@ -67,13 +84,33 @@ export class AiApplyService {
     // no-op — all of which raise before anything is written.
 
     // Claim the proposal. The status is what makes acceptance single-use, and two people can reach
-    // this at once, so the write is a compare-and-swap on PENDING rather than a read-then-write:
-    // whoever wins the swap is the one whose document now holds the change.
+    // this at once, so the write is a compare-and-swap rather than a read-then-write: whoever wins
+    // the swap is the one whose document now holds the change.
+    //
+    // The re-apply branch swaps on the claim it read — status, the moment it was claimed, and
+    // `storedAt` still null. Without all three, two tabs that both notice a missing change would
+    // both apply it, and a `code` change applied twice concatenates the file. `storedAt` in the
+    // where clause is what makes a save that landed in the meantime win instead: this swap then
+    // matches nothing and the change is refused, which is correct — it is already stored.
     const claimed = await this.prisma.aiProposal.updateMany({
-      where: { id: proposal.id, status: "PENDING" },
-      data: { status: "APPLIED", reviewedBy: userId, inverse: commit.inverse as Prisma.InputJsonValue },
+      where: reApply
+        ? { id: proposal.id, status: "APPLIED", storedAt: null, appliedAt: proposal.appliedAt }
+        : { id: proposal.id, status: "PENDING" },
+      data: {
+        status: "APPLIED",
+        reviewedBy: userId,
+        appliedAt: new Date(),
+        // A fresh claim is not yet in storage; a re-apply resets the record, since the previous
+        // claim's receipts were only ever in the document that was lost.
+        storedAt: null,
+        inverse: commit.inverse as Prisma.InputJsonValue,
+      },
     });
-    if (claimed.count !== 1) throw new ConflictException("Proposal was already reviewed");
+    if (claimed.count !== 1) {
+      throw new ConflictException(reApply
+        ? "This change is already stored, or another person is re-applying it"
+        : "Proposal was already reviewed");
+    }
 
     // Nothing is written to storage here, and that is deliberate.
     //
@@ -95,5 +132,39 @@ export class AiApplyService {
     // holds the change — recoverable only by re-proposing it, since the status is no longer PENDING
     // and the inverse's `before` no longer matches anything. That gap is real and is not closed here.
     return { update: commit.result, categories: commit.categories };
+  }
+
+  /**
+   * How long a claim is left alone before it can be applied again.
+   *
+   * Long enough that a save which is merely in flight is not overtaken. The accepting editor saves
+   * immediately on apply and retries until storage has the change, so the normal gap is seconds; a
+   * claim that has been sitting unsaved for this long was not going to be saved.
+   */
+  static readonly REAPPLY_GRACE_MS = 30_000;
+
+  /**
+   * Whether this proposal may be applied a second time: claimed, never stored, and held by nobody.
+   *
+   * Every clause is a way the change could be somewhere after all, and re-applying when it is would
+   * duplicate it — a `code` operation replaces the whole file, so a second application concatenates
+   * it rather than merging cleanly.
+   */
+  private async unstoredReapply(projectId: number, proposal: AiProposal, snapshot: string): Promise<boolean> {
+    if (proposal.status !== "APPLIED") return false;
+    // Set by the first save whose bytes carry this proposal's receipt. Present means stored, and
+    // stored is final. A null on a row predating the column is read as "unknown", which is not the
+    // same as "absent" — so those are never re-applied, since they are almost certainly stored many
+    // times over and a duplicate code change is worse than an unrecoverable one.
+    if (proposal.storedAt !== null) return false;
+    if (proposal.appliedAt === null) return false;
+    if (Date.now() - proposal.appliedAt.getTime() < AiApplyService.REAPPLY_GRACE_MS) return false;
+    // The client asking must not hold it either.
+    if (hasReceipt(snapshot, proposal.id)) return false;
+    // Nor may storage. A client that is merely behind, holding a document from before the change,
+    // would pass the test above while storage already has it.
+    const newest = (await this.ai.newestStoredSave(projectId)) ?? null;
+    if (newest && hasReceipt(newest, proposal.id)) return false;
+    return true;
   }
 }

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { Test } from "@nestjs/testing";
 import { ConflictException, UnauthorizedException } from "@nestjs/common";
 import { PrismaService } from "@ourPrisma/prisma.service";
+import { S3Service } from "@s3/s3.service";
 import { AiService } from "./ai.service";
 
 describe("AI scoped proposals", () => {
@@ -15,7 +16,12 @@ describe("AI scoped proposals", () => {
   beforeEach(async () => {
     jest.resetAllMocks();
     const module = await Test.createTestingModule({
-      providers: [AiService, { provide: PrismaService, useValue: prisma }]
+      providers: [
+        AiService,
+        { provide: PrismaService, useValue: prisma },
+        // Used only to ask whether a change has reached storage, which these tests never assert on.
+        { provide: S3Service, useValue: { listObjects: jest.fn().mockResolvedValue([]), downloadFile: jest.fn() } }
+      ]
     }).compile();
     service = module.get(AiService);
   });

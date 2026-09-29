@@ -43,11 +43,24 @@ model AiProposal {
   // made today can see how far back it reaches instead of assuming it is current. Carried to a
   // revert, which is written against the same state.
   baseContextAgeMs Int @default(0)
+  // When the change was claimed, and when storage was first seen to hold it.
+  //
+  // `storedAt` is what makes "applied but never stored" something the server knows rather than
+  // something a person has to notice: the document carries an `ai.applied` receipt for every commit,
+  // and a save writes them out, so the first save whose bytes contain this proposal's receipt sets
+  // this. Null with a status of APPLIED means the change is committed to in a document that has not
+  // been persisted — the reply was lost, or the tab closed before the first save. That proposal can
+  // be applied again, because nothing anywhere holds the change; reverting it cannot work, since
+  // there is nothing to take back out.
+  appliedAt     DateTime?
+  storedAt      DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId, createdAt])
+  // For the sweep that reports proposals committed to but not yet stored.
+  @@index([status, storedAt])
 }
 
 model AiJob {
