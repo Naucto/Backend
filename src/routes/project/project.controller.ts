@@ -707,7 +707,8 @@ export class ProjectController {
   @ApiResponse({ status: 422, description: "File validation failed" })
   @ApiResponse({
     status: 503,
-    description: "Too many saves are already queued for this project; Retry-After says when to try again"
+    description:
+      "Too many saves are already queued for this project. Transient: the same bytes succeed once the queue drains, and the client retries with backoff."
   })
   @HttpCode(HttpStatus.CREATED)
   async saveProjectContent(

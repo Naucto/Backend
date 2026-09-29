@@ -824,12 +824,11 @@ export class ProjectService {
     // Counted before queueing, so the limit covers waiting and running together.
     const queued = this.pending.get(projectId) ?? 0;
     if (queued >= this.max_pending_saves) {
-      // Retry-After, because the client cannot guess: a save refused for a busy queue is not the
-      // same as one that was turned down, and treating them alike is what turned a transient limit
-      // into a lost change.
-      const refused = new ServiceUnavailableException("Too many saves are already waiting for this project");
-      (refused.getResponse() as { setHeader?: (k: string, v: string) => void }).setHeader?.("Retry-After", "5");
-      throw refused;
+      // 503, and not 429: this is the server's own queue being full, and the client is told to come
+      // back by its own backoff rather than by a header it does not read. 429 would promise a
+      // Retry-After this response cannot actually carry — an HttpException's response is the body
+      // object, and there is no header on it.
+      throw new ServiceUnavailableException("Too many saves are already waiting for this project");
     }
     this.pending.set(projectId, queued + 1);
     const previous = this.saving.get(projectId) ?? Promise.resolve();

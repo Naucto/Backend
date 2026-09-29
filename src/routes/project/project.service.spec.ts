@@ -183,13 +183,13 @@ describe("ProjectService", () => {
   const configServiceMock = {
     get: jest.fn((key: string) => {
       if (key === "S3_MAX_AUTO_HISTORY_VERSION") return "5";
-      if (key === "S3_AUTO_HISTORY_DELAY") return "10";
+      // Blank, exactly as `cp .env.example .env` leaves it. Not a value: a test that passes
+      // whether the number is parsed correctly or the blank is caught proves neither.
+      if (key === "S3_AUTO_HISTORY_DELAY") return "";
       if (key === "S3_MAX_CHECKPOINTS") return "5";
       // Short, so the stalled-read test does not sit out the production ten seconds.
       if (key === "S3_STORED_SAVE_TIMEOUT_MS") return "150";
-      if (key === "S3_MAX_PENDING_SAVES") return "4";
-      // Blank, exactly as `cp .env.example .env` leaves it.
-      if (key === "S3_AUTO_HISTORY_DELAY") return "";
+      if (key === "S3_MAX_PENDING_SAVES") return "";
       return undefined;
     })
   };
@@ -866,7 +866,9 @@ describe("ProjectService", () => {
       // history of one — which is what a blank S3_MAX_AUTO_HISTORY_VERSION used to produce — the
       // newest slot was among the ones deleted, so one failed save left the project with no save at
       // all, and the change the failure was about was gone from storage.
-      saves([660_000, 1_400_000]);
+      // More slots than the history keeps, so the prune has something to delete and a reordering
+      // is visible. Two against a history of five would delete nothing either way.
+      saves([660_000, 1_400_000, 2_100_000, 2_800_000, 3_500_000, 4_200_000]);
       const history = (await service.listVersions(1))[0]!.name;
       s3ServiceMock.getFileMetadataOrNull.mockResolvedValue({ ContentLength: 0 });
       s3ServiceMock.downloadFile.mockResolvedValue({ body: Readable.from([]) });
