@@ -119,6 +119,51 @@ integration("AI application PostgreSQL integration", () => {
     return { id: made.id, contentHash: made.contentHash };
   };
 
+  it("applies one file's chosen lines and the other file whole, in the same accept", async () => {
+    // The regression this guards: the review used to send a range for every file it showed, so a
+    // file nobody picked anything in arrived looking like a selection covering all of it. The server
+    // read that as "narrow to this range", found no changed lines in a range that had every one of
+    // them, and refused the whole apply — so accepting a change without picking through it did not
+    // work at all.
+    const setFile = (id: string, text: string): void => {
+      const file = new Y.Map<unknown>();
+      const body = new Y.Text(text);
+      document.transact(() => {
+        document.getMap("code.files").set(id, file);
+        file.set("text", body);
+      });
+    };
+    setFile("alpha", "a1\na2\na3\na4\n");
+    setFile("beta", "b1\nb2\nb3\nb4\n");
+    const ctx = await ai.context(projectId, userId, { code: "x" });
+    const two = await ai.propose(connection, {
+      title: "two files", summary: "x", snapshotHash: ctx.hash,
+      operations: [
+        // Both files change in two separate places, so each has more than one hunk to choose from.
+        { kind: "code", fileId: "alpha", before: "a1\na2\na3\na4\n", after: "A1\na2\na3\nA4\n" },
+        { kind: "code", fileId: "beta", before: "b1\nb2\nb3\nb4\n", after: "B1\nb2\nb3\nB4\n" },
+      ],
+    });
+    const before = Buffer.from(Y.encodeStateAsUpdate(document)).toString("base64");
+
+    // Only alpha's first hunk was chosen. Beta was never mentioned, so it is applied whole.
+    const part = await apply.apply(projectId, userId, two.id, two.contentHash, before, [
+      { fileId: "alpha", from: 0, to: 1 },
+    ]);
+    const landed = new Y.Doc();
+    Y.applyUpdate(landed, new Uint8Array(Buffer.from(part.update, "base64")));
+    const textOf = (id: string): string =>
+      (landed.getMap("code.files").get(id) as Y.Map<Y.Text>).get("text")!.toString();
+    // Beta whole, both of its edits.
+    expect(textOf("beta")).toBe("B1\nb2\nb3\nB4\n");
+    // Alpha only the chosen hunk, the other left out.
+    expect(textOf("alpha")).toBe("A1\na2\na3\na4\n");
+    document.transact(() => {
+      document.getMap("code.files").delete("alpha");
+      document.getMap("code.files").delete("beta");
+    });
+  });
+
   it("applies only the lines a person chose, and leaves the rest of the change available", async () => {
     // A `code` operation carries the whole new file, so accepting one used to mean accepting all of
     // it. Somebody who wanted one of three edits had no way to say so.

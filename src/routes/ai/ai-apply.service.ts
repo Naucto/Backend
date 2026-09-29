@@ -179,18 +179,42 @@ export class AiApplyService {
     const doc = new Y.Doc();
     try {
       Y.applyUpdate(doc, new Uint8Array(Buffer.from(snapshot, "base64")));
-      const chosen: Operation[] = [];
+      // A file nobody chose lines in is applied whole; a file that was is narrowed to the choice.
+      // Anything that is not a code operation — artwork, maps, sound, declarations — is applied
+      // whole too, because there is no honest way to take half of a sprite sheet or half a
+      // multiplayer permission, and refusing the whole apply over it would leave the person unable
+      // to take the one edit they did want.
+      const wanted = new Set(hunks.map((hunk) => hunk.fileId));
       for (const selection of hunks) {
-        const code = (proposal.operations as unknown[]).find(
-          (op): op is { kind: "code"; fileId: string; before: string; after: string } =>
-            !!op && typeof op === "object" && (op as { kind?: unknown }).kind === "code"
+        if (!proposal.operations.some(
+          (op) => !!op && typeof op === "object" && (op as { kind?: unknown }).kind === "code"
             && (op as { fileId?: unknown }).fileId === selection.fileId,
-        );
-        if (!code) throw new ConflictException(`This change does not touch ${selection.fileId}`);
-        const current = currentText(doc, selection.fileId);
-        if (current === null) throw new ConflictException(`This change does not touch ${selection.fileId}`);
-        chosen.push(narrowCodeOperation(code, selection, current));
+        )) {
+          throw new ConflictException(`This change does not touch ${selection.fileId}`);
+        }
       }
+      const chosen: Operation[] = [];
+      for (const raw of proposal.operations as unknown[]) {
+        if (!raw || typeof raw !== "object") continue;
+        const op = raw as Operation;
+        const kind = op["kind"];
+        const fileId = typeof op["fileId"] === "string" ? (op["fileId"] as string) : "";
+        // Not a code operation, or a code operation nobody narrowed: taken as it stands.
+        if (kind !== "code" || !wanted.has(fileId)) {
+          chosen.push(op);
+          continue;
+        }
+        const selection = hunks.find((hunk) => hunk.fileId === fileId);
+        if (!selection) continue;
+        const current = currentText(doc, fileId);
+        if (current === null) throw new ConflictException(`This change does not touch ${fileId}`);
+        chosen.push(narrowCodeOperation(
+          op as unknown as { kind: "code"; fileId: string; before: string; after: string },
+          selection,
+          current,
+        ));
+      }
+      if (!chosen.length) throw new ConflictException("Nothing in this change was selected");
 
       const part = await this.prisma.aiProposal.create({ data: {
         projectId, userId,
