@@ -265,13 +265,25 @@ export class S3Service {
     metadata,
     bucketName,
     keyName,
-    cacheControl
+    cacheControl,
+    ifMatch
   }: {
     file: Express.Multer.File | DownloadedFile;
     metadata?: Record<string, string>;
     bucketName?: string;
     keyName?: string;
     cacheControl?: string;
+    /**
+     * The ETag the caller read before deciding what to write, as an upload precondition.
+     *
+     * Without it a read-merge-write is only safe against other writers in the same process, which is
+     * a much smaller claim than it sounds: two Backend instances, or a save racing a colleague's save
+     * that took a different path, both read the same stored state, both merge only their own view
+     * into it, and the write that lands second drops the other's work. The object store can refuse
+     * that write, because it still holds the ETag that was read — so the loss becomes a conflict the
+     * caller retries rather than a document that quietly lost a change.
+     */
+    ifMatch?: string;
   }): Promise<void> {
     const resolvedBucketName = this.resolveBucket(bucketName);
 
@@ -286,7 +298,8 @@ export class S3Service {
           Body: file.buffer,
           ContentType: file.mimetype,
           Metadata: metadata,
-          CacheControl: cacheControl
+          CacheControl: cacheControl,
+          IfMatch: ifMatch
         };
         const command = new PutObjectCommand(input);
 

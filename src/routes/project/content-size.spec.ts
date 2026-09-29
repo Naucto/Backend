@@ -162,6 +162,35 @@ describe("mergeStates", () => {
     expect(mergeStates(Buffer.from("not a document at all"), next)).toEqual(next);
   });
 
+  it("refuses to merge a file from a different project", () => {
+    // A Yjs update carries no identity of its own, so nothing downstream could tell that the result
+    // of this merge was a document belonging to neither project — it would load as a project, with
+    // both files in it, and no trace of how it got that way.
+    const identified = (id: string, text: string): Buffer => {
+      const doc = docWith(text);
+      doc.getMap("game.meta").set("docId", id);
+      return Buffer.from(Y.encodeStateAsUpdate(doc));
+    };
+    const mine = identified("alpha", "mine");
+    const yours = identified("beta", "yours");
+    expect(() => mergeStates(mine, yours)).toThrow(/different project/);
+    expect(() => mergeStates(yours, mine)).toThrow(/different project/);
+    // The same identity merges as before — two independent editors' writes at the same offset, so
+    // only one of them is visible in the text; both are in the document either way.
+    const merged = read(mergeStates(identified("alpha", "one"), identified("alpha", "two")));
+    expect(merged === "one" || merged === "two").toBe(true);
+  });
+
+  it("merges as usual when one of the two states declares no identity", () => {
+    // Every project saved before the identity existed has none, and "no identity" is not evidence of
+    // a mismatch — refusing those would make every one of them unsaveable.
+    const legacy = Buffer.from(Y.encodeStateAsUpdate(docWith("old\n")));
+    const merged = read(mergeStates(legacy, Buffer.from(Y.encodeStateAsUpdate(docWith("new\n")))));
+    expect(merged.length).toBeGreaterThan(0);
+    // And the result really is a document, not a refusal.
+    expect(() => read(mergeStates(legacy, Buffer.from(Y.encodeStateAsUpdate(docWith("new\n")))))).not.toThrow();
+  });
+
   it("refuses an incoming save that cannot be read even when there is nothing stored", () => {
     // "Nothing to merge with" is reached by a new window, a legacy blob and an oversized one, and
     // the check used to live only on the path that merges. So bytes that were not a document could

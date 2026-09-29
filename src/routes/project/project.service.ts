@@ -870,6 +870,7 @@ export class ProjectService {
     // deleted the very slot being carried forward.
     const stored = slot === newest?.name ? await this.storedSave(projectId, slot) : null;
     const carried = slot === newest?.name ? null : await this.storedSave(projectId, newest?.name ?? "");
+    const base = stored ?? carried;
 
     // The prune is deferred until the upload has landed — see below. Deleting first meant a save
     // that then failed took the old slots with it, and with a short history the newest slot was
@@ -885,14 +886,13 @@ export class ProjectService {
     // one from whichever writer arrived first drops everything the previous window held that this
     // save's author had not seen. Two editors in a partition is where that shows: each becomes host,
     // each saves, and the one whose save opened the window decides what everyone else loads.
-    const base = stored ?? carried;
     // The merged result is bounded too. Merging only ever grows a document, so a slot can creep
     // past the ceiling over a window and then be read as "too large to merge" — replaced, not
     // merged, by every save after that. Failing here instead leaves the slot as it was.
     let buffer: Buffer | undefined;
     if (file.buffer) {
       try {
-        buffer = await mergeStates(base, file.buffer);
+        buffer = await mergeStates(base?.bytes ?? null, file.buffer);
       } catch {
         // Refused rather than stored: bytes that are not a document would be written as the newest
         // slot, and opening the project would then fail, with no editor open to repair it.
@@ -905,7 +905,10 @@ export class ProjectService {
 
     await this.s3Service.uploadFile({
       file: buffer ? { ...file, buffer, size: buffer.length } : file,
-      keyName: `save/${projectId}/${slot}`
+      keyName: `save/${projectId}/${slot}`,
+      // Only for a slot that already existed and had something to merge into. A new slot has
+      // no prior state, so there is nothing a writer could have replaced.
+      ...(stored?.etag ? { ifMatch: stored.etag } : {})
     });
 
     // Now that the new slot exists, the old ones can go. Ordered after every step that can fail, so
@@ -937,7 +940,7 @@ export class ProjectService {
    * the save, which the editor retries: losing a keystroke is recoverable, losing an applied change
    * is not.
    */
-  private async storedSave(projectId: number, slot: string): Promise<Buffer | null> {
+  private async storedSave(projectId: number, slot: string): Promise<{ bytes: Buffer; etag: string | undefined } | null> {
     if (!slot) return null;
     const key = `save/${projectId}/${slot}`;
     const metadata = await this.s3Service.getFileMetadataOrNull(key);
@@ -966,7 +969,10 @@ export class ProjectService {
     const probe = new Y.Doc();
     try {
       Y.applyUpdate(probe, bytes);
-      return bytes;
+      // The ETag goes with the bytes: it is what the upload is conditioned on, so that a write based
+      // on a state something else has since replaced is refused rather than applied.
+      const etag = typeof metadata.ETag === "string" ? metadata.ETag.split("\"").join("") : undefined;
+      return { bytes, etag };
     } catch {
       return null;
     } finally {

@@ -1005,6 +1005,23 @@ describe("ProjectService", () => {
       expect(s3ServiceMock.downloadFile).toHaveBeenCalledWith({ key: `save/1/${slot}` });
     });
 
+    it("conditions the write on the state it merged into, so another writer cannot be overwritten", async () => {
+      // The per-project lock only covers one process. Two Backend instances, or two writers taking
+      // different paths, both read the same stored state, both merge only their own view into it,
+      // and the write that lands second drops the other's work. The object store can refuse that
+      // write while it still holds the ETag that was read, which turns the loss into a conflict.
+      saves([1_000]);
+      s3ServiceMock.getFileMetadataOrNull.mockResolvedValue({ ContentLength: 10, ETag: "\"abc123\"" });
+      s3ServiceMock.downloadFile.mockResolvedValue({ body: Readable.from([Buffer.from(Y.encodeStateAsUpdate(docWith("kept")))]) });
+      s3ServiceMock.uploadFile.mockResolvedValue(undefined);
+
+      await service.save(1, { ...file, buffer: docA } as Express.Multer.File);
+
+      expect(s3ServiceMock.uploadFile).toHaveBeenCalledWith(
+        expect.objectContaining({ ifMatch: "abc123" })
+      );
+    });
+
     it("reads the slot again only after the save that merged into it has written", async () => {
       // Two saves arriving together used to read the same stored state, each merge only its own view
       // into it, and the second write drop the first's work — the loss merging exists to prevent.

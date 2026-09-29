@@ -206,6 +206,33 @@ export function isContentSizeBreakdown(
  * that lands second keeps the other's work instead of erasing it, which is what writing one state
  * over the other would do.
  */
+/**
+ * The identity a document carries in its own metadata.
+ *
+ * A Yjs update carries no document identity — not a client id, not a clock, nothing that says which
+ * project these bytes came from. That matters for merging: two documents merge cleanly and produce a
+ * third that is neither, and the result loads as a project with both projects' files and neither
+ * one's history, and nothing anywhere says so afterwards.
+ *
+ * So the identity is written into the document, once, by the editor on first open. A save whose
+ * identity disagrees with the stored one is refused rather than merged: that is a file from a
+ * different project, and the only safe thing to do with it is decline.
+ */
+export const DOC_ID_KEY = "docId";
+
+/** A document read from bytes, and released. Used where one read is all that is wanted. */
+function decode(bytes: Buffer): Y.Doc {
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, bytes);
+  return doc;
+}
+
+/** The document identity a state declares, or null when it declares none. */
+export function documentIdOf(doc: Y.Doc): string | null {
+  const value = doc.getMap<unknown>(GAME_KEYS.meta).get(DOC_ID_KEY);
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
 /** Whether these bytes are a document this build can read, which is the only kind worth merging. */
 function isDocument(bytes: Uint8Array): boolean {
   if (!bytes.length) return false;
@@ -227,7 +254,15 @@ export function mergeStates(stored: Buffer | null, next: Buffer): Buffer {
   // there is no editor open to repair it. Checked first, so the answer does not depend on what
   // happens to be stored.
   if (!isDocument(next)) throw new Error("The incoming save is not a game document");
-  if (!stored?.length) return next;
+  if (!stored?.length || !isDocument(stored)) return next;
+  // Two different projects. Merging them would produce a document that is neither, and it would look
+  // like a perfectly good save. A document that declares no identity — every one saved before this
+  // key existed — is not compared, because "no identity" is not evidence of a mismatch.
+  if (documentIdOf(decode(stored)) !== null || documentIdOf(decode(next)) !== null) {
+    const a = documentIdOf(decode(stored));
+    const b = documentIdOf(decode(next));
+    if (a && b && a !== b) throw new Error("That file belongs to a different project");
+  }
   // The two sides are probed apart, because they fail for different reasons and only one of them
   // can be replaced. Bytes that are not a document at all are one cause, and an old format is
   // another, and the two are not interchangeable: what is stored is a blob that can be discarded
