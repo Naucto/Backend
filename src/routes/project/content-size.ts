@@ -220,6 +220,21 @@ export function isContentSizeBreakdown(
  */
 export const DOC_ID_KEY = "docId";
 
+/**
+ * The identity a project stamps on its own documents: derived from the project, not generated.
+ *
+ * Generated per editor it would be wrong twice over. Two people opening the same project would each
+ * write a different value, and which one won would be a coin toss decided by client id — so one
+ * person's save would be refused as belonging to another project, and the refusal would be
+ * indistingishable from a real mismatch. Derived, every editor of a project computes the same value
+ * before writing anything, there is nothing to reconcile, and a file from one project cannot claim to
+ * be another without it being written by somebody deliberately.
+ *
+ * It identifies a file, it does not authorise one: saving is already checked against the session's
+ * access to the project, and this exists to catch a file being uploaded to the wrong place.
+ */
+export const documentIdFor = (projectId: number): string => `p${projectId}`;
+
 /** A document read from bytes, and released. Used where one read is all that is wanted. */
 function decode(bytes: Buffer): Y.Doc {
   const doc = new Y.Doc();

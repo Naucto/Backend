@@ -3,6 +3,7 @@ import {
   GAME_KEYS,
   LEGACY_GAME_KEYS,
   computeContentSize,
+  documentIdFor,
   mergeStates,
   isContentSizeBreakdown
 } from "./content-size";
@@ -189,6 +190,15 @@ describe("mergeStates", () => {
     expect(merged.length).toBeGreaterThan(0);
     // And the result really is a document, not a refusal.
     expect(() => read(mergeStates(legacy, Buffer.from(Y.encodeStateAsUpdate(docWith("new\n")))))).not.toThrow();
+  });
+
+  it("stamps a document with the identity its project derives", () => {
+    // Derived rather than generated, so every editor of a project computes the same value before
+    // writing anything. Generated per editor, two people opening the same project would each write
+    // a different one and a save would be refused as belonging to another project — a refusal that
+    // would be indistinguishable from a real mismatch.
+    expect(documentIdFor(139)).toBe("p139");
+    expect(documentIdFor(140)).not.toBe(documentIdFor(139));
   });
 
   it("refuses an incoming save that cannot be read even when there is nothing stored", () => {

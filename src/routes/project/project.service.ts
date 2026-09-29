@@ -39,6 +39,30 @@ class StoredSaveTooLargeError extends Error {
 /** The stored slot, read once: its bytes, the ETag a write must be conditioned on, and the document. */
 type StoredSave = { bytes: Buffer; etag: string | undefined; doc: Y.Doc };
 
+/**
+ * The state with its identity set to this project's, or null when it declares a different one.
+ *
+ * Refuses rather than overwrites: a file that says it is another project's has been put somewhere
+ * it does not belong, and quietly re-stamping it would merge two projects and hide that it happened.
+ */
+function stampDocumentId(bytes: Buffer, projectId: number): Buffer | null {
+  const doc = new Y.Doc();
+  try {
+    Y.applyUpdate(doc, bytes);
+    const meta = doc.getMap<unknown>(GAME_KEYS.meta);
+    const current = meta.get(DOC_ID_KEY);
+    const mine = documentIdFor(projectId);
+    if (typeof current === "string" && current !== mine) {
+      throw new BadRequestException("That file belongs to a different project");
+    }
+    if (current === mine) return bytes;
+    doc.transact(() => meta.set(DOC_ID_KEY, mine));
+    return Buffer.from(Y.encodeStateAsUpdate(doc));
+  } finally {
+    doc.destroy();
+  }
+}
+
 class StoredSaveUnreadableError extends Error {
   constructor() {
     super("The stored autosave could not be read in time");
@@ -60,7 +84,7 @@ import {
   ProjectTooLargeException
 } from "./project.error";
 import { recordSavedAiProvenance } from "src/routes/ai/ai-provenance";
-import { mergeInto, mergeStates } from "./content-size";
+import { documentIdFor, DOC_ID_KEY, GAME_KEYS, mergeInto, mergeStates } from "./content-size";
 
 // What a project says about its people, on public routes as well as private ones: the id
 // and the name, never the address behind the account.
@@ -908,6 +932,11 @@ export class ProjectService {
     if (buffer && buffer.length > PROJECT_BLOB_MAX_BYTES) {
       throw new PayloadTooLargeException("The merged document is past the maximum size for a save");
     }
+
+    // Stamped before the write, so a file that reached the wrong project is caught here rather than
+    // merged into a document that is now both. Derived from the project, so every editor of this
+    // project computes the same value and none of them has to be told.
+    if (buffer) buffer = stampDocumentId(buffer, projectId) ?? undefined;
 
     await this.s3Service.uploadFile({
       file: buffer ? { ...file, buffer, size: buffer.length } : file,
