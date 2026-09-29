@@ -36,6 +36,9 @@ class StoredSaveTooLargeError extends Error {
 }
 
 /** The stored slot did not arrive in time. The slot is untouched; the save is retried. */
+/** The stored slot, read once: its bytes, the ETag a write must be conditioned on, and the document. */
+type StoredSave = { bytes: Buffer; etag: string | undefined; doc: Y.Doc };
+
 class StoredSaveUnreadableError extends Error {
   constructor() {
     super("The stored autosave could not be read in time");
@@ -57,7 +60,7 @@ import {
   ProjectTooLargeException
 } from "./project.error";
 import { recordSavedAiProvenance } from "src/routes/ai/ai-provenance";
-import { mergeStates } from "./content-size";
+import { mergeInto, mergeStates } from "./content-size";
 
 // What a project says about its people, on public routes as well as private ones: the id
 // and the name, never the address behind the account.
@@ -892,7 +895,10 @@ export class ProjectService {
     let buffer: Buffer | undefined;
     if (file.buffer) {
       try {
-        buffer = await mergeStates(base?.bytes ?? null, file.buffer);
+        // Merged into the document already read, rather than into its bytes, so the stored blob is
+        // decoded once per save instead of twice.
+        buffer = base ? mergeInto(base.doc, file.buffer) : mergeStates(null, file.buffer);
+        base?.doc.destroy();
       } catch {
         // Refused rather than stored: bytes that are not a document would be written as the newest
         // slot, and opening the project would then fail, with no editor open to repair it.
@@ -940,7 +946,7 @@ export class ProjectService {
    * the save, which the editor retries: losing a keystroke is recoverable, losing an applied change
    * is not.
    */
-  private async storedSave(projectId: number, slot: string): Promise<{ bytes: Buffer; etag: string | undefined } | null> {
+  private async storedSave(projectId: number, slot: string): Promise<StoredSave | null> {
     if (!slot) return null;
     const key = `save/${projectId}/${slot}`;
     const metadata = await this.s3Service.getFileMetadataOrNull(key);
@@ -972,11 +978,12 @@ export class ProjectService {
       // The ETag goes with the bytes: it is what the upload is conditioned on, so that a write based
       // on a state something else has since replaced is refused rather than applied.
       const etag = typeof metadata.ETag === "string" ? metadata.ETag.split("\"").join("") : undefined;
-      return { bytes, etag };
+      // The decoded document travels with the bytes: the merge needs that same read, and a second
+      // pass over a multi-megabyte blob is the largest single cost of a save.
+      return { bytes, etag, doc: probe };
     } catch {
-      return null;
-    } finally {
       probe.destroy();
+      return null;
     }
   }
 

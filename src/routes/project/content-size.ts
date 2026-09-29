@@ -248,39 +248,47 @@ function isDocument(bytes: Uint8Array): boolean {
 }
 
 export function mergeStates(stored: Buffer | null, next: Buffer): Buffer {
-  // The incoming save is checked on every path, not only the one that merges. A new window, a
-  // legacy blob and an oversized blob all reach "return next" unchanged, and bytes that are not a
-  // document would be written as the newest slot — after which the project no longer opens, and
-  // there is no editor open to repair it. Checked first, so the answer does not depend on what
-  // happens to be stored.
-  if (!isDocument(next)) throw new Error("The incoming save is not a game document");
-  if (!stored?.length || !isDocument(stored)) return next;
-  // Two different projects. Merging them would produce a document that is neither, and it would look
-  // like a perfectly good save. A document that declares no identity — every one saved before this
-  // key existed — is not compared, because "no identity" is not evidence of a mismatch.
-  if (documentIdOf(decode(stored)) !== null || documentIdOf(decode(next)) !== null) {
-    const a = documentIdOf(decode(stored));
-    const b = documentIdOf(decode(next));
-    if (a && b && a !== b) throw new Error("That file belongs to a different project");
+  if (!stored?.length || !isDocument(stored)) {
+    if (!isDocument(next)) throw new Error("The incoming save is not a game document");
+    return next;
   }
-  // The two sides are probed apart, because they fail for different reasons and only one of them
-  // can be replaced. Bytes that are not a document at all are one cause, and an old format is
-  // another, and the two are not interchangeable: what is stored is a blob that can be discarded
-  // because the incoming save replaces it, whereas an unreadable *incoming* save is bytes from
-  // nowhere, and writing them over a good document would trade a recoverable state for an
-  // unrecoverable one.
+  const base = decode(stored);
+  try {
+    return mergeInto(base, next);
+  } finally {
+    base.destroy();
+  }
+}
+
+/**
+ * Merge into a stored state that has already been read.
+ *
+ * The caller read it anyway — to tell a legacy blob from a document, and to learn the ETag to
+ * condition the write on — so decoding it again in order to merge into it is a second full pass
+ * over the blob for no new information. At the size projects reach that is a large fraction of a
+ * second of the main thread per save, in the process that also runs the collab, game and user
+ * sockets, so the extra pass is worth avoiding rather than measuring.
+ */
+export function mergeInto(base: Y.Doc, next: Buffer): Buffer {
+  // The incoming save is validated on every path, not only the one that merges. A new window, a
+  // legacy blob and an oversized one all reach "return next" unchanged, and bytes that are not a
+  // document would be written as the newest slot — after which the project no longer opens, and
+  // there is no editor open to repair it.
+  if (!isDocument(next)) throw new Error("The incoming save is not a game document");
+
+  // Two different projects. Merging them would produce a document that is neither, and it would look
+  // like a perfectly good save. A state that declares no identity — every project saved before this
+  // key existed — is not compared, because "no identity" is not evidence of a mismatch.
+  const storedId = documentIdOf(base);
+  const nextId = documentIdOf(decode(next));
+  if (storedId && nextId && storedId !== nextId) throw new Error("That file belongs to a different project");
+
+  // An unreadable *incoming* save is bytes from nowhere, and writing them over a good document would
+  // trade a recoverable state for an unrecoverable one. Checked above, so the answer does not depend
+  // on what happens to be stored.
   const doc = new Y.Doc();
   try {
-    try {
-      Y.applyUpdate(doc, stored);
-    } catch {
-      // Not a document this build can read — an older format, or bytes that are not a save at all.
-      // The incoming save is the whole truth, and replacing is the honest thing to do rather than
-      // keeping a blob nothing can open.
-      return next;
-    }
-    // Outside the catch above, so a bad incoming save is refused rather than taking the stored
-    // document down with it.
+    Y.applyUpdate(doc, Y.encodeStateAsUpdate(base));
     Y.applyUpdate(doc, next);
     return Buffer.from(Y.encodeStateAsUpdate(doc));
   } finally {
