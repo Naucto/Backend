@@ -124,7 +124,7 @@ export class AiController {
   @ApiOperation({ summary: "Accept the proposal against the caller's own document and return the merged state" })
   apply(@Param("projectId", ParseIntPipe) id: number, @Param("proposalId") proposalId: string, @Req() req: Request, @Body() dto: AiAcceptDto): Promise<AiApplyDto> {
     if (dto.decision !== "APPROVED") throw new BadRequestException("Applying requires approval");
-    return this.applyService.apply(id, userOf(req), proposalId, dto.contentHash, dto.snapshot);
+    return this.applyService.apply(id, userOf(req), proposalId, dto.contentHash, dto.snapshot, dto.hunks);
   }
 
   @Get("jobs")

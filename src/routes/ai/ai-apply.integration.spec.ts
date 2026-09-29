@@ -119,6 +119,49 @@ integration("AI application PostgreSQL integration", () => {
     return { id: made.id, contentHash: made.contentHash };
   };
 
+  it("applies only the lines a person chose, and leaves the rest of the change available", async () => {
+    // A `code` operation carries the whole new file, so accepting one used to mean accepting all of
+    // it. Somebody who wanted one of three edits had no way to say so.
+    const source = ["local M = {}", "function start()", "end", "", "function stop()", "end"].join("\n");
+    const file = new Y.Map<unknown>();
+    const body = new Y.Text(source);
+    document.transact(() => {
+      document.getMap("code.files").set("hunked", file);
+      file.set("text", body);
+    });
+    const ctx = await ai.context(projectId, userId, { code: source });
+    const whole = await ai.propose(connection, {
+      title: "three edits", summary: "x", snapshotHash: ctx.hash,
+      operations: [{ kind: "code", fileId: "hunked", before: source, after: [
+        "local M = {}", "function start()", "  M.run = true", "end", "", "function stop()", "  M.run = false", "end",
+      ].join("\n") }],
+    });
+    const before = Buffer.from(Y.encodeStateAsUpdate(document)).toString("base64");
+
+    // Only the line the assistant added to start().
+    const part = await apply.apply(projectId, userId, whole.id, whole.contentHash, before, [{ fileId: "hunked", from: 2, to: 3 }]);
+    const landed = new Y.Doc();
+    Y.applyUpdate(landed, new Uint8Array(Buffer.from(part.update, "base64")));
+    const text = (landed.getMap("code.files").get("hunked") as Y.Map<Y.Text>).get("text")!;
+    expect(text.toString()).toContain("M.run = true");
+    // The one it did not choose is not there.
+    expect(text.toString()).not.toContain("M.run = false");
+
+    // The proposal was not consumed, so the rest is still on the table — against the document the
+    // first part actually landed in, which is the whole point of not claiming it.
+    const original = await prisma.aiProposal.findUnique({ where: { id: whole.id } });
+    expect(original!.status).toBe("PENDING");
+    expect(original!.parentId).toBeNull();
+    // And the applied part is its own row, so it reverts on its own.
+    expect(part.appliedProposalId).toBeDefined();
+    const derived = await prisma.aiProposal.findUnique({ where: { id: part.appliedProposalId! } });
+    expect(derived!.parentId).toBe(whole.id);
+    expect(derived!.status).toBe("APPLIED");
+    expect(derived!.inverse).not.toBeNull();
+
+    document.transact(() => { document.getMap("code.files").delete("hunked"); });
+  });
+
   it("applies a change again when the first application was never stored", async () => {
     // The whole point of `storedAt`. Nothing is written on apply, so a lost reply leaves the row
     // APPLIED and no document anywhere holding the change — which used to be a dead end: not PENDING,

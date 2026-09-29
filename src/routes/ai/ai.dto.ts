@@ -1,5 +1,21 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsInt, IsObject, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from "class-validator";
+import { Type } from "class-transformer";
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsIn,
+  IsInt,
+  IsObject,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+  ValidateNested
+} from "class-validator";
 import { AI_CATEGORIES } from "./ai-jobs.service";
 
 export class AiContextDto {
@@ -81,6 +97,36 @@ export class AiAcceptDto extends AiSnapshotDto {
   @ApiProperty()
   @Matches(/^[a-f0-9]{64}$/)
     contentHash!: string;
+
+  @ApiProperty({
+    type: () => [AiHunkDto],
+    required: false,
+    description:
+      "Lines chosen out of the change, per file, counted from zero in the proposed text. Present " +
+      "means apply only these lines: the proposal is not claimed, and a derived row records what was " +
+      "applied so it can be reverted on its own and the rest applied afterwards. Omit for all of it.",
+  })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => AiHunkDto)
+    hunks?: AiHunkDto[];
+}
+
+/** Which lines of a proposed file the person chose, counted from zero in the proposed text. */
+export class AiHunkDto {
+  @ApiProperty({ description: "The file the range is in, as the proposal names it" })
+  @IsString()
+    fileId!: string;
+
+  @ApiProperty({ description: "First chosen line, counted from zero in the proposed text" })
+  @IsInt()
+  @Min(0)
+    from!: number;
+
+  @ApiProperty({ description: "One past the last chosen line" })
+  @IsInt()
+  @Min(1)
+    to!: number;
 }
 
 export class AiApplyDto {
@@ -91,6 +137,17 @@ export class AiApplyDto {
   @IsArray()
   @IsString({ each: true })
     categories!: string[];
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description:
+      "Which proposal was applied, when only part of one was. It is a derived row, so a revert of the " +
+      "part is its own change and the original is untouched and still applicable.",
+  })
+  @IsOptional()
+  @IsString()
+    appliedProposalId?: string;
 }
 
 export class AiPreviewDto {

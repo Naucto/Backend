@@ -54,6 +54,10 @@ model AiProposal {
   // there is nothing to take back out.
   appliedAt     DateTime?
   storedAt      DateTime?
+  // Set on a row that came from applying part of a larger proposal. The parent stays PENDING, so the
+  // rest of it can still be applied; this row is what the applied part is recorded as, and so what a
+  // revert of that part stages against.
+  parentId      String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -61,6 +65,7 @@ model AiProposal {
   @@index([projectId, createdAt])
   // For the sweep that reports proposals committed to but not yet stored.
   @@index([status, storedAt])
+  @@index([parentId])
 }
 
 model AiJob {

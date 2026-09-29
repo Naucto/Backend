@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException } from "@nestjs/common";
 import * as Y from "yjs";
 import { type Operation, prepareAsset } from "./ai-assets";
+export type { Operation } from "./ai-assets";
 import { prepareNetPermissions } from "./ai-net";
 
 export const OPERATION_KINDS = ["code", "pixels", "tiles", "catalog", "sound", "delete_sound", "create_map", "delete_map", "resize_map", "net_permissions"] as const;

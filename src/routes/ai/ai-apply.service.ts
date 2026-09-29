@@ -1,8 +1,11 @@
 import { ConflictException, Injectable } from "@nestjs/common";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { Prisma } from "@prisma/client";
-import { commitSnapshots } from "./ai-commit";
+import { commitSnapshots, Operation } from "./ai-commit";
+import { createHash } from "node:crypto";
+import * as Y from "yjs";
 import { AiProposal } from "@prisma/client";
+import { HunkSelection, currentText, narrowCodeOperation } from "./ai-hunks";
 import { hasReceipt } from "./ai-receipt";
 import { AiService } from "./ai.service";
 
@@ -50,10 +53,18 @@ export class AiApplyService {
    * the missing chunk happens to arrive. A state carries its own dependencies, so it is correct for
    * every recipient regardless of what they have.
    */
-  async apply(projectId: number, userId: number, proposalId: string, contentHash: string, snapshot: string): Promise<{ update: string; categories: string[] }> {
+  async apply(
+    projectId: number,
+    userId: number,
+    proposalId: string,
+    contentHash: string,
+    snapshot: string,
+    hunks?: HunkSelection[],
+  ): Promise<{ update: string; categories: string[]; appliedProposalId?: string }> {
     await this.ai.authorize(projectId, userId);
     const proposal = await this.prisma.aiProposal.findUnique({ where: { id: proposalId } });
     if (!proposal || proposal.projectId !== projectId) throw new ConflictException("Proposal unavailable");
+    if (hunks?.length) return this.applySelection(projectId, userId, proposal, snapshot, hunks);
     if (proposal.contentHash !== contentHash) throw new ConflictException("Proposal changed; review it again");
 
     // A claim that never reached storage can be applied again, and one that did cannot.
@@ -142,6 +153,71 @@ export class AiApplyService {
    * claim that has been sitting unsaved for this long was not going to be saved.
    */
   static readonly REAPPLY_GRACE_MS = 30_000;
+
+  /**
+   * Apply part of a proposal: the lines the person chose, in the file as it is now.
+   *
+   * The proposal itself is deliberately not claimed. It stays PENDING, so the rest of it can still
+   * be applied — and it should be, because the parts were written against one snapshot and applying
+   * them at different times means the second is read against a document the first has already moved.
+   * The applied part is recorded as its own row carrying the same provenance and its own inverse, so
+   * "one change is one undo unit" survives: reverting this part does not disturb the rest, and a
+   * revert of the whole is refused rather than silently doing half of it.
+   */
+  private async applySelection(
+    projectId: number,
+    userId: number,
+    proposal: AiProposal,
+    snapshot: string,
+    hunks: HunkSelection[],
+  ): Promise<{ update: string; categories: string[]; appliedProposalId: string }> {
+    if (proposal.status !== "PENDING") throw new ConflictException("Proposal was already reviewed");
+    if (!Array.isArray(proposal.operations)) throw new ConflictException("This change's record cannot be read");
+
+    // Built from the snapshot the person sent, so the chosen lines are located in the document as
+    // they have it rather than in the one the proposal was written against.
+    const doc = new Y.Doc();
+    try {
+      Y.applyUpdate(doc, new Uint8Array(Buffer.from(snapshot, "base64")));
+      const chosen: Operation[] = [];
+      for (const selection of hunks) {
+        const code = (proposal.operations as unknown[]).find(
+          (op): op is { kind: "code"; fileId: string; before: string; after: string } =>
+            !!op && typeof op === "object" && (op as { kind?: unknown }).kind === "code"
+            && (op as { fileId?: unknown }).fileId === selection.fileId,
+        );
+        if (!code) throw new ConflictException(`This change does not touch ${selection.fileId}`);
+        const current = currentText(doc, selection.fileId);
+        if (current === null) throw new ConflictException(`This change does not touch ${selection.fileId}`);
+        chosen.push(narrowCodeOperation(code, selection, current));
+      }
+
+      const part = await this.prisma.aiProposal.create({ data: {
+        projectId, userId,
+        parentId: proposal.id,
+        title: `Part of: ${proposal.title}`.slice(0, 160),
+        summary: `Lines ${hunks.map((h) => `${h.fileId}:${h.from}-${h.to}`).join(", ")} of a change with ${(proposal.operations as unknown[]).length} operation(s).`,
+        snapshotHash: proposal.snapshotHash,
+        baseContextAgeMs: proposal.baseContextAgeMs,
+        operations: chosen as unknown as Prisma.InputJsonValue,
+        contentHash: createHash("sha256").update(JSON.stringify(chosen)).digest("hex"),
+        status: "PENDING",
+      } });
+
+      const commit = commitSnapshots([snapshot], chosen, part.id, false);
+      const claimed = await this.prisma.aiProposal.updateMany({
+        where: { id: part.id, status: "PENDING" },
+        data: {
+          status: "APPLIED", reviewedBy: userId, appliedAt: new Date(), storedAt: null,
+          inverse: commit.inverse as Prisma.InputJsonValue,
+        },
+      });
+      if (claimed.count !== 1) throw new ConflictException("That part was applied by someone else");
+      return { update: commit.result, categories: commit.categories, appliedProposalId: part.id };
+    } finally {
+      doc.destroy();
+    }
+  }
 
   /**
    * Whether this proposal may be applied a second time: claimed, never stored, and held by nobody.
