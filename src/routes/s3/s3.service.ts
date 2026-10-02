@@ -474,7 +474,18 @@ function isNotImplemented(error: unknown): boolean {
  */
 function s3RequestHandler(configService: ConfigService): NodeHttpHandler {
   const connectionTimeout = positiveNumber(configService.get<string>("S3_CONNECTION_TIMEOUT_MS"), 5000);
-  const requestTimeout = positiveNumber(configService.get<string>("S3_REQUEST_TIMEOUT_MS"), 30000);
+  // Ten seconds, not thirty. This is a deadline on the whole exchange, and what it is really
+  // catching is a route that completes the TCP handshake and then stalls in TLS — which is what a
+  // bad path to the object store looks like, and which the connection timeout above does not see
+  // because the connection *did* succeed. At thirty, combined with the SDK's three attempts, one
+  // unreachable store held a project's open for ninety seconds per call and the editor showed
+  // nothing at all for two minutes. Raise it for a deployment whose store is genuinely slow to
+  // hand over a large object; S3_REQUEST_TIMEOUT_MS is here for that.
+  const requestTimeout = positiveNumber(configService.get<string>("S3_REQUEST_TIMEOUT_MS"), 10000);
+  // The SDK's default of three retries multiplies the deadline above rather than sitting inside it:
+  // a route that accepts the connection and then stalls cost 30s four times over, so one unreachable
+  // save took a project's open past two minutes with nothing on screen to say why. One retry still
+  // rides out a blip; the second only doubles the wait for the same stall.
   // throwOnRequestTimeout, because without it `requestTimeout` only logs. A deadline that warns is
   // not a deadline: the request stays pending, so a stalled store still held the project's save lock
   // and every later save queued behind it. Verified against a server that accepts and never answers.
