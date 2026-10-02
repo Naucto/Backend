@@ -89,17 +89,73 @@ function changedHunks(before: string[], after: string[]): Hunk[] {
     open.to = j0 + j;
     open.beforeTo = i0 + i;
   }
-  // Whatever is left when one side runs out is still a difference — a pure insertion leaves nothing
-  // on the `a` side at all, and without this the walk reports no change for exactly the case a
-  // hunk most often is.
+  // Whatever is left when one side runs out is still a difference, and it belongs to the run that is
+  // open, if there is one. Both ends are taken to the end of their side: the walk stops as soon as
+  // either side is exhausted, so a one-line replacement stops having consumed the old line but not
+  // the new one. Leaving `to` where the walk stopped made that hunk an empty range in the new text,
+  // and every replacement or deletion was then refused as "no changed lines" when chosen.
   if (open || i < a.length || j < b.length) {
-    hunks.push(open ?? { from: j0 + j, to: j0 + b.length, beforeFrom: i0 + i, beforeTo: i0 + i });
+    const run = open ?? { from: j0 + j, to: j0 + j, beforeFrom: i0 + i, beforeTo: i0 + i };
+    run.to = j0 + b.length;
+    run.beforeTo = i0 + a.length;
+    hunks.push(run);
   }
   return hunks;
 }
 
 /** Above this many cells the diff falls back to one conservative region. */
 const LCS_CELLS = 4_000_000;
+
+/**
+ * Whether a chosen range touches a hunk. A deletion has an empty range in the new text, so it is
+ * counted as one line wide here; otherwise nothing could ever be said to choose it.
+ */
+const overlaps = (selection: HunkSelection, hunk: Hunk): boolean =>
+  selection.to > hunk.from && selection.from < Math.max(hunk.to, hunk.from + 1);
+
+/**
+ * The proposal with every chosen block of one file applied, and the rest left as the file has it.
+ *
+ * Taking only the first choice made a person who picked two blocks get one, with nothing to say the
+ * other had been dropped.
+ *
+ * When the file is still what the proposal was written against — the usual case — the blocks are
+ * spliced into it directly, back to front so one cannot move another. When the file has moved,
+ * each block is found again by the lines around it, one at a time; two chosen blocks that sit
+ * within a couple of lines of each other can then fail to be found, and that is refused rather
+ * than guessed at.
+ */
+export function narrowCodeOperations(
+  operation: { kind: "code"; fileId: string; before: string; after: string },
+  selections: HunkSelection[],
+  current: string,
+): { kind: "code"; fileId: string; before: string; after: string } {
+  if (!selections.length) throw new ConflictException("Nothing in this change was selected");
+  if (current === operation.before) {
+    const beforeLines = splitLines(operation.before);
+    const afterLines = splitLines(operation.after);
+    const chosen = changedHunks(beforeLines, afterLines).filter((hunk) =>
+      selections.some((selection) => overlaps(selection, hunk)),
+    );
+    if (!chosen.length) throw new ConflictException("The selected range contains no changed lines");
+    const lines = [...beforeLines];
+    for (const hunk of [...chosen].reverse()) {
+      const touching = selections.filter((selection) => overlaps(selection, hunk));
+      const from = Math.max(hunk.from, Math.min(...touching.map((selection) => selection.from)));
+      const to = Math.max(from, Math.min(hunk.to, Math.max(...touching.map((selection) => selection.to))));
+      lines.splice(hunk.beforeFrom, hunk.beforeTo - hunk.beforeFrom, ...afterLines.slice(from, to));
+    }
+    const after = lines.join("\n");
+    if (after === current) throw new ConflictException("The selected range is already what the file holds");
+    return { kind: "code", fileId: operation.fileId, before: current, after };
+  }
+  // Back to front: a block applied lower down does not shift the lines of one above it.
+  let text = current;
+  for (const selection of [...selections].sort((x, y) => y.from - x.from)) {
+    text = narrowCodeOperation(operation, selection, text).after;
+  }
+  return { kind: "code", fileId: operation.fileId, before: current, after: text };
+}
 
 /**
  * The proposal as the person chose part of it: the file as it is now, with one region changed.
@@ -141,13 +197,13 @@ export function narrowCodeOperation(
   // The hunk the range falls in, or overlaps. A range that spans two changes is two hunks, not one:
   // the person is asking for the lines between them too, and those may well be unchanged text that
   // should be left alone.
-  const hunks = changedHunks(beforeLines, afterLines).filter(
-    (hunk) => selection.to > hunk.from && selection.from < Math.max(hunk.to, hunk.from + 1),
-  );
+  const hunks = changedHunks(beforeLines, afterLines).filter((hunk) => overlaps(selection, hunk));
   if (!hunks.length) throw new ConflictException("The selected range contains no changed lines");
   const from = Math.max(hunks[0]!.from, selection.from);
-  const to = Math.min(hunks[hunks.length - 1]!.to, selection.to);
-  if (to <= from) throw new ConflictException("The selected range contains no changed lines");
+  // Never less than `from`, and allowed to equal it: a pure deletion has no new lines at all, so
+  // choosing it is choosing an empty run, and what it does is take the old lines out. Refusing an
+  // empty run refused every deletion. A choice that changes nothing is still refused, below.
+  const to = Math.max(from, Math.min(hunks[hunks.length - 1]!.to, selection.to));
   // The document lines the chosen new lines stand in for: from the first hunk's start to the last
   // hunk's end, which is the span the rewrite occupies in the file as it is.
   const region = { beforeFrom: hunks[0]!.beforeFrom, beforeTo: hunks[hunks.length - 1]!.beforeTo };

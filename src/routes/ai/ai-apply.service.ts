@@ -5,7 +5,7 @@ import { commitSnapshots, Operation } from "./ai-commit";
 import { createHash } from "node:crypto";
 import * as Y from "yjs";
 import { AiProposal } from "@prisma/client";
-import { HunkSelection, currentText, narrowCodeOperation } from "./ai-hunks";
+import { HunkSelection, currentText, narrowCodeOperations } from "./ai-hunks";
 import { hasReceipt } from "./ai-receipt";
 import { AiService } from "./ai.service";
 
@@ -204,13 +204,14 @@ export class AiApplyService {
           chosen.push(op);
           continue;
         }
-        const selection = hunks.find((hunk) => hunk.fileId === fileId);
-        if (!selection) continue;
+        // Every choice made in this file, not the first: two blocks picked are two blocks applied.
+        const selections = hunks.filter((hunk) => hunk.fileId === fileId);
+        if (!selections.length) continue;
         const current = currentText(doc, fileId);
         if (current === null) throw new ConflictException(`This change does not touch ${fileId}`);
-        chosen.push(narrowCodeOperation(
+        chosen.push(narrowCodeOperations(
           op as unknown as { kind: "code"; fileId: string; before: string; after: string },
-          selection,
+          selections,
           current,
         ));
       }

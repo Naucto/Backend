@@ -1,7 +1,7 @@
 import { ConflictException } from "@nestjs/common";
 import { describe, expect, it } from "@jest/globals";
 import * as Y from "yjs";
-import { currentText, narrowCodeOperation } from "./ai-hunks";
+import { currentText, narrowCodeOperation, narrowCodeOperations } from "./ai-hunks";
 
 describe("narrowCodeOperation", () => {
   const before = ["local M = {}", "function start()", "end", "", "function stop()", "end"].join("\n");
@@ -47,6 +47,56 @@ describe("narrowCodeOperation", () => {
   it("clamps a range that runs past the end of the proposed text", () => {
     const narrowed = narrowCodeOperation({ kind: "code", fileId: "main", before, after }, { fileId: "main", from: 0, to: 99 }, before);
     expect(narrowed.after.length).toBeGreaterThan(0);
+  });
+
+  // Every case below was refused as "no changed lines" before: the block finder stopped where its
+  // walk ran out of one side and left the rest of the block behind, so only pure insertions — whose
+  // lines are all on the side the walk finishes last — ever came out with a range to choose.
+  const op = (b: string, a: string): { kind: "code"; fileId: string; before: string; after: string } =>
+    ({ kind: "code", fileId: "m", before: b, after: a });
+  it.each([
+    ["one line replaced", "a\nX\nc", "a\nY\nc", 1, 2],
+    ["the last line replaced", "a\nb\nX", "a\nb\nY", 2, 3],
+    ["one line replaced by two", "a\nX\nc", "a\nY\nZ\nc", 1, 3],
+    ["a line deleted", "a\nX\nc", "a\nc", 1, 2],
+    ["the last line deleted", "a\nb\nX", "a\nb", 2, 3],
+  ])("applies a chosen block when it is %s", (_name, b, a, from, to) => {
+    expect(narrowCodeOperation(op(b, a), { fileId: "m", from, to }, b).after).toBe(a);
+  });
+});
+
+describe("narrowCodeOperations", () => {
+  const op = (b: string, a: string): { kind: "code"; fileId: string; before: string; after: string } =>
+    ({ kind: "code", fileId: "m", before: b, after: a });
+  const before = ["one", "A", "two", "three", "four", "B", "five"].join("\n");
+  const after = ["one", "A2", "two", "three", "four", "B2", "five"].join("\n");
+
+  it("applies every block chosen in a file, not only the first", () => {
+    // Taking the first choice alone gave a person who picked two blocks one, silently.
+    const result = narrowCodeOperations(op(before, after), [{ fileId: "m", from: 1, to: 2 }, { fileId: "m", from: 5, to: 6 }], before);
+    expect(result.after).toBe(after);
+  });
+
+  it("leaves a block that was not chosen as the file has it", () => {
+    const result = narrowCodeOperations(op(before, after), [{ fileId: "m", from: 5, to: 6 }], before);
+    expect(result.after).toBe(["one", "A", "two", "three", "four", "B2", "five"].join("\n"));
+  });
+
+  it("applies several blocks to a file that has moved since, finding each by its surroundings", () => {
+    // A line added at the top after the proposal was written: line numbers no longer match, the
+    // text around each block still does.
+    const moved = `-- header\n${before}`;
+    const result = narrowCodeOperations(op(before, after), [{ fileId: "m", from: 1, to: 2 }, { fileId: "m", from: 5, to: 6 }], moved);
+    expect(result.after).toBe(`-- header\n${after}`);
+  });
+
+  it("takes a chosen deletion out", () => {
+    const result = narrowCodeOperations(op("a\nX\nc\nd", "a\nc\nD"), [{ fileId: "m", from: 1, to: 2 }], "a\nX\nc\nd");
+    expect(result.after).toBe("a\nc\nd");
+  });
+
+  it("refuses an empty choice rather than applying the whole change", () => {
+    expect(() => narrowCodeOperations(op(before, after), [], before)).toThrow(ConflictException);
   });
 });
 
