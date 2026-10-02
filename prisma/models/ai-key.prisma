@@ -1,6 +1,5 @@
-// A long-lived assistant credential the account owner creates once, and the projects it may reach.
-// The 8-hour AiConnection stays for the in-editor flow; this is what a service holds, so nobody
-// re-authorises a client every few hours.
+// A long-lived assistant credential the account owner creates once. It reaches every project the
+// account owns: there is no per-project token and nothing to link.
 
 model AiKey {
   id         String    @id @default(uuid())
@@ -12,22 +11,8 @@ model AiKey {
   revokedAt  DateTime?
   lastUsedAt DateTime?
   createdAt  DateTime  @default(now())
-  grants     AiKeyGrant[]
   // Cascade with the account: a key outliving its owner would outlive the membership it depends on.
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
-}
-
-model AiKeyGrant {
-  id        String    @id @default(uuid())
-  keyId     String
-  projectId Int
-  revokedAt DateTime?
-  createdAt DateTime  @default(now())
-  key       AiKey     @relation(fields: [keyId], references: [id], onDelete: Cascade)
-  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  @@unique([keyId, projectId])
-  @@index([projectId])
 }

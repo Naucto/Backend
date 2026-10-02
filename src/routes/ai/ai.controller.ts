@@ -4,8 +4,8 @@ import { Request } from "express";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
 import { Public } from "@auth/decorators/public.decorator";
 import { UserDto } from "@auth/dto/user.dto";
-import { AiContext, AiDeclaration, AiJob, AiProposal } from "@prisma/client";
-import { AiConnectionResponseDto, AiContextDto, AiDeclarationDto, AiJobCompleteDto, AiJobCreateDto, AiJobFailDto, AiProposalDto, AiReviewDto, AiKeyCreateDto, AiKeyResponseDto, AiKeySummaryDto, AiMcpConnectionDto, AiMcpProjectDto, AiAcceptDto, AiApplyDto, AiPreviewDto, AiSnapshotDto } from "./ai.dto";
+import { AiDeclaration, AiJob, AiProposal } from "@prisma/client";
+import { AiDeclarationDto, AiJobCompleteDto, AiJobCreateDto, AiJobFailDto, AiProposalDto, AiReviewDto, AiKeyCreateDto, AiKeyResponseDto, AiKeySummaryDto, AiMcpConnectionDto, AiMcpProjectDto, AiAcceptDto, AiApplyDto, AiPreviewDto, AiSnapshotDto } from "./ai.dto";
 import {
   AiContextResponseDto,
   AiDeclarationResponseDto,
@@ -47,20 +47,6 @@ export class AiKeysController {
     await this.service.revokeKey(userOf(req), keyId);
     return { revoked: true };
   }
-
-  @Post(":keyId/projects/:projectId")
-  @ApiOperation({ summary: "Let a key reach one more project" })
-  async grant(@Param("keyId") keyId: string, @Param("projectId", ParseIntPipe) projectId: number, @Req() req: Request): Promise<{ linked: boolean }> {
-    await this.service.grantKey(userOf(req), keyId, projectId);
-    return { linked: true };
-  }
-
-  @Delete(":keyId/projects/:projectId")
-  @ApiOperation({ summary: "Stop a key reaching a project, keeping the key itself" })
-  async ungrant(@Param("keyId") keyId: string, @Param("projectId", ParseIntPipe) projectId: number, @Req() req: Request): Promise<{ revoked: boolean }> {
-    await this.service.revokeGrant(userOf(req), keyId, projectId);
-    return { revoked: true };
-  }
 }
 
 @ApiTags("AI")
@@ -69,26 +55,6 @@ export class AiKeysController {
 @Controller("ai/projects/:projectId")
 export class AiController {
   constructor(private readonly service: AiService, private readonly jobs: AiJobsService, private readonly applyService: AiApplyService) {}
-
-  @Post("connection")
-  @ApiOperation({ summary: "Create a project-scoped proposal-only AI credential" })
-  @ApiResponse({ status: 201, type: AiConnectionResponseDto })
-  connect(@Param("projectId", ParseIntPipe) id: number, @Req() req: Request): Promise<AiConnectionResponseDto> {
-    return this.service.connect(id, userOf(req));
-  }
-
-  @Delete("connection")
-  @ApiOperation({ summary: "Revoke this user's AI connection and shared context" })
-  async revoke(@Param("projectId", ParseIntPipe) id: number, @Req() req: Request): Promise<{ revoked: boolean }> {
-    await this.service.revoke(id, userOf(req));
-    return { revoked: true };
-  }
-
-  @Post("context")
-  @ApiOperation({ summary: "Share current editor context with the user's AI connection" })
-  context(@Param("projectId", ParseIntPipe) id: number, @Req() req: Request, @Body() dto: AiContextDto): Promise<{ hash: string }> {
-    return this.service.context(id, userOf(req), dto.content);
-  }
 
   @Get("proposals")
   @ApiResponse({ status: 200, type: [AiProposalResponseDto] })
@@ -182,13 +148,14 @@ export class AiMcpController {
 
   @Get("context")
   @ApiResponse({ status: 200, type: AiContextResponseDto })
-  @ApiOperation({ summary: "Read the project's last shared state and how old it is" })
-  async context(@Headers("authorization") auth?: string, @Headers("x-naucto-project") project?: string): Promise<AiContext> {
-    // Age travels with the context on purpose: an assistant may be working on a project nobody has
-    // open, and it should know how far back the state it is reasoning about reaches.
-    const stored = await this.service.storedContext(await this.service.connection(auth, project));
-    if (!stored) throw new ConflictException("Open the editor once so this project has a state to work from");
-    return { ...stored.context, ageMs: stored.ageMs } as AiContext;
+  @ApiOperation({ summary: "Read the project as last saved, and how old that save is" })
+  async context(@Headers("authorization") auth?: string, @Headers("x-naucto-project") project?: string): Promise<AiContextResponseDto> {
+    // Read from storage, so it works with nobody in the editor. Age travels with it on purpose: the
+    // assistant should know how far back the state it is reasoning about reaches.
+    const connection = await this.service.connection(auth, project);
+    const stored = await this.service.storedContext(connection);
+    if (!stored) throw new ConflictException("This project has no saved state yet: open it once in the editor");
+    return { projectId: connection.projectId, userId: connection.userId, hash: stored.hash, content: stored.content, updatedAt: stored.updatedAt, ageMs: stored.ageMs };
   }
 
   @Get("proposals")

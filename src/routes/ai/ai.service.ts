@@ -1,15 +1,25 @@
 import { createHash, randomBytes } from "node:crypto";
 import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { PrismaService } from "@ourPrisma/prisma.service";
-import { Prisma, AiConnection, AiContext, AiProposal } from "@prisma/client";
+import { Prisma, AiProposal } from "@prisma/client";
 import { Readable } from "stream";
 import { S3Service } from "@s3/s3.service";
-import { AiConnectionResponseDto, AiMcpProjectDto, AiProposalDto, AiReviewDto } from "./ai.dto";
+import { AiMcpProjectDto, AiProposalDto, AiReviewDto } from "./ai.dto";
+import { buildContext } from "./ai-context";
 import { NON_INVERTIBLE_KINDS, OPERATION_KINDS } from "./ai-commit";
 import { hasReceipt } from "./ai-receipt";
 
-export interface AiKeyResponse { id: string; name: string; token: string; expiresAt: Date | null; createdAt: Date; projects: { projectId: number; name: string }[] }
-export interface AiKeySummary { id: string; name: string; expiresAt: Date | null; createdAt: Date; lastUsedAt: Date | null; projects: { projectId: number; name: string }[] }
+export interface AiKeyResponse { id: string; name: string; token: string; expiresAt: Date | null; createdAt: Date }
+export interface AiKeySummary { id: string; name: string; expiresAt: Date | null; createdAt: Date; lastUsedAt: Date | null }
+/** Who is asking and which project they are working on: all a route below needs from a credential. */
+export interface AiMcpConnection { projectId: number; userId: number; expiresAt: Date }
+/** The project as last saved, in the shape the MCP reads, and how old that save is. */
+export interface AiStoredContext { hash: string; content: Record<string, unknown>; updatedAt: Date; ageMs: number }
+/**
+ * The oldest a save can be reported as: the column is a 32-bit integer, and a project nobody has opened
+ * in a month is 2.6 billion milliseconds old — past it, and now an ordinary thing for a key to meet.
+ */
+const MAX_AGE_MS = 2_147_483_647;
 /** What a never-expiring key reports, so callers that read `expiresAt` keep working. */
 const FAR_FUTURE = new Date(8640000000000000);
 
@@ -59,24 +69,6 @@ export class AiService {
     if (!project) throw new NotFoundException("Project unavailable");
   }
 
-  async connect(projectId: number, userId: number): Promise<AiConnectionResponseDto> {
-    await this.authorize(projectId, userId);
-    const token = `naucto_ai_${randomBytes(32).toString("hex")}`;
-    const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000);
-    // Rotate rather than accumulate live credentials for the same user/project.
-    await this.prisma.$transaction([
-      this.prisma.aiConnection.deleteMany({ where: { projectId, userId } }),
-      this.prisma.aiConnection.create({ data: { projectId, userId, tokenHash: hash(token), expiresAt } })
-    ]);
-    return { token, expiresAt };
-  }
-
-  async revoke(projectId: number, userId: number): Promise<void> {
-    await this.authorize(projectId, userId);
-    await this.prisma.aiConnection.deleteMany({ where: { projectId, userId } });
-    await this.prisma.aiContext.deleteMany({ where: { projectId, userId } });
-  }
-
   /**
    * Creates a long-lived assistant credential. `expiresInDays` null (the default) never expires:
    * the user asked for a key they set up once, and a rotation is their call, not a countdown.
@@ -92,23 +84,12 @@ export class AiService {
     const live = await this.prisma.aiKey.count({ where: { userId, revokedAt: null } });
     if (live >= 20) throw new BadRequestException("Too many keys; revoke one you no longer use");
     const key = await this.prisma.aiKey.create({ data: { tokenHash: hash(token), userId, name, expiresAt } });
-    return { id: key.id, name: key.name, token, expiresAt: key.expiresAt, createdAt: key.createdAt, projects: [] };
+    return { id: key.id, name: key.name, token, expiresAt: key.expiresAt, createdAt: key.createdAt };
   }
 
   async listKeys(userId: number): Promise<AiKeySummary[]> {
-    const keys = await this.prisma.aiKey.findMany({
-      where: { userId, revokedAt: null },
-      orderBy: { createdAt: "desc" },
-      include: { grants: { where: { revokedAt: null }, select: { projectId: true, project: { select: { name: true } } } } }
-    });
-    return keys.map((key) => ({
-      id: key.id,
-      name: key.name,
-      expiresAt: key.expiresAt,
-      createdAt: key.createdAt,
-      lastUsedAt: key.lastUsedAt,
-      projects: key.grants.map((g: { projectId: number; project: { name: string } }) => ({ projectId: g.projectId, name: g.project.name }))
-    }));
+    const keys = await this.prisma.aiKey.findMany({ where: { userId, revokedAt: null }, orderBy: { createdAt: "desc" } });
+    return keys.map((key) => ({ id: key.id, name: key.name, expiresAt: key.expiresAt, createdAt: key.createdAt, lastUsedAt: key.lastUsedAt }));
   }
 
   /** Revoking the key kills it everywhere: a leaked key is the reason this has to be one call. */
@@ -118,157 +99,108 @@ export class AiService {
     await this.prisma.aiKey.update({ where: { id: keyId }, data: { revokedAt: new Date() } });
   }
 
-  /** Lets a key reach one more project. Still a proposal-only credential, never an approver. */
-  async grantKey(userId: number, keyId: string, projectId: number): Promise<void> {
-    await this.authorize(projectId, userId);
-    const key = await this.prisma.aiKey.findFirst({ where: { id: keyId, userId, revokedAt: null } });
-    if (!key) throw new NotFoundException("No such key");
-    await this.prisma.aiKeyGrant.upsert({
-      where: { keyId_projectId: { keyId, projectId } },
-      create: { keyId, projectId },
-      update: { revokedAt: null }
-    });
+  /** The projects an account owns: what a key reaches, with no per-project linking. */
+  private owned(userId: number): Prisma.ProjectWhereInput {
+    return { userId, creator: { deletedAt: null } };
   }
 
-  async revokeGrant(userId: number, keyId: string, projectId: number): Promise<void> {
-    const key = await this.prisma.aiKey.findFirst({ where: { id: keyId, userId } });
-    if (!key) throw new NotFoundException("No such key");
-    await this.prisma.aiKeyGrant.updateMany({ where: { keyId, projectId, revokedAt: null }, data: { revokedAt: new Date() } });
-  }
-
-  private async keyConnection(token: string, projectHint?: string): Promise<AiConnection> {
-    const key = await this.prisma.aiKey.findUnique({
-      where: { tokenHash: hash(token) },
-      include: { grants: { where: { revokedAt: null } } }
-    });
+  /**
+   * Resolves an account key to the project a request is about.
+   *
+   * A key is the account's: it reaches every project the account owns, so there is nothing to link
+   * and nothing a collaborator invite or a removal can leave dangling. When the account owns several
+   * and the request names none, the Backend will not guess which one is meant.
+   */
+  async connection(authorization?: string, projectHint?: string): Promise<AiMcpConnection> {
+    const token = authorization?.match(/^Bearer (naucto_k_[a-f0-9]{64})$/)?.[1];
+    if (!token) throw new UnauthorizedException();
+    const key = await this.prisma.aiKey.findUnique({ where: { tokenHash: hash(token) } });
     if (!key || key.revokedAt || (key.expiresAt && key.expiresAt.getTime() <= Date.now())) throw new UnauthorizedException();
-    // Count only the projects this key can still use. A grant left behind by a collaborator the
-    // owner has since been removed from would otherwise force the "several projects" answer when
-    // only one is reachable, and hand access back if they are re-added.
-    const usable = await this.prisma.aiKeyGrant.findMany({
-      where: {
-        keyId: key.id,
-        revokedAt: null,
-        project: { OR: [{ userId: key.userId, creator: { deletedAt: null } }, { collaborators: { some: { id: key.userId, deletedAt: null } } }] }
-      },
-      select: { projectId: true }
+    const hinted = projectHint !== undefined && projectHint !== "";
+    if (hinted && !/^\d{1,10}$/.test(projectHint)) throw new UnauthorizedException("This key does not reach that project");
+    const reachable = await this.prisma.project.findMany({
+      where: { ...this.owned(key.userId), ...(hinted ? { id: Number(projectHint) } : {}) },
+      select: { id: true },
+      take: 2,
+      orderBy: { id: "asc" }
     });
-    const granted = usable
-      .map((g) => g.projectId)
-      .filter((projectId) => projectHint === undefined || String(projectId) === projectHint);
-    if (!granted.length) throw new UnauthorizedException("This key is not linked to that project");
-    // Several linked projects and no hint: say so rather than picking one and reading the wrong game.
-    if (granted.length > 1) throw new ConflictException("This key is linked to several projects: send X-Naucto-Project");
-    const projectId = granted[0]!;
-    await this.authorize(projectId, key.userId);
+    if (!reachable.length) throw new UnauthorizedException(hinted ? "This key does not reach that project" : "This account owns no project");
+    // Several projects and no hint: say so rather than picking one and reading the wrong game.
+    if (reachable.length > 1) throw new ConflictException("This key reaches several projects: send X-Naucto-Project");
     // Every MCP call would otherwise write: the connection probe and the job polls alone are
     // dozens a minute, and "last used" only has to be roughly true.
     if (!key.lastUsedAt || Date.now() - key.lastUsedAt.getTime() > 60000) {
       void this.prisma.aiKey.update({ where: { id: key.id }, data: { lastUsedAt: new Date() } }).catch(() => undefined);
     }
-    return { projectId, userId: key.userId, expiresAt: key.expiresAt ?? FAR_FUTURE } as AiConnection;
+    return { projectId: reachable[0]!.id, userId: key.userId, expiresAt: key.expiresAt ?? FAR_FUTURE };
   }
 
   /**
-   * Resolves either credential: the 8-hour in-editor `naucto_ai_` token, or a long-lived
-   * `naucto_k_` key. Both land on the same (project, user) pair, so every route below is unchanged.
-   */
-  async connection(authorization?: string, projectHint?: string): Promise<AiConnection> {
-    const scoped = authorization?.match(/^Bearer (naucto_ai_[a-f0-9]{64})$/)?.[1];
-    if (scoped) {
-      const connection = await this.prisma.aiConnection.findUnique({ where: { tokenHash: hash(scoped) } });
-      if (!connection || connection.expiresAt.getTime() <= Date.now()) throw new UnauthorizedException();
-      await this.authorize(connection.projectId, connection.userId);
-      // A token names exactly one project, so a hint naming another one is a mistake worth
-      // refusing: answering with the token's own project is how a client ends up reading the
-      // wrong game without being told.
-      if (projectHint !== undefined && projectHint !== String(connection.projectId)) throw new UnauthorizedException();
-      return connection;
-    }
-    const key = authorization?.match(/^Bearer (naucto_k_[a-f0-9]{64})$/)?.[1];
-    if (key) return this.keyConnection(key, projectHint);
-    throw new UnauthorizedException();
-  }
-
-  async context(projectId: number, userId: number, content: Record<string, unknown>): Promise<{ hash: string }> {
-    await this.authorize(projectId, userId);
-    const encoded = JSON.stringify(content);
-    if (Buffer.byteLength(encoded) > 1024 * 1024) throw new BadRequestException("Context exceeds 1 MiB");
-    const digest = hash(encoded);
-    await this.prisma.aiContext.upsert({
-      where: { projectId_userId: { projectId, userId } },
-      create: { projectId, userId, hash: digest, content: json(content) },
-      update: { hash: digest, content: json(content) }
-    });
-    return { hash: digest };
-  }
-
-  /**
-   * The last state an editor shared, with how old it is.
+   * The project as last saved, in the shape the MCP reads, and how old that save is.
    *
-   * `fresh` is a floor of a minute, and it exists for one honest reason: the assistant works
-   * whether or not anyone has the project open, and a project nobody has opened in a week still
-   * has a perfectly good last-known state to work from. Age is the answer to "may I act on this",
-   * not a wall — what an operation writes is checked against the real document when it is applied,
-   * so a stale base is caught then rather than by refusing to read it here.
+   * Built from storage rather than from an editor, because the assistant works whether or not
+   * anybody has the project open. Age is reported, not enforced: what an operation writes is checked
+   * against the document of the person who accepts it, so a stale base is caught there, where there
+   * is a human, and not here, where the only outcome would be an assistant that cannot start.
    */
-  async storedContext(connection: AiConnection, maxAgeMs = Number.POSITIVE_INFINITY): Promise<{ context: AiContext; ageMs: number } | null> {
-    const context = await this.prisma.aiContext.findUnique({ where: { projectId_userId: { projectId: connection.projectId, userId: connection.userId } } });
-    if (!context) return null;
-    const ageMs = Date.now() - context.updatedAt.getTime();
-    if (ageMs > maxAgeMs) throw new ConflictException("Open the editor and share fresh context");
-    return { context, ageMs };
-  }
-
-  async readContext(connection: AiConnection): Promise<AiContext> {
-    const stored = await this.storedContext(connection, 60000);
-    if (!stored) throw new ConflictException("Open the editor and share fresh context");
-    return stored.context;
-  }
-
-  /**
-   * Every project this credential may reach, so an assistant holding a key linked to several
-   * games can find them instead of being told to guess an id. A key that reaches exactly one needs
-   * no header; this is how anything wider knows what its options are.
-   */
-  async reachableProjects(authorization?: string, projectHint?: string): Promise<AiMcpProjectDto[]> {
-    const describe = async (projectId: number, userId: number): Promise<AiMcpProjectDto> => {
-      const [project, context, pending] = await Promise.all([
-        this.prisma.project.findUnique({ where: { id: projectId }, select: { name: true } }),
-        this.prisma.aiContext.findUnique({ where: { projectId_userId: { projectId, userId } }, select: { updatedAt: true } }),
-        this.prisma.aiProposal.count({ where: { projectId, status: "PENDING" } }),
-      ]);
-      return {
-        projectId,
-        userId,
-        name: project?.name ?? `Project ${String(projectId)}`,
-        contextUpdatedAt: context?.updatedAt.toISOString() ?? null,
-        contextAgeMs: context ? Date.now() - context.updatedAt.getTime() : null,
-        pendingProposals: pending,
-      };
-    };
-    const key = authorization?.match(/^Bearer (naucto_k_[a-f0-9]{64})$/)?.[1];
-    if (!key) {
-      // A project token names exactly one project, so there is nothing to enumerate.
-      const connection = await this.connection(authorization, projectHint);
-      return [await describe(connection.projectId, connection.userId)];
+  async storedContext(connection: { projectId: number }): Promise<AiStoredContext | null> {
+    const saved = await this.newestSave(connection.projectId);
+    if (!saved) return null;
+    let content: Record<string, unknown>;
+    try {
+      content = buildContext(saved.bytes);
+    } catch {
+      throw new ConflictException("This project's saved state cannot be read; open it once in the editor");
     }
-    const found = await this.prisma.aiKey.findUnique({ where: { tokenHash: hash(key) }, include: { grants: { where: { revokedAt: null } } } });
-    if (!found || found.revokedAt || (found.expiresAt && found.expiresAt.getTime() <= Date.now())) throw new UnauthorizedException();
-    // Reachable means reachable: a grant to a project the owner has since lost is not an option.
-    const usable = await this.prisma.aiKeyGrant.findMany({
-      where: { keyId: found.id, revokedAt: null, project: { OR: [{ userId: found.userId, creator: { deletedAt: null } }, { collaborators: { some: { id: found.userId, deletedAt: null } } }] } },
-      select: { projectId: true }
-    });
-    const hinted = projectHint === undefined ? usable : usable.filter((g) => String(g.projectId) === projectHint);
-    if (!hinted.length) throw new UnauthorizedException("This key is not linked to that project");
-    return Promise.all(hinted.map((g) => describe(g.projectId, found.userId)));
+    return { content, hash: hash(JSON.stringify(content)), updatedAt: saved.at, ageMs: Date.now() - saved.at.getTime() };
   }
 
-  async propose(connection: AiConnection, dto: AiProposalDto): Promise<AiProposal> {
+  /** The newest autosave slot with the moment it was written, or null for a project never saved. */
+  private async newestSave(projectId: number): Promise<{ bytes: Buffer; at: Date } | null> {
+    const slots = await this.s3.listObjects({ prefix: `save/${projectId}/` });
+    const newest = slots.filter((o) => o.Key).sort((a, b) => (b.LastModified?.getTime() ?? 0) - (a.LastModified?.getTime() ?? 0))[0];
+    if (!newest?.Key) return null;
+    const { body } = await this.s3.downloadFile({ key: newest.Key });
+    const chunks: Buffer[] = [];
+    for await (const chunk of body as Readable) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string));
+    return { bytes: Buffer.concat(chunks), at: newest.LastModified ?? new Date() };
+  }
+
+  /** Every project this account's key reaches, with what is waiting in each. */
+  async reachableProjects(authorization?: string, projectHint?: string): Promise<AiMcpProjectDto[]> {
+    const token = authorization?.match(/^Bearer (naucto_k_[a-f0-9]{64})$/)?.[1];
+    if (!token) throw new UnauthorizedException();
+    const key = await this.prisma.aiKey.findUnique({ where: { tokenHash: hash(token) } });
+    if (!key || key.revokedAt || (key.expiresAt && key.expiresAt.getTime() <= Date.now())) throw new UnauthorizedException();
+    const hinted = projectHint !== undefined && projectHint !== "";
+    if (hinted && !/^\d{1,10}$/.test(projectHint)) throw new UnauthorizedException("This key does not reach that project");
+    const projects = await this.prisma.project.findMany({
+      where: { ...this.owned(key.userId), ...(hinted ? { id: Number(projectHint) } : {}) },
+      select: { id: true, name: true },
+      orderBy: { id: "asc" }
+    });
+    if (!projects.length) throw new UnauthorizedException(hinted ? "This key does not reach that project" : "This account owns no project");
+    return Promise.all(projects.map(async (project) => {
+      const [slots, pending] = await Promise.all([
+        this.s3.listObjects({ prefix: `save/${project.id}/` }),
+        this.prisma.aiProposal.count({ where: { projectId: project.id, status: "PENDING" } })
+      ]);
+      const at = slots.map((o) => o.LastModified?.getTime() ?? 0).sort((a, b) => b - a)[0];
+      return {
+        projectId: project.id,
+        userId: key.userId,
+        name: project.name,
+        contextUpdatedAt: at ? new Date(at).toISOString() : null,
+        contextAgeMs: at ? Date.now() - at : null,
+        pendingProposals: pending
+      };
+    }));
+  }
+
+  async propose(connection: AiMcpConnection, dto: AiProposalDto): Promise<AiProposal> {
     const stored = await this.storedContext(connection);
-    if (!stored) throw new ConflictException("No editor has shared this project yet");
-    if (stored.context.hash !== dto.snapshotHash) throw new ConflictException("Context changed; read it again");
+    if (!stored) throw new ConflictException("This project has no saved state yet: open it once in the editor");
+    if (stored.hash !== dto.snapshotHash) throw new ConflictException("Context changed; read it again");
     if (Buffer.byteLength(JSON.stringify(dto)) > 1024 * 1024) throw new BadRequestException("Proposal exceeds 1 MiB");
     if (dto.operations.some(op => !OPERATION_KINDS.includes(String(op["kind"]) as typeof OPERATION_KINDS[number]))) throw new BadRequestException("Unsupported operation");
     const pending = await this.prisma.aiProposal.count({ where: { projectId: connection.projectId, status: "PENDING" } });
@@ -277,7 +209,7 @@ export class AiService {
     return this.prisma.aiProposal.create({ data: {
       projectId: connection.projectId, userId: connection.userId, title: dto.title,
       summary: dto.summary, snapshotHash: dto.snapshotHash, contentHash, operations: json(dto.operations),
-      baseContextAgeMs: stored.ageMs
+      baseContextAgeMs: Math.min(stored.ageMs, MAX_AGE_MS)
     } });
   }
 

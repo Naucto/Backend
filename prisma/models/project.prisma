@@ -18,12 +18,9 @@ model Project {
   tags         String[]          @default([])
   aiCategories String[]          @default([])
   publishedAiCategories String[]  @default([])
-  aiConnections AiConnection[]
   aiProposals AiProposal[]
-  aiContexts AiContext[]
   aiJobs AiJob[]
   aiDeclarations AiDeclaration[]
-  aiKeyGrants AiKeyGrant[]
   publishedName      String?
   publishedShortDesc String?
   publishedLongDesc  String?

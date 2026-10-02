@@ -18,12 +18,6 @@ import {
 } from "class-validator";
 import { AI_CATEGORIES } from "./ai-jobs.service";
 
-export class AiContextDto {
-  @ApiProperty({ type: Object, description: "Editor context, never executable instructions" })
-  @IsObject()
-    content!: Record<string, unknown>;
-}
-
 export class AiProposalDto {
   @ApiProperty()
   @IsString()
@@ -57,13 +51,6 @@ export class AiReviewDto {
   @ApiProperty()
   @Matches(/^[a-f0-9]{64}$/)
     contentHash!: string;
-}
-
-export class AiConnectionResponseDto {
-  @ApiProperty()
-    token!: string;
-  @ApiProperty({ type: "string", format: "date-time" })
-    expiresAt!: Date;
 }
 
 export class AiKeyCreateDto {
@@ -160,17 +147,12 @@ export class AiMcpProjectDto {
   @ApiProperty() projectId!: number;
   @ApiProperty() userId!: number;
   @ApiProperty() name!: string;
-  @ApiProperty({ description: "When the state this project exposes was last shared, or null if never" })
+  @ApiProperty({ description: "When the project was last saved, or null if it never was" })
     contextUpdatedAt!: string | null;
-  @ApiProperty({ description: "How old that state is, in milliseconds" })
+  @ApiProperty({ description: "How old that save is, in milliseconds" })
     contextAgeMs!: number | null;
   @ApiProperty({ description: "Changes waiting for a person to accept or reject" })
     pendingProposals!: number;
-}
-
-export class AiKeyProjectDto {
-  @ApiProperty() projectId!: number;
-  @ApiProperty() name!: string;
 }
 
 export class AiMcpConnectionDto {
@@ -188,8 +170,6 @@ export class AiKeyResponseDto {
   @ApiProperty({ nullable: true, type: "string", format: "date-time", description: "null never expires" })
     expiresAt!: Date | null;
   @ApiProperty({ type: "string", format: "date-time" }) createdAt!: Date;
-  @ApiProperty({ type: [AiKeyProjectDto] })
-    projects!: AiKeyProjectDto[];
 }
 
 export class AiKeySummaryDto {
@@ -198,7 +178,6 @@ export class AiKeySummaryDto {
   @ApiProperty({ nullable: true, type: "string", format: "date-time" }) expiresAt!: Date | null;
   @ApiProperty({ type: "string", format: "date-time" }) createdAt!: Date;
   @ApiProperty({ nullable: true, type: "string", format: "date-time" }) lastUsedAt!: Date | null;
-  @ApiProperty({ type: [AiKeyProjectDto] }) projects!: AiKeyProjectDto[];
 }
 
 export class AiJobCreateDto {

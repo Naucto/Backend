@@ -21,12 +21,12 @@ export class AiProposalResponseDto {
 }
 
 export class AiContextResponseDto {
-  @ApiProperty() id!: string;
   @ApiProperty() projectId!: number;
   @ApiProperty() userId!: number;
   @ApiProperty() hash!: string;
-  @ApiProperty({ type: Object }) content!: Prisma.JsonValue;
-  @ApiProperty() updatedAt!: Date;
+  @ApiProperty({ type: Object }) content!: Record<string, unknown>;
+  @ApiProperty({ type: "string", format: "date-time", description: "When the project was last saved" }) updatedAt!: Date;
+  @ApiProperty({ description: "How old that save is, in milliseconds" }) ageMs!: number;
 }
 
 export class AiJobResponseDto {

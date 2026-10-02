@@ -2,8 +2,8 @@ import { timingSafeEqual } from "node:crypto";
 import { BadRequestException, ConflictException, Injectable, NotFoundException, ServiceUnavailableException, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "@ourPrisma/prisma.service";
-import { AiConnection, AiDeclaration, AiJob, Prisma } from "@prisma/client";
-import { AiService } from "./ai.service";
+import { AiDeclaration, AiJob, Prisma } from "@prisma/client";
+import { AiMcpConnection, AiService } from "./ai.service";
 
 export const AI_CATEGORIES = ["CODE", "SPRITES", "MAPS", "MUSIC", "SFX", "MULTIPLAYER"] as const;
 /** Only sprites are generated outside (PixelLab); music and sound are composed with the synth. */
@@ -41,7 +41,7 @@ export class AiJobsService {
     });
   }
 
-  async create(connection: AiConnection, kind: string, request: Record<string, unknown>): Promise<AiJob> {
+  async create(connection: AiMcpConnection, kind: string, request: Record<string, unknown>): Promise<AiJob> {
     if (!JOB_KINDS.includes(kind)) throw new BadRequestException("Unknown generation kind");
     if (Buffer.byteLength(JSON.stringify(request)) > 16384) throw new BadRequestException("Generation request too large");
     await this.expireLost(connection.projectId);
@@ -54,20 +54,20 @@ export class AiJobsService {
     }, { isolationLevel: "Serializable" });
   }
 
-  async get(connection: AiConnection, id: string): Promise<AiJob> {
+  async get(connection: AiMcpConnection, id: string): Promise<AiJob> {
     const job = await this.prisma.aiJob.findFirst({ where: { id, projectId: connection.projectId } });
     if (!job) throw new NotFoundException("Generation job unavailable");
     return job;
   }
 
   /** QUEUED → RUNNING, unless someone cancelled it first. Returns whether to dispatch. */
-  async claim(connection: AiConnection, id: string): Promise<boolean> {
+  async claim(connection: AiMcpConnection, id: string): Promise<boolean> {
     const updated = await this.prisma.aiJob.updateMany({ where: { id, projectId: connection.projectId, state: "QUEUED", cancelRequested: false }, data: { state: "RUNNING" } });
     if (!updated.count) await this.prisma.aiJob.updateMany({ where: { id, projectId: connection.projectId, state: "QUEUED" }, data: { state: "CANCELLED" } });
     return updated.count === 1;
   }
 
-  async complete(connection: AiConnection, id: string, result: unknown, model: string): Promise<AiJob> {
+  async complete(connection: AiMcpConnection, id: string, result: unknown, model: string): Promise<AiJob> {
     if (Buffer.byteLength(JSON.stringify(result)) > MAX_RESULT_BYTES) throw new BadRequestException("Result too large");
     // A late answer to a cancelled job is discarded, never stored.
     await this.prisma.aiJob.updateMany({ where: { id, projectId: connection.projectId, state: "RUNNING", cancelRequested: true }, data: { state: "CANCELLED" } });
@@ -75,7 +75,7 @@ export class AiJobsService {
     return this.get(connection, id);
   }
 
-  async fail(connection: AiConnection, id: string, error: string): Promise<void> {
+  async fail(connection: AiMcpConnection, id: string, error: string): Promise<void> {
     await this.prisma.aiJob.updateMany({
       where: { id, projectId: connection.projectId, state: { in: ["QUEUED", "RUNNING"] } },
       data: { state: "FAILED", error: error.slice(0, 300) }

@@ -1,29 +1,5 @@
-// AI assistance: scoped MCP credentials, shared editor context, reviewable proposals, the
-// proposals, how a proposal is applied, specialist generation jobs and provenance declarations.
-
-model AiConnection {
-  id        String   @id @default(uuid())
-  tokenHash String   @unique
-  projectId Int
-  userId    Int
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  @@index([projectId, userId])
-}
-
-model AiContext {
-  id        String   @id @default(uuid())
-  projectId Int
-  userId    Int
-  hash      String
-  content   Json
-  updatedAt DateTime @updatedAt
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  @@unique([projectId, userId])
-}
+// AI assistance: reviewable proposals staged by the MCP, how a proposal is applied, specialist
+// generation jobs and provenance declarations.
 
 model AiProposal {
   id           String   @id @default(uuid())

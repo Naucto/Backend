@@ -5,12 +5,14 @@ import { ModuleRef } from "@nestjs/core";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import * as Y from "yjs";
 import { S3Service } from "@s3/s3.service";
-import { AiService } from "./ai.service";
+import { AiMcpConnection, AiService } from "./ai.service";
 import { AiApplyService } from "./ai-apply.service";
 import { recordSavedAiProvenance } from "./ai-provenance";
 import { AiJobsService } from "./ai-jobs.service";
 import { ConfigService } from "@nestjs/config";
-import { AiConnection, AiProposal } from "@prisma/client";
+import { AiProposal } from "@prisma/client";
+import { createHash } from "node:crypto";
+import { buildContext } from "./ai-context";
 
 const integration = process.env["AI_INTEGRATION"] === "1" ? describe : describe.skip;
 integration("AI application PostgreSQL integration", () => {
@@ -29,7 +31,7 @@ integration("AI application PostgreSQL integration", () => {
   const currentText = (): string => (document.getMap<Y.Map<Y.Text>>("code.files").get("main")!.get("text")!).toString();
   /** A code proposal against whatever the document holds right now, so tests stand on their own. */
   const stageCode = async (title: string, after: string): Promise<AiProposal> => {
-    const context = await ai.context(projectId, userId, { run: randomUUID() });
+    const context = (await ai.storedContext({ projectId }))!;
     return ai.propose(connection, { title, summary: "x", snapshotHash: context.hash, operations: [{ kind: "code", fileId: "main", before: currentText(), after }] });
   };
   // Every test starts from the real behaviour. Overriding it and leaving the override behind makes
@@ -41,7 +43,7 @@ integration("AI application PostgreSQL integration", () => {
   const document = new Y.Doc();
   let proposalId: string;
   let contentHash: string;
-  let connection: AiConnection;
+  let connection: AiMcpConnection;
   let jobs: AiJobsService;
   const extraUserIds: number[] = [];
   /** Every project this suite made, so it can clean up after itself and nothing else. */
@@ -73,10 +75,16 @@ integration("AI application PostgreSQL integration", () => {
     const file = new Y.Map<unknown>();
     document.getMap("code.files").set("main", file);
     file.set("text", new Y.Text("old"));
-    const { token } = await ai.connect(projectId, userId);
-    connection = await ai.connection(`Bearer ${token}`);
+    // What the MCP reads is built from storage; here storage is the document under test, so a
+    // proposal's `snapshotHash` follows whatever that document holds right now.
+    jest.spyOn(ai, "storedContext").mockImplementation(async () => {
+      const content = buildContext(Y.encodeStateAsUpdate(document));
+      return { content, hash: createHash("sha256").update(JSON.stringify(content)).digest("hex"), updatedAt: new Date(), ageMs: 0 };
+    });
+    const { token } = await ai.createKey(userId, "Suite");
+    connection = await ai.connection(`Bearer ${token}`, String(projectId));
     jobs = new AiJobsService(prisma, ai, new ConfigService({ AI_SERVICE_SECRET: "service-secret", AI_JOBS_PER_PROJECT_HOUR: "2" }));
-    const context = await ai.context(projectId, userId, { code: "old" });
+    const context = (await ai.storedContext({ projectId }))!;
     const proposal = await ai.propose(connection, { title: "test", summary: "change", snapshotHash: context.hash, operations: [{ kind: "code", fileId: "main", before: "old", after: "new" }] });
     proposalId = proposal.id;
     contentHash = proposal.contentHash;
@@ -110,7 +118,7 @@ integration("AI application PostgreSQL integration", () => {
   // Its own proposal: the tests below apply one more than once, and the shared one is spent by
   // whichever test runs first.
   const ownProposal = async (): Promise<{ id: string; contentHash: string }> => {
-    const context = await ai.context(projectId, userId, { code: "old" });
+    const context = (await ai.storedContext({ projectId }))!;
     const made = await ai.propose(connection, {
       title: "twice", summary: "applied more than once",
       snapshotHash: context.hash,
@@ -135,7 +143,7 @@ integration("AI application PostgreSQL integration", () => {
     };
     setFile("alpha", "a1\na2\na3\na4\n");
     setFile("beta", "b1\nb2\nb3\nb4\n");
-    const ctx = await ai.context(projectId, userId, { code: "x" });
+    const ctx = (await ai.storedContext({ projectId }))!;
     const two = await ai.propose(connection, {
       title: "two files", summary: "x", snapshotHash: ctx.hash,
       operations: [
@@ -174,7 +182,7 @@ integration("AI application PostgreSQL integration", () => {
       document.getMap("code.files").set("hunked", file);
       file.set("text", body);
     });
-    const ctx = await ai.context(projectId, userId, { code: source });
+    const ctx = (await ai.storedContext({ projectId }))!;
     const whole = await ai.propose(connection, {
       title: "three edits", summary: "x", snapshotHash: ctx.hash,
       operations: [{ kind: "code", fileId: "hunked", before: source, after: [
@@ -273,7 +281,7 @@ integration("AI application PostgreSQL integration", () => {
     const second = await ai.propose(connection, {
       title: "colleague behind",
       summary: "x",
-      snapshotHash: (await ai.context(projectId, userId, { run: randomUUID() })).hash,
+      snapshotHash: ((await ai.storedContext({ projectId }))!).hash,
       operations: [{ kind: "code", fileId: "main", before: acceptorText.toString(), after: "AI final" }],
     });
     const { update: secondUpdate } = await apply.apply(projectId, userId, second.id, second.contentHash, acceptorState);
@@ -308,7 +316,7 @@ integration("AI application PostgreSQL integration", () => {
 
   it("refuses a change to code that moved underneath, instead of merging over it", async () => {
     save.mockImplementation(async () => undefined);
-    const context = await ai.context(projectId, userId, { run: randomUUID() });
+    const context = (await ai.storedContext({ projectId }))!;
     const proposal = await ai.propose(connection, { title: "stale", summary: "x", snapshotHash: context.hash, operations: [{ kind: "code", fileId: "main", before: "something else entirely", after: "newer" }] });
     // The document has moved on since the proposal was written, so the operation's `before` no
     // longer matches. This is what the old barrier existed to catch, and it is caught here.
@@ -338,7 +346,7 @@ integration("AI application PostgreSQL integration", () => {
     const doc = new Y.Doc();
     doc.getMap("net.permissions").set("gate", { flags: 3 });
     const state = Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64");
-    const context = await ai.context(projectId, userId, { run: randomUUID() });
+    const context = (await ai.storedContext({ projectId }))!;
     const removed = await ai.propose(connection, {
       title: "close a path",
       summary: "x",
@@ -391,39 +399,40 @@ integration("AI application PostgreSQL integration", () => {
     expect((await jobs.list(projectId, userId)).map(job => job.state).sort()).toEqual(["CANCELLED", "CANCELLED"]);
   });
 
-  it("gives a long-lived key exactly the projects it was linked to, and no more", async () => {
+  it("gives a long-lived key every project the account owns, with no linking", async () => {
     const made = await ai.createKey(userId, "Test client");
     expect(made.token).toMatch(/^naucto_k_[a-f0-9]{64}$/);
     expect(made.expiresAt).toBeNull();
     const auth = `Bearer ${made.token}`;
 
-    // Not linked yet: refused, and it says so rather than reaching a project by accident.
-    await expect(ai.connection(auth)).rejects.toThrow("not linked");
+    // With one project there is nothing to choose between, so no header is needed.
+    expect((await ai.connection(auth)).projectId).toBe(projectId);
 
-    await ai.grantKey(userId, made.id, projectId);
-    const resolved = await ai.connection(auth);
+    const resolved = await ai.connection(auth, String(projectId));
     expect(resolved.projectId).toBe(projectId);
     expect(resolved.userId).toBe(userId);
     // Never expiring still answers with a usable date, so nothing downstream has to special-case it.
     expect(resolved.expiresAt.getTime()).toBeGreaterThan(Date.now());
 
-    // A project it was not linked to stays out of reach, even named explicitly.
-    const other = await newProject("Other");
-    await expect(ai.connection(auth, String(other))).rejects.toThrow("not linked");
-
-    // Two linked projects need the header: guessing one would read the wrong game.
-    await ai.grantKey(userId, made.id, other);
+    // A project made after the key was issued is reachable without any step in between.
+    const later = await newProject("Later");
+    expect((await ai.connection(auth, String(later))).projectId).toBe(later);
+    // Now there are two, and guessing one would read the wrong game.
     await expect(ai.connection(auth)).rejects.toThrow("several projects");
-    expect((await ai.connection(auth, String(other))).projectId).toBe(other);
 
-    // Unlinking one project is enough to stop it.
-    await ai.revokeGrant(userId, made.id, other);
-    expect((await ai.connection(auth)).projectId).toBe(projectId);
+    // Somebody else's project stays out of reach, even named explicitly.
+    const stranger = await prisma.user.create({ data: { email: `${randomUUID()}@example.invalid`, username: randomUUID() } });
+    extraUserIds.push(stranger.id);
+    const theirs = await newProject("Theirs", stranger.id);
+    await expect(ai.connection(auth, String(theirs))).rejects.toThrow("does not reach");
+
+    const listed = await ai.reachableProjects(auth);
+    expect(listed.map((entry) => entry.projectId)).toEqual(expect.arrayContaining([projectId, later]));
+    expect(listed.map((entry) => entry.projectId)).not.toContain(theirs);
 
     // Revoking the key kills it everywhere at once.
     await ai.revokeKey(userId, made.id);
-    await expect(ai.connection(auth)).rejects.toThrow();
-    expect(await ai.listKeys(userId)).toHaveLength(0);
+    await expect(ai.connection(auth, String(projectId))).rejects.toThrow();
   });
 
   it("expires a key only when the user asked for a date", async () => {
@@ -440,46 +449,27 @@ integration("AI application PostgreSQL integration", () => {
     extraUserIds.push(stranger.id);
     const theirs = await ai.createKey(stranger.id, "Theirs");
     await expect(ai.revokeKey(userId, theirs.id)).rejects.toThrow("No such key");
-    await expect(ai.grantKey(userId, theirs.id, projectId)).rejects.toThrow("No such key");
   });
 
-  it("refuses a project hint that contradicts the 8-hour token", async () => {
-    const { token } = await ai.connect(projectId, userId);
-    const other = await newProject("Other");
+  it("refuses a malformed project hint", async () => {
+    const { token } = await ai.createKey(userId, "Hints");
     const auth = `Bearer ${token}`;
-    // The token names one project, so a hint naming another is a mistake: answering with the
-    // token's own project is how a client ends up reading the wrong game without being told.
-    await expect(ai.connection(auth, String(other))).rejects.toThrow();
     await expect(ai.connection(auth, "1, 2")).rejects.toThrow();
-    await expect(ai.connection(auth, "01")).rejects.toThrow();
-    expect((await ai.connection(auth)).projectId).toBe(projectId);
+    await expect(ai.connection(auth, "abc")).rejects.toThrow();
     expect((await ai.connection(auth, String(projectId))).projectId).toBe(projectId);
   });
 
-  it("ignores a grant to a project the owner can no longer open", async () => {
-    // The owner is a collaborator on both projects, not the creator, so access can be taken away.
+  it("does not reach a project the account only collaborates on", async () => {
     const owner = await prisma.user.create({ data: { email: `${randomUUID()}@example.invalid`, username: randomUUID() } });
     extraUserIds.push(owner.id);
     const host = await prisma.user.create({ data: { email: `${randomUUID()}@example.invalid`, username: randomUUID() } });
     extraUserIds.push(host.id);
-    const kept = await newProject("Kept", host.id);
-    const theirs = await newProject("Theirs", host.id);
-    for (const id of [kept, theirs])
-      await prisma.project.update({ where: { id }, data: { collaborators: { connect: [{ id: owner.id }] } } });
-
-    const made = await ai.createKey(owner.id, "Shared");
-    await ai.grantKey(owner.id, made.id, kept);
-    await ai.grantKey(owner.id, made.id, theirs);
+    const shared = await newProject("Shared", host.id);
+    await prisma.project.update({ where: { id: shared }, data: { collaborators: { connect: [{ id: owner.id }] } } });
+    const made = await ai.createKey(owner.id, "Collaborator");
     const auth = `Bearer ${made.token}`;
-    await expect(ai.connection(auth)).rejects.toThrow("several projects");
-
-    // Removing the owner from that project leaves the grant behind. It must stop counting: the
-    // key resolves to the one project still open rather than demanding a header forever, and the
-    // access does not return if the owner is added back.
-    await prisma.project.update({ where: { id: theirs }, data: { collaborators: { disconnect: [{ id: owner.id }] } } });
-    expect((await ai.connection(auth)).projectId).toBe(kept);
-    await prisma.project.update({ where: { id: theirs }, data: { collaborators: { connect: [{ id: owner.id }] } } });
-    await expect(ai.connection(auth)).rejects.toThrow("several projects");
+    await expect(ai.connection(auth, String(shared))).rejects.toThrow();
+    await expect(ai.connection(auth)).rejects.toThrow("owns no project");
   });
 
   it("caps how many live keys one account holds", async () => {
@@ -497,7 +487,7 @@ integration("AI application PostgreSQL integration", () => {
     // Applies its own change rather than reading a receipt an earlier test happened to write, and
     // compares before and after rather than an exact list, because the project's provenance is
     // shared by every test in this file.
-    const context = await ai.context(projectId, userId, { run: randomUUID() });
+    const context = (await ai.storedContext({ projectId }))!;
     const state = Buffer.from(Y.encodeStateAsUpdate(document)).toString("base64");
     const current = (document.getMap<Y.Map<Y.Text>>("code.files").get("main")!.get("text")!).toString();
     const applied = await ai.propose(connection, { title: "receipt", summary: "x", snapshotHash: context.hash, operations: [{ kind: "code", fileId: "main", before: current, after: `${current} -- receipted` }] });

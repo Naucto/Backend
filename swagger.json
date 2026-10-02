@@ -1,108 +1,6 @@
 {
   "openapi": "3.0.0",
   "paths": {
-    "/ai/projects/{projectId}/connection": {
-      "post": {
-        "operationId": "AiController_connect",
-        "parameters": [
-          {
-            "name": "projectId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "number"
-            }
-          }
-        ],
-        "responses": {
-          "201": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AiConnectionResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "Create a project-scoped proposal-only AI credential",
-        "tags": [
-          "AI"
-        ]
-      },
-      "delete": {
-        "operationId": "AiController_revoke",
-        "parameters": [
-          {
-            "name": "projectId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "number"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "Revoke this user's AI connection and shared context",
-        "tags": [
-          "AI"
-        ]
-      }
-    },
-    "/ai/projects/{projectId}/context": {
-      "post": {
-        "operationId": "AiController_context",
-        "parameters": [
-          {
-            "name": "projectId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "number"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AiContextDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "Share current editor context with the user's AI connection",
-        "tags": [
-          "AI"
-        ]
-      }
-    },
     "/ai/projects/{projectId}/proposals": {
       "get": {
         "operationId": "AiController_list",
@@ -600,78 +498,6 @@
         ]
       }
     },
-    "/ai/keys/{keyId}/projects/{projectId}": {
-      "post": {
-        "operationId": "AiKeysController_grant",
-        "parameters": [
-          {
-            "name": "keyId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "projectId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "number"
-            }
-          }
-        ],
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "Let a key reach one more project",
-        "tags": [
-          "AI keys"
-        ]
-      },
-      "delete": {
-        "operationId": "AiKeysController_ungrant",
-        "parameters": [
-          {
-            "name": "keyId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "projectId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "number"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "Stop a key reaching a project, keeping the key itself",
-        "tags": [
-          "AI keys"
-        ]
-      }
-    },
     "/ai/mcp/connection": {
       "get": {
         "operationId": "AiMcpController_connection",
@@ -776,7 +602,7 @@
             }
           }
         },
-        "summary": "Read the project's last shared state and how old it is",
+        "summary": "Read the project as last saved, and how old that save is",
         "tags": [
           "AI MCP"
         ]
@@ -5664,34 +5490,6 @@
       }
     },
     "schemas": {
-      "AiConnectionResponseDto": {
-        "type": "object",
-        "properties": {
-          "token": {
-            "type": "string"
-          },
-          "expiresAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "token",
-          "expiresAt"
-        ]
-      },
-      "AiContextDto": {
-        "type": "object",
-        "properties": {
-          "content": {
-            "type": "object",
-            "description": "Editor context, never executable instructions"
-          }
-        },
-        "required": [
-          "content"
-        ]
-      },
       "AiProposalResponseDto": {
         "type": "object",
         "properties": {
@@ -6087,21 +5885,6 @@
           "name"
         ]
       },
-      "AiKeyProjectDto": {
-        "type": "object",
-        "properties": {
-          "projectId": {
-            "type": "number"
-          },
-          "name": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "projectId",
-          "name"
-        ]
-      },
       "AiKeyResponseDto": {
         "type": "object",
         "properties": {
@@ -6124,12 +5907,6 @@
           "createdAt": {
             "type": "string",
             "format": "date-time"
-          },
-          "projects": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AiKeyProjectDto"
-            }
           }
         },
         "required": [
@@ -6137,8 +5914,7 @@
           "name",
           "token",
           "expiresAt",
-          "createdAt",
-          "projects"
+          "createdAt"
         ]
       },
       "AiKeySummaryDto": {
@@ -6163,12 +5939,6 @@
             "type": "string",
             "nullable": true,
             "format": "date-time"
-          },
-          "projects": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AiKeyProjectDto"
-            }
           }
         },
         "required": [
@@ -6176,8 +5946,7 @@
           "name",
           "expiresAt",
           "createdAt",
-          "lastUsedAt",
-          "projects"
+          "lastUsedAt"
         ]
       },
       "AiMcpConnectionDto": {
@@ -6205,9 +5974,6 @@
       "AiContextResponseDto": {
         "type": "object",
         "properties": {
-          "id": {
-            "type": "string"
-          },
           "projectId": {
             "type": "number"
           },
@@ -6221,17 +5987,22 @@
             "type": "object"
           },
           "updatedAt": {
+            "type": "string",
             "format": "date-time",
-            "type": "string"
+            "description": "When the project was last saved"
+          },
+          "ageMs": {
+            "type": "number",
+            "description": "How old that save is, in milliseconds"
           }
         },
         "required": [
-          "id",
           "projectId",
           "userId",
           "hash",
           "content",
-          "updatedAt"
+          "updatedAt",
+          "ageMs"
         ]
       },
       "AiProposalDto": {
