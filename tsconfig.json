@@ -29,21 +29,6 @@
     "module": "commonjs",                                /* Specify what module code is generated. */
     // "rootDir": "./",                                  /* Specify the root folder within your source files. */
     // "moduleResolution": "node10",                     /* Specify how TypeScript looks up a file from a given module specifier. */
-    "baseUrl": "./src",                                  /* Specify the base directory to resolve non-relative module names. */
-    "paths": {
-        "src/*": ["./*"],
-        "@util/*": ["util/*"],
-        "@ourPrisma/*": ["prisma/*"],
-        "@auth/*": ["auth/*"],
-        "@project/*": ["routes/project/*"],
-        "@multiplayer/*": ["routes/multiplayer/*"],
-        "@project-comment/*": ["routes/project-comment/*"],
-        "@user/*": ["routes/user/*"],
-        "@work-session/*": ["routes/work-session/*"],
-        "@s3/*": ["routes/s3/*"],
-        "@common/*": ["common/*"],
-        "@webrtc/*": ["webrtc/*"]
-    },                                                   /* Specify a set of entries that re-map imports to additional lookup locations. */
     // "rootDirs": [],                                   /* Allow multiple folders to be treated as one when resolving modules. */
     // "typeRoots": [],                                  /* Specify multiple folders that act like './node_modules/@types'. */
     // "types": [],                                      /* Specify type package names to be included without being referenced in a source file. */

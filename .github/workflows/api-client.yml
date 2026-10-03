@@ -1,0 +1,56 @@
+name: API client
+on:
+  push:
+    branches: [main]
+    tags: ['api-client/v*']
+  pull_request:
+permissions:
+  contents: read
+  packages: write
+concurrency: { group: 'api-client-${{ github.ref }}', cancel-in-progress: true }
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          registry-url: https://npm.pkg.github.com
+          scope: '@naucto'
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Generate swagger.json, then generate and build @naucto/api-client from it
+        run: npm run client:build
+      - name: Resolve version and dist-tag
+        id: meta
+        shell: bash
+        run: |
+          base=$(node -p "require('./client/package.json').version")
+          if [[ "$GITHUB_REF" == refs/tags/api-client/v* ]]; then
+            tagged="${GITHUB_REF#refs/tags/api-client/v}"
+            if [[ "$tagged" != "$base" ]]; then
+              echo "Tag version $tagged does not match client/package.json version $base" >&2
+              exit 1
+            fi
+            echo "version=$base" >> "$GITHUB_OUTPUT"
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            pr="${{ github.event.pull_request.number }}"
+            echo "version=$base-pr.$pr.$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+            echo "tag=pr-$pr" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$base-main.$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+            echo "tag=next" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish
+        if: github.event.pull_request.head.repo.fork != true
+        working-directory: client
+        run: |
+          # A tagged release asks for the version package.json already holds, which `npm version`
+          # rejects without --allow-same-version.
+          npm version "${{ steps.meta.outputs.version }}" --no-git-tag-version --allow-same-version
+          npm publish --tag "${{ steps.meta.outputs.tag }}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

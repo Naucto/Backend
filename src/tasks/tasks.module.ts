@@ -1,7 +1,10 @@
-import { Module } from "@nestjs/common";
-import { TasksService } from "src/tasks/tasks/tasks.service";
+import { Module } from '@nestjs/common';
+
+import { ProjectModule } from '../routes/project/project.module';
+import { TasksService } from './tasks/tasks.service';
 
 @Module({
-  providers: [TasksService]
+  imports: [ProjectModule],
+  providers: [TasksService],
 })
 export class TasksModule {}

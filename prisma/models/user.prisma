@@ -1,19 +1,46 @@
+// A fixed palette rather than a free colour: each accent has to read against both themes and stay
+// distinct from the accents that mean "act" and "danger".
+enum PersonalColour {
+  SKY
+  BLUSH
+  JADE
+  GOLD
+  ORANGE
+  HOT
+}
+
+enum SessionJoinPolicy {
+  ANYONE
+  FRIENDS
+  CODE_ONLY
+}
+
 model User {
   id        Int      @id @default(autoincrement())
   email     String   @unique
   username  String   @unique
   nickname  String?
   description String?
+  // Null until picked: a colour is then derived from the id, so everyone has one from day one.
+  colour    PersonalColour?
   password  String?
   createdAt DateTime @default(now())
 
-  roles Role[] @relation("UserRoles")
+  // Crockford base32 code a person shares to be added as a friend; null until first read, which
+  // generates it.
+  friendCode        String?           @unique
+  sessionJoinPolicy SessionJoinPolicy @default(ANYONE)
+  // Soft-delete marker: set by account deletion, rejected by the JWT strategy.
+  deletedAt         DateTime?
+
+  // One of the role constants in src/auth/access/roles.ts; text rather than an enum so a role can be
+  // added without a type migration.
+  role String @default("User")
 
   friendsInitiated Friendship[]    @relation("UserAFriends")
   friendsReceived  Friendship[]    @relation("UserBFriends")
   sentRequests     FriendRequest[] @relation("SentFriendRequests")
   receivedRequests FriendRequest[] @relation("ReceivedFriendRequests")
-  subscriptions    Subscription[]
   comments         Comment[]
   likes            Like[]
   creator          Project[]       @relation("ProjectCreator")
@@ -28,13 +55,7 @@ model User {
 
   refreshTokens RefreshToken[]
   notifications Notification[]
-}
-
-model Role {
-  id   Int    @id @default(autoincrement())
-  name String @unique
-
-  users User[] @relation("UserRoles")
+  featuredReleases FeaturedRelease[] @relation("FeaturedReleaseCurator")
 }
 
 model RefreshToken {
@@ -50,31 +71,26 @@ model RefreshToken {
 
 model FriendRequest {
   id        Int      @id @default(autoincrement())
-  from      User     @relation("SentFriendRequests", fields: [fromId], references: [id])
+  from      User     @relation("SentFriendRequests", fields: [fromId], references: [id], onDelete: Cascade)
   fromId    Int
-  to        User     @relation("ReceivedFriendRequests", fields: [toId], references: [id])
+  to        User     @relation("ReceivedFriendRequests", fields: [toId], references: [id], onDelete: Cascade)
   toId      Int
   createdAt DateTime @default(now())
 
   @@unique([fromId, toId])
+  @@index([toId])
 }
 
+// Canonical pair order: userAId < userBId (enforced by FriendsService), so a
+// friendship is stored exactly once and looked up without an OR.
 model Friendship {
   id        Int      @id @default(autoincrement())
-  userA     User     @relation("UserAFriends", fields: [userAId], references: [id])
+  userA     User     @relation("UserAFriends", fields: [userAId], references: [id], onDelete: Cascade)
   userAId   Int
-  userB     User     @relation("UserBFriends", fields: [userBId], references: [id])
+  userB     User     @relation("UserBFriends", fields: [userBId], references: [id], onDelete: Cascade)
   userBId   Int
   createdAt DateTime @default(now())
 
   @@unique([userAId, userBId])
-}
-
-model Subscription {
-  id        Int       @id @default(autoincrement())
-  user      User      @relation(fields: [userId], references: [id])
-  userId    Int
-  price     Int
-  startDate DateTime
-  endDate   DateTime?
+  @@index([userBId])
 }

@@ -22,7 +22,7 @@ no separately maintained release branches.
 - **No secrets in the repo.** All configuration comes from environment variables (`.env`,
   gitignored) read through `ConfigService`. Credentials, tokens, and keys — including `.env`
   files and CloudFront `*.pem` keys — must never be committed. `.env.example` documents the
-  variable **names** only.
+  variable names; the only values it carries are the local MinIO defaults.
 - **Input is validated at the edge.** Every endpoint takes a `class-validator` DTO and the global
   `ValidationPipe` (`whitelist` + `forbidNonWhitelisted` + `transform`) strips/rejects unknown
   fields. Don't bypass it.
@@ -33,8 +33,3 @@ no separately maintained release branches.
   avoided. **CORS** is restricted to `FRONTEND_URL` with credentials.
 - Run `npm audit` before adding or bumping a dependency; prefer well-maintained, patched
   versions. See the Security section of [`AGENTS.md`](./AGENTS.md) for contributor guidance.
-
-## Known issues being addressed
-
-- CI runs the build and test suite on every PR to `main` but does not yet run lint/`typecheck`,
-  and there is no pre-commit hook — see the tooling backlog in [`AGENTS.md`](./AGENTS.md).
