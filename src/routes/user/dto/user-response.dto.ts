@@ -1,60 +1,34 @@
-import { ApiProperty } from "@nestjs/swagger";
-import { Expose, Type } from "class-transformer";
+import { ApiProperty } from '@nestjs/swagger';
 
-export class UserRoleDto {
-  @ApiProperty({ description: "Role ID", example: 1 })
-  @Expose()
-  id!: number;
-
-  @ApiProperty({ description: "Role name", example: "Admin" })
-  @Expose()
-  name!: string;
-}
+import { ROLE_NAMES, USER } from '../../../auth/access/roles';
 
 export class UserResponseDto {
-  @ApiProperty({ description: "User ID", example: 1 })
-  @Expose()
+  @ApiProperty({ description: 'User ID', example: 1 })
   id!: number;
 
   @ApiProperty({
-    description: "User email address",
-    example: "user@example.com"
+    description: 'User email address',
+    example: 'user@example.com',
   })
-  @Expose()
   email!: string;
 
-  @ApiProperty({ description: "Username", example: "xX_DarkGamer_Xx" })
-  @Expose()
+  @ApiProperty({ description: 'Username', example: 'xX_DarkGamer_Xx' })
   username!: string;
 
   @ApiProperty({
-    description: "User nickname",
-    example: "JohnDoe",
-    nullable: true
+    description: 'User nickname',
+    example: 'JohnDoe',
+    type: String,
+    nullable: true,
   })
-  @Expose()
-  nickname?: string;
+  nickname!: string | null;
+
+  @ApiProperty({ description: 'Role the user holds', enum: ROLE_NAMES, example: USER })
+  role!: string;
 
   @ApiProperty({
-    description: "User roles",
-    type: [UserRoleDto],
-    required: false
+    description: 'User creation date',
+    example: '2023-01-01T00:00:00.000Z',
   })
-  @Expose()
-  @Type(() => UserRoleDto)
-  roles?: UserRoleDto[];
-
-  @ApiProperty({
-    description: "User creation date",
-    example: "2023-01-01T00:00:00.000Z"
-  })
-  @Expose()
   createdAt!: Date;
-
-  @ApiProperty({
-    description: "User last update date",
-    example: "2023-01-01T00:00:00.000Z"
-  })
-  @Expose()
-  updatedAt!: Date;
 }
