@@ -9,10 +9,6 @@ ARG POSTGRES_DB
 
 WORKDIR /app
 
-# If we need some dependencies that require native compilation (unlikely),
-# decomment this out:
-# RUN apk add --no-cache python3 make g++
-
 ENV DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}"
 
 COPY package.json package-lock.json ./
@@ -38,23 +34,17 @@ RUN npm run build
 FROM build AS migrate
 CMD ["npx", "prisma", "migrate", "deploy"]
 
-# Slim production runtime: production dependencies only (no Prisma CLI, no dev
-# tooling), the generated Prisma client copied from the build stage, and the
-# compiled output -- no source or test assets. Migrations run via the `migrate`
-# stage above, not here.
+# Production runtime: production dependencies, the generated Prisma client and the compiled output.
 FROM base AS prod
 ENV PORT=${BACKEND_PORT}
 # Swagger UI is not served in production, so drop its bundled static assets.
 ENV ENABLE_SWAGGER=false
-# Keep optional peer deps so the Prisma CLI (an optional peer of @prisma/client)
-# stays in the image: the prod deploy self-runs `prisma migrate deploy` in this
-# container at startup, so it needs the CLI. --omit=dev still drops the dev toolchain.
-# TODO(NCTO-XXX): move migrations to the dedicated `migrate` stage so prod can
-# re-add --omit=optional and slim back down (see migrate stage + docker-compose).
+# No --omit=optional: the deployment runs `prisma migrate deploy` in this container at startup,
+# and the Prisma CLI is an optional peer of @prisma/client.
 RUN npm ci --omit=dev \
     && rm -rf node_modules/swagger-ui-dist \
     && npm cache clean --force
 COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=build /app/dist ./dist
-COPY package.json config* ./config/
+COPY config ./config
 CMD ["npm", "run", "start:prod"]
