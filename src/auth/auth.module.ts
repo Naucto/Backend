@@ -1,54 +1,38 @@
-import { PassportModule } from "@nestjs/passport";
-import { JwtModule } from "@nestjs/jwt";
-import { ConfigModule, ConfigService } from "@nestjs/config";
-import { JwtStrategy } from "./strategies/jwt.strategy";
-import { UserModule } from "@user/user.module";
-import { JwtAuthGuard } from "./guards/jwt-auth.guard";
-import { RolesGuard } from "./guards/roles.guard";
-import { AuthController } from "./auth.controller";
-import { AuthService } from "./auth.service";
-import { MissingEnvVarError, BadEnvVarError } from "./auth.error";
-import { GoogleAuthService } from "./providers/google-auth.service";
-import { GithubAuthService } from "./providers/github-auth.service";
-import { MicrosoftAuthService } from "./providers/microsoft-auth.service";
-import { Module, Logger } from "@nestjs/common";
+import { Logger, Module } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
+import { PassportModule } from '@nestjs/passport';
 
-type DurationString = `${number}${"s" | "m" | "h" | "d"}`;
-
-function parseExpiresIn(v?: string): number | DurationString {
-  if (!v) return "1h";
-  if (/^\d+$/.test(v)) return Number(v);
-  if (/^\d+[smhd]$/.test(v)) return v as DurationString;
-  throw new BadEnvVarError(`Invalid JWT_EXPIRES_IN: ${v}`);
-}
+import { getEnv, getOptionalEnv } from '../config/env';
+import { UserModule } from '../routes/user/user.module';
+import { AuthController } from './auth.controller';
+import { AuthService } from './auth.service';
+import { authLifetimes } from './auth.utils';
+import { GithubAuthService } from './providers/github-auth.service';
+import { GoogleAuthService } from './providers/google-auth.service';
+import { MicrosoftAuthService } from './providers/microsoft-auth.service';
+import { JwtStrategy } from './strategies/jwt.strategy';
 
 @Module({
   imports: [
-    ConfigModule,
     UserModule,
     PassportModule.register({}),
     JwtModule.registerAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (cs: ConfigService) => {
-        const logger = new Logger("AuthModule");
-        const env = cs.get<string>("NODE_ENV") ?? "development";
-        const secret = cs.get<string>("JWT_SECRET");
-        const expiresInRaw = cs.get<string>("JWT_EXPIRES_IN");
+      useFactory: () => {
+        const logger = new Logger('AuthModule');
+        const env = getOptionalEnv('NODE_ENV') ?? 'development';
+        const secret = getEnv('JWT_SECRET');
 
-        if (!secret) {
-          throw new MissingEnvVarError("JWT_SECRET");
-        }
-        if (env === "development" && secret.length < 16) {
+        if (env === 'development' && secret.length < 16) {
           logger.warn(
-            `JWT_SECRET is quite short (${secret.length} chars). Consider using a longer, more secure secret.`
+            `JWT_SECRET is quite short (${secret.length} chars). Consider using a longer, more secure secret.`,
           );
         }
 
-        const expiresIn = parseExpiresIn(expiresInRaw);
+        // Read here so an unreadable lifetime stops the boot rather than a sign-in.
+        const { accessToken: expiresIn } = authLifetimes();
 
-        if (env === "development") {
-          logger.log("JWT config loaded successfully");
+        if (env === 'development') {
+          logger.log('JWT config loaded successfully');
           logger.log(`→ JWT_SECRET length: ${secret.length}`);
           logger.log(`→ JWT_EXPIRES_IN: ${expiresIn}`);
         }
@@ -56,22 +40,14 @@ function parseExpiresIn(v?: string): number | DurationString {
         return {
           secret,
           signOptions: {
-            expiresIn: expiresIn
-          }
+            expiresIn: expiresIn,
+          },
         };
-      }
-    })
+      },
+    }),
   ],
-  providers: [
-    JwtAuthGuard,
-    RolesGuard,
-    AuthService,
-    GoogleAuthService,
-    GithubAuthService,
-    MicrosoftAuthService,
-    JwtStrategy
-  ],
-  exports: [JwtAuthGuard, RolesGuard, JwtModule],
-  controllers: [AuthController]
+  providers: [AuthService, GoogleAuthService, GithubAuthService, MicrosoftAuthService, JwtStrategy],
+  exports: [JwtModule],
+  controllers: [AuthController],
 })
 export class AuthModule {}
