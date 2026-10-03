@@ -9,8 +9,9 @@ services:
       - naucto-dev
 
   # S3-compatible object storage the browser can reach, so a published release plays on localhost.
+  # MinIO no longer publishes images; pgsty/* rebuilds the upstream releases unchanged.
   minio:
-    image: minio/minio
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
     command: server /data --console-address ":9001"
     restart: unless-stopped
     environment:
@@ -33,7 +34,7 @@ services:
   # Creates the bucket and makes it anonymously readable, because EDGE_ENDPOINT hands the browser
   # an unsigned URL. Runs once and exits.
   minio-init:
-    image: minio/mc
+    image: pgsty/mc:RELEASE.2026-09-16T00-00-00Z
     depends_on:
       minio:
         condition: service_healthy
@@ -71,11 +72,16 @@ services:
           path: ./src
           target: /app/src
 
+        # Ahead of the plain sync below, so an edit here rebuilds (re-running `prisma generate`)
+        # instead of syncing a client-less change into the container.
+        - action: rebuild
+          path: prisma/models
+
         - action: sync
           path: ./prisma
           target: /app/prisma
           ignore:
-            - prisma/migrations
+            - migrations
 
         - action: rebuild
           path: package.json
