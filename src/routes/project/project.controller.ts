@@ -4,133 +4,69 @@ import {
   Delete,
   Get,
   HttpCode,
+  HttpException,
   HttpStatus,
-  Logger,
-  Param,
-  ParseIntPipe,
   ParseFilePipeBuilder,
   Patch,
   Post,
-  Query,
   Put,
-  Res,
+  Query,
   Req,
   UploadedFile,
   UseGuards,
   UseInterceptors,
-  HttpException
-} from "@nestjs/common";
-import { FileInterceptor } from "@nestjs/platform-express";
-import { Response } from "express";
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
-  ProjectService,
-  RELEASE_WINDOWS,
-  USER_PROJECT_STATUSES
-} from "@project/project.service";
-import type {
-  ProjectSave,
-  PublishedProjectFilters,
-  ReleaseWindow,
-  UserProjectStatus,
-  UserProjectFilters
-} from "@project/project.service";
-import { CreateProjectDto } from "@project/dto/create-project.dto";
-import { UpdateProjectDto } from "@project/dto/update-project.dto";
-import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
-import {
-  ProjectCollaboratorGuard,
-  ProjectCreatorGuard
-} from "@auth/guards/project.guard";
-import {
-  ApiBearerAuth,
   ApiBody,
   ApiConsumes,
   ApiOperation,
   ApiParam,
   ApiQuery,
   ApiResponse,
-  ApiTags
-} from "@nestjs/swagger";
+  ApiTags,
+} from '@nestjs/swagger';
+import { Request } from 'express';
+
+import { RequiresAuth } from '../../auth/access/access.decorators';
+import { UserDto } from '../../auth/dto/user.dto';
+import { ProjectCollaboratorGuard, ProjectCreatorGuard } from '../../auth/guards/project.guard';
+import { AddCollaboratorDto, RemoveCollaboratorDto } from './dto/collaborator-project.dto';
+import { CreateProjectDto } from './dto/create-project.dto';
+import { ImageUrlResponseDto } from './dto/image-url-response.dto';
+import { ProjectActionResponseDto } from './dto/project-action-response.dto';
 import {
-  AddCollaboratorDto,
-  RemoveCollaboratorDto
-} from "@project/dto/collaborator-project.dto";
-import { Request } from "express";
-import { UserDto } from "@auth/dto/user.dto";
-import type { Project } from "@prisma/client";
-import {
-  ProjectResponseDto,
-  ProjectExResponseDto,
-  ForkProjectResponseDto,
   PaginatedProjectsResponseDto,
+  ProjectExResponseDto,
+  ProjectResponseDto,
   ProjectsCountResponseDto,
-  SignedUrlResponseDto
-} from "./dto/project-response.dto";
-import { S3DownloadException } from "@s3/s3.error";
-import { S3Service } from "@s3/s3.service";
-import { CloudfrontService } from "src/routes/s3/edge.service";
-import { PrismaService } from "@ourPrisma/prisma.service";
-import { Public } from "@auth/decorators/public.decorator";
-import { ImageUrlResponseDto } from "src/routes/common/dto/image-url-response.dto";
-import { LikeResponseDto } from "./dto/like-response.dto";
-import { ViewResponseDto } from "./dto/view-response.dto";
+} from './dto/project-response.dto';
+import { UpdateProjectDto } from './dto/update-project.dto';
+import type { UserProjectFilters, UserProjectStatus } from './project.service';
+import { ProjectService, USER_PROJECT_STATUSES } from './project.service';
+import { ProjectId } from './project-id.decorator';
+import { parseOptionalInt, parseTags } from './project-query';
 
 interface RequestWithUser extends Request {
   user: UserDto;
 }
 
-@ApiTags("projects")
-@Controller("projects")
-@UseGuards(JwtAuthGuard)
-@ApiBearerAuth("JWT-auth")
+/** Multer stops reading past it and answers 413 itself, before the route's pipe runs. */
+const PROJECT_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+
+@ApiTags('projects')
+@Controller('projects')
+@RequiresAuth()
 export class ProjectController {
-  constructor(
-    private readonly projectService: ProjectService,
-    private readonly s3Service: S3Service,
-    private readonly cloudfrontService: CloudfrontService,
-    private readonly prismaService: PrismaService
-  ) {}
-
-  private readonly logger = new Logger(ProjectController.name);
-
-  private parseOptionalInt(value?: string): number | undefined {
-    return value ? parseInt(value, 10) : undefined;
-  }
-
-  private parseTags(tags?: string): string[] | undefined {
-    return tags ? tags.split(",") : undefined;
-  }
-
-  private buildPublishedProjectFilters(
-    search?: string,
-    tags?: string,
-    releaseWindow?: ReleaseWindow
-  ): PublishedProjectFilters {
-    const filters: PublishedProjectFilters = {};
-    const parsedTags = this.parseTags(tags);
-
-    if (search) {
-      filters.search = search;
-    }
-
-    if (parsedTags) {
-      filters.tags = parsedTags;
-    }
-
-    if (releaseWindow) {
-      filters.releaseWindow = releaseWindow;
-    }
-
-    return filters;
-  }
+  constructor(private readonly projectService: ProjectService) {}
 
   private buildUserProjectFilters(
     search?: string,
     tags?: string,
-    status?: UserProjectStatus
+    status?: UserProjectStatus,
   ): UserProjectFilters {
     const filters: UserProjectFilters = {};
-    const parsedTags = this.parseTags(tags);
+    const parsedTags = parseTags(tags);
 
     if (search) {
       filters.search = search;
@@ -147,949 +83,316 @@ export class ProjectController {
     return filters;
   }
 
-  @Public()
-  @Get("releases")
-  @ApiOperation({ summary: "Get all released projects" })
-  @ApiResponse({
-    status: 200,
-    description:
-      "A JSON array of projects with collaborators and creator information",
-    type: [ProjectExResponseDto]
-  })
-  async getAllReleases(): Promise<ProjectExResponseDto[]> {
-    return this.projectService.fetchPublishedGames();
-  }
-
-  @Public()
-  @Get("releases/paginated")
-  @ApiOperation({ summary: "Get released projects with pagination" })
-  @ApiQuery({ name: "page", type: "number", required: false })
-  @ApiQuery({ name: "limit", type: "number", required: false })
-  @ApiResponse({
-    status: 200,
-    description: "A paginated list of released projects",
-    type: PaginatedProjectsResponseDto
-  })
-  async getPaginatedReleases(
-    @Query("page") page?: string,
-    @Query("limit") limit?: string
-  ): Promise<PaginatedProjectsResponseDto> {
-    return this.projectService.fetchPublishedGamesPaginated(
-      this.parseOptionalInt(page),
-      this.parseOptionalInt(limit)
-    );
-  }
-
-  @Public()
-  @Get("releases/count")
-  @ApiOperation({ summary: "Count released projects with filters" })
-  @ApiQuery({ name: "search", type: "string", required: false })
-  @ApiQuery({
-    name: "tags",
-    type: "string",
-    required: false,
-    description: "Comma-separated tag list"
-  })
-  @ApiQuery({
-    name: "releaseWindow",
-    enum: RELEASE_WINDOWS,
-    required: false
-  })
-  @ApiResponse({
-    status: 200,
-    description: "The total number of released projects matching the request",
-    type: ProjectsCountResponseDto
-  })
-  async countReleasedProjects(
-    @Query("search") search?: string,
-    @Query("tags") tags?: string,
-    @Query("releaseWindow")
-      releaseWindow?: ReleaseWindow
-  ): Promise<ProjectsCountResponseDto> {
-    const total = await this.projectService.countPublishedGames(
-      this.buildPublishedProjectFilters(search, tags, releaseWindow)
-    );
-
-    return { total };
-  }
-
-  @Public()
-  @Get("releases/:id")
-  @ApiOperation({ summary: "Get project release version" })
-  @ApiParam({ name: "id", type: "string" })
-  @ApiResponse({
-    status: 200,
-    description: "Project release metadata",
-    type: ProjectExResponseDto
-  })
-  async getRelease(@Param("id") id: string): Promise<ProjectExResponseDto> {
-    const projectRelease = await this.projectService.fetchRelease(Number(id));
-
-    return projectRelease;
-  }
-
-  @Public()
-  @Get("releases/:id/content")
-  @ApiOperation({ summary: "Get project release version" })
-  @ApiParam({ name: "id", type: "string" })
-  @ApiResponse({
-    status: 200,
-    description: "Project release file",
-    content: {
-      "application/octet-stream": {
-        schema: { type: "string", format: "binary" }
-      }
-    }
-  })
-  async getReleaseContent(
-    @Param("id") id: string,
-    @Res() res: Response
-  ): Promise<void> {
-    try {
-      const file = await this.projectService.fetchReleaseContent(Number(id));
-      res.set({
-        "Content-Type": file.contentType,
-        "Content-Length": file.contentLength
-      });
-
-      file.body.pipe(res);
-    } catch (error) {
-      if (error instanceof Error) {
-        this.logger.error(
-          `Failed to fetch content for project ${id}: ${error.message}`,
-          error.stack
-        );
-      } else {
-        this.logger.error(
-          `Failed to fetch content for project ${id}: ${JSON.stringify(error)}`
-        );
-      }
-
-      if (error instanceof S3DownloadException) {
-        res.status(404).json({ message: "File not found" });
-        return;
-      }
-      res.status(500).json({ message: "Internal server error" });
-      return;
-    }
-  }
-
-  @Public()
-  @Get("releases/:id/content-url")
-  @ApiOperation({ summary: "Get signed CDN URL for a release" })
-  @ApiParam({ name: "id", type: "string" })
-  @ApiResponse({
-    status: 200,
-    description: "Signed Edge URL for the release",
-    type: SignedUrlResponseDto
-  })
-  async getReleaseContentUrl(
-    @Param("id") id: string
-  ): Promise<SignedUrlResponseDto> {
-    const key = `release/${id}`;
-    const exists = await this.s3Service.fileExists(key);
-    if (!exists) {
-      throw new HttpException("Release not found", HttpStatus.NOT_FOUND);
-    }
-
-    const signedUrl = this.cloudfrontService.generateSignedUrl(key);
-    return { signedUrl };
-  }
-
   @Get()
-  @ApiOperation({ summary: "Retrieve the paginated list of projects" })
-  @ApiQuery({ name: "page", type: "number", required: false })
-  @ApiQuery({ name: "limit", type: "number", required: false })
+  @ApiOperation({ summary: 'Retrieve the paginated list of projects' })
+  @ApiQuery({ name: 'page', type: 'number', required: false })
+  @ApiQuery({ name: 'limit', type: 'number', required: false })
   @ApiResponse({
     status: 200,
-    description:
-      "A paginated list of projects with collaborators and creator information",
-    type: PaginatedProjectsResponseDto
+    description: 'A paginated list of projects with collaborators and creator information',
+    type: PaginatedProjectsResponseDto,
   })
-  @ApiResponse({ status: 500, description: "Internal server error" })
+  @ApiResponse({ status: 500, description: 'Internal server error' })
   async findAll(
     @Req() request: RequestWithUser,
-    @Query("page") page?: string,
-    @Query("limit") limit?: string
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ): Promise<PaginatedProjectsResponseDto> {
     const user = request.user;
-    return this.projectService.findAll(
-      user.id,
-      this.parseOptionalInt(page),
-      this.parseOptionalInt(limit)
-    );
+    return this.projectService.findAll(user.id, parseOptionalInt(page), parseOptionalInt(limit));
   }
 
-  @Get("count")
+  @Get('count')
   @ApiOperation({ summary: "Count the user's projects with filters" })
-  @ApiQuery({ name: "search", type: "string", required: false })
+  @ApiQuery({ name: 'search', type: 'string', required: false })
   @ApiQuery({
-    name: "tags",
-    type: "string",
+    name: 'tags',
+    type: 'string',
     required: false,
-    description: "Comma-separated tag list"
+    description: 'Comma-separated tag list',
   })
   @ApiQuery({
-    name: "status",
+    name: 'status',
     enum: USER_PROJECT_STATUSES,
-    required: false
+    required: false,
   })
   @ApiResponse({
     status: 200,
-    description: "The total number of user projects matching the request",
-    type: ProjectsCountResponseDto
+    description: 'The total number of user projects matching the request',
+    type: ProjectsCountResponseDto,
   })
   async countProjects(
     @Req() request: RequestWithUser,
-    @Query("search") search?: string,
-    @Query("tags") tags?: string,
-    @Query("status") status?: UserProjectStatus
+    @Query('search') search?: string,
+    @Query('tags') tags?: string,
+    @Query('status') status?: UserProjectStatus,
   ): Promise<ProjectsCountResponseDto> {
     const total = await this.projectService.countUserProjects(
       request.user.id,
-      this.buildUserProjectFilters(search, tags, status)
+      this.buildUserProjectFilters(search, tags, status),
     );
 
     return { total };
   }
 
-  @Get(":id")
-  @UseGuards(ProjectCollaboratorGuard)
-  @ApiOperation({ summary: "Retrieve a single project" })
-  @ApiParam({
-    name: "id",
-    type: "number",
-    description: "Numeric ID of the project to retrieve"
-  })
-  @ApiResponse({
-    status: 200,
-    description: "Project object",
-    type: ProjectResponseDto
-  })
-  @ApiResponse({ status: 404, description: "Project not found" })
-  @ApiResponse({ status: 500, description: "Internal server error" })
-  @ApiResponse({ status: 403, description: "Invalid user or project ID" })
-  async findOne(
-    @Param("id", ParseIntPipe) id: number
-  ): Promise<ProjectResponseDto> {
-    return this.projectService.findOne(id);
-  }
-
   @Post()
-  @ApiOperation({ summary: "Create a new project" })
+  @ApiOperation({ summary: 'Create a new project' })
   @ApiBody({ type: CreateProjectDto })
   @ApiResponse({
     status: 201,
-    description: "Project created successfully",
-    type: ProjectResponseDto
+    description: 'Project created successfully',
+    type: ProjectResponseDto,
   })
-  @ApiResponse({ status: 400, description: "Bad request – invalid input" })
+  @ApiResponse({ status: 400, description: 'Bad request – invalid input' })
   @HttpCode(HttpStatus.CREATED)
   async create(
     @Body() createProjectDto: CreateProjectDto,
-    @Req() req: RequestWithUser
+    @Req() req: RequestWithUser,
   ): Promise<ProjectResponseDto> {
     const userId = req.user.id;
     return await this.projectService.create(createProjectDto, userId);
   }
 
-  @Post(":id/fork")
-  @ApiOperation({ summary: "Fork a published project" })
+  @Get(':id')
+  @UseGuards(ProjectCollaboratorGuard)
+  @ApiOperation({ summary: 'Retrieve a single project' })
   @ApiParam({
-    name: "id",
-    type: "number",
-    description: "Numeric ID of the published project to fork"
+    name: 'id',
+    type: 'number',
+    description: 'Numeric ID of the project to retrieve',
   })
   @ApiResponse({
-    status: 201,
-    description: "Forked project created successfully",
-    type: ForkProjectResponseDto
+    status: 200,
+    description: 'Project object',
+    type: ProjectExResponseDto,
   })
-  @ApiResponse({ status: 400, description: "Project is not published" })
-  @ApiResponse({ status: 404, description: "Project not found" })
-  @HttpCode(HttpStatus.CREATED)
-  async fork(
-    @Param("id", ParseIntPipe) id: number,
-    @Req() req: RequestWithUser
-  ): Promise<ForkProjectResponseDto> {
-    return await this.projectService.fork(id, req.user.id);
+  @ApiResponse({ status: 404, description: 'Project not found' })
+  @ApiResponse({ status: 500, description: 'Internal server error' })
+  @ApiResponse({ status: 403, description: 'Invalid user or project ID' })
+  async findOne(@ProjectId() id: number): Promise<ProjectExResponseDto> {
+    return this.projectService.findOne(id);
   }
 
-  @Put(":id")
-  @ApiOperation({ summary: "Update an existing project" })
+  @Put(':id')
+  @UseGuards(ProjectCollaboratorGuard)
+  @ApiOperation({ summary: 'Update an existing project' })
   @ApiParam({
-    name: "id",
-    type: "number",
-    description: "Numeric ID of the project to update"
+    name: 'id',
+    type: 'number',
+    description: 'Numeric ID of the project to update',
   })
   @ApiBody({ type: UpdateProjectDto })
   @ApiResponse({
     status: 200,
-    description: "Updated project object",
-    type: ProjectResponseDto
+    description: 'Updated project object',
+    type: ProjectResponseDto,
   })
-  @ApiResponse({ status: 404, description: "Project not found" })
-  @ApiResponse({ status: 500, description: "Error updating project" })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  @ApiResponse({ status: 404, description: 'Project not found' })
+  @ApiResponse({ status: 500, description: 'Error updating project' })
   async update(
-    @Param("id", ParseIntPipe) id: number,
-    @Body() updateProjectDto: UpdateProjectDto
+    @ProjectId() id: number,
+    @Body() updateProjectDto: UpdateProjectDto,
   ): Promise<ProjectResponseDto> {
     return this.projectService.update(id, updateProjectDto);
   }
 
   @UseGuards(ProjectCreatorGuard)
-  @Patch(":id/add-collaborator")
+  @Patch(':id/add-collaborator')
   @ApiOperation({
-    summary: "Add a new collaborator",
+    summary: 'Add a new collaborator',
     description:
-      "Add a collaborator to a project by providing either userId, username, or email. At least one must be provided."
+      'Add a collaborator to a project by providing either userId, username, or email. At least one must be provided.',
   })
   @ApiParam({
-    name: "id",
-    type: "number",
-    description: "Numeric ID of the project to update"
+    name: 'id',
+    type: 'number',
+    description: 'Numeric ID of the project to update',
   })
   @ApiBody({
     type: AddCollaboratorDto,
     examples: {
       byUserId: {
-        summary: "Add by User ID",
+        summary: 'Add by User ID',
         value: {
-          userId: 42
-        }
+          userId: 42,
+        },
       },
       byUsername: {
-        summary: "Add by Username",
+        summary: 'Add by Username',
         value: {
-          username: "john_doe"
-        }
+          username: 'john_doe',
+        },
       },
 
       byEmail: {
-        summary: "Add by Email",
+        summary: 'Add by Email',
         value: {
-          email: "john.doe@example.com"
-        }
-      }
-    }
+          email: 'john.doe@example.com',
+        },
+      },
+    },
   })
   @ApiResponse({
     status: 200,
-    description: "Updated project object with collaborators",
-    type: ProjectExResponseDto
+    description: 'Updated project object with collaborators',
+    type: ProjectExResponseDto,
   })
   @ApiResponse({
     status: 400,
-    description: "Bad request - no valid identifier provided"
+    description: 'Bad request - no valid identifier provided',
   })
-  @ApiResponse({ status: 404, description: "Project or user not found" })
-  @ApiResponse({ status: 500, description: "Error Patching project" })
+  @ApiResponse({ status: 404, description: 'Project or user not found' })
+  @ApiResponse({ status: 500, description: 'Error Patching project' })
   async addCollaborator(
-    @Param("id", ParseIntPipe) id: number,
-    @Body() addCollaboratorDto: AddCollaboratorDto
-  ): Promise<Project> {
+    @ProjectId() id: number,
+    @Body() addCollaboratorDto: AddCollaboratorDto,
+  ): Promise<ProjectExResponseDto> {
     return this.projectService.addCollaborator(id, addCollaboratorDto);
   }
 
   @UseGuards(ProjectCreatorGuard)
-  @Delete(":id/remove-collaborator")
+  @Delete(':id/remove-collaborator')
   @ApiOperation({
-    summary: "Remove a collaborator",
+    summary: 'Remove a collaborator',
     description:
-      "Remove a collaborator from a project by providing either userId, username, or email. At least one must be provided."
+      'Remove a collaborator from a project by providing either userId, username, or email. At least one must be provided.',
   })
   @ApiParam({
-    name: "id",
-    type: "number",
-    description: "Numeric ID of the project to update"
+    name: 'id',
+    type: 'number',
+    description: 'Numeric ID of the project to update',
   })
   @ApiBody({
     type: RemoveCollaboratorDto,
     examples: {
       byUserId: {
-        summary: "Remove by User ID",
+        summary: 'Remove by User ID',
         value: {
-          userId: 42
-        }
+          userId: 42,
+        },
       },
 
       byUsername: {
-        summary: "Remove by Username",
+        summary: 'Remove by Username',
         value: {
-          username: "john_doe"
-        }
+          username: 'john_doe',
+        },
       },
 
       byEmail: {
-        summary: "Remove by Email",
+        summary: 'Remove by Email',
         value: {
-          email: "john.doe@example.com"
-        }
-      }
-    }
+          email: 'john.doe@example.com',
+        },
+      },
+    },
   })
   @ApiResponse({
     status: 200,
-    description: "Updated project object with collaborators",
-    type: ProjectExResponseDto
+    description: 'Updated project object with collaborators',
+    type: ProjectExResponseDto,
   })
   @ApiResponse({
     status: 400,
-    description: "Bad request - no valid identifier provided"
+    description: 'Bad request - no valid identifier provided',
   })
   @ApiResponse({
     status: 403,
-    description: "Forbidden - cannot remove project creator"
+    description: 'Forbidden - cannot remove project creator',
   })
-  @ApiResponse({ status: 404, description: "Project or user not found" })
+  @ApiResponse({ status: 404, description: 'Project or user not found' })
   @ApiResponse({
     status: 500,
-    description: "Error remove collaborator on project"
+    description: 'Error remove collaborator on project',
   })
   async removeCollaborator(
-    @Param("id", ParseIntPipe) id: number,
-    @Body() removeCollaboratorDto: RemoveCollaboratorDto
-  ): Promise<Project> {
+    @ProjectId() id: number,
+    @Body() removeCollaboratorDto: RemoveCollaboratorDto,
+  ): Promise<ProjectExResponseDto> {
     return this.projectService.removeCollaborator(id, removeCollaboratorDto);
   }
 
   @UseGuards(ProjectCreatorGuard)
-  @Delete(":id")
-  @ApiOperation({ summary: "Delete a project" })
+  @Delete(':id')
+  @ApiOperation({ summary: 'Delete a project' })
   @ApiParam({
-    name: "id",
-    type: "number",
-    description: "Numeric ID of the project to delete"
+    name: 'id',
+    type: 'number',
+    description: 'Numeric ID of the project to delete',
   })
   @ApiResponse({
     status: 204,
-    description: "Project deleted successfully (no content)"
+    description: 'Project deleted successfully (no content)',
   })
-  @ApiResponse({ status: 404, description: "Project not found" })
-  @ApiResponse({ status: 500, description: "Error deleting project" })
+  @ApiResponse({ status: 404, description: 'Project not found' })
+  @ApiResponse({ status: 500, description: 'Error deleting project' })
   @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(@Param("id", ParseIntPipe) id: number): Promise<void> {
+  async remove(@ProjectId() id: number): Promise<void> {
     return this.projectService.remove(id);
   }
 
-  @Patch(":id/saveContent")
+  @Post(':id/image')
   @UseGuards(ProjectCollaboratorGuard)
-  @UseInterceptors(FileInterceptor("file"))
-  @ApiOperation({ summary: "Save project's content (Upload)" })
-  @ApiConsumes("multipart/form-data")
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: PROJECT_IMAGE_MAX_BYTES } }))
+  @ApiOperation({ summary: 'Upload project image' })
+  @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
-      type: "object",
+      type: 'object',
       properties: {
         file: {
-          type: "string",
-          format: "binary",
-          description: "Project file (zip, pdf, png, etc.)"
-        }
-      }
-    }
+          type: 'string',
+          format: 'binary',
+          description: 'Project image file (JPEG, PNG, GIF, WebP)',
+        },
+      },
+    },
   })
-  @ApiParam({ name: "id", type: "number" })
-  @ApiResponse({ status: 201, description: "File uploaded successfully" })
-  @ApiResponse({ status: 403, description: "Forbidden" })
-  @ApiResponse({ status: 422, description: "File validation failed" })
-  @HttpCode(HttpStatus.CREATED)
-  async saveProjectContent(
-    @Param("id", ParseIntPipe) id: number,
-    @UploadedFile(
-      new ParseFilePipeBuilder()
-        .addMaxSizeValidator({
-          maxSize: 100 * 1024 * 1024
-        })
-        .build({
-          errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY
-        })
-    )
-    file: Express.Multer.File
-  ): Promise<{ message: string; id: number }> {
-    await this.projectService.save(id, file);
-
-    return { message: "File uploaded successfully", id };
-  }
-
-  @Post(":id/image")
-  @UseGuards(ProjectCollaboratorGuard)
-  @UseInterceptors(FileInterceptor("file"))
-  @ApiOperation({ summary: "Upload project image" })
-  @ApiConsumes("multipart/form-data")
-  @ApiBody({
-    schema: {
-      type: "object",
-      properties: {
-        file: {
-          type: "string",
-          format: "binary",
-          description: "Project image file (JPEG, PNG, GIF, WebP)"
-        }
-      }
-    }
+  @ApiParam({ name: 'id', type: 'number' })
+  @ApiResponse({
+    status: 201,
+    description: 'Image uploaded successfully',
+    type: ProjectActionResponseDto,
   })
-  @ApiParam({ name: "id", type: "number" })
-  @ApiResponse({ status: 201, description: "Image uploaded successfully" })
-  @ApiResponse({ status: 403, description: "Forbidden" })
-  @ApiResponse({ status: 422, description: "Invalid file type or size" })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  @ApiResponse({ status: 413, description: 'File too large' })
+  @ApiResponse({ status: 422, description: 'Invalid file type or size' })
   @HttpCode(HttpStatus.CREATED)
   async uploadProjectImage(
-    @Param("id", ParseIntPipe) id: number,
+    @ProjectId() id: number,
     @UploadedFile(
       new ParseFilePipeBuilder()
-        .addMaxSizeValidator({ maxSize: 5 * 1024 * 1024 })
         .addFileTypeValidator({ fileType: /^image\/(jpeg|png|gif|webp)$/ })
-        .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY })
+        .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY }),
     )
     file: Express.Multer.File,
-    @Req() req: RequestWithUser
-  ): Promise<{ message: string; id: number }> {
-    await this.projectService.findOne(id);
+    @Req() req: RequestWithUser,
+  ): Promise<ProjectActionResponseDto> {
+    await this.projectService.uploadImage(id, file, req.user.id);
 
-    const key = `projects/${id}/image`;
-    await this.s3Service.uploadFile({
-      file,
-      keyName: key,
-      metadata: {
-        uploadedBy: req.user.id.toString(),
-        projectId: id.toString(),
-        originalName: file.originalname
-      },
-      cacheControl: "no-cache"
-    });
-    await this.s3Service.setObjectPublicRead(key);
-
-    return { message: "Project image uploaded successfully", id };
+    return { message: 'Project image uploaded successfully', id };
   }
 
-  @Get(":id/image")
+  @Get(':id/image')
   @UseGuards(ProjectCollaboratorGuard)
   @ApiOperation({
-    summary: "Get CDN URL for project image (authenticated, any project status)"
+    summary: 'Get CDN URL for project image (authenticated, any project status)',
   })
-  @ApiParam({ name: "id", type: "number" })
+  @ApiParam({ name: 'id', type: 'number' })
   @ApiResponse({
     status: 200,
-    description: "CDN URL for the project image",
-    type: ImageUrlResponseDto
+    description: 'CDN URL for the project image',
+    type: ImageUrlResponseDto,
   })
-  @ApiResponse({ status: 204, description: "Project has no image" })
-  @ApiResponse({ status: 403, description: "Forbidden" })
-  async getProjectImage(
-    @Param("id", ParseIntPipe) id: number
-  ): Promise<ImageUrlResponseDto> {
-    const key = `projects/${id}/image`;
-    const head = await this.s3Service.getFileMetadataOrNull(key);
-    if (!head) {
-      throw new HttpException("No content", HttpStatus.NO_CONTENT);
+  @ApiResponse({ status: 204, description: 'Project has no image' })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  async getProjectImage(@ProjectId() id: number): Promise<ImageUrlResponseDto> {
+    const url = await this.projectService.coverUrl(id);
+    if (!url) {
+      throw new HttpException('No content', HttpStatus.NO_CONTENT);
     }
-    const version = head.ETag?.replace(/"/g, "") ?? Date.now().toString();
-    const url = `${this.cloudfrontService.getCDNUrl(key)}?v=${version}`;
+
     return { url };
-  }
-
-  @Public()
-  @Get("public/:id/image")
-  @ApiOperation({
-    summary: "Get public CDN URL for a published project's image"
-  })
-  @ApiParam({
-    name: "id",
-    type: "number",
-    description: "Project ID"
-  })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: "Returns the CDN URL for the project image",
-    type: ImageUrlResponseDto
-  })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: "Project not found, not published, or has no image"
-  })
-  async getPublishedProjectImage(
-    @Param("id", ParseIntPipe) id: number
-  ): Promise<ImageUrlResponseDto> {
-    const project = await this.prismaService.project.findFirst({
-      where: { id, status: "COMPLETED" },
-      select: { id: true }
-    });
-
-    if (!project) {
-      throw new HttpException("Not found", HttpStatus.NOT_FOUND);
-    }
-
-    const key = `projects/${id}/image`;
-    const head = await this.s3Service.getFileMetadataOrNull(key);
-    if (!head) {
-      throw new HttpException("Not found", HttpStatus.NOT_FOUND);
-    }
-
-    const version = head.ETag?.replace(/"/g, "") ?? Date.now().toString();
-    const url = `${this.cloudfrontService.getCDNUrl(key)}?v=${version}`;
-    return { url };
-  }
-
-  @Get(":id/fetchContent")
-  @UseGuards(ProjectCollaboratorGuard)
-  @ApiOperation({ summary: "Fetch project's content" })
-  @ApiParam({ name: "id", type: "string" })
-  @ApiResponse({
-    status: 200,
-    description: "File fetched successfully",
-    content: {
-      "application/octet-stream": {
-        schema: { type: "string", format: "binary" }
-      }
-    }
-  })
-  @ApiResponse({ status: 403, description: "Forbidden" })
-  @ApiResponse({ status: 404, description: "File not found" })
-  async fetchProjectContent(
-    @Param("id") id: number,
-    @Res() res: Response
-  ): Promise<void> {
-    try {
-      const file = await this.projectService.fetchLastVersion(id);
-
-      res.set({
-        "Content-Type": file.contentType,
-        "Content-Length": file.contentLength
-      });
-
-      file.body.pipe(res);
-    } catch (error) {
-      if (error instanceof Error) {
-        this.logger.error(
-          `Failed to fetch content for project ${id}: ${error.message}`,
-          error.stack
-        );
-      } else {
-        this.logger.error(
-          `Failed to fetch content for project ${id}: ${JSON.stringify(error)}`
-        );
-      }
-
-      if (error instanceof S3DownloadException) {
-        res.status(404).json({ message: "File not found" });
-        return;
-      }
-      res.status(500).json({ message: "Internal server error" });
-      return;
-    }
-  }
-
-  @Post(":id/saveCheckpoint/:name")
-  @UseGuards(ProjectCollaboratorGuard)
-  @UseInterceptors(FileInterceptor("file"))
-  @ApiOperation({ summary: "Save project's checkpoint" })
-  @ApiConsumes("multipart/form-data")
-  @ApiBody({
-    schema: {
-      type: "object",
-      properties: {
-        file: {
-          type: "string",
-          format: "binary"
-        }
-      }
-    }
-  })
-  @ApiParam({ name: "id", type: "string" })
-  @ApiParam({ name: "name", type: "string" })
-  @ApiResponse({ status: 201, description: "File uploaded successfully" })
-  @ApiResponse({ status: 403, description: "Forbidden" })
-  @HttpCode(HttpStatus.CREATED)
-  async saveCheckpoint(
-    @Param("id") id: string,
-    @Param("name") name: string,
-    @UploadedFile() file: Express.Multer.File
-  ): Promise<{ message: string; id: string }> {
-    await this.projectService.save(Number(id), file);
-    await this.projectService.checkpoint(Number(id), name);
-
-    return { message: "Checkpoint saved successfully", id };
-  }
-
-  @Delete(":id/deleteCheckpoint/:name")
-  @UseGuards(ProjectCollaboratorGuard)
-  @ApiOperation({ summary: "Delete project's checkpoint" })
-  @ApiParam({ name: "id", type: "string" })
-  @ApiParam({ name: "name", type: "string" })
-  @ApiResponse({ status: 201, description: "File deleted successfully" })
-  @ApiResponse({ status: 403, description: "Forbidden" })
-  @HttpCode(HttpStatus.ACCEPTED)
-  async deleteCheckpoint(
-    @Param("id") id: string,
-    @Param("name") name: string
-  ): Promise<{ message: string; id: string }> {
-    await this.projectService.removeCheckpoint(Number(id), name);
-
-    return { message: "Checkpoint deleted successfully", id };
-  }
-
-  @Post(":id/publish")
-  @UseGuards(ProjectCreatorGuard)
-  @ApiOperation({ summary: "Publish project" })
-  @ApiParam({ name: "id", type: "string" })
-  @ApiResponse({ status: 201, description: "Project published successfully" })
-  @ApiResponse({ status: 403, description: "Forbidden" })
-  @HttpCode(HttpStatus.CREATED)
-  async publish(
-    @Param("id") id: string
-  ): Promise<{ message: string; id: string }> {
-    await this.projectService.publish(Number(id));
-
-    return { message: "Project published successfully", id };
-  }
-
-  @Post(":id/unpublish")
-  @UseGuards(ProjectCreatorGuard)
-  @ApiOperation({ summary: "Unpublish project" })
-  @ApiParam({ name: "id", type: "string" })
-  @ApiResponse({ status: 201, description: "Project unpublished successfully" })
-  @ApiResponse({ status: 403, description: "Forbidden" })
-  @HttpCode(HttpStatus.CREATED)
-  async unpublish(
-    @Param("id") id: string
-  ): Promise<{ message: string; id: string }> {
-    await this.projectService.unpublish(Number(id));
-
-    return { message: "Project unpublished successfully", id };
-  }
-
-  @Get(":id/versions")
-  @UseGuards(ProjectCollaboratorGuard)
-  @ApiOperation({ summary: "Get project versions" })
-  @ApiParam({ name: "id", type: "string" })
-  @ApiResponse({
-    status: 200,
-    description: "Project versions retrieved successfully"
-  })
-  @ApiResponse({ status: 403, description: "Forbidden" })
-  async getVersions(
-    @Param("id") id: string
-  ): Promise<{ versions: ProjectSave[] }> {
-    const versions = await this.projectService.listVersions(Number(id));
-
-    return { versions };
-  }
-
-  @Get(":id/checkpoints")
-  @UseGuards(ProjectCollaboratorGuard)
-  @ApiOperation({ summary: "Get project checkpoints" })
-  @ApiParam({ name: "id", type: "string" })
-  @ApiResponse({
-    status: 200,
-    description: "Project checkpoints retrieved successfully"
-  })
-  @ApiResponse({ status: 403, description: "Forbidden" })
-  async getCheckpoints(
-    @Param("id") id: string
-  ): Promise<{ checkpoints: ProjectSave[] }> {
-    const checkpoints = await this.projectService.listCheckpoints(Number(id));
-
-    return { checkpoints };
-  }
-
-  @Get(":id/versions/:version")
-  @UseGuards(ProjectCollaboratorGuard)
-  @ApiOperation({ summary: "Fetch a project version" })
-  @ApiParam({ name: "id", type: "string" })
-  @ApiParam({ name: "version", type: "string" })
-  @ApiResponse({
-    status: 200,
-    description: "Project version retrieved successfully",
-    content: {
-      "application/octet-stream": {
-        schema: { type: "string", format: "binary" }
-      }
-    }
-  })
-  @ApiResponse({ status: 403, description: "Forbidden" })
-  async getVersion(
-    @Param("id") id: string,
-    @Param("version") version: string,
-    @Res() res: Response
-  ): Promise<void> {
-    try {
-      const file = await this.projectService.fetchSavedVersion(
-        Number(id),
-        version
-      );
-
-      res.set({
-        "Content-Type": file.contentType,
-        "Content-Length": file.contentLength
-      });
-
-      file.body.pipe(res);
-    } catch (error) {
-      if (error instanceof Error) {
-        this.logger.error(
-          `Failed to fetch content for project ${id}: ${error.message}`,
-          error.stack
-        );
-      } else {
-        this.logger.error(
-          `Failed to fetch content for project ${id}: ${JSON.stringify(error)}`
-        );
-      }
-
-      if (error instanceof S3DownloadException) {
-        res.status(404).json({ message: "File not found" });
-        return;
-      }
-      res.status(500).json({ message: "Internal server error" });
-      return;
-    }
-  }
-
-  @Get(":id/checkpoints/:checkpoint")
-  @UseGuards(ProjectCollaboratorGuard)
-  @ApiOperation({ summary: "Fetch a project checkpoint" })
-  @ApiParam({ name: "id", type: "string" })
-  @ApiParam({ name: "checkpoint", type: "string" })
-  @ApiResponse({
-    status: 200,
-    description: "Project checkpoint retrieved successfully",
-    content: {
-      "application/octet-stream": {
-        schema: { type: "string", format: "binary" }
-      }
-    }
-  })
-  @ApiResponse({ status: 403, description: "Forbidden" })
-  async getCheckpoint(
-    @Param("id") id: number,
-    @Param("checkpoint") checkpoint: string,
-    @Res() res: Response
-  ): Promise<void> {
-    try {
-      const file = await this.projectService.fetchCheckpoint(
-        Number(id),
-        checkpoint
-      );
-      const project = await this.projectService.findOne(id);
-
-      res.set({
-        "Content-Type": file.contentType,
-        "Content-Length": (file.contentLength ?? 0).toString(),
-        "Content-Disposition": `attachment; filename="${checkpoint}"`,
-        "Cache-Control": "no-cache, no-store, must-revalidate",
-        Pragma: "no-cache",
-        Expires: "0",
-        ETag: project.contentUploadedAt
-          ? `W/"${project.contentUploadedAt.getTime()}"`
-          : undefined
-      });
-
-      file.body.pipe(res);
-    } catch (error) {
-      if (error instanceof S3DownloadException) {
-        this.logger.warn(
-          `S3 File not found for project ${id} (Key: ${error.key})`
-        );
-        res.status(404).json({ message: "File not found on storage server" });
-        return;
-      }
-      if (error instanceof Error) {
-        this.logger.error(`Download failed: ${error.message}`, error.stack);
-      } else {
-        this.logger.error("Download failed: Unknown error");
-      }
-
-      if (!res.headersSent) {
-        res
-          .status(500)
-          .json({ message: "Internal server error during download" });
-      }
-    }
-  }
-
-  @Post("releases/:id/like")
-  @ApiOperation({
-    summary: "Like a published project (idempotent, authenticated users only)"
-  })
-  @ApiParam({ name: "id", type: "string" })
-  @ApiResponse({
-    status: 200,
-    description: "Like status",
-    type: LikeResponseDto
-  })
-  @HttpCode(HttpStatus.OK)
-  async likeProject(
-    @Param("id") id: string,
-    @Req() req: RequestWithUser
-  ): Promise<LikeResponseDto> {
-    return this.projectService.likeProject(Number(id), req.user.id);
-  }
-
-  @Delete("releases/:id/like")
-  @ApiOperation({
-    summary: "Unlike a published project (authenticated users only)"
-  })
-  @ApiParam({ name: "id", type: "string" })
-  @ApiResponse({
-    status: 200,
-    description: "Like removed",
-    type: LikeResponseDto
-  })
-  @HttpCode(HttpStatus.OK)
-  async unlikeProject(
-    @Param("id") id: string,
-    @Req() req: RequestWithUser
-  ): Promise<LikeResponseDto> {
-    return this.projectService.unlikeProject(Number(id), req.user.id);
-  }
-
-  @Get("releases/:id/like-status")
-  @ApiOperation({
-    summary: "Get like status for a project (authenticated users only)"
-  })
-  @ApiParam({ name: "id", type: "string" })
-  @ApiResponse({
-    status: 200,
-    description: "Like status",
-    type: LikeResponseDto
-  })
-  async getLikeStatus(
-    @Param("id") id: string,
-    @Req() req: RequestWithUser
-  ): Promise<LikeResponseDto> {
-    return this.projectService.getLikeStatus(Number(id), req.user.id);
-  }
-
-  @Public()
-  @Post("releases/:id/view")
-  @ApiOperation({ summary: "Register a play view for a published project" })
-  @ApiParam({ name: "id", type: "string" })
-  @ApiResponse({
-    status: 200,
-    description: "Updated view count",
-    type: ViewResponseDto
-  })
-  @HttpCode(HttpStatus.OK)
-  async registerReleaseView(@Param("id") id: string): Promise<ViewResponseDto> {
-    return this.projectService.registerReleaseView(Number(id));
-  }
-
-  @Post(":id/update-release")
-  @UseGuards(ProjectCreatorGuard)
-  @ApiOperation({
-    summary: "Update an already published project's release content"
-  })
-  @ApiParam({ name: "id", type: "string" })
-  @ApiResponse({ status: 200, description: "Release updated successfully" })
-  @ApiResponse({ status: 400, description: "Project is not published" })
-  @ApiResponse({ status: 403, description: "Forbidden" })
-  @HttpCode(HttpStatus.OK)
-  async updateRelease(
-    @Param("id") id: string
-  ): Promise<{ message: string; id: string }> {
-    await this.projectService.updateRelease(Number(id));
-
-    return { message: "Release updated successfully", id };
   }
 }
