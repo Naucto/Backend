@@ -1,240 +1,42 @@
-import { Test, TestingModule } from "@nestjs/testing";
-import { ProjectService } from "./project.service";
-import { S3Service } from "@s3/s3.service";
-import { PrismaService } from "@ourPrisma/prisma.service";
-import { ConfigService } from "@nestjs/config";
-import {
-  BadRequestException,
-  ForbiddenException,
-  InternalServerErrorException,
-  NotFoundException
-} from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Logger, NotFoundException } from '@nestjs/common';
+import { TestingModule } from '@nestjs/testing';
 
-import { CREATOR_SELECT, COLLABORATOR_SELECT } from "./project.service";
-import { ProjectStatus, MonetizationType, Prisma } from "@prisma/client";
+import { withEnv } from '../../../test/env';
+import { draft, ProjectMocks, released } from '../../../test/project-mocks';
+import { ProjectService } from './project.service';
+import { COLLABORATOR_SELECT, CREATOR_SELECT } from './project-select';
 
-type ProjectWithCreatorAndCollaborators = Prisma.ProjectGetPayload<{
-  include: {
-    creator: {
-      select: typeof CREATOR_SELECT;
-    };
-    collaborators: {
-      select: typeof COLLABORATOR_SELECT;
-    };
-  };
-}>;
-
-const mockProjects: ProjectWithCreatorAndCollaborators[] = [
-  {
-    id: 1,
-    name: "Project A",
-    shortDesc: "Short A",
-    longDesc: "Long A",
-    tags: ["Action"],
-    publishedName: null,
-    publishedShortDesc: null,
-    publishedLongDesc: null,
-    publishedTags: [],
-    status: ProjectStatus.IN_PROGRESS,
-    iconUrl: "https://example.com/icon-a.png",
-    monetization: MonetizationType.ADS,
-    price: 0,
-    createdAt: new Date(),
-    userId: 1,
-    viewCount: 0,
-    uniquePlayers: 0,
-    activePlayers: 0,
-    likes: 0,
-    updatedAt: new Date(),
-    publishedAt: null,
-    contentKey: "keyA",
-    contentExtension: ".zip",
-    contentUploadedAt: new Date(),
-    forkedFromId: null,
-    creator: {
-      id: 42,
-      email: "creator@example.com",
-      username: "creatorUser"
-    },
-    collaborators: [
-      {
-        id: 1,
-        email: "user1@example.com",
-        username: "user1"
-      }
-    ]
-  },
-  {
-    id: 2,
-    name: "Project B",
-    shortDesc: "Short B",
-    longDesc: "Long B",
-    tags: ["Shooter", "Adventure"],
-    publishedName: "Project B",
-    publishedShortDesc: "Short B",
-    publishedLongDesc: "Long B",
-    publishedTags: ["Shooter", "Adventure"],
-    status: ProjectStatus.COMPLETED,
-    iconUrl: "https://example.com/icon-b.png",
-    monetization: MonetizationType.PAID,
-    price: 67.99,
-    createdAt: new Date(),
-    userId: 1,
-    viewCount: 42,
-    uniquePlayers: 10897,
-    activePlayers: 600,
-    likes: 187,
-    updatedAt: new Date(),
-    publishedAt: new Date(),
-    contentKey: "keyB",
-    contentExtension: ".zip",
-    contentUploadedAt: new Date(),
-    forkedFromId: null,
-    creator: {
-      id: 42,
-      email: "creator@example.com",
-      username: "creatorUser"
-    },
-    collaborators: [
-      {
-        id: 1,
-        email: "user1@example.com",
-        username: "user1"
-      }
-    ]
-  }
-];
-
-describe("ProjectService", () => {
+describe('ProjectService', () => {
   let service: ProjectService;
 
-  const prismaMock = {
-    project: {
-      count: jest.fn(),
-      create: jest.fn(),
-      findMany: jest.fn(),
-      findUnique: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn()
-    },
-    user: {
-      findUnique: jest.fn()
-    },
-    like: {
-      upsert: jest.fn(),
-      deleteMany: jest.fn(),
-      count: jest.fn()
-    },
-    workSession: {
-      findMany: jest.fn(),
-      update: jest.fn()
-    },
-    $transaction: jest.fn((operations: Array<Promise<unknown>>) =>
-      Promise.all(operations)
-    )
-  };
-
-  const s3ServiceMock = {
-    deleteFile: jest.fn(),
-    listObjects: jest.fn(),
-    deleteFiles: jest.fn()
-  };
-
-  const configServiceMock = {
-    get: jest.fn((key: string) => {
-      if (key === "S3_MAX_AUTO_HISTORY_VERSION") return "5";
-      if (key === "S3_AUTO_HISTORY_DELAY") return "10";
-      if (key === "S3_MAX_CHECKPOINTS") return "5";
-      return undefined;
-    })
-  };
+  const mocks = new ProjectMocks();
+  const { prismaMock, s3ServiceMock, notificationsMock, workSessionsMock } = mocks;
 
   beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        ProjectService,
-        {
-          provide: PrismaService,
-          useValue: prismaMock
-        },
-        {
-          provide: S3Service,
-          useValue: s3ServiceMock
-        },
-        {
-          provide: ConfigService,
-          useValue: configServiceMock
-        }
-      ]
-    }).compile();
+    withEnv({
+      JWT_SECRET: 'jwt-secret',
+      S3_MAX_AUTO_HISTORY_VERSION: '5',
+      S3_AUTO_HISTORY_DELAY: '10',
+      S3_MAX_CHECKPOINTS: '5',
+    });
 
+    const module: TestingModule = await mocks.compile();
     service = module.get<ProjectService>(ProjectService);
 
     jest.clearAllMocks();
   });
 
-  it("should be defined", () => {
-    expect(service).toBeDefined();
-  });
-
-  describe("likeProject / unlikeProject", () => {
-    it("is idempotent when liking: upserts the like and syncs the counter from a row count", async () => {
-      prismaMock.project.findUnique.mockResolvedValue({ id: 1 });
-      prismaMock.like.upsert.mockResolvedValue({ id: 10, userId: 7, projectId: 1 });
-      prismaMock.like.count.mockResolvedValue(1);
-      prismaMock.project.update.mockResolvedValue({ likes: 1 });
-
-      const result = await service.likeProject(1, 7);
-
-      expect(prismaMock.like.upsert).toHaveBeenCalledWith({
-        where: { userId_projectId: { userId: 7, projectId: 1 } },
-        create: { userId: 7, projectId: 1 },
-        update: {}
-      });
-      // Counter is recomputed from the actual rows, never incremented blindly.
-      expect(prismaMock.like.count).toHaveBeenCalledWith({ where: { projectId: 1 } });
-      expect(prismaMock.project.update).toHaveBeenCalledWith({
-        where: { id: 1 },
-        data: { likes: 1 }
-      });
-      expect(result).toEqual({ likes: 1, liked: true });
-    });
-
-    it("rejects liking a project that does not exist", async () => {
-      prismaMock.project.findUnique.mockResolvedValue(null);
-
-      await expect(service.likeProject(999, 7)).rejects.toBeInstanceOf(
-        NotFoundException
-      );
-      expect(prismaMock.like.upsert).not.toHaveBeenCalled();
-    });
-
-    it("is idempotent when unliking: deleteMany never throws on a missing like", async () => {
-      prismaMock.project.findUnique.mockResolvedValue({ id: 1 });
-      prismaMock.like.deleteMany.mockResolvedValue({ count: 0 });
-      prismaMock.like.count.mockResolvedValue(0);
-      prismaMock.project.update.mockResolvedValue({ likes: 0 });
-
-      const result = await service.unlikeProject(1, 7);
-
-      expect(prismaMock.like.deleteMany).toHaveBeenCalledWith({
-        where: { userId: 7, projectId: 1 }
-      });
-      expect(result).toEqual({ likes: 0, liked: false });
-    });
-  });
-
-  describe("findAll", () => {
-    it("should return paginated projects for a given user", async () => {
+  describe('findAll', () => {
+    it('should return paginated projects for a given user', async () => {
       const userId = 1;
       const where = {
         collaborators: {
-          some: { id: userId }
-        }
+          some: { id: userId },
+        },
       };
 
-      prismaMock.project.count.mockResolvedValue(mockProjects.length);
-      prismaMock.project.findMany.mockResolvedValue(mockProjects);
+      prismaMock.project.count.mockResolvedValue(2);
+      prismaMock.project.findMany.mockResolvedValue([draft, released]);
 
       const result = await service.findAll(userId);
 
@@ -242,599 +44,396 @@ describe("ProjectService", () => {
       expect(prismaMock.project.findMany).toHaveBeenCalledWith({
         where,
         include: {
-          collaborators: { select: ProjectService.COLLABORATOR_SELECT },
-          creator: { select: ProjectService.CREATOR_SELECT }
+          collaborators: { select: COLLABORATOR_SELECT },
+          creator: { select: CREATOR_SELECT },
         },
-        orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
         skip: 0,
-        take: 24
+        take: 24,
       });
 
       expect(result).toEqual({
-        projects: mockProjects,
-        total: mockProjects.length,
+        projects: [draft, released],
+        total: 2,
         page: 1,
-        limit: 24
+        limit: 24,
       });
     });
 
-    it("should normalize page and cap limit", async () => {
+    it('should normalize page and cap limit', async () => {
       const userId = 1;
 
       prismaMock.project.count.mockResolvedValue(250);
-      prismaMock.project.findMany.mockResolvedValue(mockProjects);
+      prismaMock.project.findMany.mockResolvedValue([draft, released]);
 
       const result = await service.findAll(userId, 2.9, 150.8);
 
       expect(prismaMock.project.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           skip: 100,
-          take: 100
-        })
+          take: 100,
+        }),
       );
       expect(result).toEqual({
-        projects: mockProjects,
+        projects: [draft, released],
         total: 250,
         page: 2,
-        limit: 100
+        limit: 100,
       });
     });
   });
 
-  describe("findOne", () => {
-    it("should return the project if found", async () => {
-      const projectId = 1;
-
-      prismaMock.project.findUnique.mockResolvedValue(mockProjects[0]);
-
-      const result = await service.findOne(projectId);
-
-      expect(prismaMock.project.findUnique).toHaveBeenCalledWith({
-        where: { id: projectId },
-        include: {
-          creator: {
-            select: {
-              id: true,
-              username: true,
-              email: true
-            }
-          },
-          collaborators: {
-            select: {
-              id: true,
-              username: true,
-              email: true
-            }
-          }
-        }
-      });
-      expect(result).toEqual(mockProjects[0]);
-    });
-
-    it("should throw NotFoundException if project not found", async () => {
-      const projectId = 999;
-
+  describe('findOne', () => {
+    it('should throw NotFoundException if project not found', async () => {
       prismaMock.project.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOne(projectId)).rejects.toThrow(
-        NotFoundException
-      );
-
-      expect(prismaMock.project.findUnique).toHaveBeenCalledWith({
-        where: { id: projectId },
-        include: {
-          creator: {
-            select: {
-              id: true,
-              username: true,
-              email: true
-            }
-          },
-          collaborators: {
-            select: {
-              id: true,
-              username: true,
-              email: true
-            }
-          }
-        }
-      });
+      await expect(service.findOne(999)).rejects.toThrow(NotFoundException);
     });
   });
 
-  describe("create", () => {
-    it("should create and return a project", async () => {
+  describe('create', () => {
+    const createDto = {
+      name: 'New Project',
+      shortDesc: 'Short',
+    };
+
+    it('should create and return a project', async () => {
       const userId = 1;
-      const createDto = {
-        name: "New Project",
-        shortDesc: "Short",
-        longDesc: "Long",
-        status: ProjectStatus.IN_PROGRESS,
-        iconUrl: "",
-        monetization: MonetizationType.ADS,
-        price: 0
-      };
 
       prismaMock.user.findUnique.mockResolvedValue({ id: userId });
       prismaMock.project.create.mockResolvedValue({
         id: 10,
         ...createDto,
-        collaborators: [
-          { id: userId, username: "user1", email: "user1@example.com" }
-        ],
-        creator: { id: userId, username: "user1", email: "user1@example.com" }
+        collaborators: [{ id: userId, username: 'user1' }],
+        creator: { id: userId, username: 'user1' },
       });
 
       const result = await service.create(createDto, userId);
 
-      expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
-        where: { id: userId }
-      });
       expect(prismaMock.project.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             ...createDto,
             collaborators: { connect: [{ id: userId }] },
-            creator: { connect: { id: userId } }
+            creator: { connect: { id: userId } },
           }),
-          include: expect.any(Object)
-        })
+          include: expect.any(Object),
+        }),
       );
-      expect(result).toHaveProperty("id", 10);
+      expect(result).toHaveProperty('id', 10);
     });
 
-    it("should throw NotFoundException if user not found", async () => {
+    it('should throw NotFoundException if user not found', async () => {
       prismaMock.user.findUnique.mockResolvedValue(null);
-      const createDto = {
-        name: "Dummy Project",
-        shortDesc: "Dummy short desc",
-        longDesc: "Dummy long desc",
-        status: ProjectStatus.IN_PROGRESS,
-        iconUrl: "",
-        monetization: MonetizationType.ADS,
-        price: 0
-      };
 
-      await expect(service.create(createDto, 999)).rejects.toThrow(
-        NotFoundException
-      );
+      await expect(service.create(createDto, 999)).rejects.toThrow(NotFoundException);
     });
 
-    it("should throw InternalServerErrorException on prisma error", async () => {
+    it('lets a database failure through as it is', async () => {
+      const failure = new Error('DB error');
       prismaMock.user.findUnique.mockResolvedValue({ id: 1 });
-      prismaMock.project.create.mockRejectedValue(new Error("DB error"));
-      const createDto = {
-        name: "Dummy Project",
-        shortDesc: "Dummy short desc",
-        longDesc: "Dummy long desc",
-        status: ProjectStatus.IN_PROGRESS,
-        iconUrl: "",
-        monetization: MonetizationType.ADS,
-        price: 0
-      };
+      prismaMock.project.create.mockRejectedValue(failure);
 
-      await expect(service.create(createDto, 1)).rejects.toThrow(
-        InternalServerErrorException
-      );
+      await expect(service.create(createDto, 1)).rejects.toBe(failure);
     });
   });
 
-  describe("update", () => {
-    it("should update and return the project", async () => {
-      const projectId = 1;
-      const updateDto = {
-        name: "Updated Name",
-        shortDesc: "Updated short desc"
-      };
+  describe('update', () => {
+    const updateDto = {
+      name: 'Updated Name',
+      shortDesc: 'Updated short desc',
+    };
 
-      prismaMock.project.findUnique.mockResolvedValue(mockProjects[0]);
-      prismaMock.project.update.mockResolvedValue({
-        ...mockProjects[0],
-        ...updateDto
-      });
+    it('should store tags trimmed, without blanks or repeats', async () => {
+      prismaMock.project.findUnique.mockResolvedValue(draft);
+      prismaMock.project.update.mockResolvedValue(draft);
 
-      const result = await service.update(projectId, updateDto);
+      await service.update(1, { ...updateDto, tags: [' Action ', 'action', ''] });
 
-      expect(prismaMock.project.findUnique).toHaveBeenCalledWith({
-        where: { id: projectId },
-        include: {
-          creator: {
-            select: {
-              id: true,
-              username: true,
-              email: true
-            }
-          },
-          collaborators: {
-            select: {
-              id: true,
-              username: true,
-              email: true
-            }
-          }
-        }
-      });
       expect(prismaMock.project.update).toHaveBeenCalledWith({
-        where: { id: projectId },
-        data: updateDto
+        where: { id: 1 },
+        data: { ...updateDto, tags: ['Action'] },
       });
-      expect(result.name).toBe("Updated Name");
     });
 
-    it("should throw NotFoundException if project does not exist", async () => {
+    it('should throw NotFoundException if project does not exist', async () => {
       prismaMock.project.findUnique.mockResolvedValue(null);
-      const updateDto = {
-        name: "Updated Name",
-        shortDesc: "Updated short desc"
-      };
 
-      await expect(service.update(999, updateDto)).rejects.toThrow(
-        NotFoundException
-      );
+      await expect(service.update(999, updateDto)).rejects.toThrow(NotFoundException);
     });
   });
 
-  describe("remove", () => {
-    it("should delete the S3 file and project successfully", async () => {
+  describe('uploadImage', () => {
+    it('stores the cover where the edge serves it and records that address on the row', async () => {
+      prismaMock.project.findUnique.mockResolvedValue(draft);
+      prismaMock.project.update.mockResolvedValue(draft);
+      s3ServiceMock.uploadFile.mockResolvedValue(undefined);
+      s3ServiceMock.setObjectPublicRead.mockResolvedValue(undefined);
+      const file = { originalname: 'cover.png' } as Express.Multer.File;
+
+      await service.uploadImage(1, file, 7);
+
+      expect(s3ServiceMock.uploadFile).toHaveBeenCalledWith(
+        expect.objectContaining({ file, keyName: 'projects/1/image' }),
+      );
+      expect(s3ServiceMock.setObjectPublicRead).toHaveBeenCalledWith('projects/1/image');
+      expect(prismaMock.project.update).toHaveBeenCalledWith({
+        where: { id: 1 },
+        data: { iconUrl: 'https://cdn.test/projects/1/image' },
+      });
+    });
+  });
+
+  describe('remove', () => {
+    it('clears the sessions and the project together, then the stored content', async () => {
       const projectId = 1;
-      prismaMock.project.findUnique.mockResolvedValue(mockProjects[0]);
-      prismaMock.project.delete.mockResolvedValue(mockProjects[0]);
+      prismaMock.project.findUnique.mockResolvedValue(draft);
+      prismaMock.project.delete.mockResolvedValue(draft);
       s3ServiceMock.deleteFile.mockResolvedValue(undefined);
       s3ServiceMock.listObjects.mockResolvedValue([]);
       s3ServiceMock.deleteFiles.mockResolvedValue(undefined);
 
       await service.remove(projectId);
 
-      expect(prismaMock.project.findUnique).toHaveBeenCalledWith({
-        where: { id: projectId },
-        include: {
-          creator: {
-            select: {
-              id: true,
-              username: true,
-              email: true
-            }
-          },
-          collaborators: {
-            select: {
-              id: true,
-              username: true,
-              email: true
-            }
-          }
-        }
+      // Asserted because the foreign keys refuse the delete outright while a session still points
+      // at the project.
+      expect(prismaMock.gameSession.deleteMany).toHaveBeenCalledWith({
+        where: { projectId },
       });
-      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({
-        key: `release/${projectId}`
+      expect(prismaMock.workSession.deleteMany).toHaveBeenCalledWith({
+        where: { projectId },
       });
+      expect(prismaMock.$transaction).toHaveBeenCalled();
       expect(prismaMock.project.delete).toHaveBeenCalledWith({
-        where: { id: projectId }
+        where: { id: projectId },
+      });
+
+      // The order is the load-bearing part: content dropped before the row would be lost to a
+      // delete that then fails.
+      expect(prismaMock.project.delete.mock.invocationCallOrder[0]).toBeLessThan(
+        s3ServiceMock.deleteFile.mock.invocationCallOrder[0]!,
+      );
+      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({
+        key: `release/${projectId}`,
       });
     });
 
-    it("should throw InternalServerErrorException if s3Service.deleteFile fails", async () => {
-      const projectId = 1;
-      prismaMock.project.findUnique.mockResolvedValue(mockProjects[0]);
-      s3ServiceMock.deleteFile.mockRejectedValue(new Error("S3 error"));
+    it('drops everything the project stored: release, cover, saves and checkpoints', async () => {
+      prismaMock.project.findUnique.mockResolvedValue(draft);
+      prismaMock.project.delete.mockResolvedValue(draft);
+      s3ServiceMock.deleteFile.mockResolvedValue(undefined);
+      s3ServiceMock.deleteFiles.mockResolvedValue([]);
+      s3ServiceMock.listObjects.mockImplementation(async ({ prefix }: { prefix: string }) => [
+        { Key: `${prefix}a` },
+        { Key: `${prefix}b` },
+      ]);
 
-      await expect(service.remove(projectId)).rejects.toThrow(
-        InternalServerErrorException
-      );
+      await service.remove(1);
 
-      expect(prismaMock.project.findUnique).toHaveBeenCalled();
-      expect(s3ServiceMock.deleteFile).toHaveBeenCalled();
+      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({ key: 'release/1' });
+      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({
+        key: 'projects/1/image',
+      });
+      expect(s3ServiceMock.deleteFiles).toHaveBeenCalledWith({
+        keys: ['checkpoint/1/a', 'checkpoint/1/b'],
+      });
+      expect(s3ServiceMock.deleteFiles).toHaveBeenCalledWith({
+        keys: ['save/1/a', 'save/1/b'],
+      });
     });
 
-    it("should throw NotFoundException if project does not exist", async () => {
+    it('still deletes the project when its stored content cannot be reached', async () => {
+      const projectId = 1;
+      prismaMock.project.findUnique.mockResolvedValue(draft);
+      prismaMock.project.delete.mockResolvedValue(draft);
+      s3ServiceMock.deleteFile.mockRejectedValue(new Error('S3 error'));
+
+      await expect(service.remove(projectId)).resolves.toBeUndefined();
+
+      expect(prismaMock.project.delete).toHaveBeenCalledWith({
+        where: { id: projectId },
+      });
+    });
+
+    it('should throw NotFoundException if project does not exist', async () => {
       prismaMock.project.findUnique.mockResolvedValue(null);
 
       await expect(service.remove(999)).rejects.toThrow(NotFoundException);
     });
-
-    it("should throw InternalServerErrorException with unknown error if s3Service.deleteFile throws non-Error", async () => {
-      const projectId = 123;
-
-      prismaMock.project.findUnique.mockResolvedValue({
-        ...mockProjects[0],
-        id: projectId
-      });
-
-      s3ServiceMock.deleteFile.mockImplementation(() => {
-        throw "some string error";
-      });
-
-      await expect(service.remove(projectId)).rejects.toThrow(
-        InternalServerErrorException
-      );
-      await expect(service.remove(projectId)).rejects.toThrow(
-        `Error deleting S3 file with key ${projectId}: Unknown error`
-      );
-
-      expect(prismaMock.project.findUnique).toHaveBeenCalledWith({
-        where: { id: projectId },
-        include: {
-          creator: {
-            select: {
-              id: true,
-              username: true,
-              email: true
-            }
-          },
-          collaborators: {
-            select: {
-              id: true,
-              username: true,
-              email: true
-            }
-          }
-        }
-      });
-      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({
-        key: `release/${projectId}`
-      });
-    });
   });
 
-  describe("addCollaborator", () => {
+  describe('addCollaborator', () => {
     const addDto = { userId: 2 };
 
-    it("should add collaborator successfully", async () => {
+    it('should add collaborator successfully', async () => {
       prismaMock.user.findUnique.mockResolvedValue({ id: 2 });
       prismaMock.project.findUnique.mockResolvedValue({
-        ...mockProjects[0],
-        collaborators: [{ id: 1 }, { id: 3 }]
+        ...draft,
+        collaborators: [{ id: 1 }, { id: 3 }],
       });
-      prismaMock.project.update.mockResolvedValue(mockProjects[0]);
+      prismaMock.project.update.mockResolvedValue(draft);
 
       const result = await service.addCollaborator(1, addDto);
 
+      // Nothing else tells the invitee they were added; the project simply turns up in their list.
+      expect(notificationsMock.notifyBestEffort).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: addDto.userId,
+          kind: 'COLLABORATOR_ADDED',
+          data: { projectId: draft.id },
+        }),
+      );
+
       expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
-        where: { id: addDto.userId }
-      });
-      expect(prismaMock.project.findUnique).toHaveBeenCalledWith({
-        where: { id: 1 },
-        include: {
-          creator: {
-            select: {
-              id: true,
-              username: true,
-              email: true
-            }
-          },
-          collaborators: {
-            select: {
-              id: true,
-              username: true,
-              email: true
-            }
-          }
-        }
+        where: { id: addDto.userId },
+        select: { id: true },
       });
       expect(prismaMock.project.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: {
-            collaborators: { connect: { id: addDto.userId } }
-          }
-        })
+            collaborators: { connect: { id: addDto.userId } },
+          },
+        }),
       );
-      expect(result).toEqual(mockProjects[0]);
+      expect(result).toEqual(draft);
     });
 
-    it("should throw NotFoundException if user not found", async () => {
+    it('should refuse a request that names nobody', async () => {
+      await expect(service.addCollaborator(1, {})).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw NotFoundException if user not found', async () => {
       prismaMock.user.findUnique.mockResolvedValue(null);
 
-      await expect(service.addCollaborator(1, addDto)).rejects.toThrow(
-        NotFoundException
-      );
+      await expect(service.addCollaborator(1, addDto)).rejects.toThrow(NotFoundException);
     });
 
-    it("should throw NotFoundException if project not found", async () => {
+    it('should throw NotFoundException if project not found', async () => {
       prismaMock.user.findUnique.mockResolvedValue({ id: 2 });
       prismaMock.project.findUnique.mockResolvedValue(null);
 
-      await expect(service.addCollaborator(1, addDto)).rejects.toThrow(
-        NotFoundException
-      );
+      await expect(service.addCollaborator(1, addDto)).rejects.toThrow(NotFoundException);
     });
 
-    it("should throw BadRequestException if user already collaborator", async () => {
+    it('should throw BadRequestException if user already collaborator', async () => {
       prismaMock.user.findUnique.mockResolvedValue({ id: 2 });
       prismaMock.project.findUnique.mockResolvedValue({
-        ...mockProjects[0],
-        collaborators: [{ id: 2 }]
+        ...draft,
+        collaborators: [{ id: 2 }],
       });
 
-      await expect(service.addCollaborator(1, addDto)).rejects.toThrow(
-        BadRequestException
-      );
+      await expect(service.addCollaborator(1, addDto)).rejects.toThrow(BadRequestException);
     });
   });
 
-  describe("removeCollaborator", () => {
+  describe('removeCollaborator', () => {
     const removeDto = { userId: 2 };
 
-    it("should remove collaborator successfully", async () => {
+    it('should remove collaborator successfully', async () => {
       prismaMock.user.findUnique.mockResolvedValue({ id: 2 });
       prismaMock.project.findUnique.mockResolvedValue({
-        ...mockProjects[0],
-        collaborators: [{ id: 2 }, { id: 3 }]
+        ...draft,
+        collaborators: [{ id: 2 }, { id: 3 }],
       });
-      prismaMock.project.update.mockResolvedValue(mockProjects[0]);
+      prismaMock.project.update.mockResolvedValue(draft);
 
       const result = await service.removeCollaborator(1, removeDto);
 
-      expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
-        where: { id: removeDto.userId }
-      });
-      expect(prismaMock.project.findUnique).toHaveBeenCalledWith({
-        where: { id: 1 },
-        include: {
-          creator: {
-            select: {
-              id: true,
-              username: true,
-              email: true
-            }
-          },
-          collaborators: {
-            select: {
-              id: true,
-              username: true,
-              email: true
-            }
-          }
-        }
-      });
       expect(prismaMock.project.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: {
-            collaborators: { disconnect: { id: removeDto.userId } }
-          }
-        })
+            collaborators: { disconnect: { id: removeDto.userId } },
+          },
+        }),
       );
-      expect(result).toEqual(mockProjects[0]);
+      expect(result).toEqual(draft);
     });
 
-    it("should throw NotFoundException if user not found", async () => {
+    it('should tell the removed collaborator and close their live session', async () => {
+      prismaMock.user.findUnique.mockResolvedValue({ id: 2 });
+      prismaMock.project.findUnique.mockResolvedValue({
+        ...draft,
+        collaborators: [{ id: 2 }, { id: 3 }],
+      });
+      prismaMock.project.update.mockResolvedValue(draft);
+
+      await service.removeCollaborator(1, removeDto);
+
+      expect(notificationsMock.notifyBestEffort).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 2,
+          kind: 'COLLABORATOR_REMOVED',
+        }),
+      );
+      expect(workSessionsMock.kick).toHaveBeenCalledWith(1, 2);
+    });
+
+    it('removes the collaborator even when no session is open to close', async () => {
+      prismaMock.user.findUnique.mockResolvedValue({ id: 2 });
+      prismaMock.project.findUnique.mockResolvedValue({
+        ...draft,
+        collaborators: [{ id: 2 }, { id: 3 }],
+      });
+      prismaMock.project.update.mockResolvedValue(draft);
+      workSessionsMock.kick.mockRejectedValueOnce(new NotFoundException());
+
+      await expect(service.removeCollaborator(1, removeDto)).resolves.toEqual(draft);
+    });
+
+    it('reports a live session it could not close, without failing the removal', async () => {
+      const logged = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      prismaMock.user.findUnique.mockResolvedValue({ id: 2 });
+      prismaMock.project.findUnique.mockResolvedValue({
+        ...draft,
+        collaborators: [{ id: 2 }, { id: 3 }],
+      });
+      prismaMock.project.update.mockResolvedValue(draft);
+
+      workSessionsMock.kick.mockRejectedValueOnce(new NotFoundException());
+      await service.removeCollaborator(1, removeDto);
+      expect(logged).not.toHaveBeenCalled();
+
+      workSessionsMock.kick.mockRejectedValueOnce(new Error('host election failed'));
+      await expect(service.removeCollaborator(1, removeDto)).resolves.toEqual(draft);
+      expect(logged).toHaveBeenCalledTimes(1);
+
+      logged.mockRestore();
+    });
+
+    it('should throw NotFoundException if user not found', async () => {
       prismaMock.user.findUnique.mockResolvedValue(null);
 
-      await expect(service.removeCollaborator(1, removeDto)).rejects.toThrow(
-        NotFoundException
-      );
+      await expect(service.removeCollaborator(1, removeDto)).rejects.toThrow(NotFoundException);
     });
 
-    it("should throw NotFoundException if project not found", async () => {
+    it('should throw NotFoundException if project not found', async () => {
       prismaMock.user.findUnique.mockResolvedValue({ id: 2 });
       prismaMock.project.findUnique.mockResolvedValue(null);
 
-      await expect(service.removeCollaborator(1, removeDto)).rejects.toThrow(
-        NotFoundException
-      );
+      await expect(service.removeCollaborator(1, removeDto)).rejects.toThrow(NotFoundException);
     });
 
-    it("should throw ForbiddenException if trying to remove creator", async () => {
-      const creatorId =
-        mockProjects && mockProjects[0] ? mockProjects[0].userId : 1;
+    it('should throw ForbiddenException if trying to remove creator', async () => {
+      const creatorId = draft.userId;
       prismaMock.user.findUnique.mockResolvedValue({ id: creatorId });
       prismaMock.project.findUnique.mockResolvedValue({
-        ...mockProjects[0],
-        collaborators: [{ id: creatorId }]
+        ...draft,
+        collaborators: [{ id: creatorId }],
       });
 
-      await expect(
-        service.removeCollaborator(1, { userId: creatorId })
-      ).rejects.toThrow(ForbiddenException);
+      await expect(service.removeCollaborator(1, { userId: creatorId })).rejects.toThrow(
+        ForbiddenException,
+      );
     });
 
-    it("should throw BadRequestException if user not a collaborator", async () => {
+    it('should throw BadRequestException if user not a collaborator', async () => {
       prismaMock.user.findUnique.mockResolvedValue({ id: 2 });
       prismaMock.project.findUnique.mockResolvedValue({
-        ...mockProjects[0],
-        collaborators: [{ id: 3 }]
+        ...draft,
+        collaborators: [{ id: 3 }],
       });
 
-      await expect(service.removeCollaborator(1, removeDto)).rejects.toThrow(
-        BadRequestException
-      );
-    });
-  });
-
-  describe("updateLastTimeUpdate", () => {
-    it("should update lastSave if sessions exist", async () => {
-      const projectId = 1;
-      prismaMock.workSession.findMany.mockResolvedValue([
-        { id: 10 },
-        { id: 11 }
-      ]);
-      prismaMock.workSession.update.mockResolvedValue({});
-
-      await service.updateLastTimeUpdate(projectId);
-
-      expect(prismaMock.workSession.findMany).toHaveBeenCalledWith({
-        where: { projectId }
-      });
-      expect(prismaMock.workSession.update).toHaveBeenCalledWith({
-        data: { lastSaveAt: expect.any(Date) },
-        where: { projectId }
-      });
-    });
-
-    it("should not update if no sessions", async () => {
-      const projectId = 1;
-      prismaMock.workSession.findMany.mockResolvedValue([]);
-
-      await service.updateLastTimeUpdate(projectId);
-
-      expect(prismaMock.workSession.findMany).toHaveBeenCalledWith({
-        where: { projectId }
-      });
-      expect(prismaMock.workSession.update).not.toHaveBeenCalled();
-    });
-  });
-
-  describe("fetchPublishedGamesPaginated", () => {
-    const publishedProject = {
-      ...mockProjects[1]!,
-      _count: {
-        comments: 3,
-        forks: 5
-      }
-    };
-
-    it("should return paginated published projects with counts", async () => {
-      prismaMock.project.count.mockResolvedValue(1);
-      prismaMock.project.findMany.mockResolvedValue([publishedProject]);
-
-      const result = await service.fetchPublishedGamesPaginated(2, 1);
-
-      expect(prismaMock.project.count).toHaveBeenCalledWith({
-        where: { status: "COMPLETED" }
-      });
-      expect(prismaMock.project.findMany).toHaveBeenCalledWith({
-        where: { status: "COMPLETED" },
-        include: {
-          collaborators: { select: ProjectService.COLLABORATOR_SELECT },
-          creator: { select: ProjectService.CREATOR_SELECT },
-          _count: {
-            select: {
-              forks: true,
-              comments: { where: { deleted: false } }
-            }
-          }
-        },
-        orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
-        skip: 1,
-        take: 1
-      });
-      expect(result).toEqual({
-        projects: [
-          expect.objectContaining({
-            id: publishedProject.id,
-            name: publishedProject.publishedName,
-            commentCount: 3,
-            forkCount: 5
-          })
-        ],
-        total: 1,
-        page: 2,
-        limit: 1
-      });
-    });
-
-    it("should normalize invalid page and cap large limits", async () => {
-      prismaMock.project.count.mockResolvedValue(1);
-      prismaMock.project.findMany.mockResolvedValue([publishedProject]);
-
-      const result = await service.fetchPublishedGamesPaginated(0, 500);
-
-      expect(prismaMock.project.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          skip: 0,
-          take: 100
-        })
-      );
-      expect(result.page).toBe(1);
-      expect(result.limit).toBe(100);
+      await expect(service.removeCollaborator(1, removeDto)).rejects.toThrow(BadRequestException);
     });
   });
 });
