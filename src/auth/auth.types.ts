@@ -1,5 +1,6 @@
-import { Request } from "express";
-import { UserDto } from "@auth/dto/user.dto";
+import { Request } from 'express';
+
+import { UserDto } from './dto/user.dto';
 
 export interface JwtPayload {
   sub: number;

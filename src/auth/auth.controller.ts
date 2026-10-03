@@ -1,282 +1,252 @@
 import {
-  Controller,
-  Post,
-  Patch,
   Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Patch,
+  Post,
   Req,
   Res,
   UnauthorizedException,
-  UseGuards
-} from "@nestjs/common";
-import { AuthService } from "./auth.service";
-import {
-  LoginDto,
-  GoogleCodeDto,
-  GithubLoginDto,
-  MicrosoftLoginDto
-} from "./dto/login.dto";
-import { ChangePasswordDto } from "./dto/change-password.dto";
-import { CreateUserDto } from "@user/dto/create-user.dto";
-import {
-  ApiOperation,
-  ApiResponse,
-  ApiTags,
-  ApiBody,
-  ApiBearerAuth
-} from "@nestjs/swagger";
-import { Response, Request, CookieOptions } from "express";
-import { JwtAuthGuard } from "./guards/jwt-auth.guard";
-import { RequestWithUser } from "./auth.types";
-import {
-  encryptRefreshToken,
-  decryptRefreshToken
-} from "./refresh-cookie.crypto";
+} from '@nestjs/common';
+import { ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Request, Response } from 'express';
 
-@ApiTags("auth")
-@Controller("auth")
+import {
+  ConflictErrorResponseDto,
+  ValidationErrorResponseDto,
+} from '../common/validation/error-response.dto';
+import { CreateUserDto } from '../routes/user/dto/create-user.dto';
+import { Public, RequiresAuth } from './access/access.decorators';
+import { AuthService } from './auth.service';
+import { RequestWithUser } from './auth.types';
+import { REFRESH_COOKIE_NAME, refreshCookieOptions } from './auth.utils';
+import { AccessTokenResponseDto, AuthResponseDto } from './dto/auth-response.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { GithubLoginDto, GoogleCodeDto, LoginDto, MicrosoftLoginDto } from './dto/login.dto';
+import { PasswordPolicyDto } from './dto/password-policy.dto';
+import { PASSWORD_POLICY } from './password-policy';
+import { decryptRefreshToken, encryptRefreshToken } from './refresh-cookie.crypto';
+
+@ApiTags('auth')
+@Controller('auth')
 export class AuthController {
-  private readonly isProd = process.env["NODE_ENV"] === "production";
-
   constructor(private readonly authService: AuthService) {}
 
-  private getRefreshCookieOptions(): CookieOptions {
-    return {
-      httpOnly: true,
-      secure: this.isProd,
-      sameSite: this.isProd ? "none" : "lax",
-      path: "/auth/refresh"
-    };
-  }
-
   private setRefreshCookie(res: Response, token: string): void {
-    res.cookie("refresh_token", encryptRefreshToken(token), {
-      ...this.getRefreshCookieOptions(),
-      maxAge: this.authService.getRefreshTokenMaxAgeMs()
+    res.cookie(REFRESH_COOKIE_NAME, encryptRefreshToken(token), {
+      ...refreshCookieOptions(),
+      maxAge: this.authService.getRefreshTokenMaxAgeMs(),
     });
   }
 
-  @Post("login")
-  @ApiOperation({ summary: "Authenticate a user and return an access token" })
+  /** Hands a freshly minted pair out: the refresh token as a cookie, the access token in the body. */
+  private issue(res: Response, pair: AuthResponseDto): AccessTokenResponseDto {
+    this.setRefreshCookie(res, pair.refresh_token);
+    return { access_token: pair.access_token };
+  }
+
+  @Public()
+  @Post('login')
+  @ApiOperation({ summary: 'Authenticate a user and return an access token' })
   @ApiBody({ type: LoginDto })
   @ApiResponse({
     status: 201,
-    description: "User logged in successfully",
-    schema: {
-      type: "object",
-      properties: { access_token: { type: "string", example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." } },
-      required: ["access_token"]
-    }
+    description: 'User logged in successfully',
+    type: AccessTokenResponseDto,
   })
-  @ApiResponse({ status: 400, description: "Bad request" })
-  @ApiResponse({ status: 401, description: "Invalid credentials" })
+  @ApiResponse({ status: 400, description: 'Bad request' })
+  @ApiResponse({ status: 401, description: 'Invalid credentials' })
   async login(
     @Body() loginDto: LoginDto,
-    @Res({ passthrough: true }) res: Response
-  ): Promise<{ access_token: string }> {
-    const { access_token, refresh_token } = await this.authService.login(
-      loginDto.email,
-      loginDto.password
-    );
-
-    this.setRefreshCookie(res, refresh_token);
-
-    return { access_token };
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AccessTokenResponseDto> {
+    return this.issue(res, await this.authService.login(loginDto.email, loginDto.password));
   }
 
-  @Post("register")
-  @ApiOperation({ summary: "Register a new user and return an access token" })
+  @Public()
+  @Get('password-policy')
+  @ApiOperation({
+    summary: 'The password rule this deployment enforces, so a form can enforce the same one',
+  })
+  @ApiResponse({ status: HttpStatus.OK, type: PasswordPolicyDto })
+  getPasswordPolicy(): PasswordPolicyDto {
+    return {
+      minLength: PASSWORD_POLICY.minLength,
+      minCharacterClasses: PASSWORD_POLICY.minCharacterClasses,
+      // A copy, so the response never aliases the array the validators read.
+      characterClasses: [...PASSWORD_POLICY.characterClasses],
+    };
+  }
+
+  @Public()
+  @Post('register')
+  @ApiOperation({ summary: 'Register a new user and return an access token' })
   @ApiBody({ type: CreateUserDto })
   @ApiResponse({
     status: 201,
-    description: "User registered successfully",
-    schema: {
-      type: "object",
-      properties: { access_token: { type: "string", example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." } },
-      required: ["access_token"]
-    }
+    description: 'User registered successfully',
+    type: AccessTokenResponseDto,
   })
-  @ApiResponse({ status: 400, description: "Bad request" })
-  @ApiResponse({ status: 409, description: "Email already in use" })
-  @ApiResponse({ status: 403, description: "Cannot register as an admin" })
+  @ApiResponse({ status: 400, description: 'Bad request', type: ValidationErrorResponseDto })
+  @ApiResponse({
+    status: 409,
+    description: 'Email or username already in use',
+    type: ConflictErrorResponseDto,
+  })
   async register(
     @Body() createUserDto: CreateUserDto,
-    @Res({ passthrough: true }) res: Response
-  ): Promise<{ access_token: string }> {
-    const { access_token, refresh_token } =
-      await this.authService.register(createUserDto);
-
-    this.setRefreshCookie(res, refresh_token);
-
-    return { access_token };
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AccessTokenResponseDto> {
+    return this.issue(res, await this.authService.register(createUserDto));
   }
 
-  @Post("google/code")
-  @ApiOperation({ summary: "Authenticate with Google authorization code + PKCE" })
+  @Public()
+  @Post('google/code')
+  @ApiOperation({ summary: 'Authenticate with Google authorization code + PKCE' })
   @ApiBody({ type: GoogleCodeDto })
   @ApiResponse({
     status: 201,
-    description: "Login successful with Google",
-    schema: {
-      type: "object",
-      properties: { access_token: { type: "string", example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." } },
-      required: ["access_token"]
-    }
+    description: 'Login successful with Google',
+    type: AccessTokenResponseDto,
   })
-  @ApiResponse({ status: 401, description: "Invalid Google code or code_verifier" })
+  @ApiResponse({ status: 401, description: 'Invalid Google code or code_verifier' })
   async loginWithGoogleCode(
     @Body() dto: GoogleCodeDto,
-    @Res({ passthrough: true }) res: Response
-  ): Promise<{ access_token: string }> {
-    const { access_token, refresh_token } =
-      await this.authService.loginWithGoogleCode(dto.code, dto.codeVerifier);
-
-    this.setRefreshCookie(res, refresh_token);
-
-    return { access_token };
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AccessTokenResponseDto> {
+    return this.issue(
+      res,
+      await this.authService.loginWithProvider('google', {
+        code: dto.code,
+        codeVerifier: dto.codeVerifier,
+      }),
+    );
   }
 
-  @Post("github")
+  @Public()
+  @Post('github')
   @ApiOperation({
-    summary: "Authenticate with GitHub OAuth authorization code"
+    summary: 'Authenticate with GitHub OAuth authorization code',
   })
   @ApiBody({ type: GithubLoginDto })
   @ApiResponse({
     status: 201,
-    description: "Login successful with GitHub",
-    schema: {
-      type: "object",
-      properties: { access_token: { type: "string", example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." } },
-      required: ["access_token"]
-    }
+    description: 'Login successful with GitHub',
+    type: AccessTokenResponseDto,
   })
-  @ApiResponse({ status: 401, description: "Invalid or expired GitHub code" })
+  @ApiResponse({ status: 401, description: 'Invalid or expired GitHub code' })
   async loginWithGithub(
     @Body() githubLoginDto: GithubLoginDto,
-    @Res({ passthrough: true }) res: Response
-  ): Promise<{ access_token: string }> {
-    const { access_token, refresh_token } =
-      await this.authService.loginWithGithub(githubLoginDto.code);
-
-    this.setRefreshCookie(res, refresh_token);
-
-    return { access_token };
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AccessTokenResponseDto> {
+    return this.issue(res, await this.authService.loginWithProvider('github', githubLoginDto.code));
   }
 
-  @Post("microsoft")
+  @Public()
+  @Post('microsoft')
   @ApiOperation({
-    summary: "Authenticate with Microsoft ID token"
+    summary: 'Authenticate with Microsoft ID token',
   })
   @ApiBody({ type: MicrosoftLoginDto })
   @ApiResponse({
     status: 201,
-    description: "Login successful with Microsoft",
-    schema: {
-      type: "object",
-      properties: { access_token: { type: "string", example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." } },
-      required: ["access_token"]
-    }
+    description: 'Login successful with Microsoft',
+    type: AccessTokenResponseDto,
   })
   @ApiResponse({
     status: 401,
-    description: "Invalid Microsoft ID token"
+    description: 'Invalid Microsoft ID token',
   })
   async loginWithMicrosoft(
     @Body() microsoftLoginDto: MicrosoftLoginDto,
-    @Res({ passthrough: true }) res: Response
-  ): Promise<{ access_token: string }> {
-    const { access_token, refresh_token } =
-      await this.authService.loginWithMicrosoft(microsoftLoginDto.token);
-
-    this.setRefreshCookie(res, refresh_token);
-
-    return { access_token };
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AccessTokenResponseDto> {
+    return this.issue(
+      res,
+      await this.authService.loginWithProvider('microsoft', microsoftLoginDto.token),
+    );
   }
 
-  @Post("refresh")
+  @Public()
+  @Post('refresh')
   @ApiOperation({
-    summary: "Refresh the access token using refresh token cookie"
+    summary: 'Refresh the access token using refresh token cookie',
   })
   @ApiResponse({
     status: 201,
-    description: "Access token refreshed successfully",
-    schema: {
-      type: "object",
-      properties: { access_token: { type: "string", example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." } },
-      required: ["access_token"]
-    }
+    description: 'Access token refreshed successfully',
+    type: AccessTokenResponseDto,
   })
-  @ApiResponse({ status: 401, description: "Refresh token missing or invalid" })
+  @ApiResponse({ status: 401, description: 'Refresh token missing or invalid' })
   async refresh(
     @Req() req: Request,
-    @Res({ passthrough: true }) res: Response
-  ): Promise<{ access_token: string }> {
-    const refresh_cookie = req.cookies["refresh_token"];
-    if (!refresh_cookie)
-      throw new UnauthorizedException("Refresh token missing");
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AccessTokenResponseDto> {
+    const refreshCookie = req.cookies[REFRESH_COOKIE_NAME];
+    if (!refreshCookie) {
+      throw new UnauthorizedException('Refresh token missing');
+    }
 
     let refresh_token: string;
     try {
-      refresh_token = decryptRefreshToken(refresh_cookie);
+      refresh_token = decryptRefreshToken(refreshCookie);
     } catch {
-      res.clearCookie("refresh_token", this.getRefreshCookieOptions());
-      throw new UnauthorizedException("Invalid refresh token");
+      res.clearCookie(REFRESH_COOKIE_NAME, refreshCookieOptions());
+      throw new UnauthorizedException('Invalid refresh token');
     }
 
-    const { access_token, refresh_token: new_refresh_token } =
-      await this.authService.refreshToken(refresh_token);
-
-    this.setRefreshCookie(res, new_refresh_token);
-
-    return { access_token };
+    return this.issue(res, await this.authService.refreshToken(refresh_token));
   }
 
-  @Patch("password")
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth("JWT-auth")
+  @Patch('password')
+  @RequiresAuth()
   @ApiOperation({
-    summary:
-      "Change password, OAuth users can set one without providing a current password"
+    summary: 'Change password, OAuth users can set one without providing a current password',
   })
   @ApiBody({ type: ChangePasswordDto })
-  @ApiResponse({ status: 200, description: "Password updated successfully" })
+  @ApiResponse({ status: 200, description: 'Password updated successfully' })
   @ApiResponse({
     status: 400,
-    description: "Current password required for non-OAuth accounts"
+    description: 'Current password required for non-OAuth accounts',
   })
-  @ApiResponse({ status: 401, description: "Current password incorrect" })
+  @ApiResponse({ status: 401, description: 'Current password incorrect' })
   async changePassword(
     @Body() dto: ChangePasswordDto,
-    @Req() req: RequestWithUser
+    @Req() req: RequestWithUser,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<{ success: boolean }> {
-    await this.authService.changePassword(
+    const { refresh_token } = await this.authService.changePassword(
       req.user.id,
       dto.newPassword,
-      dto.currentPassword
+      dto.currentPassword,
     );
+
+    this.setRefreshCookie(res, refresh_token);
+
     return { success: true };
   }
 
-  @Post("logout")
-  @ApiOperation({ summary: "Remove refresh token cookie" })
+  /**
+   * The refresh cookie is scoped to the refresh route and never reaches this one, so the session
+   * is revoked by authenticated user rather than by presented token.
+   */
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  @RequiresAuth()
+  @ApiOperation({ summary: 'End the session and clear the refresh token cookie' })
   @ApiResponse({
     status: 200,
-    description: "Logout successful",
-    schema: { example: { success: true } }
+    description: 'Logout successful',
+    schema: { example: { success: true } },
   })
   async logout(
-    @Req() req: Request,
-    @Res({ passthrough: true }) res: Response
+    @Req() req: RequestWithUser,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<{ success: boolean }> {
-    const refresh_cookie = req.cookies["refresh_token"];
-    if (refresh_cookie) {
-      try {
-        await this.authService.revokeRefreshToken(
-          decryptRefreshToken(refresh_cookie)
-        );
-      } catch {
-      }
-      res.clearCookie("refresh_token", this.getRefreshCookieOptions());
-    }
+    await this.authService.revokeAllRefreshTokens(req.user.id);
+    res.clearCookie(REFRESH_COOKIE_NAME, refreshCookieOptions());
     return { success: true };
   }
 }
