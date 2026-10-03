@@ -1,4 +1,17 @@
-import { PartialType } from "@nestjs/swagger";
-import { CreateUserDto } from "./create-user.dto";
+import { ApiProperty, PartialType } from '@nestjs/swagger';
+import { IsIn, IsOptional } from 'class-validator';
 
-export class UpdateUserDto extends PartialType(CreateUserDto) {}
+import { ROLE_NAMES, USER } from '../../../auth/access/roles';
+import { CreateUserDto } from './create-user.dto';
+
+export class UpdateUserDto extends PartialType(CreateUserDto) {
+  @ApiProperty({
+    description: 'Role the user holds, replacing the one they held',
+    enum: ROLE_NAMES,
+    example: USER,
+    required: false,
+  })
+  @IsOptional()
+  @IsIn(ROLE_NAMES)
+  role?: string;
+}

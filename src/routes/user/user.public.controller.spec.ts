@@ -1,84 +1,132 @@
-import { Test, TestingModule } from "@nestjs/testing";
-import { HttpStatus } from "@nestjs/common";
-import { UserPublicController } from "./user.public.controller";
-import { UserService } from "./user.service";
-import { S3Service } from "@s3/s3.service";
-import { CloudfrontService } from "src/routes/s3/edge.service";
-import { ProjectService } from "@project/project.service";
+import { HttpStatus } from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
 
-describe("UserPublicController", () => {
+import { HubService } from '../project/hub.service';
+import { EdgeService } from '../s3/edge.service';
+import { S3Service } from '../s3/s3.service';
+import { ProfileAssetService } from './profile-asset.service';
+import { UserPublicController } from './user.public.controller';
+import { UserService } from './user.service';
+
+describe('UserPublicController', () => {
   let controller: UserPublicController;
-  let userService: { findPublicProfileByUsername: jest.Mock };
+  let userService: {
+    findPublicProfileByUsername: jest.Mock;
+    searchPublic: jest.Mock;
+  };
   let s3Service: { getFileMetadataOrNull: jest.Mock };
-  let cloudfrontService: { getCDNUrl: jest.Mock };
+  let edgeService: { getCDNUrl: jest.Mock };
+  let hubService: { fetchUserTotals: jest.Mock };
 
   beforeEach(async () => {
     userService = {
-      findPublicProfileByUsername: jest.fn()
+      findPublicProfileByUsername: jest.fn(),
+      searchPublic: jest.fn(),
     };
     s3Service = {
-      getFileMetadataOrNull: jest.fn()
+      getFileMetadataOrNull: jest.fn(),
     };
-    cloudfrontService = {
-      getCDNUrl: jest.fn()
+    edgeService = {
+      getCDNUrl: jest.fn(),
+    };
+    hubService = {
+      fetchUserTotals: jest.fn().mockResolvedValue({
+        gameCount: 7,
+        totalPlays: 1240,
+        totalLikes: 318,
+      }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [UserPublicController],
       providers: [
+        ProfileAssetService,
         {
           provide: UserService,
-          useValue: userService
+          useValue: userService,
         },
         {
           provide: S3Service,
-          useValue: s3Service
+          useValue: s3Service,
         },
         {
-          provide: CloudfrontService,
-          useValue: cloudfrontService
+          provide: EdgeService,
+          useValue: edgeService,
         },
         {
-          provide: ProjectService,
-          useValue: {}
-        }
-      ]
+          provide: HubService,
+          useValue: hubService,
+        },
+      ],
     }).compile();
 
     controller = module.get<UserPublicController>(UserPublicController);
   });
 
-  it("should be defined", () => {
+  describe('search', () => {
+    it('should answer an empty box with nothing rather than the first ten accounts', async () => {
+      const result = await controller.search('   ');
+
+      expect(result.data).toEqual([]);
+      expect(userService.searchPublic).not.toHaveBeenCalled();
+    });
+
+    it("should carry each person's picture, so a face is recognisable in the list", async () => {
+      userService.searchPublic.mockResolvedValue([
+        { id: 12, username: 'louis', nickname: 'Louis' },
+      ]);
+      s3Service.getFileMetadataOrNull.mockResolvedValue({ ETag: '"abc"' });
+      edgeService.getCDNUrl.mockReturnValue('https://cdn.example/users/12/profile');
+
+      const result = await controller.search('lou');
+
+      expect(userService.searchPublic).toHaveBeenCalledWith('lou', 10);
+      expect(result.data).toEqual([
+        {
+          id: 12,
+          username: 'louis',
+          nickname: 'Louis',
+          profileImageUrl: 'https://cdn.example/users/12/profile?v=abc',
+        },
+      ]);
+    });
+  });
+
+  it('should be defined', () => {
     expect(controller).toBeDefined();
   });
 
-  describe("getPublicProfileByUsername", () => {
-    it("should return a public user profile response", async () => {
+  describe('getPublicProfileByUsername', () => {
+    it('should return a public user profile response', async () => {
       const publicProfile = {
         id: 1,
-        username: "Madeline",
-        nickname: "Maddy",
-        description: "Hello"
+        username: 'Madeline',
+        nickname: 'Maddy',
+        description: 'Hello',
+        createdAt: new Date('2025-03-14T09:00:00.000Z'),
       };
 
       userService.findPublicProfileByUsername.mockResolvedValue(publicProfile);
       s3Service.getFileMetadataOrNull
-        .mockResolvedValueOnce({ ETag: "\"profile-etag\"" })
+        .mockResolvedValueOnce({ ETag: '"profile-etag"' })
         .mockResolvedValueOnce(null);
-      cloudfrontService.getCDNUrl.mockReturnValue("https://cdn.example.com/profile");
+      edgeService.getCDNUrl.mockReturnValue('https://cdn.example.com/profile');
 
-      await expect(controller.getPublicProfileByUsername("Madeline")).resolves.toEqual({
+      await expect(controller.getPublicProfileByUsername('Madeline')).resolves.toEqual({
         statusCode: HttpStatus.OK,
-        message: "Public user profile retrieved successfully",
+        message: 'Public user profile retrieved successfully',
         data: {
           ...publicProfile,
-          profileImageUrl: "https://cdn.example.com/profile?v=profile-etag",
-          backgroundImageUrl: null
-        }
+          gameCount: 7,
+          totalPlays: 1240,
+          totalLikes: 318,
+          profileImageUrl: 'https://cdn.example.com/profile?v=profile-etag',
+          backgroundImageUrl: null,
+        },
       });
-      expect(userService.findPublicProfileByUsername).toHaveBeenCalledWith("Madeline");
-      expect(s3Service.getFileMetadataOrNull).toHaveBeenCalledWith("users/1/profile");
-      expect(s3Service.getFileMetadataOrNull).toHaveBeenCalledWith("users/1/background");
+      expect(userService.findPublicProfileByUsername).toHaveBeenCalledWith('Madeline');
+      expect(s3Service.getFileMetadataOrNull).toHaveBeenCalledWith('users/1/profile');
+      expect(s3Service.getFileMetadataOrNull).toHaveBeenCalledWith('users/1/background');
     });
   });
 });
