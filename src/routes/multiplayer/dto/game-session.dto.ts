@@ -1,55 +1,52 @@
-import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { GameSessionVisibility } from "@prisma/client";
-import {
-  IsArray,
-  IsEnum,
-  IsInt,
-  IsOptional,
-  IsString,
-  IsUUID
-} from "class-validator";
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { GameSessionVisibility } from '@prisma/client';
+import { IsArray, IsEnum, IsInt, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class GameSessionResponseDto {
   @ApiProperty()
   @IsUUID()
-    sessionUuid!: string;
+  sessionUuid!: string;
 
   @ApiProperty()
   @IsString()
-    title!: string;
+  title!: string;
 
   @ApiProperty({ enum: GameSessionVisibility })
   @IsEnum(GameSessionVisibility)
-    visibility!: GameSessionVisibility;
+  visibility!: GameSessionVisibility;
 
-  @ApiProperty({ description: "ID of the host user" })
+  @ApiProperty({ description: 'ID of the host user' })
   @IsInt()
-    hostId!: number;
+  hostId!: number;
 
-  @ApiProperty({ description: "Username of the host" })
+  @ApiProperty({ description: 'Username of the host' })
   @IsString()
-    hostUsername!: string;
+  hostUsername!: string;
 
-  @ApiPropertyOptional({ description: "Display nickname of the host, if set" })
+  @ApiPropertyOptional({ description: 'Display nickname of the host, if set' })
   @IsOptional()
   @IsString()
-    hostNickname?: string;
+  hostNickname?: string;
 
-  @ApiProperty({ description: "Name of the game (project) being played" })
+  @ApiProperty({ description: 'ID of the game (project) being played' })
+  @IsInt()
+  projectId!: number;
+
+  @ApiProperty({ description: 'Name of the game (project) being played' })
   @IsString()
-    projectName!: string;
+  projectName!: string;
 
-  @ApiProperty({ description: "Maximum number of players, host included" })
+  @ApiProperty({ description: 'Maximum number of players, host included' })
   @IsInt()
-    maxPlayers!: number;
+  maxPlayers!: number;
 
-  @ApiProperty({ description: "Current number of players, host included" })
+  @ApiProperty({ description: 'Current number of players, host included' })
   @IsInt()
-    playerCount!: number;
+  playerCount!: number;
 }
 
 export class GameSessionListResponseDto {
   @ApiProperty({ type: () => [GameSessionResponseDto] })
   @IsArray()
-    sessions!: GameSessionResponseDto[];
+  sessions!: GameSessionResponseDto[];
 }

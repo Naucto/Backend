@@ -1,22 +1,21 @@
+import { plainToInstance } from 'class-transformer';
+import { IsString, validateSync, ValidationError } from 'class-validator';
+import { RawData } from 'ws';
+
+import { getExcerrMessage } from '../../util/errors';
+import { WebRTCService } from '../webrtc.service';
 import {
+  ownMetadata,
+  prototypeChainOf,
+  readOwnMetadata,
   WebRTCClientEvent,
   WebRTCClientReadyState,
   WebRTCClientSocket,
+  WebRTCDecoratorTarget,
   WebRTCServer,
-  WebRTCServerOptions
-} from "@webrtc/server/webrtc.server";
-import { WebRTCServerDecoratorError } from "@webrtc/server/webrtc.server.error";
-import { WebRTCService } from "@webrtc/webrtc.service";
-import { getExcerrMessage } from "@util/errors";
-
-import { RawData } from "ws";
-
-import { plainToInstance } from "class-transformer";
-import { IsString, validateSync, ValidationError } from "class-validator";
-
-// ----------------------------------------------------------------------------
-// Public message contracts
-// ----------------------------------------------------------------------------
+  WebRTCServerOptions,
+} from './webrtc.server';
+import { WebRTCServerDecoratorError } from './webrtc.server.error';
 
 // Minimal envelope used to read the `type` discriminator before the concrete
 // message class is known. Every incoming message must at least carry a `type`.
@@ -32,11 +31,26 @@ export interface EventBasedOutgoing {
   [key: string]: unknown;
 }
 
+type EventBasedMessageClass<TypeT extends string = string> = new (...args: never[]) => {
+  type: TypeT;
+};
+
+/** The messages of one channel and direction, each class keyed by the literal `type` it carries. */
+export type EventBasedMessageSet<SetT> = {
+  [TypeT in keyof SetT & string]: EventBasedMessageClass<TypeT>;
+};
+
+/** Refuses to compile when a key differs from the `type` its class declares. */
+export function eventBasedMessages<SetT extends EventBasedMessageSet<SetT>>(messages: SetT): SetT {
+  return messages;
+}
+
+export type EventBasedMessageOf<SetT extends Record<string, EventBasedMessageClass>> = InstanceType<
+  SetT[keyof SetT]
+>;
+
 type EventBasedMessageConstructor = new (...args: unknown[]) => object;
-type EventBasedMessageHandler = (
-  socket: WebRTCClientSocket,
-  body: object
-) => void;
+type EventBasedMessageHandler = (socket: WebRTCClientSocket, body: object) => void;
 
 type EventBasedMessageEntry = {
   ctor: EventBasedMessageConstructor;
@@ -44,27 +58,17 @@ type EventBasedMessageEntry = {
 };
 
 type EventBasedMessageMap = Map<string, EventBasedMessageEntry>;
-type EventBasedDecoratorTarget = Record<string | symbol, unknown>;
 
-const WEBRTC_EB_MESSAGES_META_KEY = Symbol("webrtc:eventBasedMessages");
+const WEBRTC_EB_MESSAGES_META_KEY = Symbol('webrtc:eventBasedMessages');
 
-// ----------------------------------------------------------------------------
-// @EventBasedMessage decorator
-// ----------------------------------------------------------------------------
-
-function isEventBasedPrototypeTarget(
-  target: unknown
-): target is EventBasedDecoratorTarget {
-  if (typeof target !== "object" || target === null) {
+function isEventBasedPrototypeTarget(target: unknown): target is WebRTCDecoratorTarget {
+  if (typeof target !== 'object' || target === null) {
     return false;
   }
 
   return (
     target === EventBasedWebRTCServer.prototype ||
-    Object.prototype.isPrototypeOf.call(
-      EventBasedWebRTCServer.prototype,
-      target
-    )
+    Object.prototype.isPrototypeOf.call(EventBasedWebRTCServer.prototype, target)
   );
 }
 
@@ -74,60 +78,45 @@ function isEventBasedPrototypeTarget(
 // registered per `type` (per prototype chain).
 export function EventBasedMessage(
   type: string,
-  dtoClass: EventBasedMessageConstructor
+  dtoClass: EventBasedMessageConstructor,
 ): MethodDecorator {
-  return (
-    target: unknown,
-    _key: string | symbol,
-    descriptor: PropertyDescriptor
-  ) => {
+  return (target: unknown, _key: string | symbol, descriptor: PropertyDescriptor) => {
     if (!isEventBasedPrototypeTarget(target)) {
       throw new WebRTCServerDecoratorError(
-        "The @EventBasedMessage decorator can only be applied to methods of " +
-          "EventBasedWebRTCServer and derived classes"
+        'The @EventBasedMessage decorator can only be applied to methods of ' +
+          'EventBasedWebRTCServer and derived classes',
       );
     }
 
-    let messageMap: EventBasedMessageMap | undefined;
-
-    if (
-      Object.prototype.hasOwnProperty.call(target, WEBRTC_EB_MESSAGES_META_KEY)
-    ) {
-      messageMap = target[WEBRTC_EB_MESSAGES_META_KEY] as EventBasedMessageMap;
-    }
-
-    if (!messageMap) {
-      messageMap = new Map();
-      target[WEBRTC_EB_MESSAGES_META_KEY] = messageMap;
-    }
+    const messageMap = ownMetadata<EventBasedMessageMap>(
+      target,
+      WEBRTC_EB_MESSAGES_META_KEY,
+      () => new Map(),
+    );
 
     if (messageMap.has(type)) {
       throw new WebRTCServerDecoratorError(
-        `Duplicate @EventBasedMessage handler for type "${type}".`
+        `Duplicate @EventBasedMessage handler for type "${type}".`,
       );
     }
 
     messageMap.set(type, {
       ctor: dtoClass,
-      handler: descriptor.value as EventBasedMessageHandler
+      handler: descriptor.value as EventBasedMessageHandler,
     });
   };
 }
 
-// ----------------------------------------------------------------------------
-// Server
-// ----------------------------------------------------------------------------
-
-export type EventBasedFailurePolicy = "close" | "ignore";
+export type EventBasedFailurePolicy = 'close' | 'ignore';
 
 export class EventBasedWebRTCServerOptions extends WebRTCServerOptions {
   // What to do when a message is malformed (bad JSON) or fails DTO validation.
   // Defaults to closing the socket, mirroring "kick the badly-behaved client".
-  onInvalidMessage: EventBasedFailurePolicy = "close";
+  onInvalidMessage: EventBasedFailurePolicy = 'close';
 
   // What to do when a message has a `type` with no registered handler.
   // Defaults to ignoring it for forward-compatibility with newer clients.
-  onUnknownType: EventBasedFailurePolicy = "ignore";
+  onUnknownType: EventBasedFailurePolicy = 'ignore';
 }
 
 // A WebRTC server base that turns the raw "message" event into a typed,
@@ -138,52 +127,32 @@ export class EventBasedWebRTCServerOptions extends WebRTCServerOptions {
 // connection/close/pong, so subclasses remain free to manage their own
 // per-socket lifecycle via @WebRTCServerEvent/@WebRTCClientEvent.
 export class EventBasedWebRTCServer<
-  OptsT extends EventBasedWebRTCServerOptions = EventBasedWebRTCServerOptions
+  OptsT extends EventBasedWebRTCServerOptions = EventBasedWebRTCServerOptions,
+  OutgoingT extends { type: string } = EventBasedOutgoing,
 > extends WebRTCServer<OptsT> {
   private readonly _messageHandlers: EventBasedMessageMap = new Map();
 
   constructor(
     webrtcService: WebRTCService,
     whatFor: string,
-    extraOpts: OptsT = new EventBasedWebRTCServerOptions() as OptsT
+    extraOpts: OptsT = new EventBasedWebRTCServerOptions() as OptsT,
   ) {
     super(webrtcService, whatFor, extraOpts);
 
     this.registerMessageHandlers();
   }
 
-  // --------------------------------------------------------------------------
-
   private registerMessageHandlers(): void {
-    const prototypeChain: Array<EventBasedDecoratorTarget> = [];
+    prototypeChainOf(this).forEach((prototype) => {
+      const messageMap = readOwnMetadata<EventBasedMessageMap>(
+        prototype,
+        WEBRTC_EB_MESSAGES_META_KEY,
+      );
 
-    let currentProto = Object.getPrototypeOf(this) as object | null;
-
-    while (currentProto && currentProto !== Object.prototype) {
-      prototypeChain.push(currentProto as EventBasedDecoratorTarget);
-      currentProto = Object.getPrototypeOf(currentProto);
-    }
-
-    // Walk base-to-derived so that a more derived class redeclaring the same
-    // type is reported as the duplicate it is.
-    prototypeChain.reverse().forEach((prototype) => {
-      if (
-        !Object.prototype.hasOwnProperty.call(
-          prototype,
-          WEBRTC_EB_MESSAGES_META_KEY
-        )
-      ) {
-        return;
-      }
-
-      const messageMap = prototype[
-        WEBRTC_EB_MESSAGES_META_KEY
-      ] as EventBasedMessageMap;
-
-      messageMap.forEach((entry, type) => {
+      messageMap?.forEach((entry, type) => {
         if (this._messageHandlers.has(type)) {
           throw new WebRTCServerDecoratorError(
-            `Duplicate @EventBasedMessage handler for type "${type}".`
+            `Duplicate @EventBasedMessage handler for type "${type}".`,
           );
         }
 
@@ -192,40 +161,40 @@ export class EventBasedWebRTCServer<
     });
   }
 
-  // --------------------------------------------------------------------------
-
   // Decode a ws RawData frame (Buffer/ArrayBuffer/Buffer[]/string) into a parsed
   // JSON object. Throws SyntaxError on malformed input.
   protected decodeRawData(rawData: RawData | Buffer | string): unknown {
     if (Buffer.isBuffer(rawData)) {
-      return JSON.parse(rawData.toString("utf-8"));
+      return JSON.parse(rawData.toString('utf-8'));
     }
 
     if (rawData instanceof ArrayBuffer) {
-      return JSON.parse(
-        new TextDecoder("utf-8").decode(new Uint8Array(rawData))
-      );
+      return JSON.parse(new TextDecoder('utf-8').decode(new Uint8Array(rawData)));
     }
 
     if (Array.isArray(rawData)) {
-      return JSON.parse(Buffer.concat(rawData as Buffer[]).toString("utf-8"));
+      return JSON.parse(Buffer.concat(rawData as Buffer[]).toString('utf-8'));
     }
 
     return JSON.parse(rawData as string);
   }
 
-  @WebRTCClientEvent("message")
+  @WebRTCClientEvent('message')
   protected _internal_eb_onMessage(
     socket: WebRTCClientSocket,
-    rawData: RawData | Buffer | string
+    rawData: RawData | Buffer | string,
   ): void {
     let rawBody: unknown;
 
     try {
       rawBody = this.decodeRawData(rawData);
     } catch (err) {
-      // Never rethrow: an escaped throw would crash the shared ws listener.
       this.handleMalformed(socket, err);
+      return;
+    }
+
+    if (typeof rawBody !== 'object' || rawBody === null || Array.isArray(rawBody)) {
+      this.handleMalformed(socket, new Error('frame is not a JSON object'));
       return;
     }
 
@@ -252,8 +221,8 @@ export class EventBasedWebRTCServer<
       return;
     }
 
-    // A throw here would escape into the base's shared ws listener, so contain
-    // a buggy handler to its own connection.
+    // Caught here so the log names the message type; left to the base, the connection is dropped
+    // without it.
     try {
       entry.handler.call(this, socket, body as object);
     } catch (err) {
@@ -261,19 +230,11 @@ export class EventBasedWebRTCServer<
     }
   }
 
-  // --------------------------------------------------------------------------
-  // Failure handling — overridable so a subclass can, e.g., send an error frame
-  // before closing.
-  // --------------------------------------------------------------------------
-
-  protected handleHandlerError(
-    socket: WebRTCClientSocket,
-    type: string,
-    err: unknown
-  ): void {
+  // The failure hooks are overridable, so a subclass can send an error frame before closing.
+  protected handleHandlerError(socket: WebRTCClientSocket, type: string, err: unknown): void {
     this.logger.error(
       `Handler for "${type}" threw on a message from ${socket.remoteAddress}: ` +
-        getExcerrMessage(err)
+        getExcerrMessage(err),
     );
 
     socket.close();
@@ -281,18 +242,15 @@ export class EventBasedWebRTCServer<
 
   protected handleMalformed(socket: WebRTCClientSocket, err: unknown): void {
     this.logger.verbose(
-      `Failed to parse message from ${socket.remoteAddress}: ${getExcerrMessage(err)}`
+      `Failed to parse message from ${socket.remoteAddress}: ${getExcerrMessage(err)}`,
     );
 
-    if (this.extraOpts.onInvalidMessage === "close") {
+    if (this.extraOpts.onInvalidMessage === 'close') {
       socket.close();
     }
   }
 
-  protected handleInvalidMessage(
-    socket: WebRTCClientSocket,
-    errors: ValidationError[]
-  ): void {
+  protected handleInvalidMessage(socket: WebRTCClientSocket, errors: ValidationError[]): void {
     errors.forEach((error) => {
       const path = error.children?.length
         ? `${error.property}.${error.children[0]!.property}`
@@ -300,33 +258,24 @@ export class EventBasedWebRTCServer<
 
       this.logger.verbose(
         `Validation error for ${socket.remoteAddress} — ${path}: ` +
-          Object.values(error.constraints || {}).join(", ")
+          Object.values(error.constraints || {}).join(', '),
       );
     });
 
-    if (this.extraOpts.onInvalidMessage === "close") {
+    if (this.extraOpts.onInvalidMessage === 'close') {
       socket.close();
     }
   }
 
   protected handleUnknownType(socket: WebRTCClientSocket, type: string): void {
-    this.logger.verbose(
-      `Unknown message type "${type}" from ${socket.remoteAddress}`
-    );
+    this.logger.verbose(`Unknown message type "${type}" from ${socket.remoteAddress}`);
 
-    if (this.extraOpts.onUnknownType === "close") {
+    if (this.extraOpts.onUnknownType === 'close') {
       socket.close();
     }
   }
 
-  // --------------------------------------------------------------------------
-  // Typed I/O helpers
-  // --------------------------------------------------------------------------
-
-  protected send(
-    socket: WebRTCClientSocket,
-    message: EventBasedOutgoing
-  ): void {
+  protected send(socket: WebRTCClientSocket, message: OutgoingT): void {
     if (
       socket.readyState !== WebRTCClientReadyState.CONNECTING &&
       socket.readyState !== WebRTCClientReadyState.OPEN
@@ -334,7 +283,7 @@ export class EventBasedWebRTCServer<
       const stateName = WebRTCClientReadyState[socket.readyState];
 
       this.logger.verbose(
-        `Attempt to send to ${socket.remoteAddress} in state ${stateName}, closing`
+        `Attempt to send to ${socket.remoteAddress} in state ${stateName}, closing`,
       );
 
       socket.close();
@@ -344,17 +293,15 @@ export class EventBasedWebRTCServer<
     try {
       socket.send(JSON.stringify(message));
     } catch (err) {
-      this.logger.verbose(
-        `Failed to send message to ${socket.remoteAddress}: ${err}`
-      );
+      this.logger.verbose(`Failed to send message to ${socket.remoteAddress}: ${err}`);
       socket.close();
     }
   }
 
   protected broadcast(
     sockets: Iterable<WebRTCClientSocket>,
-    message: EventBasedOutgoing,
-    opts?: { except?: WebRTCClientSocket }
+    message: OutgoingT,
+    opts?: { except?: WebRTCClientSocket },
   ): void {
     const serialized = JSON.stringify(message);
 
@@ -370,9 +317,7 @@ export class EventBasedWebRTCServer<
       try {
         socket.send(serialized);
       } catch (err) {
-        this.logger.verbose(
-          `Failed to broadcast to ${socket.remoteAddress}: ${err}`
-        );
+        this.logger.verbose(`Failed to broadcast to ${socket.remoteAddress}: ${err}`);
         socket.close();
       }
     }
