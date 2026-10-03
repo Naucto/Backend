@@ -11,5 +11,6 @@ coverage
 generated_client
 test
 memories
+swagger.json
 Session.vim
 .env

@@ -1,6 +1,4 @@
-/* eslint-disable no-console */
-// Fine for this file, not part of the main project
-
+import { writeFileSync } from "node:fs";
 import { setupGracefulShutdown } from "@tygra/nestjs-graceful-shutdown";
 
 // This is only necessary for services that explicitly rely on ConfigService
@@ -27,53 +25,29 @@ const stubEnv: NodeJS.ProcessEnv = {
   S3_MAX_AUTO_HISTORY_VERSION: "5",
   S3_AUTO_HISTORY_DELAY: "10",
   S3_MAX_CHECKPOINTS: "5",
-  CDN_URL: "stub.cloudfront.net",
-  CLOUDFRONT_KEY_PAIR_ID: "stub-key-pair-id",
-  CLOUDFRONT_PRIVATE_KEY_PATH: "/dev/null",
 };
 
 Object.assign(process.env, stubEnv);
 
 (async () => {
   try {
-    console.log("[swag-gen] Starting swagger generation...");
-
-    console.log("[swag-gen] Importing @nestjs/core...");
     const { NestFactory } = await import("@nestjs/core");
-    console.log("[swag-gen] Imported @nestjs/core.");
-
-    console.log("[swag-gen] Importing SwaggerAppModule...");
-    const { SwaggerAppModule: AppModule } = await import("../src/swagger.app.module");
-    console.log("[swag-gen] Imported SwaggerAppModule.");
-
-    console.log("[swag-gen] Importing buildSwaggerDocument...");
+    const { SwaggerAppModule } = await import("../src/swagger.app.module");
     const { buildSwaggerDocument } = await import("../src/swagger");
-    console.log("[swag-gen] Imported buildSwaggerDocument.");
 
-    const fs = await import("fs");
-
-    console.log("[swag-gen] Creating NestJS application...");
-    const app = await NestFactory.create(AppModule, { logger: ["error", "warn", "log", "debug", "verbose"] });
-    console.log("[swag-gen] NestJS application created.");
-    
-    console.log("[swag-gen] Setting up graceful shutdown from Tygra...");
+    const app = await NestFactory.create(SwaggerAppModule, { logger: ["error", "warn", "log", "debug", "verbose"] });
     setupGracefulShutdown({ app });
-    console.log("[swag-gen] Graceful shutdown hook set up");
 
-    console.log("[swag-gen] Building swagger document...");
     const document = buildSwaggerDocument(app);
-    console.log("[swag-gen] Swagger document built.");
+    writeFileSync("swagger.json", JSON.stringify(document, null, 2));
 
-    console.log("[swag-gen] Writing swagger.json...");
-    fs.writeFileSync("swagger.json", JSON.stringify(document, null, 2));
-    console.log("[swag-gen] swagger.json written successfully.");
-
-    console.log("[swag-gen] Closing NestJS application...");
     await app.close();
-    console.log("[swag-gen] Done.");
+    console.log("[swag-gen] swagger.json written");
   } catch (err) {
-    console.error("[swag-gen] Failed to generate swagger.json",
-                  err instanceof Error ? err.stack : String(err));
+    console.error(
+      "[swag-gen] Failed to generate swagger.json",
+      err instanceof Error ? err.stack : String(err)
+    );
     process.exit(1);
   }
 })();
