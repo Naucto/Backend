@@ -1,42 +1,87 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { JwtService } from "@nestjs/jwt";
-import { PrismaService } from "@ourPrisma/prisma.service";
-import { WebRTCOfferDto } from "@webrtc/webrtc.dto";
-import { WebRTCService } from "@webrtc/webrtc.service";
-import { CreateNotificationInput, NotificationPayload, NotificationType } from "./notifications.types";
-import { NotificationWebRTCServer } from "./notifications.webrtc-server";
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { Prisma } from '@prisma/client';
+
+import { PresenceServerMessage } from '../presence/dto/presence-message.dto';
+import { PresenceSocketHandler } from '../presence/presence.types';
+import { PrismaService } from '../prisma/prisma.service';
+import { WebRTCOfferDto } from '../webrtc/webrtc.dto';
+import { WebRTCService } from '../webrtc/webrtc.service';
+import {
+  CreateNotificationInput,
+  NotificationData,
+  NotificationKind,
+  NotificationPayload,
+  NotificationType,
+} from './notifications.types';
+import { NotificationWebRTCServer } from './notifications.webrtc-server';
 
 const MAX_NOTIFICATIONS_PER_USER = 50;
 
 @Injectable()
 export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
   private readonly notificationServer: NotificationWebRTCServer;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly webrtcService: WebRTCService,
-    jwtService: JwtService
+    jwtService: JwtService,
   ) {
     this.notificationServer = new NotificationWebRTCServer(
       this.webrtcService,
-      "Notifications",
+      'Notifications',
       jwtService,
-      this
+      this,
     );
+  }
+
+  attachPresence(handler: PresenceSocketHandler): void {
+    this.notificationServer.setPresenceHandler(handler);
+  }
+
+  sendPresenceToUser(userId: number, message: PresenceServerMessage): void {
+    this.notificationServer.sendMessageToUser(userId, message);
   }
 
   getWebRTCOffer(): WebRTCOfferDto {
     return this.webrtcService.buildOffer(this.notificationServer);
   }
 
+  /** False for a soft-deleted account, whose row and still-valid tokens outlive it. */
+  async isActiveUser(userId: number): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { deletedAt: true },
+    });
+
+    return user !== null && user.deletedAt === null;
+  }
+
   async getUserNotifications(userId: number): Promise<NotificationPayload[]> {
     const notifications = await this.prisma.notification.findMany({
       where: { userId },
-      orderBy: { createdAt: "desc" },
+      orderBy: { createdAt: 'desc' },
       take: MAX_NOTIFICATIONS_PER_USER,
     });
 
     return notifications.map((notification) => this.toPayload(notification));
+  }
+
+  /**
+   * Notifies about a change the caller has already written, logging a failure instead of raising
+   * it: the caller must not answer that its change failed when only the notice about it did.
+   */
+  async notifyBestEffort(input: CreateNotificationInput): Promise<void> {
+    try {
+      await this.createNotification(input);
+    } catch (error) {
+      this.logger.warn(
+        `Could not notify user ${input.userId} (${input.kind ?? 'GENERIC'}): ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   async createNotification(input: CreateNotificationInput): Promise<NotificationPayload> {
@@ -47,15 +92,14 @@ export class NotificationsService {
           title: input.title,
           message: input.message,
           type: input.type,
+          kind: input.kind ?? 'GENERIC',
+          ...(input.data !== undefined ? { data: input.data as Prisma.InputJsonObject } : {}),
         },
       });
 
       const extraNotifications = await tx.notification.findMany({
         where: { userId: input.userId },
-        orderBy: [
-          { createdAt: "desc" },
-          { id: "desc" },
-        ],
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip: MAX_NOTIFICATIONS_PER_USER,
         select: { id: true },
       });
@@ -79,18 +123,7 @@ export class NotificationsService {
   async markAsRead(userId: number, notificationIdRaw: string): Promise<NotificationPayload> {
     const notificationId = Number(notificationIdRaw);
     if (!Number.isInteger(notificationId)) {
-      throw new BadRequestException("Invalid notification id");
-    }
-
-    const notification = await this.prisma.notification.findFirst({
-      where: {
-        id: notificationId,
-        userId,
-      },
-    });
-
-    if (!notification) {
-      throw new NotFoundException("Notification not found");
+      throw new BadRequestException('Invalid notification id');
     }
 
     const result = await this.prisma.notification.updateMany({
@@ -99,12 +132,12 @@ export class NotificationsService {
     });
 
     if (result.count === 0) {
-      throw new NotFoundException("Notification not found");
+      throw new NotFoundException('Notification not found');
     }
 
     const updated = await this.prisma.notification.findUnique({ where: { id: notificationId } });
     if (!updated) {
-      throw new NotFoundException("Notification not found");
+      throw new NotFoundException('Notification not found');
     }
 
     return this.toPayload(updated);
@@ -124,12 +157,20 @@ export class NotificationsService {
     return result.count;
   }
 
+  private toData(value: Prisma.JsonValue): NotificationData | null {
+    return value !== null && typeof value === 'object' && !Array.isArray(value)
+      ? (value as NotificationData)
+      : null;
+  }
+
   private toPayload(notification: {
     id: number;
     userId: number;
     title: string;
     message: string;
     type: NotificationType;
+    kind: NotificationKind;
+    data: Prisma.JsonValue;
     read: boolean;
     createdAt: Date;
   }): NotificationPayload {
@@ -139,6 +180,8 @@ export class NotificationsService {
       title: notification.title,
       message: notification.message,
       type: notification.type,
+      kind: notification.kind,
+      data: this.toData(notification.data),
       read: notification.read,
       createdAt: notification.createdAt.toISOString(),
     };
