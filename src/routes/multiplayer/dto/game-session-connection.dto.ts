@@ -3,8 +3,7 @@ import { Type } from "class-transformer";
 import { IsInt, IsOptional, IsString, IsUUID } from "class-validator";
 import { WebRTCOfferDto } from "@webrtc/webrtc.dto";
 
-// Returned on create/join: everything a client needs to open its WebRTC
-// connection to the synced game-table server.
+// Everything a client needs to open its WebRTC connection to the synced game-table server.
 export class GameSessionConnectionResponseDto {
   @ApiProperty()
   @IsUUID()

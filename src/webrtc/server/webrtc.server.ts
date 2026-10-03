@@ -1,7 +1,4 @@
-import {
-  WebRTCServerDecoratorError,
-  WebRTCServerRuntimeError
-} from "@webrtc/server/webrtc.server.error";
+import { WebRTCServerDecoratorError } from "@webrtc/server/webrtc.server.error";
 import { WebRTCService } from "@webrtc/webrtc.service";
 
 import { availableParallelism } from "os";
@@ -50,7 +47,6 @@ type WebRTCAuthEventHandler = (
   httpClientSocket: Duplex,
   head: Buffer
 ) => boolean;
-type WebRTCAuthEventHandlerSet = Array<WebRTCAuthEventHandler>;
 
 type WebRTCEventKind = "server" | "client";
 
@@ -63,13 +59,13 @@ const WEBRTC_AUTH_EVENTS_META_KEY = Symbol("webrtc:authEvents");
 function isWebRTCPrototypeTarget(
   target: unknown
 ): target is WebRTCDecoratorTarget {
-  if (typeof target !== "object" || target === undefined) {
+  if (typeof target !== "object" || target === null) {
     return false;
   }
 
   return (
     target === WebRTCServer.prototype ||
-    Object.prototype.isPrototypeOf.call(WebRTCServer.prototype, target!)
+    Object.prototype.isPrototypeOf.call(WebRTCServer.prototype, target)
   );
 }
 
@@ -142,54 +138,71 @@ export function WebRTCServerAuthEvent(): MethodDecorator {
       );
     }
 
-    let eventMap: WebRTCAuthEventHandlerSet | undefined;
+    let handlers: WebRTCAuthEventHandler[] | undefined;
 
     if (
       Object.prototype.hasOwnProperty.call(target, WEBRTC_AUTH_EVENTS_META_KEY)
     ) {
-      eventMap = target[
-        WEBRTC_AUTH_EVENTS_META_KEY
-      ] as WebRTCAuthEventHandlerSet;
+      handlers = target[WEBRTC_AUTH_EVENTS_META_KEY] as WebRTCAuthEventHandler[];
     }
 
-    if (!eventMap) {
-      eventMap = [];
-      target[WEBRTC_AUTH_EVENTS_META_KEY] = eventMap;
+    if (!handlers) {
+      handlers = [];
+      target[WEBRTC_AUTH_EVENTS_META_KEY] = handlers;
     }
 
-    if (eventMap.includes(descriptor.value as WebRTCAuthEventHandler)) {
+    if (handlers.includes(descriptor.value as WebRTCAuthEventHandler)) {
       throw new WebRTCServerDecoratorError("Duplicate auth event handler");
     }
 
-    eventMap.push(descriptor.value as WebRTCAuthEventHandler);
+    handlers.push(descriptor.value as WebRTCAuthEventHandler);
   };
 
   return decoratorWrapper;
 }
 
+/**
+ * Public names of the WebSocket servers; a deployment maps one subdomain and one port to each.
+ * A server's port offset is its position here, so entries are appended, never reordered.
+ */
+export const WEBRTC_SERVER_NAMES = {
+  collab: "collab",
+  game: "game",
+  user: "user"
+} as const;
+export type WebRTCServerName =
+  (typeof WEBRTC_SERVER_NAMES)[keyof typeof WEBRTC_SERVER_NAMES];
+
 export class WebRTCServerOptions {
   port?: number;
+  /** Public name substituted for `{name}` in the signaling URL template. */
+  name?: WebRTCServerName;
   compressed: boolean = true;
   compressionThreshold: number = 256;
+  /**
+   * Largest frame a client may send, in bytes; bounded for every server, as a frame is parsed in
+   * one go on the event loop the HTTP API shares.
+   */
+  maxPayload: number = 1024 * 1024;
 }
 
-// Bare-bones implementation of a generic WebRTC server.
-// You'll be interested in the derived classes more than this one for examples.
 export class WebRTCServer<
   OptsT extends WebRTCServerOptions = WebRTCServerOptions
 > {
   private readonly _logger: Logger;
 
   private readonly _port: number;
+  private readonly _name: WebRTCServerName | undefined;
   private readonly _httpServer: HTTPServer;
   private readonly _wsServer: WebSocketServer;
   private readonly _extraOpts: OptsT;
 
-  private readonly _authEventHandlers: WebRTCAuthEventHandlerSet = [];
+  private readonly _authEventHandlers: WebRTCAuthEventHandler[] = [];
   private readonly _serverEventHandlers: WebRTCEventHandlerMap = new Map();
   private readonly _clientEventHandlers: WebRTCEventHandlerMap = new Map();
 
   private _isShuttingDown = false;
+  private _listening = false;
 
   constructor(
     webrtcService: WebRTCService,
@@ -199,16 +212,23 @@ export class WebRTCServer<
     if (extraOpts.port !== undefined) {
       this._port = extraOpts.port;
     } else {
-      this._port = webrtcService.allocatePort();
+      this._port = webrtcService.allocatePort(extraOpts.name);
     }
 
     extraOpts.port = this._port;
 
+    this._name = extraOpts.name;
+
     this._logger = new Logger(`${this.constructor.name} (${whatFor})`);
 
-    this._httpServer = createHttpServer();
+    // Nothing else answers a request that is not an upgrade, and unanswered it holds its socket.
+    this._httpServer = createHttpServer((_request, response) => {
+      response.writeHead(426, { "Content-Type": "text/plain" });
+      response.end("Upgrade Required");
+    });
     this._wsServer = new WebSocketServer({
       noServer: true,
+      maxPayload: extraOpts.maxPayload,
       perMessageDeflate: extraOpts.compressed
         ? {
           zlibDeflateOptions: {
@@ -224,7 +244,7 @@ export class WebRTCServer<
             chunkSize: 4096
           },
           // Use all cores minus 2 so that the server can still respond to requests
-          concurrencyLimit: availableParallelism() - 2,
+          concurrencyLimit: Math.max(1, availableParallelism() - 2),
           // Don't compress if smaller than the given amount of bytes
           threshold: extraOpts.compressionThreshold
         }
@@ -240,15 +260,27 @@ export class WebRTCServer<
       this._internal_base_onUpgrade(request, socket, head);
     });
 
-    this._httpServer.listen(this._port);
-
     webrtcService.registerServer(this);
   }
 
-  // --------------------------------------------------------------------------
+  /**
+   * Binds the port. Kept out of the constructor so that resolving the DI graph never opens a
+   * listener: a second process building the graph (a test run, the swagger generator) would
+   * collide on the port.
+   */
+  public listen(): void {
+    if (this._listening) return;
+    this._listening = true;
+    this._httpServer.listen(this._port);
+  }
 
   public get port(): number {
     return this._port;
+  }
+
+  /** Public name used by the signaling URL template; unset for ad-hoc servers. */
+  public get name(): WebRTCServerName | undefined {
+    return this._name;
   }
 
   public get logger(): Logger {
@@ -267,13 +299,9 @@ export class WebRTCServer<
     return this._extraOpts;
   }
 
-  // --------------------------------------------------------------------------
-
   protected wss<T extends WebSocketServer>(): T {
     return this._wsServer as T;
   }
-
-  // --------------------------------------------------------------------------
 
   private registerDecoratedEventHandlers(): void {
     const prototypeChain: Array<WebRTCDecoratorTarget> = [];
@@ -298,11 +326,11 @@ export class WebRTCServer<
       )
         ? (prototype[WEBRTC_CLIENT_EVENTS_META_KEY] as WebRTCEventHandlerMap)
         : undefined;
-      const authEventSet = Object.prototype.hasOwnProperty.call(
+      const authHandlers = Object.prototype.hasOwnProperty.call(
         prototype,
         WEBRTC_AUTH_EVENTS_META_KEY
       )
-        ? (prototype[WEBRTC_AUTH_EVENTS_META_KEY] as WebRTCAuthEventHandlerSet)
+        ? (prototype[WEBRTC_AUTH_EVENTS_META_KEY] as WebRTCAuthEventHandler[])
         : undefined;
 
       serverEventMap?.forEach((handlers, eventName) => {
@@ -337,7 +365,7 @@ export class WebRTCServer<
         this._clientEventHandlers.set(eventName, knownHandlers);
       });
 
-      authEventSet?.forEach((handler) => {
+      authHandlers?.forEach((handler) => {
         if (this._authEventHandlers.includes(handler)) {
           throw new WebRTCServerDecoratorError("Duplicate auth event handler");
         }
@@ -347,35 +375,35 @@ export class WebRTCServer<
     });
   }
 
-  // --------------------------------------------------------------------------
-
   private applyEventHandlers(specializedSocket: WebRTCSocketLikeObject): void {
-    const socket = specializedSocket as WebRTCSocketLikeObject;
-
     const eventHandlers =
       specializedSocket instanceof WebSocketServer
         ? this._serverEventHandlers
         : this._clientEventHandlers;
 
     eventHandlers.forEach((handlers, eventName) => {
-      socket.on(eventName, (...args) => {
+      specializedSocket.on(eventName, (...args) => {
         handlers.forEach((handler) => {
           try {
             handler.apply(this, [specializedSocket, ...args]);
           } catch (error) {
             let message;
+            let stack;
 
             if (error instanceof Error) {
               message = error.message;
+              stack = error.stack;
             } else {
               message = String(error);
             }
 
-            this._logger.error(`Failed to hook "${eventName}": ${message}`);
+            this._logger.error(`Failed to hook "${eventName}": ${message}`, stack);
 
-            throw new WebRTCServerRuntimeError(
-              `Failed to hook "${eventName}" event handler`
-            );
+            // A throw that escapes an emitter's listener is an uncaught exception and ends the
+            // process, so the connection that caused it is dropped instead.
+            if (!(specializedSocket instanceof WebSocketServer)) {
+              (specializedSocket as WebSocket).terminate();
+            }
           }
         });
       });
@@ -429,9 +457,8 @@ export class WebRTCServer<
       httpClientSocket,
       head,
       (clientSocket: WebSocket) => {
-        // A denied or throwing auth handler must abort the connection entirely;
-        // we use a plain loop (not forEach) so we can short-circuit out of this
-        // callback and never reach the connection wiring below.
+        // A denied or throwing auth handler aborts the connection before any event handler is
+        // wired to it.
         for (let authHandlerI = 0; authHandlerI < this._authEventHandlers.length; authHandlerI++) {
           const handler = this._authEventHandlers[authHandlerI]!;
 
@@ -464,8 +491,6 @@ export class WebRTCServer<
     );
   }
 
-  // --------------------------------------------------------------------------
-
   public shutdown(): void {
     if (this._isShuttingDown) {
       return;
@@ -477,12 +502,8 @@ export class WebRTCServer<
       `Closing this server with ${this._wsServer.clients.size} clients alive`
     );
 
-    // Force-terminate every live client BEFORE closing the servers. terminate()
-    // destroys the underlying TCP socket at once (no close handshake), so both
-    // `wss.close()` (which in noServer mode only completes once clients.size
-    // reaches 0) and `httpServer.close()` can resolve immediately. Terminating
-    // inside wss.close()'s callback would deadlock: that callback never fires
-    // while clients are still alive, and nothing else would ever close them.
+    // Clients go first: in noServer mode the WebSocket server's close only completes once no
+    // client is left, and nothing else would close them.
     this._wsServer.clients.forEach((client) => client.terminate());
 
     this._wsServer.close();

@@ -76,12 +76,40 @@ export class ProjectCommentService {
     };
   }
 
+  private mapComment(comment: CommentRecord): CommentResponseDto {
+    return {
+      id: comment.id,
+      content: comment.content,
+      deleted: comment.deleted,
+      createdAt: comment.createdAt,
+      projectId: comment.projectId,
+      author: comment.author,
+      replies: comment.replies?.map((reply) => ({
+        id: reply.id,
+        content: reply.content,
+        deleted: reply.deleted,
+        createdAt: reply.createdAt,
+        projectId: reply.projectId,
+        author: reply.author
+      }))
+    };
+  }
+
   async getComments(
     projectId: number,
     page: number = DEFAULT_COMMENTS_PAGE,
     limit: number = DEFAULT_COMMENTS_LIMIT,
     sort: "newest" | "oldest" = "newest"
   ): Promise<PaginatedCommentsResponseDto> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { publishedAt: true }
+    });
+
+    if (!project?.publishedAt) {
+      throw new NotFoundException(`Project with ID ${projectId} not found`);
+    }
+
     const pagination = this.normalizePagination(page, limit);
     const orderBy = sort === "newest" ? "desc" : "asc";
     const visibleCommentWhere =
@@ -123,14 +151,14 @@ export class ProjectCommentService {
   ): Promise<CommentResponseDto> {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      select: { status: true }
+      select: { publishedAt: true }
     });
 
     if (!project) {
       throw new NotFoundException(`Project with ID ${projectId} not found`);
     }
 
-    if (project.status !== "COMPLETED") {
+    if (!project.publishedAt) {
       throw new CommentProjectNotPublishedException(projectId);
     }
 
@@ -160,7 +188,8 @@ export class ProjectCommentService {
         id: true,
         parentId: true,
         projectId: true,
-        deleted: true
+        deleted: true,
+        project: { select: { publishedAt: true } }
       }
     });
 
@@ -170,6 +199,10 @@ export class ProjectCommentService {
 
     if (parentComment.projectId !== projectId) {
       throw new NotFoundException("Comment does not belong to this project");
+    }
+
+    if (!parentComment.project.publishedAt) {
+      throw new CommentProjectNotPublishedException(projectId);
     }
 
     if (parentComment.parentId !== null) {
@@ -196,17 +229,22 @@ export class ProjectCommentService {
   }
 
   async updateComment(
+    projectId: number,
     commentId: number,
     userId: number,
     content: string
   ): Promise<CommentResponseDto> {
     const comment = await this.prisma.comment.findUnique({
       where: { id: commentId },
-      select: { id: true, authorId: true }
+      select: { id: true, authorId: true, projectId: true, deleted: true }
     });
 
-    if (!comment) {
+    if (!comment || comment.deleted) {
       throw new CommentNotFoundException(commentId);
+    }
+
+    if (comment.projectId !== projectId) {
+      throw new NotFoundException("Comment does not belong to this project");
     }
 
     if (comment.authorId !== userId) {
@@ -269,24 +307,5 @@ export class ProjectCommentService {
         where: { id: commentId }
       });
     }
-  }
-
-  private mapComment(comment: CommentRecord): CommentResponseDto {
-    return {
-      id: comment.id,
-      content: comment.content,
-      deleted: comment.deleted,
-      createdAt: comment.createdAt,
-      projectId: comment.projectId,
-      author: comment.author,
-      replies: comment.replies?.map((reply) => ({
-        id: reply.id,
-        content: reply.content,
-        deleted: reply.deleted,
-        createdAt: reply.createdAt,
-        projectId: reply.projectId,
-        author: reply.author
-      }))
-    };
   }
 }

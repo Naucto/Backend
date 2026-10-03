@@ -7,20 +7,12 @@ import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import { RolesGuard } from "./guards/roles.guard";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
-import { MissingEnvVarError, BadEnvVarError } from "./auth.error";
+import { MissingEnvVarError } from "./auth.error";
+import { parseExpiresIn } from "./auth.utils";
 import { GoogleAuthService } from "./providers/google-auth.service";
 import { GithubAuthService } from "./providers/github-auth.service";
 import { MicrosoftAuthService } from "./providers/microsoft-auth.service";
 import { Module, Logger } from "@nestjs/common";
-
-type DurationString = `${number}${"s" | "m" | "h" | "d"}`;
-
-function parseExpiresIn(v?: string): number | DurationString {
-  if (!v) return "1h";
-  if (/^\d+$/.test(v)) return Number(v);
-  if (/^\d+[smhd]$/.test(v)) return v as DurationString;
-  throw new BadEnvVarError(`Invalid JWT_EXPIRES_IN: ${v}`);
-}
 
 @Module({
   imports: [
@@ -34,7 +26,6 @@ function parseExpiresIn(v?: string): number | DurationString {
         const logger = new Logger("AuthModule");
         const env = cs.get<string>("NODE_ENV") ?? "development";
         const secret = cs.get<string>("JWT_SECRET");
-        const expiresInRaw = cs.get<string>("JWT_EXPIRES_IN");
 
         if (!secret) {
           throw new MissingEnvVarError("JWT_SECRET");
@@ -45,7 +36,9 @@ function parseExpiresIn(v?: string): number | DurationString {
           );
         }
 
-        const expiresIn = parseExpiresIn(expiresInRaw);
+        const expiresIn = parseExpiresIn("JWT_EXPIRES_IN", cs.get<string>("JWT_EXPIRES_IN"), "1h");
+        // Parsed for its refusal alone: an unreadable lifetime has to stop the boot, not a sign-in.
+        parseExpiresIn("JWT_REFRESH_EXPIRES_IN", cs.get<string>("JWT_REFRESH_EXPIRES_IN"), "7d");
 
         if (env === "development") {
           logger.log("JWT config loaded successfully");
@@ -71,7 +64,10 @@ function parseExpiresIn(v?: string): number | DurationString {
     MicrosoftAuthService,
     JwtStrategy
   ],
-  exports: [JwtAuthGuard, RolesGuard, JwtModule],
+  // UserModule rides along with RolesGuard: the guard takes a UserService, and Nest builds it in
+  // the *consumer's* injector — so exporting the guard without its dependency makes any module
+  // that uses it fail to resolve at boot.
+  exports: [JwtAuthGuard, RolesGuard, JwtModule, UserModule],
   controllers: [AuthController]
 })
 export class AuthModule {}

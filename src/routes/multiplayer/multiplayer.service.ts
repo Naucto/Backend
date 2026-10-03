@@ -1,14 +1,15 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
-import { JwtService } from "@nestjs/jwt";
+import { JwtService, JwtVerifyOptions } from "@nestjs/jwt";
 import {
   GameSession,
   GameSessionVisibility,
   Prisma,
-  Project,
-  User
+  SessionJoinPolicy
 } from "@prisma/client";
-import { PrismaService } from "@ourPrisma/prisma.service";
+import { NotificationsService } from "src/notifications/notifications.service";
+import { FriendsService } from "@friends/friends.service";
+import { PrismaService, isUniqueViolation } from "@ourPrisma/prisma.service";
 import { ProjectService } from "@project/project.service";
 import { WebRTCService } from "@webrtc/webrtc.service";
 import {
@@ -17,7 +18,6 @@ import {
   SyncedGameTableWebRTCServer
 } from "@webrtc/server/webrtc.server.synced-game-table";
 
-import { ProjectNotFoundError } from "@project/project.error";
 import {
   MultiplayerForbiddenError,
   MultiplayerGameSessionNotFoundError,
@@ -25,37 +25,32 @@ import {
   MultiplayerInvalidStateError,
   MultiplayerSessionFullError,
   MultiplayerUserAlreadyJoinedError,
+  MultiplayerUserNotFoundError,
   MultiplayerUserNotInSessionError
 } from "./multiplayer.error";
 
 import { CreateGameSessionDto } from "./dto/create-game-session.dto";
 import { UpdateGameSessionDto } from "./dto/update-game-session.dto";
 import { GameSessionConnectionResponseDto } from "./dto/game-session-connection.dto";
+import { SessionRosterResponseDto } from "./dto/session-roster.dto";
 
 import { randomBytes } from "crypto";
 
-// Game session with the relations the listing/host operations need.
-export type GameSessionEx = GameSession & {
-  otherUsers: User[];
-  host: User;
-  project: Project;
-};
+const PLAYER_SELECT = { id: true, username: true, nickname: true } as const;
 
 const SESSION_RELATIONS = {
-  otherUsers: true,
-  host: true,
-  project: true
+  otherUsers: { select: PLAYER_SELECT },
+  host: { select: PLAYER_SELECT },
+  project: { select: { name: true, publishedName: true } }
 } as const;
+
+export type GameSessionEx = Prisma.GameSessionGetPayload<{
+  include: typeof SESSION_RELATIONS;
+}>;
 
 // Payload embedded in a connection ticket. `kind` disambiguates it from regular
 // auth tokens that share the same signing secret.
-interface GameTableTicketPayload {
-  kind: "game-table";
-  sessionId: string;
-  userId: number;
-  role: SyncedGameTableRole;
-  maxPlayers: number;
-}
+type GameTableTicketPayload = SyncedGameTableTicket & { kind: "game-table" };
 
 @Injectable()
 export class MultiplayerService {
@@ -63,6 +58,16 @@ export class MultiplayerService {
   private static readonly JOIN_CODE_ALPHABET =
     "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   private static readonly TICKET_TTL = "60s";
+  private static readonly VISIBILITY_RANK: Record<GameSessionVisibility, number> = {
+    [GameSessionVisibility.PUBLIC]: 0,
+    [GameSessionVisibility.FRIENDS_ONLY]: 1,
+    [GameSessionVisibility.INVITE_CODE]: 2
+  };
+  private static readonly POLICY_FLOOR: Record<SessionJoinPolicy, GameSessionVisibility> = {
+    [SessionJoinPolicy.ANYONE]: GameSessionVisibility.PUBLIC,
+    [SessionJoinPolicy.FRIENDS]: GameSessionVisibility.FRIENDS_ONLY,
+    [SessionJoinPolicy.CODE_ONLY]: GameSessionVisibility.INVITE_CODE
+  };
   private static readonly MAX_DB_RETRIES = 5;
   // Backstop for sessions orphaned by an ungraceful server shutdown (the
   // heartbeat + host-disconnect hook handle the normal cases live).
@@ -75,7 +80,9 @@ export class MultiplayerService {
     private readonly _webrtcService: WebRTCService,
     private readonly _projectService: ProjectService,
     private readonly _prismaService: PrismaService,
-    private readonly _jwtService: JwtService
+    private readonly _jwtService: JwtService,
+    private readonly _friendsService: FriendsService,
+    private readonly _notifications: NotificationsService
   ) {
     this._syncServer = new SyncedGameTableWebRTCServer(
       _webrtcService,
@@ -87,24 +94,23 @@ export class MultiplayerService {
     );
   }
 
-  // --------------------------------------------------------------------------
-  // CRUD
-  // --------------------------------------------------------------------------
-
   async create(
     userId: number,
     dto: CreateGameSessionDto
   ): Promise<GameSessionConnectionResponseDto> {
     const project = await this._projectService.findOne(dto.projectId);
-    if (!project) {
-      throw new ProjectNotFoundError(
-        `Project with ID ${dto.projectId} not found`
+
+    if (
+      !project.publishedAt &&
+      project.creator.id !== userId &&
+      !project.collaborators.some((collaborator) => collaborator.id === userId)
+    ) {
+      throw new MultiplayerForbiddenError(
+        "Only its collaborators can host an unpublished project"
       );
     }
 
-    // Re-hosting replaces the host's previous session for this project (e.g.
-    // after an editor reload): end it and evict anyone still connected so the
-    // developer can iterate without waiting for the old one to expire.
+    // A host has one open session per project: hosting again, as an editor reload does, replaces the previous one.
     const existing = await this._prismaService.gameSession.findFirst({
       where: { hostId: userId, projectId: dto.projectId, endedAt: null }
     });
@@ -113,16 +119,18 @@ export class MultiplayerService {
       this._syncServer.closeRoom(existing.sessionId);
     }
 
+    const visibility = await this._applyHostPolicy(userId, dto.visibility);
+
     const baseData = {
       hostId: userId,
       projectId: dto.projectId,
       title: dto.title,
       maxPlayers: dto.maxPlayers,
-      visibility: dto.visibility
+      visibility
     };
 
     const created =
-      dto.visibility === GameSessionVisibility.INVITE_CODE
+      visibility === GameSessionVisibility.INVITE_CODE
         ? await this._withFreshJoinCode((joinCode) =>
           this._prismaService.gameSession.create({
             data: { ...baseData, joinCode }
@@ -135,32 +143,52 @@ export class MultiplayerService {
     return this._buildConnection(created, userId, "host");
   }
 
-  async list(projectId: number, userId: number): Promise<GameSessionEx[]> {
+  /** Open sessions the caller may see: one game's when a project is named, every game's otherwise, narrowed to those whose title or game name contains `search`. */
+  async list(
+    projectId: number | undefined,
+    userId: number,
+    search?: string
+  ): Promise<GameSessionEx[]> {
+    const term = search?.trim();
+    const contains = { contains: term ?? "", mode: "insensitive" } as const;
+
     const sessions = await this._prismaService.gameSession.findMany({
       include: SESSION_RELATIONS,
-      where: { projectId, endedAt: null }
+      where: {
+        endedAt: null,
+        ...(projectId === undefined ? {} : { projectId }),
+        ...(term
+          ? {
+            OR: [
+              { title: contains },
+              { project: { publishedName: contains } },
+              { project: { name: contains } }
+            ]
+          }
+          : {})
+      }
     });
 
+    const friendIds = new Set(await this._friendsService.friendIdsOf(userId));
     const visible: GameSessionEx[] = [];
 
-    sessions.forEach((session) => {
+    for (const session of sessions) {
       switch (session.visibility) {
       case GameSessionVisibility.PUBLIC:
         visible.push(session);
         break;
 
       case GameSessionVisibility.FRIENDS_ONLY:
-        // FIXME: friends system not implemented yet; hide friends-only sessions
-        // from listings until areFriends() exists.
-        // visible.push(session) when isFriend(userId, session.hostId)
-        void userId;
+        if (this._isMember(session, userId) || friendIds.has(session.hostId)) {
+          visible.push(session);
+        }
         break;
 
       case GameSessionVisibility.INVITE_CODE:
         // Not discoverable through listing — joinable by code only.
         break;
       }
-    });
+    }
 
     return visible;
   }
@@ -176,17 +204,101 @@ export class MultiplayerService {
 
     const isMember = this._isMember(session, userId);
 
-    // Non-public sessions are not discoverable by non-members. We 404 rather
-    // than 403 so a known UUID doesn't confirm a session exists or leak its
-    // title/host/player count. (FRIENDS_ONLY stays members-only until
-    // areFriends() exists; INVITE_CODE is reachable through join-by-code only.)
-    if (!isMember && session.visibility !== GameSessionVisibility.PUBLIC) {
+    // Not-found rather than forbidden, so a known UUID does not confirm that a hidden session exists.
+    if (!isMember && !(await this._canDiscover(session, userId))) {
       throw new MultiplayerGameSessionNotFoundError(
         `No game session found for UUID ${sessionId}`
       );
     }
 
     return session;
+  }
+
+  /**
+   * Who is in the session, host first. Reuses `get`, so the same visibility rule applies: a
+   * non-member of a non-discoverable session gets a 404, not a roster.
+   */
+  async roster(
+    sessionId: string,
+    userId: number
+  ): Promise<SessionRosterResponseDto> {
+    const session = await this.get(sessionId, userId);
+
+    return {
+      players: [
+        {
+          userId: session.host.id,
+          username: session.host.username,
+          nickname: session.host.nickname,
+          host: true
+        },
+        ...session.otherUsers.map((u) => ({
+          userId: u.id,
+          username: u.username,
+          nickname: u.nickname,
+          host: false
+        }))
+      ],
+      maxPlayers: session.maxPlayers
+    };
+  }
+
+  /** Notifies the invitee that the host invited them to the session. */
+  async invite(
+    sessionId: string,
+    hostId: number,
+    inviteeId: number
+  ): Promise<void> {
+    const session = await this._findSessionOrThrow(sessionId);
+
+    this._assertHost(session, hostId);
+
+    if (inviteeId === hostId) return;
+
+    const invitee = await this._prismaService.user.findUnique({
+      where: { id: inviteeId },
+      select: { deletedAt: true }
+    });
+
+    if (!invitee || invitee.deletedAt) {
+      throw new MultiplayerUserNotFoundError(
+        `No user found for ID ${inviteeId}`
+      );
+    }
+
+    // An invitation carries text the host wrote, so it only reaches someone the host has a tie with.
+    const tied =
+      (await this._friendsService.areFriends(hostId, inviteeId)) ||
+      (await this._prismaService.project.count({
+        where: {
+          id: session.projectId,
+          OR: [
+            { userId: inviteeId },
+            { collaborators: { some: { id: inviteeId } } }
+          ]
+        }
+      })) > 0;
+
+    if (!tied) {
+      throw new MultiplayerForbiddenError(
+        "Only a friend or someone who works on the game can be invited"
+      );
+    }
+
+    await this._notifications.createNotification({
+      userId: inviteeId,
+      title: session.title,
+      message: `${session.host.nickname ?? session.host.username} invited you to play ${session.project.publishedName || session.project.name}`,
+      type: "INFO",
+      kind: "GENERIC",
+      // The code is what turns the notification into a way in; without it the invitee can see
+      // there is a session and still not reach it.
+      data: {
+        sessionId: session.sessionId,
+        joinCode: session.joinCode ?? undefined,
+        projectId: session.projectId
+      }
+    });
   }
 
   async update(
@@ -208,13 +320,12 @@ export class MultiplayerService {
       data.maxPlayers = dto.maxPlayers;
     }
     if (dto.visibility !== undefined) {
-      data.visibility = dto.visibility;
+      const visibility = await this._applyHostPolicy(userId, dto.visibility);
+      data.visibility = visibility;
 
-      if (dto.visibility === GameSessionVisibility.INVITE_CODE) {
-        needsFreshJoinCode = !session.joinCode;
-      } else {
-        data.joinCode = null;
-      }
+      // A join code lives as long as its session, so the one the host already shared keeps working while the session is listed.
+      needsFreshJoinCode =
+        visibility === GameSessionVisibility.INVITE_CODE && !session.joinCode;
     }
 
     if (needsFreshJoinCode) {
@@ -242,7 +353,7 @@ export class MultiplayerService {
     this._syncServer.closeRoom(sessionId);
   }
 
-  // Idempotent, so the host-disconnect hook and REST delete can both call it.
+  // Idempotent, and never throws: a failure is logged, because the disconnect callback that runs it is not awaited.
   async endSession(sessionId: string): Promise<void> {
     try {
       await this._softEnd(sessionId);
@@ -251,8 +362,6 @@ export class MultiplayerService {
     }
   }
 
-  // Backstop sweep: ends sessions left active past the max lifetime, which
-  // normally only happens if the process died before its disconnect hooks ran.
   @Cron(CronExpression.EVERY_30_MINUTES)
   async reapStaleSessions(): Promise<void> {
     const cutoff = new Date(Date.now() - MultiplayerService.MAX_SESSION_AGE_MS);
@@ -262,10 +371,7 @@ export class MultiplayerService {
       select: { sessionId: true }
     });
 
-    // A legitimately long-running session (host connected past the max lifetime)
-    // also matches by age, but its WebRTC room is still live — ending its DB row
-    // would desync it from the live room. Only reap sessions with no connected
-    // players, i.e. the orphans a dead process leaves behind.
+    // Age alone also matches a long-running session whose room is still live; ending its row would desync it from that room.
     const orphaned = candidates.filter(
       (session) => this.connectedPlayerCount(session.sessionId) === 0
     );
@@ -279,24 +385,12 @@ export class MultiplayerService {
       data: { endedAt: new Date() }
     });
 
-    // Tear down any lingering in-memory room alongside the DB row.
     orphaned.forEach((session) =>
       this._syncServer.closeRoom(session.sessionId)
     );
 
     this._logger.log(`Reaped ${orphaned.length} stale game session(s)`);
   }
-
-  private async _softEnd(sessionId: string): Promise<void> {
-    await this._prismaService.gameSession.updateMany({
-      where: { sessionId, endedAt: null },
-      data: { endedAt: new Date() }
-    });
-  }
-
-  // --------------------------------------------------------------------------
-  // Membership
-  // --------------------------------------------------------------------------
 
   async join(
     sessionId: string,
@@ -306,23 +400,19 @@ export class MultiplayerService {
   ): Promise<GameSessionConnectionResponseDto> {
     const session = await this._findSessionOrThrow(sessionId);
 
-    const isMember = this._isMember(session, userId);
+    if (this._isMember(session, userId)) {
+      // Membership outlives a connection, so a member who comes back is handed a new one for the seat they already hold.
+      if (session.hostId !== userId) {
+        return this._buildConnection(session, userId, "slave");
+      }
 
-    if (isMember) {
-      // The game editor opts in (editorTest) so the host can open a second client
-      // as a distinct synthetic player and test multiplayer alone; the published
-      // game viewer never sends the flag. Restricted to the host: any other member
-      // could otherwise mint unlimited synthetic slaves and fill every maxPlayers
-      // slot with phantom players, denying real users entry. The synthetic id is
-      // never persisted (no such User row) and the WS layer still caps it.
-      if (editorTest && session.hostId === userId) {
+      // Host only: any other member could mint synthetic players without limit and fill the session against real ones.
+      if (editorTest) {
         return this._buildConnection(session, this._syntheticSlaveId(), "slave");
       }
 
       throw new MultiplayerUserAlreadyJoinedError(
-        session.hostId === userId
-          ? "User is the host of this game session"
-          : "User has already joined this game session"
+        "User is the host of this game session"
       );
     }
 
@@ -334,10 +424,12 @@ export class MultiplayerService {
       break;
 
     case GameSessionVisibility.FRIENDS_ONLY:
-      // FIXME: friends system not implemented yet; deny until areFriends() exists.
-      throw new MultiplayerForbiddenError(
-        "Friends-only game sessions cannot be joined yet"
-      );
+      if (!(await this._friendsService.areFriends(userId, session.hostId))) {
+        throw new MultiplayerForbiddenError(
+          "Only the host's friends can join this game session"
+        );
+      }
+      break;
 
     case GameSessionVisibility.PUBLIC:
       break;
@@ -350,10 +442,10 @@ export class MultiplayerService {
         async (tx) => {
           const fresh = await tx.gameSession.findUnique({
             where: { sessionId },
-            include: { otherUsers: true }
+            include: { otherUsers: { select: { id: true } } }
           });
 
-          if (!fresh) {
+          if (!fresh || fresh.endedAt) {
             throw new MultiplayerGameSessionNotFoundError(
               `No game session found for UUID ${sessionId}`
             );
@@ -384,8 +476,7 @@ export class MultiplayerService {
     return this._buildConnection(session, userId, "slave");
   }
 
-  // Resolve an invite-code session by its code, then join it. Lets a player join
-  // without first knowing the (non-discoverable) session UUID.
+  // Lets a player in without knowing the session UUID, which a hidden session never reveals.
   async joinByCode(
     joinCode: string,
     userId: number,
@@ -402,15 +493,31 @@ export class MultiplayerService {
     return this.join(session.sessionId, userId, joinCode, editorTest);
   }
 
-  // Mint a fresh connection ticket for a member of the session (host or slave),
-  // so a client can reconnect after the short-lived ticket expires.
+  // The host's editor self-join plays under a synthetic id that no account lookup can recover, so that seat alone is
+  // carried over from the ticket being replaced; every other seat is minted from the caller's account, whichever ticket
+  // is presented.
   async refreshTicket(
     sessionId: string,
-    userId: number
+    userId: number,
+    ticket?: string
   ): Promise<GameSessionConnectionResponseDto> {
     const session = await this._findSessionOrThrow(sessionId);
+    const accountRole = this._roleOf(session, userId);
+    const previous =
+      ticket === undefined
+        ? null
+        : this._replacedTicket(ticket, session.sessionId);
 
-    return this._buildConnection(session, userId, this._roleOf(session, userId));
+    if (
+      previous &&
+      accountRole === "host" &&
+      previous.role === "slave" &&
+      !this._isMember(session, previous.userId)
+    ) {
+      return this._buildConnection(session, previous.userId, previous.role);
+    }
+
+    return this._buildConnection(session, userId, accountRole);
   }
 
   async leave(sessionId: string, userId: number): Promise<void> {
@@ -433,9 +540,12 @@ export class MultiplayerService {
     });
   }
 
-  // --------------------------------------------------------------------------
-  // Helpers
-  // --------------------------------------------------------------------------
+  private async _softEnd(sessionId: string): Promise<void> {
+    await this._prismaService.gameSession.updateMany({
+      where: { sessionId, endedAt: null },
+      data: { endedAt: new Date() }
+    });
+  }
 
   private async _findSessionOrThrow(sessionId: string): Promise<GameSessionEx> {
     // Ended sessions are treated as gone for every membership/host operation.
@@ -459,6 +569,40 @@ export class MultiplayerService {
   // and surfaces as net.id().
   private _syntheticSlaveId(): number {
     return (randomBytes(4).readUInt32BE(0) & 0x7fffffff) || 1;
+  }
+
+  private async _canDiscover(
+    session: GameSessionEx,
+    userId: number
+  ): Promise<boolean> {
+    switch (session.visibility) {
+    case GameSessionVisibility.PUBLIC:
+      return true;
+    case GameSessionVisibility.FRIENDS_ONLY:
+      return this._friendsService.areFriends(userId, session.hostId);
+    case GameSessionVisibility.INVITE_CODE:
+      return false;
+    }
+  }
+
+  // The host's account-level join policy is a floor on session visibility; a stricter per-session choice is kept.
+  private async _applyHostPolicy(
+    hostId: number,
+    requested: GameSessionVisibility
+  ): Promise<GameSessionVisibility> {
+    const host = await this._prismaService.user.findUnique({
+      where: { id: hostId },
+      select: { sessionJoinPolicy: true }
+    });
+
+    const floor = MultiplayerService.POLICY_FLOOR[
+      host?.sessionJoinPolicy ?? SessionJoinPolicy.ANYONE
+    ];
+
+    return MultiplayerService.VISIBILITY_RANK[requested] >=
+      MultiplayerService.VISIBILITY_RANK[floor]
+      ? requested
+      : floor;
   }
 
   private _isMember(session: GameSessionEx, userId: number): boolean {
@@ -539,9 +683,29 @@ export class MultiplayerService {
     });
   }
 
-  private _verifyTicket(raw: string): SyncedGameTableTicket {
-    const payload =
-      this._jwtService.verify<Partial<GameTableTicketPayload>>(raw);
+  // Expiry is what a refresh is for, so only the signature and the session are
+  // asked to match; anything else falls back to the caller's account.
+  private _replacedTicket(
+    raw: string,
+    sessionId: string
+  ): SyncedGameTableTicket | null {
+    try {
+      const ticket = this._verifyTicket(raw, { ignoreExpiration: true });
+
+      return ticket.sessionId === sessionId ? ticket : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private _verifyTicket(
+    raw: string,
+    options?: JwtVerifyOptions
+  ): SyncedGameTableTicket {
+    const payload = this._jwtService.verify<Partial<GameTableTicketPayload>>(
+      raw,
+      options
+    );
 
     if (
       payload.kind !== "game-table" ||
@@ -561,21 +725,18 @@ export class MultiplayerService {
     };
   }
 
-  // Regenerates the code on a unique-constraint violation so concurrent invite
-  // creations that happen to pick the same code don't fail.
+  // Draws another code when the one drawn is taken; `op` must write no other unique value, because any
+  // unique-constraint violation is read as a taken code.
   private async _withFreshJoinCode<T>(
     op: (joinCode: string) => Promise<T>
   ): Promise<T> {
     return this._retry(
       () => op(this._randomJoinCode()),
-      (err) => this._isJoinCodeConflict(err),
+      isUniqueViolation,
       "Failed to generate a unique join code"
     );
   }
 
-  // Retries `op` up to MAX_DB_RETRIES while `isRetryable` holds for the thrown
-  // error, surfacing MultiplayerInvalidStateError(exhaustedMessage) if the
-  // retries run out (and rethrowing any non-retryable error immediately).
   private async _retry<T>(
     op: () => Promise<T>,
     isRetryable: (err: unknown) => boolean,
@@ -592,24 +753,10 @@ export class MultiplayerService {
         if (!isRetryable(err)) {
           throw err;
         }
-        if (attempt >= MultiplayerService.MAX_DB_RETRIES - 1) {
-          break;
-        }
       }
     }
 
     throw new MultiplayerInvalidStateError(exhaustedMessage);
-  }
-
-  private _isJoinCodeConflict(err: unknown): boolean {
-    if (
-      !(err instanceof Prisma.PrismaClientKnownRequestError) ||
-      err.code !== "P2002"
-    ) {
-      return false;
-    }
-
-    return JSON.stringify(err.meta?.["target"] ?? "").includes("joinCode");
   }
 
   private _randomJoinCode(): string {

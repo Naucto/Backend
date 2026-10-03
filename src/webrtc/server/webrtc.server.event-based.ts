@@ -14,15 +14,11 @@ import { RawData } from "ws";
 import { plainToInstance } from "class-transformer";
 import { IsString, validateSync, ValidationError } from "class-validator";
 
-// ----------------------------------------------------------------------------
-// Public message contracts
-// ----------------------------------------------------------------------------
-
 // Minimal envelope used to read the `type` discriminator before the concrete
 // message class is known. Every incoming message must at least carry a `type`.
 export class EventBasedEnvelope {
   @IsString()
-  type!: string;
+    type!: string;
 }
 
 // Any outgoing message must carry a `type` so the peer can route it. The
@@ -47,10 +43,6 @@ type EventBasedMessageMap = Map<string, EventBasedMessageEntry>;
 type EventBasedDecoratorTarget = Record<string | symbol, unknown>;
 
 const WEBRTC_EB_MESSAGES_META_KEY = Symbol("webrtc:eventBasedMessages");
-
-// ----------------------------------------------------------------------------
-// @EventBasedMessage decorator
-// ----------------------------------------------------------------------------
 
 function isEventBasedPrototypeTarget(
   target: unknown
@@ -114,10 +106,6 @@ export function EventBasedMessage(
   };
 }
 
-// ----------------------------------------------------------------------------
-// Server
-// ----------------------------------------------------------------------------
-
 export type EventBasedFailurePolicy = "close" | "ignore";
 
 export class EventBasedWebRTCServerOptions extends WebRTCServerOptions {
@@ -151,8 +139,6 @@ export class EventBasedWebRTCServer<
 
     this.registerMessageHandlers();
   }
-
-  // --------------------------------------------------------------------------
 
   private registerMessageHandlers(): void {
     const prototypeChain: Array<EventBasedDecoratorTarget> = [];
@@ -192,8 +178,6 @@ export class EventBasedWebRTCServer<
     });
   }
 
-  // --------------------------------------------------------------------------
-
   // Decode a ws RawData frame (Buffer/ArrayBuffer/Buffer[]/string) into a parsed
   // JSON object. Throws SyntaxError on malformed input.
   protected decodeRawData(rawData: RawData | Buffer | string): unknown {
@@ -224,8 +208,12 @@ export class EventBasedWebRTCServer<
     try {
       rawBody = this.decodeRawData(rawData);
     } catch (err) {
-      // Never rethrow: an escaped throw would crash the shared ws listener.
       this.handleMalformed(socket, err);
+      return;
+    }
+
+    if (typeof rawBody !== "object" || rawBody === null || Array.isArray(rawBody)) {
+      this.handleMalformed(socket, new Error("frame is not a JSON object"));
       return;
     }
 
@@ -252,8 +240,8 @@ export class EventBasedWebRTCServer<
       return;
     }
 
-    // A throw here would escape into the base's shared ws listener, so contain
-    // a buggy handler to its own connection.
+    // Caught here so the log names the message type; left to the base, the connection is dropped
+    // without it.
     try {
       entry.handler.call(this, socket, body as object);
     } catch (err) {
@@ -261,11 +249,7 @@ export class EventBasedWebRTCServer<
     }
   }
 
-  // --------------------------------------------------------------------------
-  // Failure handling — overridable so a subclass can, e.g., send an error frame
-  // before closing.
-  // --------------------------------------------------------------------------
-
+  // The failure hooks are overridable, so a subclass can send an error frame before closing.
   protected handleHandlerError(
     socket: WebRTCClientSocket,
     type: string,
@@ -318,10 +302,6 @@ export class EventBasedWebRTCServer<
       socket.close();
     }
   }
-
-  // --------------------------------------------------------------------------
-  // Typed I/O helpers
-  // --------------------------------------------------------------------------
 
   protected send(
     socket: WebRTCClientSocket,

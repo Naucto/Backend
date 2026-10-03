@@ -2,15 +2,15 @@ import {
   Controller,
   Post,
   Get,
-  Param,
   UseGuards,
   Req,
+  HttpCode,
   HttpStatus,
-  ParseIntPipe,
   Body
 } from "@nestjs/common";
 import { WorkSessionService } from "./work-session.service";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
+import { RequestWithUser } from "@auth/auth.types";
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -19,6 +19,7 @@ import {
   ApiParam
 } from "@nestjs/swagger";
 import { ProjectCollaboratorGuard } from "@auth/guards/project.guard";
+import { ProjectId } from "@project/project-id.decorator";
 import { FetchWorkSessionDto } from "@work-session/dto/fetch-work-session.dto";
 import { KickWorkSessionDto } from "@work-session/dto/kick-work-session.dto";
 import { JoinWorkSessionDto } from "@work-session/dto/join-work-session.dto";
@@ -38,39 +39,41 @@ export class WorkSessionController {
     type: JoinWorkSessionDto
   })
   @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: "Bad request." })
-  @ApiParam({ name: "id", description: "Project ID" })
+  @ApiParam({ name: "id", type: "number", description: "Project ID" })
   async join(
-    @Param("id", ParseIntPipe) projectId: number,
-    @Req() req: { user: import("@auth/dto/user.dto").UserDto }
+    @ProjectId() projectId: number,
+    @Req() req: RequestWithUser
   ): Promise<JoinWorkSessionDto> {
     return await this.workSessionService.join(projectId, req.user);
   }
 
   @Post("leave/:id")
+  @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: "Leave a work session" })
   @ApiResponse({
     status: HttpStatus.NO_CONTENT,
     description: "Successfully left the work session."
   })
   @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: "Bad request." })
-  @ApiParam({ name: "id", description: "Project ID" })
+  @ApiParam({ name: "id", type: "number", description: "Project ID" })
   async leave(
-    @Param("id", ParseIntPipe) projectId: number,
-    @Req() req: { user: import("@auth/dto/user.dto").UserDto }
+    @ProjectId() projectId: number,
+    @Req() req: RequestWithUser
   ): Promise<void> {
     return await this.workSessionService.leave(projectId, req.user);
   }
 
   @Post("kick/:id")
+  @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: "Kick user from work session" })
   @ApiResponse({
     status: HttpStatus.NO_CONTENT,
-    description: "Successfully left the work session."
+    description: "The user was removed from the work session."
   })
   @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: "Bad request." })
-  @ApiParam({ name: "id", description: "Project ID" })
+  @ApiParam({ name: "id", type: "number", description: "Project ID" })
   async kick(
-    @Param("id", ParseIntPipe) projectId: number,
+    @ProjectId() projectId: number,
     @Body() kick: KickWorkSessionDto
   ): Promise<void> {
     return await this.workSessionService.kick(projectId, kick.userId);
@@ -87,10 +90,10 @@ export class WorkSessionController {
     status: HttpStatus.NOT_FOUND,
     description: "Work session not found."
   })
-  @ApiParam({ name: "id", description: "Project ID" })
+  @ApiParam({ name: "id", type: "number", description: "Project ID" })
   async getInfo(
-    @Param("id", ParseIntPipe) workSessionId: number
+    @ProjectId() projectId: number
   ): Promise<FetchWorkSessionDto> {
-    return await this.workSessionService.getInfo(workSessionId);
+    return await this.workSessionService.getInfo(projectId);
   }
 }

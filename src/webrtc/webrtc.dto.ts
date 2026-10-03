@@ -5,51 +5,55 @@ import {
   IsInt,
   IsOptional,
   IsString,
-  IsUrl,
   ValidateNested
 } from "class-validator";
 
 export class WebRTCOfferPeerICEServerConfig {
-  @ApiProperty()
-  @IsUrl()
-  urls!: string;
+  /**
+   * Every transport one relay answers on, the shape RTCIceServer takes: one entry per transport
+   * would be several servers, and a browser gathers candidates for each.
+   * No `@IsUrl()`: validator.js accepts only http, https and ftp, so it would reject STUN and
+   * TURN URIs.
+   */
+  @ApiProperty({ type: [String] })
+    urls!: string[];
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ type: String })
   @IsString()
   @IsOptional()
-  username?: string | undefined;
+    username?: string | undefined;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ type: String })
   @IsString()
   @IsOptional()
-  credential?: string | undefined;
+    credential?: string | undefined;
 }
 
 export class WebRTCOfferPeerOptsConfig {
   @ApiProperty({ type: () => [WebRTCOfferPeerICEServerConfig] })
   @ValidateNested()
   @Type(() => WebRTCOfferPeerICEServerConfig)
-  iceServers!: WebRTCOfferPeerICEServerConfig[];
+    iceServers!: WebRTCOfferPeerICEServerConfig[];
 }
 
 export class WebRTCOfferPeerOpts {
   @ApiProperty({ type: () => WebRTCOfferPeerOptsConfig })
   @ValidateNested()
   @Type(() => WebRTCOfferPeerOptsConfig)
-  config!: WebRTCOfferPeerOptsConfig;
+    config!: WebRTCOfferPeerOptsConfig;
 }
 
 export class WebRTCOfferDto {
   @ApiProperty()
   @IsArray()
-  signaling!: Array<string>;
+    signaling!: Array<string>;
 
   @ApiProperty()
   @IsInt()
-  maxConns!: number;
+    maxConns!: number;
 
   @ApiProperty({ type: () => WebRTCOfferPeerOpts })
   @ValidateNested()
   @Type(() => WebRTCOfferPeerOpts)
-  peerOpts!: WebRTCOfferPeerOpts;
+    peerOpts!: WebRTCOfferPeerOpts;
 }

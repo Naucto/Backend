@@ -22,20 +22,15 @@ import {
   ApiResponse,
   ApiTags
 } from "@nestjs/swagger";
+import { RequestWithUser } from "@auth/auth.types";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
 import { Public } from "@auth/decorators/public.decorator";
-import { UserDto } from "@auth/dto/user.dto";
-import { Request } from "express";
 import { ProjectCommentService } from "./project-comment.service";
 import { CreateCommentDto } from "./dto/create-comment.dto";
 import {
   CommentResponseDto,
   PaginatedCommentsResponseDto
 } from "./dto/comment-response.dto";
-
-interface RequestWithUser extends Request {
-  user: UserDto;
-}
 
 @ApiTags("comments")
 @Controller("projects/:projectId/comments")
@@ -83,7 +78,6 @@ export class ProjectCommentController {
     description: "Comment created",
     type: CommentResponseDto
   })
-  @HttpCode(HttpStatus.CREATED)
   async createComment(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body() createCommentDto: CreateCommentDto,
@@ -107,7 +101,6 @@ export class ProjectCommentController {
     description: "Reply created",
     type: CommentResponseDto
   })
-  @HttpCode(HttpStatus.CREATED)
   async createReply(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("commentId", ParseIntPipe) commentId: number,
@@ -134,11 +127,13 @@ export class ProjectCommentController {
     type: CommentResponseDto
   })
   async updateComment(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("commentId", ParseIntPipe) commentId: number,
     @Body() createCommentDto: CreateCommentDto,
     @Req() req: RequestWithUser
   ): Promise<CommentResponseDto> {
     return this.projectCommentService.updateComment(
+      projectId,
       commentId,
       req.user.id,
       createCommentDto.content

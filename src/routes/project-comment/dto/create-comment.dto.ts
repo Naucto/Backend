@@ -24,7 +24,7 @@ export class CreateCommentDto {
   @MaxLength(COMMENT_MAX_LENGTH)
   @Matches(
     new RegExp(
-      `^(?!.*\\n{${COMMENT_MAX_CONSECUTIVE_LINE_BREAKS + 1},})[\\s\\S]*$`
+      `^(?![\\s\\S]*\\n{${COMMENT_MAX_CONSECUTIVE_LINE_BREAKS + 1},})[\\s\\S]*$`
     ),
     {
       message: `Comment cannot contain more than ${COMMENT_MAX_CONSECUTIVE_LINE_BREAKS} consecutive line breaks`
@@ -33,5 +33,5 @@ export class CreateCommentDto {
   @hasMaxLineBreaks(COMMENT_MAX_LINE_BREAKS, {
     message: `Comment cannot contain more than ${COMMENT_MAX_LINE_BREAKS} line breaks`
   })
-  content!: string;
+    content!: string;
 }

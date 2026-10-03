@@ -9,18 +9,32 @@ import { ProjectController } from "@project/project.controller";
 import { ProjectCommentController } from "@project-comment/project-comment.controller";
 import { MultiplayerController } from "src/routes/multiplayer/multiplayer.controller";
 import { NotificationsController } from "src/notifications/notifications.controller";
+import {
+  FriendsController,
+  UserFriendshipController
+} from "@friends/friends.controller";
+import { FeaturedReleaseController } from "@curation/featured-release.controller";
+import { AdminFeaturedReleaseController } from "@curation/admin-featured-release.controller";
 
 import { ProjectService } from "@project/project.service";
 import { S3Service } from "@s3/s3.service";
-import { CloudfrontService } from "src/routes/s3/edge.service";
+import { EdgeService } from "src/routes/s3/edge.service";
 import { PrismaService } from "@ourPrisma/prisma.service";
 import { S3Client } from "@aws-sdk/client-s3";
 import { MultiplayerService } from "src/routes/multiplayer/multiplayer.service";
 import { ProjectCommentService } from "@project-comment/project-comment.service";
 import { NotificationsService } from "src/notifications/notifications.service";
+import { FriendsService } from "@friends/friends.service";
+import {
+  PresenceController,
+  UserPresenceController
+} from "src/presence/presence.controller";
+import { PresenceService } from "src/presence/presence.service";
+import { CurationService } from "@curation/curation.service";
 
 import { UserModule } from "@user/user.module";
 import { WorkSessionModule } from "@work-session/work-session.module";
+import { FeaturesModule } from "src/routes/features/features.module";
 
 import { WebRTCModule } from "@webrtc/webrtc.module";
 import { WebRTCService } from "@webrtc/webrtc.service";
@@ -50,7 +64,7 @@ const nullProvider = (token: InjectionToken): Provider => ({
         webrtcService: WebRTCService
       ): Promise<IGracefulShutdownConfigOptions> => {
         return {
-          cleanup: async (/* app, signal */): Promise<void> =>
+          cleanup: async (): Promise<void> =>
             webrtcService.shutdownAllServers()
         };
       }
@@ -60,23 +74,33 @@ const nullProvider = (token: InjectionToken): Provider => ({
     AuthModule,
     UserModule,
     WorkSessionModule,
-    WebRTCModule
+    WebRTCModule,
+    FeaturesModule
   ],
   controllers: [
     ProjectController,
     MultiplayerController,
     ProjectCommentController,
-    NotificationsController
+    NotificationsController,
+    FriendsController,
+    UserFriendshipController,
+    PresenceController,
+    UserPresenceController,
+    FeaturedReleaseController,
+    AdminFeaturedReleaseController
   ],
   providers: [
     nullProvider(PrismaService),
     nullProvider(ProjectService),
     nullProvider(S3Client),
     nullProvider(S3Service),
-    nullProvider(CloudfrontService),
+    nullProvider(EdgeService),
     nullProvider(MultiplayerService),
     nullProvider(ProjectCommentService),
-    nullProvider(NotificationsService)
+    nullProvider(NotificationsService),
+    nullProvider(FriendsService),
+    nullProvider(PresenceService),
+    nullProvider(CurationService)
   ]
 })
 export class SwaggerAppModule {}

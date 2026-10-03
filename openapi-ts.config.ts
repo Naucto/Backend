@@ -3,14 +3,14 @@ import { defineConfig } from "@hey-api/openapi-ts";
 export default defineConfig({
   input: "swagger.json",
   output: {
-    path: "generated_client",
+    path: "client/src",
     postProcess: ["prettier"],
   },
   plugins: [
     {
-      name: "@hey-api/client-axios",
-      // Bundle the client runtime inside generated_client so the frontend
-      // can drop it in as-is without an extra npm dependency.
+      name: "@hey-api/client-fetch",
+      // Bundle the client runtime inside the package so consumers don't need
+      // an extra npm dependency.
       bundle: true,
     },
     {

@@ -6,8 +6,11 @@
     "license": "GPLv3",
     "scripts": {
         "build": "nest build",
+        "seed:dev": "tsx prisma/seed-dev.ts",
         "generate:swagger": "ts-node -r tsconfig-paths/register tool/generate-swagger.ts",
         "generate:client": "openapi-ts",
+        "repair:publish-state": "node dist/tasks/repair/repair-publish-state.main",
+        "repair:publish-state:dev": "ts-node -r tsconfig-paths/register src/tasks/repair/repair-publish-state.main.ts",
         "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
         "start": "npm run build && node dist/main",
         "start:dev": "nest start --watch",
@@ -21,13 +24,12 @@
         "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
         "prepare": "husky || true",
         "lint:check": "eslint \"{src,test,prisma,tool}/**/*.ts\" \"*.{ts,mjs}\"",
-        "typecheck": "tsc --noEmit -p tsconfig.eslint.json"
+        "typecheck": "tsc --noEmit -p tsconfig.eslint.json",
+        "client:build": "npm run generate:swagger && npm run generate:client && npm --prefix client install --no-audit --no-fund && npm --prefix client run build"
     },
     "dependencies": {
         "@aws-sdk/client-s3": "^3.975.0",
-        "@aws-sdk/cloudfront-signer": "^3.975.0",
         "@aws-sdk/lib-storage": "^3.986.0",
-        "@aws-sdk/s3-request-presigner": "^3.986.0",
         "@nestjs/common": "^11.1.12",
         "@nestjs/config": "^4.0.2",
         "@nestjs/core": "^11.1.12",
@@ -49,7 +51,6 @@
         "express": "^5.2.1",
         "jsonwebtoken": "^9.0.3",
         "jwks-rsa": "^4.0.1",
-        "lib0": "^0.2.117",
         "multer": "^2.0.2",
         "passport": "^0.7.0",
         "passport-jwt": "^4.0.1",
@@ -57,7 +58,8 @@
         "reflect-metadata": "^0.2.2",
         "rxjs": "^7.8.2",
         "uuid": "^14.0.0",
-        "ws": "^8.19.0"
+        "ws": "^8.19.0",
+        "yjs": "^13.6.32"
     },
     "devDependencies": {
         "@commitlint/cli": "^21.2.2",

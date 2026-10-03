@@ -58,9 +58,8 @@ services:
       - .env
     ports:
       - "${BACKEND_PORT}:3000"
-      # WebRTC signaling servers bind sequentially from BACKEND_WEBRTC_PORT_BASE
-      # (one per server: collaboration + multiplayer). Published identity-mapped
-      # because the backend advertises the exact bound port to clients.
+      # Identity-mapped: without BACKEND_WEBRTC_PUBLIC_URL_TEMPLATE the backend advertises the port
+      # it bound, so the host port must be the same one.
       - "${BACKEND_WEBRTC_PORT_BASE:-10000}-${BACKEND_WEBRTC_PORT_END:-10009}:${BACKEND_WEBRTC_PORT_BASE:-10000}-${BACKEND_WEBRTC_PORT_END:-10009}"
     restart: on-failure
     networks:

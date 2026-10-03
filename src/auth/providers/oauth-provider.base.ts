@@ -1,4 +1,5 @@
 import {
+  BadGatewayException,
   Logger,
   ServiceUnavailableException,
   UnauthorizedException
@@ -11,18 +12,16 @@ import { getExcerrMessage } from "../../util/errors";
 // per environment. Also centralizes the repeated fetch/error plumbing.
 export abstract class OAuthProviderService {
   protected readonly logger: Logger;
-  private _available = false;
+  private available = false;
 
   constructor(protected readonly providerName: string) {
     this.logger = new Logger(`${providerName}AuthService`);
   }
 
   get isAvailable(): boolean {
-    return this._available;
+    return this.available;
   }
 
-  // Reads every required var; on any miss, warns and disables the provider
-  // (returns null) rather than throwing, so the app can still boot.
   protected loadConfig(
     configService: ConfigService,
     vars: string[]
@@ -43,18 +42,17 @@ export abstract class OAuthProviderService {
       this.logger.warn(
         `${this.providerName} OAuth disabled: missing ${missing.join(", ")}`
       );
-      this._available = false;
       return null;
     }
 
-    this._available = true;
+    this.available = true;
     return values;
   }
 
   // Guards a public method so a disabled provider fails cleanly (503) instead of
   // dereferencing absent config.
   protected ensureAvailable(): void {
-    if (!this._available) {
+    if (!this.available) {
       throw new ServiceUnavailableException(
         `${this.providerName} authentication is not configured`
       );
@@ -73,13 +71,17 @@ export abstract class OAuthProviderService {
       response = await fetch(url, init);
     } catch (err) {
       this.logger.error(`${url} unreachable: ${getExcerrMessage(err)}`);
-      throw new UnauthorizedException(msgs.unreachable);
+      throw new ServiceUnavailableException(msgs.unreachable);
     }
 
     if (msgs.badResponse && !response.ok) {
       throw new UnauthorizedException(msgs.badResponse);
     }
 
-    return (await response.json()) as T;
+    try {
+      return (await response.json()) as T;
+    } catch {
+      throw new BadGatewayException(`${this.providerName} returned an unreadable response`);
+    }
   }
 }

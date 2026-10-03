@@ -58,17 +58,15 @@ export class GoogleAuthService extends OAuthProviderService {
       );
     }
 
-    return this.verifyToken(tokens.access_token);
+    return this.fetchVerifiedUser(tokens.access_token);
   }
 
-  async verifyToken(token: string): Promise<OAuthUserPayload> {
-    this.ensureAvailable();
-
+  private async fetchVerifiedUser(accessToken: string): Promise<OAuthUserPayload> {
     const userInfo = await this.fetchJson<GoogleUserInfo>(
       "https://www.googleapis.com/oauth2/v3/userinfo",
-      { headers: { Authorization: `Bearer ${token}` } },
+      { headers: { Authorization: `Bearer ${accessToken}` } },
       {
-        unreachable: "Invalid Google token",
+        unreachable: "Google authentication service unavailable",
         badResponse: "Invalid Google token"
       }
     );

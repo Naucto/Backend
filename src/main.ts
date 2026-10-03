@@ -1,5 +1,4 @@
 import { AppModule } from "src/app.module";
-import { AppConfig } from "src/app.config";
 import {
   NestExpressApplication,
   ExpressAdapter
@@ -11,7 +10,7 @@ import { ConfigService } from "@nestjs/config";
 import express, { Request, Response, NextFunction } from "express";
 
 import { NestFactory } from "@nestjs/core";
-import { ValidationPipe } from "@nestjs/common";
+import { ViolationValidationPipe } from "@common/pipes/violation-validation.pipe";
 
 import { setupGracefulShutdown } from "@tygra/nestjs-graceful-shutdown";
 
@@ -29,6 +28,9 @@ if (isProduction) {
 
 (async () => {
   const expressApp = express();
+  // The API sits behind the deployment's reverse proxy on a private network, so the address of
+  // the reader is the one that proxy reports, not the proxy's own.
+  expressApp.set("trust proxy", "loopback, linklocal, uniquelocal");
 
   const app = await NestFactory.create<NestExpressApplication>(
     AppModule,
@@ -48,7 +50,7 @@ if (isProduction) {
   app.useLogger(["log", "error", "warn", "debug"]);
 
   app.useGlobalPipes(
-    new ValidationPipe({
+    new ViolationValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true
@@ -92,9 +94,6 @@ if (isProduction) {
     typeof address === "object" && address !== null
       ? address.port
       : Number(port);
-
-  const appConfig = app.get(AppConfig);
-  appConfig.port = actualPort;
 
   logger.log(`Server listening on port ${actualPort}`);
 })();

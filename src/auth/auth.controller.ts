@@ -1,5 +1,8 @@
 import {
   Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
   Post,
   Patch,
   Body,
@@ -24,33 +27,30 @@ import {
   ApiBody,
   ApiBearerAuth
 } from "@nestjs/swagger";
-import { Response, Request, CookieOptions } from "express";
+import { Response, Request } from "express";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import { RequestWithUser } from "./auth.types";
 import {
   encryptRefreshToken,
   decryptRefreshToken
 } from "./refresh-cookie.crypto";
+import { REFRESH_COOKIE_NAME, refreshCookieOptions } from "./auth.utils";
+import { PASSWORD_POLICY } from "./password-policy";
+import { PasswordPolicyDto } from "./dto/password-policy.dto";
+import { Public } from "./decorators/public.decorator";
+import {
+  ConflictErrorResponseDto,
+  ValidationErrorResponseDto
+} from "@common/validation/error-response.dto";
 
 @ApiTags("auth")
 @Controller("auth")
 export class AuthController {
-  private readonly isProd = process.env["NODE_ENV"] === "production";
-
   constructor(private readonly authService: AuthService) {}
 
-  private getRefreshCookieOptions(): CookieOptions {
-    return {
-      httpOnly: true,
-      secure: this.isProd,
-      sameSite: this.isProd ? "none" : "lax",
-      path: "/auth/refresh"
-    };
-  }
-
   private setRefreshCookie(res: Response, token: string): void {
-    res.cookie("refresh_token", encryptRefreshToken(token), {
-      ...this.getRefreshCookieOptions(),
+    res.cookie(REFRESH_COOKIE_NAME, encryptRefreshToken(token), {
+      ...refreshCookieOptions(),
       maxAge: this.authService.getRefreshTokenMaxAgeMs()
     });
   }
@@ -83,6 +83,21 @@ export class AuthController {
     return { access_token };
   }
 
+  @Public()
+  @Get("password-policy")
+  @ApiOperation({
+    summary: "The password rule this deployment enforces, so a form can enforce the same one"
+  })
+  @ApiResponse({ status: HttpStatus.OK, type: PasswordPolicyDto })
+  getPasswordPolicy(): PasswordPolicyDto {
+    return {
+      minLength: PASSWORD_POLICY.minLength,
+      minCharacterClasses: PASSWORD_POLICY.minCharacterClasses,
+      // A copy, so the response never aliases the array the validators read.
+      characterClasses: [ ...PASSWORD_POLICY.characterClasses ]
+    };
+  }
+
   @Post("register")
   @ApiOperation({ summary: "Register a new user and return an access token" })
   @ApiBody({ type: CreateUserDto })
@@ -95,9 +110,12 @@ export class AuthController {
       required: ["access_token"]
     }
   })
-  @ApiResponse({ status: 400, description: "Bad request" })
-  @ApiResponse({ status: 409, description: "Email already in use" })
-  @ApiResponse({ status: 403, description: "Cannot register as an admin" })
+  @ApiResponse({ status: 400, description: "Bad request", type: ValidationErrorResponseDto })
+  @ApiResponse({
+    status: 409,
+    description: "Email or username already in use",
+    type: ConflictErrorResponseDto
+  })
   async register(
     @Body() createUserDto: CreateUserDto,
     @Res({ passthrough: true }) res: Response
@@ -210,22 +228,22 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response
   ): Promise<{ access_token: string }> {
-    const refresh_cookie = req.cookies["refresh_token"];
-    if (!refresh_cookie)
+    const refreshCookie = req.cookies[REFRESH_COOKIE_NAME];
+    if (!refreshCookie)
       throw new UnauthorizedException("Refresh token missing");
 
     let refresh_token: string;
     try {
-      refresh_token = decryptRefreshToken(refresh_cookie);
+      refresh_token = decryptRefreshToken(refreshCookie);
     } catch {
-      res.clearCookie("refresh_token", this.getRefreshCookieOptions());
+      res.clearCookie(REFRESH_COOKIE_NAME, refreshCookieOptions());
       throw new UnauthorizedException("Invalid refresh token");
     }
 
-    const { access_token, refresh_token: new_refresh_token } =
+    const { access_token, refresh_token: newRefreshToken } =
       await this.authService.refreshToken(refresh_token);
 
-    this.setRefreshCookie(res, new_refresh_token);
+    this.setRefreshCookie(res, newRefreshToken);
 
     return { access_token };
   }
@@ -246,37 +264,40 @@ export class AuthController {
   @ApiResponse({ status: 401, description: "Current password incorrect" })
   async changePassword(
     @Body() dto: ChangePasswordDto,
-    @Req() req: RequestWithUser
+    @Req() req: RequestWithUser,
+    @Res({ passthrough: true }) res: Response
   ): Promise<{ success: boolean }> {
-    await this.authService.changePassword(
+    const { refresh_token } = await this.authService.changePassword(
       req.user.id,
       dto.newPassword,
       dto.currentPassword
     );
+
+    this.setRefreshCookie(res, refresh_token);
+
     return { success: true };
   }
 
+  /**
+   * The refresh cookie is scoped to the refresh route and never reaches this one, so the session
+   * is revoked by authenticated user rather than by presented token.
+   */
   @Post("logout")
-  @ApiOperation({ summary: "Remove refresh token cookie" })
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth("JWT-auth")
+  @ApiOperation({ summary: "End the session and clear the refresh token cookie" })
   @ApiResponse({
     status: 200,
     description: "Logout successful",
     schema: { example: { success: true } }
   })
   async logout(
-    @Req() req: Request,
+    @Req() req: RequestWithUser,
     @Res({ passthrough: true }) res: Response
   ): Promise<{ success: boolean }> {
-    const refresh_cookie = req.cookies["refresh_token"];
-    if (refresh_cookie) {
-      try {
-        await this.authService.revokeRefreshToken(
-          decryptRefreshToken(refresh_cookie)
-        );
-      } catch {
-      }
-      res.clearCookie("refresh_token", this.getRefreshCookieOptions());
-    }
+    await this.authService.revokeAllRefreshTokens(req.user.id);
+    res.clearCookie(REFRESH_COOKIE_NAME, refreshCookieOptions());
     return { success: true };
   }
 }

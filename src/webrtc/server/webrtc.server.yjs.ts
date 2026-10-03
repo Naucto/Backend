@@ -2,7 +2,9 @@ import {
   WebRTCClientEvent,
   WebRTCClientSocket,
   WebRTCServerEvent,
-  WebRTCServerSocket
+  WebRTCServerSocket,
+  WebRTCServerName,
+  WEBRTC_SERVER_NAMES
 } from "@webrtc/server/webrtc.server";
 import {
   EventBasedMessage,
@@ -12,8 +14,6 @@ import {
 import { WebRTCService } from "@webrtc/webrtc.service";
 
 import { IsArray, IsEnum, IsString } from "class-validator";
-
-// ----------------------------------------------------------------------------
 
 type YjsWebRTCTopicID = string;
 
@@ -27,8 +27,6 @@ type YjsWebRTCServerSocket = WebRTCServerSocket<{
   topics: Map<YjsWebRTCTopicID, Set<YjsWebRTCClientSocket>>;
 }>;
 
-// ----------------------------------------------------------------------------
-
 enum YjsMessageType {
   SUBSCRIBE = "subscribe",
   UNSUBSCRIBE = "unsubscribe",
@@ -39,40 +37,39 @@ enum YjsMessageType {
 
 class YjsMessage {
   @IsEnum(YjsMessageType)
-  type!: YjsMessageType;
+    type!: YjsMessageType;
 }
 
 class YjsMessageSubscribe extends YjsMessage {
   @IsArray()
   @IsString({ each: true })
-  topics!: YjsWebRTCTopicID[];
+    topics!: YjsWebRTCTopicID[];
 }
 
 class YjsMessageUnsubscribe extends YjsMessage {
   @IsArray()
   @IsString({ each: true })
-  topics!: YjsWebRTCTopicID[];
+    topics!: YjsWebRTCTopicID[];
 }
 
 class YjsMessagePublish extends YjsMessage {
   @IsString()
-  topic!: YjsWebRTCTopicID;
+    topic!: YjsWebRTCTopicID;
 
   data?: unknown;
 }
 
 class YjsMessagePing extends YjsMessage {}
 
-// ----------------------------------------------------------------------------
-
 export class YjsWebRTCServerOptions extends EventBasedWebRTCServerOptions {
+  override name: WebRTCServerName = WEBRTC_SERVER_NAMES.collab;
   pingTimeout: number = 30000;
+  /** Signalling only: session descriptions and candidates, a few kilobytes each. */
+  override maxPayload: number = 64 * 1024;
 }
 
-// y-webrtc compatible signaling/relay server. The message handling
-// (subscribe/unsubscribe/publish/ping) is expressed as @EventBasedMessage
-// handlers; the per-socket ping lifecycle and topic bookkeeping remain
-// Yjs-specific.
+// Signalling server compatible with y-webrtc: topic subscriptions, and a publish relayed to the
+// topic's other subscribers.
 export class YjsWebRTCServer extends EventBasedWebRTCServer<YjsWebRTCServerOptions> {
   constructor(
     webrtcService: WebRTCService,
@@ -100,7 +97,8 @@ export class YjsWebRTCServer extends EventBasedWebRTCServer<YjsWebRTCServerOptio
           `Client ${clientSocket.remoteAddress} ping timed out`
         );
         clearInterval(clientSocket.pingChecker);
-        clientSocket.close();
+        // A peer that stopped answering will not answer a close frame either.
+        clientSocket.terminate();
         return;
       }
 
@@ -178,6 +176,10 @@ export class YjsWebRTCServer extends EventBasedWebRTCServer<YjsWebRTCServerOptio
 
       topic.delete(socket);
       socket.subscribedTopics.delete(topicId);
+
+      if (topic.size === 0) {
+        serverSocket.topics.delete(topicId);
+      }
     });
   }
 

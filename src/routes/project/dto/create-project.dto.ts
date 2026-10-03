@@ -4,7 +4,6 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
-  IsUrl,
   MaxLength
 } from "class-validator";
 import {
@@ -21,7 +20,7 @@ export class CreateProjectDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(PROJECT_NAME_MAX_LENGTH)
-  name!: string;
+    name!: string;
 
   @ApiProperty({
     description: "A short description of the project",
@@ -30,16 +29,7 @@ export class CreateProjectDto {
   })
   @IsString()
   @MaxLength(PROJECT_SHORT_DESC_MAX_LENGTH)
-  shortDesc!: string;
-
-  @ApiProperty({
-    description: "URL to the project icon",
-    example: "https://example.com/icons/MySuperVideoGame.png",
-    required: false
-  })
-  @IsUrl()
-  @IsOptional()
-  iconUrl?: string;
+    shortDesc!: string;
 
   @ApiProperty({
     description: "Tags attached to the project",
@@ -50,5 +40,5 @@ export class CreateProjectDto {
   @IsArray()
   @IsString({ each: true })
   @IsOptional()
-  tags?: string[];
+    tags?: string[];
 }

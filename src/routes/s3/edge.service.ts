@@ -1,38 +1,25 @@
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { BadEnvVarError, MissingEnvVarError } from "@auth/auth.error";
+import { MissingEnvVarError } from "@auth/auth.error";
+
+/** A replaced object gets a new URL, so no cache keeps serving the old one. */
+export function versionedUrl(url: string, etag: string | undefined): string {
+  const version = etag?.replace(/"/g, "") ?? Date.now().toString();
+  return `${url}?v=${version}`;
+}
 
 @Injectable()
-export class CloudfrontService {
+export class EdgeService {
   constructor(private readonly configService: ConfigService) {}
 
-  private getEdgeEndpointRaw(): string {
-    const endpoint = this.configService.get<string>("EDGE_ENDPOINT");
-    if (!endpoint) throw new MissingEnvVarError("EDGE_ENDPOINT");
-    return endpoint;
-  }
+  getCDNUrl(key: string): string {
+    const raw = this.configService.get<string>("EDGE_ENDPOINT");
+    if (!raw) throw new MissingEnvVarError("EDGE_ENDPOINT");
 
-  private normalizeEndpoint(endpoint: string): string {
-    const trimmed = endpoint.trim().replace(/\/+$/, "");
-    if (/^https?:\/\//i.test(trimmed)) {
-      return trimmed;
-    }
-    return `https://${trimmed}`;
-  }
-
-  private getEdgeEndpointUrl(): string {
-    return this.normalizeEndpoint(this.getEdgeEndpointRaw());
-  }
-
-  private buildResourceUrl(
-    key: string,
-    options?: { allowWildcard?: boolean }
-  ): string {
-    const endpoint = this.getEdgeEndpointUrl();
-
-    if (options?.allowWildcard && key === "*") {
-      return `${endpoint}/*`;
-    }
+    const trimmed = raw.trim().replace(/\/+$/, "");
+    const endpoint = /^https?:\/\//i.test(trimmed)
+      ? trimmed
+      : `https://${trimmed}`;
 
     const encodedKey = key
       .split("/")
@@ -40,21 +27,5 @@ export class CloudfrontService {
       .join("/");
 
     return `${endpoint}/${encodedKey}`;
-  }
-
-  getCookieDomain(): string {
-    try {
-      return new URL(this.getEdgeEndpointUrl()).hostname;
-    } catch {
-      throw new BadEnvVarError("EDGE_ENDPOINT");
-    }
-  }
-
-  generateSignedUrl(fileKey: string): string {
-    return this.buildResourceUrl(fileKey);
-  }
-
-  getCDNUrl(key: string): string {
-    return this.buildResourceUrl(key);
   }
 }

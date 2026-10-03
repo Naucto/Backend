@@ -6,7 +6,6 @@ import { ProjectCommentService } from "./project-comment.service";
 @Module({
   imports: [PrismaModule],
   controllers: [ProjectCommentController],
-  providers: [ProjectCommentService],
-  exports: [ProjectCommentService]
+  providers: [ProjectCommentService]
 })
 export class ProjectCommentModule {}

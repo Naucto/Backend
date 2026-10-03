@@ -13,28 +13,49 @@ import {
   DeleteObjectsCommand,
   DeleteObjectsCommandInput,
   HeadObjectCommand,
-  HeadObjectCommandInput,
   PutObjectAclCommand,
   PutObjectAclCommandInput,
   _Object,
-  HeadObjectCommandOutput
+  HeadObjectCommandOutput,
+  DeleteObjectsCommandOutput
 } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Readable } from "stream";
-import { DownloadedFile, S3ObjectMetadata } from "./s3.interface";
+import { DownloadedFile } from "./s3.interface";
 import {
   S3ConfigurationException,
   BucketResolutionException,
   S3ListObjectsException,
-  S3SignedUrlException,
   S3DownloadException,
+  S3ObjectNotFoundException,
   S3UploadException,
   S3DeleteFileException,
   S3DeleteFilesException,
-  S3GetMetadataException,
   S3MissingMetadataException
 } from "./s3.error";
 import { Upload } from "@aws-sdk/lib-storage";
+
+/** True for the `NotImplemented` an S3-compatible store returns for a feature it does not have. */
+function isNotImplemented(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "name" in error &&
+    (error as { name?: unknown }).name === "NotImplemented"
+  );
+}
+
+/** S3 names a missing object `NotFound` on a HEAD and `NoSuchKey` on a GET. */
+function isNotFound(error: unknown): boolean {
+  const s3Error = error as {
+    name?: string;
+    $metadata?: { httpStatusCode?: number };
+  };
+  return (
+    s3Error.name === "NotFound" ||
+    s3Error.name === "NoSuchKey" ||
+    s3Error.$metadata?.httpStatusCode === 404
+  );
+}
 
 @Injectable()
 export class S3Service {
@@ -43,39 +64,25 @@ export class S3Service {
   constructor(
     @Inject(ConfigService) private readonly configService: ConfigService
   ) {
-    const errors = [];
+    const missingKeys: string[] = [];
     const endpoint = this.configService.get<string>("S3_ENDPOINT");
     if (!endpoint) {
-      errors.push("S3_ENDPOINT");
+      missingKeys.push("S3_ENDPOINT");
     }
     const region = this.configService.get<string>("S3_REGION");
     if (!region) {
-      errors.push("S3_REGION");
+      missingKeys.push("S3_REGION");
     }
     const accessKeyId = this.configService.get<string>("S3_ACCESS_KEY_ID");
     if (!accessKeyId) {
-      errors.push("S3_ACCESS_KEY_ID");
+      missingKeys.push("S3_ACCESS_KEY_ID");
     }
     const secretAccessKey = this.configService.get<string>(
       "S3_SECRET_ACCESS_KEY"
     );
     if (!secretAccessKey) {
-      errors.push("S3_SECRET_ACCESS_KEY");
+      missingKeys.push("S3_SECRET_ACCESS_KEY");
     }
-
-    if (errors.length > 0) {
-      throw new S3ConfigurationException(errors);
-    }
-
-    const envVars = {
-      AWS_REGION: region,
-      AWS_ACCESS_KEY_ID: accessKeyId,
-      AWS_SECRET_ACCESS_KEY: secretAccessKey
-    };
-
-    const missingKeys = Object.entries(envVars)
-      .filter(([, value]) => !value)
-      .map(([key]) => key);
 
     if (missingKeys.length > 0) {
       throw new S3ConfigurationException(missingKeys);
@@ -92,67 +99,44 @@ export class S3Service {
     });
   }
 
-  private resolveBucket(bucketName?: string): string {
-    const defaultBucket = this.configService.get<string>("S3_BUCKET_NAME");
-    const resolved = bucketName || defaultBucket;
-    if (!resolved)
-      throw new BucketResolutionException(
-        "No bucket provided and no default bucket configured."
-      );
-    return resolved;
+  private resolveBucket(): string {
+    const bucket = this.configService.get<string>("S3_BUCKET_NAME");
+    if (!bucket)
+      throw new BucketResolutionException("No bucket configured.");
+    return bucket;
   }
 
-  async headFile(
-    key: string,
-    bucketName?: string
-  ): Promise<HeadObjectCommandOutput> {
-    const resolvedBucketName = this.resolveBucket(bucketName);
+  private async headFile(key: string): Promise<HeadObjectCommandOutput> {
     const command = new HeadObjectCommand({
-      Bucket: resolvedBucketName,
+      Bucket: this.resolveBucket(),
       Key: key
     });
     return this.s3.send(command);
   }
 
-  async fileExists(key: string, bucketName?: string): Promise<boolean> {
-    const resolvedBucketName = this.resolveBucket(bucketName);
+  async getFileMetadataOrNull(
+    key: string
+  ): Promise<HeadObjectCommandOutput | null> {
     try {
-      const command = new HeadObjectCommand({
-        Bucket: resolvedBucketName,
-        Key: key
-      });
-      await this.s3.send(command);
-      return true;
+      return await this.headFile(key);
     } catch (error: unknown) {
-      const s3Error = error as {
-        name?: string;
-        $metadata?: { httpStatusCode?: number };
-      };
-      if (
-        s3Error.name === "NotFound" ||
-        s3Error.$metadata?.httpStatusCode === 404
-      ) {
-        return false;
+      if (isNotFound(error)) {
+        return null;
       }
       throw error;
     }
   }
 
-  async listObjects({
-    bucketName,
-    prefix,
-    delimiter
-  }: {
-    bucketName?: string;
-    prefix?: string;
-    delimiter?: string;
-  } = {}): Promise<_Object[]> {
-    const resolvedBucketName = this.resolveBucket(bucketName);
+  async fileExists(key: string): Promise<boolean> {
+    return (await this.getFileMetadataOrNull(key)) !== null;
+  }
+
+  async listObjects({ prefix }: { prefix?: string } = {}): Promise<_Object[]> {
+    const resolvedBucketName = this.resolveBucket();
     try {
       const input: ListObjectsV2CommandInput = {
         Bucket: resolvedBucketName,
-        Prefix: prefix,
-        Delimiter: delimiter
+        Prefix: prefix
       };
       const command = new ListObjectsV2Command(input);
       const result = await this.s3.send(command);
@@ -163,38 +147,10 @@ export class S3Service {
     }
   }
 
-  async getSignedDownloadUrl(
-    key: string,
-    bucketName?: string
-  ): Promise<string> {
-    const resolvedBucketName = this.resolveBucket(bucketName);
+  async downloadFile({ key }: { key: string }): Promise<DownloadedFile> {
+    const resolvedBucketName = this.resolveBucket();
     try {
-      const input: GetObjectCommandInput = {
-        Bucket: resolvedBucketName,
-        Key: key
-      };
-      const command = new GetObjectCommand(input);
-      return await getSignedUrl(this.s3, command, { expiresIn: 3600 });
-    } catch (error) {
-      throw new S3SignedUrlException(resolvedBucketName, key, error);
-    }
-  }
-
-  async downloadFile({
-    key,
-    bucketName
-  }: {
-    key: string;
-    bucketName?: string;
-  }): Promise<DownloadedFile> {
-    const resolvedBucketName = this.resolveBucket(bucketName);
-    try {
-      const headInput: HeadObjectCommandInput = {
-        Bucket: resolvedBucketName,
-        Key: key
-      };
-      const headCommand = new HeadObjectCommand(headInput);
-      const head = await this.s3.send(headCommand);
+      const head = await this.headFile(key);
 
       const getObjectInput: GetObjectCommandInput = {
         Bucket: resolvedBucketName,
@@ -209,7 +165,7 @@ export class S3Service {
 
       const missingFields = [];
       if (!contentType) missingFields.push("ContentType");
-      if (!contentLength) missingFields.push("ContentLength");
+      if (contentLength === undefined) missingFields.push("ContentLength");
 
       if (missingFields.length > 0) {
         throw new S3MissingMetadataException(
@@ -227,54 +183,31 @@ export class S3Service {
 
       return downloadedFile;
     } catch (error) {
-      throw new S3DownloadException(resolvedBucketName, key, error);
-    }
-  }
-
-  async getFileMetadataOrNull(
-    key: string,
-    bucketName?: string
-  ): Promise<HeadObjectCommandOutput | null> {
-    try {
-      return await this.headFile(key, bucketName);
-    } catch (error: unknown) {
-      const s3Error = error as {
-        name?: string;
-        $metadata?: { httpStatusCode?: number };
-      };
-      if (
-        s3Error.name === "NotFound" ||
-        s3Error.$metadata?.httpStatusCode === 404
-      ) {
-        return null;
+      if (isNotFound(error)) {
+        throw new S3ObjectNotFoundException(resolvedBucketName, key, error);
       }
-      throw error;
+      throw new S3DownloadException(resolvedBucketName, key, error);
     }
   }
 
   async uploadFile({
     file,
     metadata,
-    bucketName,
     keyName,
     cacheControl
   }: {
     file: Express.Multer.File | DownloadedFile;
     metadata?: Record<string, string>;
-    bucketName?: string;
-    keyName?: string;
+    keyName: string;
     cacheControl?: string;
   }): Promise<void> {
-    const resolvedBucketName = this.resolveBucket(bucketName);
+    const resolvedBucketName = this.resolveBucket();
 
     if ("originalname" in file) {
-      file = <Express.Multer.File>file;
       try {
-        if (!keyName) keyName = file.originalname;
-
         const input: PutObjectCommandInput = {
           Bucket: resolvedBucketName,
-          Key: keyName ?? file.originalname,
+          Key: keyName,
           Body: file.buffer,
           ContentType: file.mimetype,
           Metadata: metadata,
@@ -284,16 +217,10 @@ export class S3Service {
 
         await this.s3.send(command);
       } catch (error) {
-        throw new S3UploadException(
-          resolvedBucketName,
-          file.originalname,
-          error
-        );
+        throw new S3UploadException(resolvedBucketName, keyName, error);
       }
     } else {
       try {
-        file = <DownloadedFile>file;
-
         const parallelUpload = new Upload({
           client: this.s3,
           params: {
@@ -308,23 +235,13 @@ export class S3Service {
 
         await parallelUpload.done();
       } catch (error) {
-        throw new S3UploadException(
-          resolvedBucketName,
-          keyName ?? "<undefined>",
-          error
-        );
+        throw new S3UploadException(resolvedBucketName, keyName, error);
       }
     }
   }
 
-  async deleteFile({
-    key,
-    bucketName
-  }: {
-    key: string;
-    bucketName?: string;
-  }): Promise<void> {
-    const resolvedBucketName = this.resolveBucket(bucketName);
+  async deleteFile({ key }: { key: string }): Promise<void> {
+    const resolvedBucketName = this.resolveBucket();
     try {
       const input: DeleteObjectCommandInput = {
         Bucket: resolvedBucketName,
@@ -338,14 +255,9 @@ export class S3Service {
     }
   }
 
-  async deleteFiles({
-    keys,
-    bucketName
-  }: {
-    keys: string[];
-    bucketName?: string;
-  }): Promise<_Object[]> {
-    const resolvedBucketName = this.resolveBucket(bucketName);
+  async deleteFiles({ keys }: { keys: string[] }): Promise<_Object[]> {
+    const resolvedBucketName = this.resolveBucket();
+    let result: DeleteObjectsCommandOutput;
     try {
       const input: DeleteObjectsCommandInput = {
         Bucket: resolvedBucketName,
@@ -355,70 +267,39 @@ export class S3Service {
         }
       };
       const command = new DeleteObjectsCommand(input);
-      const result = await this.s3.send(command);
-
-      return result.Deleted ?? [];
+      result = await this.s3.send(command);
     } catch (error) {
       throw new S3DeleteFilesException(resolvedBucketName, keys, error);
     }
-  }
 
-  async getObjectMetadata({
-    key,
-    bucketName
-  }: {
-    key: string;
-    bucketName?: string;
-  }): Promise<S3ObjectMetadata> {
-    const resolvedBucketName = this.resolveBucket(bucketName);
-    try {
-      const input: HeadObjectCommandInput = {
-        Bucket: resolvedBucketName,
-        Key: key
-      };
-      const command = new HeadObjectCommand(input);
-      const result = await this.s3.send(command);
-
-      if (
-        !result.ContentType ||
-        !result.ContentLength ||
-        !result.LastModified ||
-        !result.ETag
-      ) {
-        const missingFields = [];
-        if (!result.ContentType) missingFields.push("ContentType");
-        if (!result.ContentLength) missingFields.push("ContentLength");
-        if (!result.LastModified) missingFields.push("LastModified");
-        if (!result.ETag) missingFields.push("ETag");
-
-        throw new S3MissingMetadataException(
-          resolvedBucketName,
-          key,
-          missingFields
-        );
-      }
-
-      return {
-        contentType: result.ContentType,
-        contentLength: result.ContentLength,
-        lastModified: result.LastModified,
-        metadata: result.Metadata ?? {},
-        eTag: result.ETag
-      };
-    } catch (error) {
-      throw new S3GetMetadataException(resolvedBucketName, key, error);
+    const refused = result.Errors ?? [];
+    if (refused.length > 0) {
+      throw new S3DeleteFilesException(
+        resolvedBucketName,
+        refused.map((entry) => entry.Key ?? "<unknown>"),
+        refused.map((entry) => `${entry.Key}: ${entry.Code}`).join(", ")
+      );
     }
+
+    return result.Deleted ?? [];
   }
 
-  async setObjectPublicRead(key: string, bucketName?: string): Promise<void> {
-    const resolvedBucketName = this.resolveBucket(bucketName);
+  /**
+   * Makes an object readable without credentials, except on a store without per-object ACLs, where
+   * the bucket policy has to grant the read.
+   */
+  async setObjectPublicRead(key: string): Promise<void> {
+    const resolvedBucketName = this.resolveBucket();
 
     const input: PutObjectAclCommandInput = {
       Bucket: resolvedBucketName,
       Key: key,
       ACL: "public-read"
     };
-    const command = new PutObjectAclCommand(input);
-    await this.s3.send(command);
+    try {
+      await this.s3.send(new PutObjectAclCommand(input));
+    } catch (error) {
+      if (!isNotImplemented(error)) throw error;
+    }
   }
 }

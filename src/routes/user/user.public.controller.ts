@@ -2,14 +2,18 @@ import { Controller, Get, HttpStatus, Param, ParseIntPipe, Query } from "@nestjs
 import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { Public } from "@auth/decorators/public.decorator";
 import { S3Service } from "@s3/s3.service";
-import { CloudfrontService } from "src/routes/s3/edge.service";
-import { UserService } from "./user.service";
+import { EdgeService, versionedUrl } from "src/routes/s3/edge.service";
+import { PublicProfile, UserService } from "./user.service";
+import { profileAssetKey } from "./profile-asset";
 import { PublicUserProfileResponseDto } from "./dto/public-user-profile-response.dto";
+import { PublicUserSearchResponseDto } from "./dto/public-user-search.dto";
 import { ProjectService } from "@project/project.service";
 import { ProjectExResponseDto } from "@project/dto/project-response.dto";
 
 const DEFAULT_GAMES_PAGE = 1;
 const DEFAULT_GAMES_LIMIT = 20;
+/** A suggestion panel shows a handful of people; asking for more is asking for a results page. */
+const MAX_SEARCH_LIMIT = 10;
 
 @ApiTags("users")
 @Controller("users/public")
@@ -17,7 +21,7 @@ export class UserPublicController {
   constructor(
     private readonly userService: UserService,
     private readonly s3Service: S3Service,
-    private readonly cloudfrontService: CloudfrontService,
+    private readonly edgeService: EdgeService,
     private readonly projectService: ProjectService
   ) {}
 
@@ -27,8 +31,68 @@ export class UserPublicController {
       return null;
     }
 
-    const version = head.ETag?.replace(/"/g, "") ?? Date.now().toString();
-    return `${this.cloudfrontService.getCDNUrl(key)}?v=${version}`;
+    return versionedUrl(this.edgeService.getCDNUrl(key), head.ETag);
+  }
+
+  private async toProfileResponse(
+    profile: PublicProfile
+  ): Promise<PublicUserProfileResponseDto> {
+    const profileImageUrl = await this.getPublicAssetUrl(
+      profileAssetKey(profile.id, "profile")
+    );
+    const backgroundImageUrl = await this.getPublicAssetUrl(
+      profileAssetKey(profile.id, "background")
+    );
+    const totals = await this.projectService.fetchUserTotals(profile.id);
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: "Public user profile retrieved successfully",
+      data: {
+        ...profile,
+        ...totals,
+        profileImageUrl,
+        backgroundImageUrl
+      }
+    };
+  }
+
+  @Public()
+  @Get("search")
+  @ApiOperation({ summary: "Find people by handle or display name" })
+  @ApiQuery({ name: "q", type: "string", description: "What was typed" })
+  @ApiQuery({ name: "limit", type: "number", required: false })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Matching people, exact handle first",
+    type: PublicUserSearchResponseDto
+  })
+  async search(
+    @Query("q") q?: string,
+    @Query("limit") limit?: string
+  ): Promise<PublicUserSearchResponseDto> {
+    const term = q?.trim() ?? "";
+    const take = Math.min(
+      Math.max(parseInt(limit ?? "", 10) || MAX_SEARCH_LIMIT, 1),
+      MAX_SEARCH_LIMIT
+    );
+
+    // An empty term matches every account, which is not a search result.
+    const hits = term ? await this.userService.searchPublic(term, take) : [];
+    const data = await Promise.all(
+      hits.map(async (hit) => ({
+        ...hit,
+        profileImageUrl: await this.getPublicAssetUrl(
+          profileAssetKey(hit.id, "profile")
+        )
+      }))
+    );
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: "Users retrieved successfully",
+      data
+    };
   }
 
   @Public()
@@ -44,19 +108,9 @@ export class UserPublicController {
   async getPublicProfile(
     @Param("id", ParseIntPipe) id: number
   ): Promise<PublicUserProfileResponseDto> {
-    const profile = await this.userService.findPublicProfile(id);
-    const profileImageUrl = await this.getPublicAssetUrl(`users/${id}/profile`);
-    const backgroundImageUrl = await this.getPublicAssetUrl(`users/${id}/background`);
-
-    return {
-      statusCode: HttpStatus.OK,
-      message: "Public user profile retrieved successfully",
-      data: {
-        ...profile,
-        profileImageUrl,
-        backgroundImageUrl
-      }
-    };
+    return this.toProfileResponse(
+      await this.userService.findPublicProfile(id)
+    );
   }
 
   @Public()
@@ -72,23 +126,9 @@ export class UserPublicController {
   async getPublicProfileByUsername(
     @Param("username") username: string
   ): Promise<PublicUserProfileResponseDto> {
-    const profile = await this.userService.findPublicProfileByUsername(username);
-    const profileImageUrl = await this.getPublicAssetUrl(
-      `users/${profile.id}/profile`
+    return this.toProfileResponse(
+      await this.userService.findPublicProfileByUsername(username)
     );
-    const backgroundImageUrl = await this.getPublicAssetUrl(
-      `users/${profile.id}/background`
-    );
-
-    return {
-      statusCode: HttpStatus.OK,
-      message: "Public user profile retrieved successfully",
-      data: {
-        ...profile,
-        profileImageUrl,
-        backgroundImageUrl
-      }
-    };
   }
 
   @Public()
@@ -136,6 +176,12 @@ export class UserPublicController {
     type: "number",
     required: false
   })
+  @ApiQuery({
+    name: "ownedOnly",
+    type: "string",
+    required: false,
+    description: "Only the games this user owns, rather than every game they are credited on"
+  })
   @ApiResponse({
     status: HttpStatus.OK,
     description: "Returns the list of games published by the user",
@@ -144,9 +190,57 @@ export class UserPublicController {
   async getPublishedGames(
     @Param("id", ParseIntPipe) id: number,
     @Query("page") page?: string,
-    @Query("limit") limit?: string
+    @Query("limit") limit?: string,
+    @Query("ownedOnly") ownedOnly?: string
   ): Promise<ProjectExResponseDto[]> {
     return this.projectService.fetchPublishedGamesByUser(
+      id,
+      page ? parseInt(page, 10) : DEFAULT_GAMES_PAGE,
+      limit ? parseInt(limit, 10) : DEFAULT_GAMES_LIMIT,
+      ownedOnly === "true"
+    );
+  }
+
+  @Public()
+  @Get(":id/collaborations")
+  @ApiOperation({ summary: "Get published games the user collaborated on" })
+  @ApiParam({ name: "id", description: "User ID" })
+  @ApiQuery({ name: "page", type: "number", required: false })
+  @ApiQuery({ name: "limit", type: "number", required: false })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Games the user helped build but does not own",
+    type: [ProjectExResponseDto]
+  })
+  async getCollaborations(
+    @Param("id", ParseIntPipe) id: number,
+    @Query("page") page?: string,
+    @Query("limit") limit?: string
+  ): Promise<ProjectExResponseDto[]> {
+    return this.projectService.fetchCollaborationsByUser(
+      id,
+      page ? parseInt(page, 10) : DEFAULT_GAMES_PAGE,
+      limit ? parseInt(limit, 10) : DEFAULT_GAMES_LIMIT
+    );
+  }
+
+  @Public()
+  @Get(":id/remixes")
+  @ApiOperation({ summary: "Get published games remixed from this user's" })
+  @ApiParam({ name: "id", description: "User ID" })
+  @ApiQuery({ name: "page", type: "number", required: false })
+  @ApiQuery({ name: "limit", type: "number", required: false })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Games other people forked from one of this user's",
+    type: [ProjectExResponseDto]
+  })
+  async getRemixes(
+    @Param("id", ParseIntPipe) id: number,
+    @Query("page") page?: string,
+    @Query("limit") limit?: string
+  ): Promise<ProjectExResponseDto[]> {
+    return this.projectService.fetchRemixesOfUser(
       id,
       page ? parseInt(page, 10) : DEFAULT_GAMES_PAGE,
       limit ? parseInt(limit, 10) : DEFAULT_GAMES_LIMIT

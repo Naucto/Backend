@@ -1,11 +1,8 @@
 import {
   Injectable,
-  ConflictException,
   UnauthorizedException,
-  InternalServerErrorException,
   BadRequestException,
-  Inject,
-  Logger
+  Inject
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { UserService } from "@user/user.service";
@@ -13,6 +10,8 @@ import { GoogleAuthService } from "./providers/google-auth.service";
 import { GithubAuthService } from "./providers/github-auth.service";
 import { MicrosoftAuthService } from "./providers/microsoft-auth.service";
 import * as bcrypt from "bcryptjs";
+import { createHash } from "crypto";
+import { Prisma } from "@prisma/client";
 import { UserDto } from "./dto/user.dto";
 import { AuthResponseDto } from "./dto/auth-response.dto";
 import { JwtPayload } from "./auth.types";
@@ -21,11 +20,19 @@ import { PrismaService } from "@ourPrisma/prisma.service";
 import { ConfigService } from "@nestjs/config";
 import { parseExpiresIn, timespanToMs } from "./auth.utils";
 import { v4 as uuidv4 } from "uuid";
+import { conflictViolation } from "@common/validation/violation.exception";
+
+/**
+ * The form a refresh token is stored and looked up in. A plain digest: the token is already
+ * high-entropy, and bcrypt reads only the first 72 bytes of its input, which every token of one
+ * user shares.
+ */
+function storedFormOf(refreshToken: string): string {
+  return createHash("sha256").update(refreshToken).digest("hex");
+}
 
 @Injectable()
 export class AuthService {
-  private readonly logger = new Logger(AuthService.name);
-
   constructor(
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
@@ -38,19 +45,26 @@ export class AuthService {
 
   getRefreshTokenMaxAgeMs(): number {
     return timespanToMs(
-      parseExpiresIn(this.configService.get<string>("JWT_REFRESH_EXPIRES_IN"), "7d")
+      parseExpiresIn(
+        "JWT_REFRESH_EXPIRES_IN",
+        this.configService.get<string>("JWT_REFRESH_EXPIRES_IN"),
+        "7d"
+      )
     );
   }
 
-  async generateTokens(
-    payload: JwtPayload,
-    userId: number
+  private async generateTokens(
+    user: { id: number; email: string },
+    db: Prisma.TransactionClient = this.prisma
   ): Promise<AuthResponseDto> {
+    const payload: JwtPayload = { sub: user.id, email: user.email };
     const accessTokenExpiresIn = parseExpiresIn(
+      "JWT_EXPIRES_IN",
       this.configService.get<string>("JWT_EXPIRES_IN"),
       "1h"
     );
     const refreshTokenExpiresIn = parseExpiresIn(
+      "JWT_REFRESH_EXPIRES_IN",
       this.configService.get<string>("JWT_REFRESH_EXPIRES_IN"),
       "7d"
     );
@@ -59,21 +73,30 @@ export class AuthService {
       expiresIn: accessTokenExpiresIn
     });
 
+    // The id keeps two tokens signed for one user within the same second from being identical,
+    // which the unique stored form could not hold.
     const refresh_token = this.jwtService.sign(payload, {
-      expiresIn: refreshTokenExpiresIn
+      expiresIn: refreshTokenExpiresIn,
+      jwtid: uuidv4()
     });
 
-    const hashedRefreshToken = await bcrypt.hash(refresh_token, 10);
-
-    await this.prisma.refreshToken.create({
+    await db.refreshToken.create({
       data: {
-        token: hashedRefreshToken,
-        userId,
+        token: storedFormOf(refresh_token),
+        userId: user.id,
         expiresAt: new Date(Date.now() + timespanToMs(refreshTokenExpiresIn))
       }
     });
 
     return { access_token, refresh_token };
+  }
+
+  private replaceSessions(user: { id: number; email: string }): Promise<AuthResponseDto> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.refreshToken.deleteMany({ where: { userId: user.id } });
+
+      return this.generateTokens(user, tx);
+    });
   }
 
   async validateUser(email: string, password: string): Promise<UserDto> {
@@ -98,20 +121,7 @@ export class AuthService {
   async login(email: string, password: string): Promise<AuthResponseDto> {
     const user = await this.validateUser(email, password);
 
-    return this.prisma.$transaction(async (tx) => {
-      await tx.refreshToken.deleteMany({ where: { userId: user.id } });
-
-      const payload: JwtPayload = { sub: user.id, email: user.email };
-      const { access_token, refresh_token } = await this.generateTokens(
-        payload,
-        user.id
-      );
-
-      return {
-        access_token,
-        refresh_token
-      };
-    });
+    return this.replaceSessions(user);
   }
 
   async register(createUserDto: CreateUserDto): Promise<AuthResponseDto> {
@@ -121,29 +131,18 @@ export class AuthService {
     ]);
 
     if (existingByEmail.length > 0) {
-      throw new ConflictException("Email already in use");
+      throw conflictViolation("Email already in use", "email", "EMAIL_TAKEN");
     }
 
     if (existingByUsername.length > 0) {
-      throw new ConflictException("Username already in use");
+      throw conflictViolation("Username already in use", "username", "USERNAME_TAKEN");
     }
 
     createUserDto.roles = [];
 
     const newUser = await this.userService.create(createUserDto);
 
-    const payload = { sub: newUser.id, email: newUser.email };
-    const { access_token, refresh_token } = await this.generateTokens(
-      payload,
-      newUser.id
-    );
-
-    const response: AuthResponseDto = {
-      access_token: access_token,
-      refresh_token: refresh_token
-    };
-
-    return response;
+    return this.generateTokens(newUser);
   }
 
   private async loginWithOAuth(
@@ -153,7 +152,14 @@ export class AuthService {
     let user = await this.userService.findByEmail(email);
 
     if (!user) {
-      let safeUsername = name.replace(/\s+/g, "_");
+      // A provider's display name is free text, while a handle has to pass the rule a profile
+      // edit enforces, with room left for the suffix that tells two of them apart.
+      const handle = name
+        .normalize("NFKD")
+        .replace(/\p{M}/gu, "")
+        .replace(/[^a-zA-Z0-9._-]+/g, "_")
+        .slice(0, 18);
+      let safeUsername = handle.length < 3 ? "user" : handle;
       const existingUser = await this.userService.findAll({
         where: { username: safeUsername }
       });
@@ -165,13 +171,7 @@ export class AuthService {
       user = await this.userService.createOAuthUser(email, safeUsername);
     }
 
-    const payload: JwtPayload = { sub: user.id, email: user.email };
-    const { access_token, refresh_token } = await this.generateTokens(
-      payload,
-      user.id
-    );
-
-    return { access_token, refresh_token };
+    return this.generateTokens(user);
   }
 
   async loginWithGoogleCode(code: string, codeVerifier: string): Promise<AuthResponseDto> {
@@ -190,33 +190,20 @@ export class AuthService {
   }
 
   async refreshToken(oldToken: string): Promise<AuthResponseDto> {
-    let payload: JwtPayload;
-    const jwtSecret = this.configService.get<string>("JWT_SECRET");
-
-    if (!jwtSecret) {
-      throw new InternalServerErrorException("JWT_SECRET is not defined");
-    }
-
     try {
-      payload = this.jwtService.verify(oldToken, {
-        secret: jwtSecret
-      });
-    } catch (e) {
+      this.jwtService.verify(oldToken);
+    } catch {
       throw new UnauthorizedException("Invalid or expired refresh token");
     }
 
-    const userTokens = await this.prisma.refreshToken.findMany({
-      where: { userId: payload.sub },
-      include: { user: true }
-    });
-
-    let storedToken = null;
-    for (const tokenRecord of userTokens) {
-      if (await bcrypt.compare(oldToken, tokenRecord.token)) {
-        storedToken = tokenRecord;
-        break;
+    const storedToken = await this.prisma.refreshToken.findUnique({
+      where: { token: storedFormOf(oldToken) },
+      select: {
+        id: true,
+        expiresAt: true,
+        user: { select: { id: true, email: true } }
       }
-    }
+    });
 
     if (!storedToken) {
       throw new UnauthorizedException("Refresh token not recognized");
@@ -228,48 +215,33 @@ export class AuthService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      const newPayload: JwtPayload = {
-        sub: storedToken.user.id,
-        email: storedToken.user.email
-      };
-      const { access_token, refresh_token } = await this.generateTokens(
-        newPayload,
-        storedToken.user.id
-      );
+      // Two requests may present the same token at once; only the one that removes the row
+      // may be issued its replacement.
+      const { count } = await tx.refreshToken.deleteMany({
+        where: { id: storedToken.id }
+      });
+      if (count === 0) {
+        throw new UnauthorizedException("Refresh token not recognized");
+      }
 
-      await tx.refreshToken.delete({ where: { id: storedToken.id } });
-
-      return { access_token, refresh_token };
+      return this.generateTokens(storedToken.user, tx);
     });
   }
 
-  async revokeRefreshToken(token: string): Promise<void> {
-    try {
-      const decoded = this.jwtService.decode(token) as JwtPayload;
-      if (!decoded || !decoded.sub) return;
-
-      const userTokens = await this.prisma.refreshToken.findMany({
-        where: { userId: decoded.sub }
-      });
-
-      for (const tokenRecord of userTokens) {
-        if (await bcrypt.compare(token, tokenRecord.token)) {
-          await this.prisma.refreshToken.delete({
-            where: { id: tokenRecord.id }
-          });
-          break;
-        }
-      }
-    } catch (error) {
-      this.logger.warn(`Failed to revoke refresh token: ${error instanceof Error ? error.message : String(error)}`);
-    }
+  /** Ends every session of the user: each tab or device holding a refresh token is signed out. */
+  async revokeAllRefreshTokens(userId: number): Promise<void> {
+    await this.prisma.refreshToken.deleteMany({ where: { userId } });
   }
 
+  /**
+   * Sessions opened under the previous password end with it; the pair returned is the caller's
+   * way to stay signed in.
+   */
   async changePassword(
     userId: number,
     newPassword: string,
     currentPassword?: string
-  ): Promise<void> {
+  ): Promise<AuthResponseDto> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
 
     if (!user) {
@@ -286,6 +258,11 @@ export class AuthService {
       }
     }
 
-    await this.userService.updatePassword(userId, newPassword);
+    return this.prisma.$transaction(async (tx) => {
+      await this.userService.updatePassword(userId, newPassword, tx);
+      await tx.refreshToken.deleteMany({ where: { userId: user.id } });
+
+      return this.generateTokens(user, tx);
+    });
   }
 }

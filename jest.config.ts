@@ -9,6 +9,7 @@ const config: Config = {
   preset: "ts-jest/presets/default-esm",
   testEnvironment: "node",
   rootDir: "./src",
+  roots: ["<rootDir>"],
   moduleFileExtensions: ["js", "json", "ts"],
   testRegex: ".*\\.spec\\.ts$",
   moduleNameMapper: pathsToModuleNameMapper(compilerOptions.paths || {}, {
@@ -23,12 +24,10 @@ const config: Config = {
     ],
   },
   transformIgnorePatterns: ["/node_modules/(?!(jose|jwks-rsa|uuid)/)"],
-  collectCoverage: true,
   collectCoverageFrom: ["**/*.(t|j)s"],
   coverageDirectory: "../coverage",
   coveragePathIgnorePatterns: ["/node_modules/"],
   setupFiles: ["<rootDir>/../jest.setup.ts"],
-  verbose: false, // true for more information
 };
 
 export default config;

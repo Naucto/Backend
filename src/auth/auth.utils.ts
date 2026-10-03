@@ -1,20 +1,22 @@
+import { CookieOptions } from "express";
 import { BadEnvVarError } from "./auth.error";
 
 type TimeSpanUnit = "s" | "m" | "h" | "d" | "w" | "y";
 type TimeSpanString = `${number}${TimeSpanUnit}`;
 export type TimeSpan = number | TimeSpanString;
 
-export function isStringValue(value: string): value is TimeSpanString {
+function isTimeSpanString(value: string): value is TimeSpanString {
   return /^\d+(s|m|h|d|w|y)$/.test(value);
 }
 
 export function parseExpiresIn(
+  varName: string,
   value: string | undefined,
   defaultValue: TimeSpan
 ): TimeSpan {
   if (!value) return defaultValue;
 
-  if (isStringValue(value)) {
+  if (isTimeSpanString(value)) {
     return value;
   }
 
@@ -23,7 +25,7 @@ export function parseExpiresIn(
     return asNumber;
   }
 
-  throw new BadEnvVarError("JWT_EXPIRES_IN");
+  throw new BadEnvVarError(varName);
 }
 
 export function timespanToMs(value: TimeSpan): number {
@@ -33,7 +35,7 @@ export function timespanToMs(value: TimeSpan): number {
 
   const match = value.match(/^(\d+)(s|m|h|d|w|y)$/);
   if (!match) {
-    throw new BadEnvVarError("JWT_EXPIRES_IN");
+    throw new Error(`Not a time span: ${value}`);
   }
 
   const amount = Number(match[1]);
@@ -49,4 +51,19 @@ export function timespanToMs(value: TimeSpan): number {
   };
 
   return amount * multipliers[unit];
+}
+
+export const REFRESH_COOKIE_NAME = "refresh_token";
+
+// Options shared by every place that sets or clears the refresh cookie: the
+// attributes must match exactly for clearCookie() to take effect.
+export function refreshCookieOptions(): CookieOptions {
+  const isProd = process.env["NODE_ENV"] === "production";
+
+  return {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? "none" : "lax",
+    path: "/auth/refresh"
+  };
 }

@@ -3,11 +3,12 @@ import { ProjectController } from "./project.controller";
 import { ProjectService } from "./project.service";
 import { PrismaModule } from "@ourPrisma/prisma.module";
 import { S3Module } from "@s3/s3.module";
+import { OptionalJwtAuthGuard } from "@auth/guards/optional-jwt-auth.guard";
 
 @Module({
   imports: [PrismaModule, S3Module],
   controllers: [ProjectController],
-  providers: [ProjectService],
+  providers: [ProjectService, OptionalJwtAuthGuard],
   exports: [ProjectService]
 })
 export class ProjectModule {}

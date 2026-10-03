@@ -4,7 +4,9 @@ import {
   WebRTCClientSocket,
   WebRTCServerAuthEvent,
   WebRTCServerEvent,
-  WebRTCServerSocket
+  WebRTCServerSocket,
+  WebRTCServerName,
+  WEBRTC_SERVER_NAMES
 } from "@webrtc/server/webrtc.server";
 import {
   EventBasedMessage,
@@ -74,7 +76,9 @@ type SyncedGameTableServerSocket = WebRTCServerSocket<{
   rooms: Map<string, SyncedGameTableRoom>;
 }>;
 
-export class SyncedGameTableWebRTCServerOptions extends EventBasedWebRTCServerOptions {}
+export class SyncedGameTableWebRTCServerOptions extends EventBasedWebRTCServerOptions {
+  override name: WebRTCServerName = WEBRTC_SERVER_NAMES.game;
+}
 
 // Host-authoritative relay for multiplayer game-table sync.
 export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGameTableWebRTCServerOptions> {
@@ -129,10 +133,6 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
       return false;
     }
   }
-
-  // --------------------------------------------------------------------------
-  // Connection lifecycle
-  // --------------------------------------------------------------------------
 
   @WebRTCServerEvent("connection")
   protected _internal_sgt_onConnection(
@@ -209,14 +209,19 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
       });
     } else {
       room.slaves.set(socket.userId, socket);
+      existingSlave?.close();
 
-      if (existingSlave && existingSlave !== socket) {
-        existingSlave.close();
-      } else if (room.host) {
+      // Sent for every accepted socket, a reconnection included: it is the host's only notice
+      // that a player is present.
+      if (room.host) {
         this.send(room.host, {
           type: SyncedGameTableControlType.PEER_JOINED,
           userId: socket.userId
         });
+      } else if (!room.hostGraceTimer) {
+        // A slave can arrive before its host, or after the session ended: the host gets the same
+        // deadline as one that dropped, as nothing else would end a room it never joins.
+        this._scheduleHostGrace(room, ticket.sessionId);
       }
     }
   }
@@ -225,7 +230,6 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
   protected _internal_sgt_onClose(socket: SyncedGameTableClientSocket): void {
     clearInterval(socket.pingChecker);
 
-    // Skip runtime teardown logic while the process is shutting down.
     if (this.isShuttingDown) {
       return;
     }
@@ -277,7 +281,8 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
           `Game-table client ${socket.remoteAddress} ping timed out`
         );
         clearInterval(socket.pingChecker);
-        socket.close();
+        // A peer that stopped answering will not answer a close frame either.
+        socket.terminate();
         return;
       }
 

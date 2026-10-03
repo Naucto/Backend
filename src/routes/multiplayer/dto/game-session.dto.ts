@@ -35,6 +35,10 @@ export class GameSessionResponseDto {
   @IsString()
     hostNickname?: string;
 
+  @ApiProperty({ description: "ID of the game (project) being played" })
+  @IsInt()
+    projectId!: number;
+
   @ApiProperty({ description: "Name of the game (project) being played" })
   @IsString()
     projectName!: string;

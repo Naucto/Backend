@@ -4,7 +4,6 @@ import {
   IsString,
   IsOptional,
   IsNumber,
-  IsUrl,
   Min,
   IsEnum,
   IsNotEmpty,
@@ -26,7 +25,7 @@ export class UpdateProjectDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(PROJECT_NAME_MAX_LENGTH)
-  name!: string;
+    name!: string;
 
   @ApiProperty({
     description: "A short description of the project",
@@ -35,17 +34,20 @@ export class UpdateProjectDto {
   })
   @IsString()
   @MaxLength(PROJECT_SHORT_DESC_MAX_LENGTH)
-  shortDesc!: string;
+    shortDesc!: string;
 
   @ApiProperty({
     description: "A detailed description of the project",
     example: "This game features multiple levels, power-ups, and boss fights.",
     required: false,
+    type: String,
+    nullable: true,
     maxLength: PROJECT_LONG_DESC_MAX_LENGTH
   })
+  @IsOptional()
   @IsString()
   @MaxLength(PROJECT_LONG_DESC_MAX_LENGTH)
-  longDesc?: string | null;
+    longDesc?: string | null;
 
   @ApiProperty({
     description: "Tags attached to the project",
@@ -56,16 +58,7 @@ export class UpdateProjectDto {
   @IsArray()
   @IsString({ each: true })
   @IsOptional()
-  tags?: string[];
-
-  @ApiProperty({
-    description: "URL to the project icon",
-    example: "https://example.com/icons/MySuperVideoGame.png",
-    required: false
-  })
-  @IsUrl()
-  @IsOptional()
-  iconUrl?: string;
+    tags?: string[];
 
   @ApiProperty({
     description: "Project status",
@@ -75,7 +68,7 @@ export class UpdateProjectDto {
   })
   @IsEnum(ProjectStatus)
   @IsOptional()
-  status?: ProjectStatus;
+    status?: ProjectStatus;
 
   @ApiProperty({
     description: "Monetization type",
@@ -85,7 +78,7 @@ export class UpdateProjectDto {
   })
   @IsEnum(MonetizationType)
   @IsOptional()
-  monetization?: MonetizationType;
+    monetization?: MonetizationType;
 
   @ApiProperty({
     description: "The price of the project",
@@ -95,5 +88,5 @@ export class UpdateProjectDto {
   @IsNumber()
   @Min(0)
   @IsOptional()
-  price?: number;
+    price?: number;
 }
