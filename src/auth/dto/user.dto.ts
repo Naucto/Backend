@@ -1,33 +1,30 @@
-import { ApiProperty } from "@nestjs/swagger";
-import { RoleDto } from "./role.dto";
+import { ApiProperty } from '@nestjs/swagger';
+
+import { ROLE_NAMES, USER } from '../access/roles';
 
 export class UserDto {
-  @ApiProperty({ example: 1, description: "User ID" })
+  @ApiProperty({ example: 1, description: 'User ID' })
   id!: number;
 
-  @ApiProperty({ example: "user@example.com", description: "User email" })
+  @ApiProperty({ example: 'user@example.com', description: 'User email' })
   email!: string;
 
-  @ApiProperty({ example: "user_name", description: "Username" })
+  @ApiProperty({ example: 'user_name', description: 'Username' })
   username!: string;
 
   @ApiProperty({
-    example: "First",
+    example: 'First',
     required: false,
-    description: "Optional nickname"
+    description: 'Optional nickname',
   })
   nickname?: string | null;
 
   @ApiProperty({
-    example: "2025-05-05T12:51:04.098Z",
-    description: "Date of creation"
+    example: '2025-05-05T12:51:04.098Z',
+    description: 'Date of creation',
   })
   createdAt!: Date;
 
-  @ApiProperty({
-    type: [RoleDto],
-    required: false,
-    description: "List of user roles"
-  })
-  roles?: RoleDto[];
+  @ApiProperty({ enum: ROLE_NAMES, example: USER, description: 'Role the user holds' })
+  role!: string;
 }

@@ -1,21 +1,29 @@
-import { ApiProperty } from "@nestjs/swagger";
-import { IsNotEmpty, IsOptional, IsString, MinLength } from "class-validator";
+import { ApiProperty } from '@nestjs/swagger';
+import { IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
+
+import { PasswordStrength } from '../../common/decorators/password-strength';
+import { violation } from '../../common/validation/violation';
+import { PASSWORD_POLICY } from '../password-policy';
 
 export class ChangePasswordDto {
   @ApiProperty({
-    description: "Current password (not required for OAuth accounts)",
-    required: false
+    description: 'Current password (not required for OAuth accounts)',
+    required: false,
   })
   @IsString()
   @IsOptional()
   currentPassword?: string;
 
   @ApiProperty({
-    description: "New password",
-    minLength: 6
+    description: 'New password',
+    minLength: PASSWORD_POLICY.minLength,
   })
   @IsString()
-  @IsNotEmpty()
-  @MinLength(6, { message: "Password must be at least 6 characters" })
+  @IsNotEmpty({ context: violation('PASSWORD_REQUIRED') })
+  @MinLength(PASSWORD_POLICY.minLength, {
+    message: `Password must be at least ${String(PASSWORD_POLICY.minLength)} characters`,
+    context: violation('PASSWORD_TOO_SHORT'),
+  })
+  @PasswordStrength({ context: violation('PASSWORD_TOO_WEAK') })
   newPassword!: string;
 }
