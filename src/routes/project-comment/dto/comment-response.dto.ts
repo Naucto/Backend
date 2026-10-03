@@ -1,17 +1,17 @@
-import { ApiProperty } from "@nestjs/swagger";
+import { ApiProperty } from '@nestjs/swagger';
 
 export class CommentAuthorDto {
   @ApiProperty({ example: 1 })
   id!: number;
 
-  @ApiProperty({ example: "john_doe" })
+  @ApiProperty({ example: 'john_doe' })
   username!: string;
 
   @ApiProperty({
-    example: "John",
+    example: 'John',
     nullable: true,
     type: String,
-    required: false
+    required: false,
   })
   nickname?: string | null;
 }
@@ -20,10 +20,10 @@ export class CommentResponseDto {
   @ApiProperty({ example: 1 })
   id!: number;
 
-  @ApiProperty({ example: "Great game!" })
+  @ApiProperty({ example: 'Great game!' })
   content!: string;
 
-  @ApiProperty({ example: "2023-04-15T12:00:00Z" })
+  @ApiProperty({ example: '2023-04-15T12:00:00Z' })
   createdAt!: Date;
 
   @ApiProperty({ example: 1 })
@@ -38,7 +38,7 @@ export class CommentResponseDto {
   @ApiProperty({
     type: () => [CommentResponseDto],
     required: false,
-    description: "Replies to this comment (only for top-level comments)"
+    description: 'Replies to this comment (only for top-level comments)',
   })
   replies?: CommentResponseDto[] | undefined;
 }
