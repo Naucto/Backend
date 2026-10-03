@@ -1,71 +1,57 @@
+import { IncomingMessage } from 'http';
+import { Duplex } from 'stream';
+
+import { WebRTCService } from '../webrtc.service';
 import {
+  WEBRTC_SERVER_NAMES,
   WebRTCClientEvent,
   WebRTCClientReadyState,
   WebRTCClientSocket,
   WebRTCServerAuthEvent,
   WebRTCServerEvent,
-  WebRTCServerSocket
-} from "@webrtc/server/webrtc.server";
+  WebRTCServerName,
+  WebRTCServerSocket,
+} from './webrtc.server';
 import {
   EventBasedMessage,
   EventBasedWebRTCServer,
-  EventBasedWebRTCServerOptions
-} from "@webrtc/server/webrtc.server.event-based";
+  EventBasedWebRTCServerOptions,
+} from './webrtc.server.event-based';
 import {
   GameTableRequestMessage,
   GameTableResponseMessage,
+  GameTableServerMessage,
   GameTableSignalMessage,
-  GameTableStateMessage
-} from "@webrtc/server/webrtc.server.synced-game-table.dto";
-import { WebRTCService } from "@webrtc/webrtc.service";
+  GameTableStateMessage,
+} from './webrtc.server.synced-game-table.dto';
+import {
+  seatsForGuests,
+  SyncedGameTableRole,
+  SyncedGameTableTicket,
+} from './webrtc.server.synced-game-table.ticket';
 
-import { IncomingMessage } from "http";
-import { Duplex } from "stream";
-
-export type SyncedGameTableRole = "host" | "slave";
-
-export interface SyncedGameTableTicket {
-  sessionId: string;
-  userId: number;
-  role: SyncedGameTableRole;
-  maxPlayers: number;
-}
-
-export type SyncedGameTableTicketVerifier = (
-  raw: string
-) => SyncedGameTableTicket;
+export type SyncedGameTableTicketVerifier = (raw: string) => SyncedGameTableTicket;
 
 export type SyncedGameTableHostDisconnectHandler = (sessionId: string) => void;
 
-const TICKET_KEY = Symbol("syncedGameTable:ticket");
+const TICKET_KEY = Symbol('syncedGameTable:ticket');
 type TicketedRequest = IncomingMessage & {
   [TICKET_KEY]?: SyncedGameTableTicket;
 };
-
-export enum SyncedGameTableMessageType {
-  STATE = "state",
-  REQUEST = "request",
-  RESPONSE = "response",
-  SIGNAL = "signal"
-}
-
-enum SyncedGameTableControlType {
-  PEER_JOINED = "peer-joined",
-  PEER_LEFT = "peer-left",
-  SESSION_ENDED = "session-ended"
-}
 
 type SyncedGameTableClientSocket = WebRTCClientSocket<{
   sessionId: string;
   userId: number;
   role: SyncedGameTableRole;
-  pinged: boolean;
-  pingChecker: NodeJS.Timeout;
 }>;
 
 interface SyncedGameTableRoom {
   host: SyncedGameTableClientSocket | null;
   slaves: Map<number, SyncedGameTableClientSocket>;
+  /**
+   * Set from the first ticket, then only by `resizeRoom`: a ticket minted before the session was
+   * resized must not bring the old limit back.
+   */
   maxPlayers: number;
   hostGraceTimer: NodeJS.Timeout | null;
 }
@@ -74,27 +60,27 @@ type SyncedGameTableServerSocket = WebRTCServerSocket<{
   rooms: Map<string, SyncedGameTableRoom>;
 }>;
 
-export class SyncedGameTableWebRTCServerOptions extends EventBasedWebRTCServerOptions {}
+export class SyncedGameTableWebRTCServerOptions extends EventBasedWebRTCServerOptions {
+  override name: WebRTCServerName = WEBRTC_SERVER_NAMES.game;
+}
 
 // Host-authoritative relay for multiplayer game-table sync.
-export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGameTableWebRTCServerOptions> {
-  // Heartbeat interval to detect half-open sockets.
-  private static readonly PING_INTERVAL_MS = 30000;
-
+export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<
+  SyncedGameTableWebRTCServerOptions,
+  GameTableServerMessage
+> {
   // Delay before ending a hostless room so brief host reconnects can recover.
   private static readonly HOST_DISCONNECT_GRACE_MS = 15000;
 
   private readonly _verifyTicket: SyncedGameTableTicketVerifier;
-  private readonly _onHostDisconnected:
-    | SyncedGameTableHostDisconnectHandler
-    | undefined;
+  private readonly _onHostDisconnected: SyncedGameTableHostDisconnectHandler | undefined;
 
   constructor(
     webrtcService: WebRTCService,
     whatFor: string,
     verifyTicket: SyncedGameTableTicketVerifier,
     onHostDisconnected?: SyncedGameTableHostDisconnectHandler,
-    extraOpts: SyncedGameTableWebRTCServerOptions = new SyncedGameTableWebRTCServerOptions()
+    extraOpts: SyncedGameTableWebRTCServerOptions = new SyncedGameTableWebRTCServerOptions(),
   ) {
     super(webrtcService, whatFor, extraOpts);
 
@@ -109,11 +95,11 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
   protected _internal_sgt_authenticate(
     httpRequest: IncomingMessage,
     _httpClientSocket: Duplex,
-    _head: Buffer
+    _head: Buffer,
   ): boolean {
     try {
-      const url = new URL(httpRequest.url ?? "", "http://localhost");
-      const rawTicket = url.searchParams.get("ticket");
+      const url = new URL(httpRequest.url ?? '', 'http://localhost');
+      const rawTicket = url.searchParams.get('ticket');
 
       if (!rawTicket) {
         return false;
@@ -130,15 +116,11 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
     }
   }
 
-  // --------------------------------------------------------------------------
-  // Connection lifecycle
-  // --------------------------------------------------------------------------
-
-  @WebRTCServerEvent("connection")
+  @WebRTCServerEvent('connection')
   protected _internal_sgt_onConnection(
     serverSocket: SyncedGameTableServerSocket,
     rawClientSocket: SyncedGameTableClientSocket,
-    httpRequest: IncomingMessage
+    httpRequest: IncomingMessage,
   ): void {
     const ticket = (httpRequest as TicketedRequest)[TICKET_KEY];
 
@@ -150,28 +132,21 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
     const existingRoom = serverSocket.rooms.get(ticket.sessionId);
 
     const existingSlave =
-      ticket.role === "slave"
-        ? existingRoom?.slaves.get(ticket.userId)
-        : undefined;
+      ticket.role === 'slave' ? existingRoom?.slaves.get(ticket.userId) : undefined;
 
-    if (ticket.role === "host") {
-      if (
-        existingRoom?.host &&
-        existingRoom.host.readyState === WebRTCClientReadyState.OPEN
-      ) {
-        this.logger.verbose(
-          `Rejecting duplicate host for session ${ticket.sessionId}`
-        );
+    if (ticket.role === 'host') {
+      if (existingRoom?.host && existingRoom.host.readyState === WebRTCClientReadyState.OPEN) {
+        this.logger.verbose(`Rejecting duplicate host for session ${ticket.sessionId}`);
         rawClientSocket.close();
         return;
       }
     } else if (!existingSlave) {
       const currentSlaves = existingRoom ? existingRoom.slaves.size : 0;
+      const seats = seatsForGuests(existingRoom?.maxPlayers ?? ticket.maxPlayers);
 
-      if (currentSlaves >= ticket.maxPlayers - 1) {
+      if (currentSlaves >= seats) {
         this.logger.verbose(
-          `Rejecting slave for full session ${ticket.sessionId} ` +
-            `(${currentSlaves}/${ticket.maxPlayers - 1} slots)`
+          `Rejecting slave for full session ${ticket.sessionId} (${currentSlaves}/${seats} slots)`,
         );
         rawClientSocket.close();
         return;
@@ -183,49 +158,48 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
     socket.userId = ticket.userId;
     socket.role = ticket.role;
 
-    this._startHeartbeat(socket);
-
     let room = existingRoom;
     if (!room) {
       room = {
         host: null,
         slaves: new Map(),
         maxPlayers: ticket.maxPlayers,
-        hostGraceTimer: null
+        hostGraceTimer: null,
       };
       serverSocket.rooms.set(ticket.sessionId, room);
     }
 
-    if (ticket.role === "host") {
+    if (ticket.role === 'host') {
       this._clearHostGrace(room);
       room.host = socket;
-      room.maxPlayers = ticket.maxPlayers;
 
       room.slaves.forEach((slave) => {
         this.send(socket, {
-          type: SyncedGameTableControlType.PEER_JOINED,
-          userId: slave.userId
+          type: 'peer-joined',
+          userId: slave.userId,
         });
       });
     } else {
       room.slaves.set(socket.userId, socket);
+      existingSlave?.close();
 
-      if (existingSlave && existingSlave !== socket) {
-        existingSlave.close();
-      } else if (room.host) {
+      // Sent for every accepted socket, a reconnection included: it is the host's only notice
+      // that a player is present.
+      if (room.host) {
         this.send(room.host, {
-          type: SyncedGameTableControlType.PEER_JOINED,
-          userId: socket.userId
+          type: 'peer-joined',
+          userId: socket.userId,
         });
+      } else if (!room.hostGraceTimer) {
+        // A slave can arrive before its host, or after the session ended: the host gets the same
+        // deadline as one that dropped, as nothing else would end a room it never joins.
+        this._scheduleHostGrace(room, ticket.sessionId);
       }
     }
   }
 
-  @WebRTCClientEvent("close")
+  @WebRTCClientEvent('close')
   protected _internal_sgt_onClose(socket: SyncedGameTableClientSocket): void {
-    clearInterval(socket.pingChecker);
-
-    // Skip runtime teardown logic while the process is shutting down.
     if (this.isShuttingDown) {
       return;
     }
@@ -241,10 +215,10 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
       return;
     }
 
-    if (socket.role === "host" && room.host === socket) {
+    if (socket.role === 'host' && room.host === socket) {
       room.host = null;
       this._scheduleHostGrace(room, socket.sessionId);
-    } else if (socket.role === "slave") {
+    } else if (socket.role === 'slave') {
       if (room.slaves.get(socket.userId) !== socket) {
         return;
       }
@@ -253,8 +227,8 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
 
       if (room.host) {
         this.send(room.host, {
-          type: SyncedGameTableControlType.PEER_LEFT,
-          userId: socket.userId
+          type: 'peer-left',
+          userId: socket.userId,
         });
       }
 
@@ -264,41 +238,8 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
     }
   }
 
-  @WebRTCClientEvent("pong")
-  protected _internal_sgt_onPong(socket: SyncedGameTableClientSocket): void {
-    socket.pinged = true;
-  }
-
-  private _startHeartbeat(socket: SyncedGameTableClientSocket): void {
-    socket.pinged = true;
-    socket.pingChecker = setInterval(() => {
-      if (!socket.pinged) {
-        this.logger.verbose(
-          `Game-table client ${socket.remoteAddress} ping timed out`
-        );
-        clearInterval(socket.pingChecker);
-        socket.close();
-        return;
-      }
-
-      socket.pinged = false;
-
-      try {
-        socket.ping();
-      } catch (err) {
-        this.logger.verbose(
-          `Failed to ping ${socket.remoteAddress}: ${err}`
-        );
-        socket.close();
-      }
-    }, SyncedGameTableWebRTCServer.PING_INTERVAL_MS);
-  }
-
   // End the room if the host does not reconnect before the grace timeout.
-  private _scheduleHostGrace(
-    room: SyncedGameTableRoom,
-    sessionId: string
-  ): void {
+  private _scheduleHostGrace(room: SyncedGameTableRoom, sessionId: string): void {
     this._clearHostGrace(room);
 
     room.hostGraceTimer = setTimeout(() => {
@@ -311,7 +252,7 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
       }
 
       room.slaves.forEach((slave) => {
-        this.send(slave, { type: SyncedGameTableControlType.SESSION_ENDED });
+        this.send(slave, { type: 'session-ended' });
         slave.close();
       });
 
@@ -327,112 +268,119 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
     }
   }
 
-  @EventBasedMessage(SyncedGameTableMessageType.STATE, GameTableStateMessage)
+  @EventBasedMessage('state', GameTableStateMessage)
   protected _internal_sgt_onState(
     socket: SyncedGameTableClientSocket,
-    body: GameTableStateMessage
+    body: GameTableStateMessage,
   ): void {
-    if (socket.role !== "host") {
-      this._rejectUnauthorized(socket, "state");
+    if (socket.role !== 'host') {
+      this._rejectUnauthorized(socket, 'state');
       return;
     }
 
     const room = this._roomOf(socket);
-    if (!room) return;
+    if (!room) {
+      return;
+    }
 
     this.broadcast(room.slaves.values(), {
-      type: SyncedGameTableMessageType.STATE,
-      data: body.data
+      type: 'state',
+      data: body.data,
     });
   }
 
-  @EventBasedMessage(
-    SyncedGameTableMessageType.REQUEST,
-    GameTableRequestMessage
-  )
+  @EventBasedMessage('request', GameTableRequestMessage)
   protected _internal_sgt_onRequest(
     socket: SyncedGameTableClientSocket,
-    body: GameTableRequestMessage
+    body: GameTableRequestMessage,
   ): void {
-    if (socket.role !== "slave") {
-      this._rejectUnauthorized(socket, "request");
+    if (socket.role !== 'slave') {
+      this._rejectUnauthorized(socket, 'request');
       return;
     }
 
     const room = this._roomOf(socket);
-    if (!room || !room.host) return;
+    if (!room || !room.host) {
+      return;
+    }
 
     this.send(room.host, {
-      type: SyncedGameTableMessageType.REQUEST,
+      type: 'request',
       from: socket.userId,
-      data: body.data
+      data: body.data,
     });
   }
 
-  @EventBasedMessage(
-    SyncedGameTableMessageType.RESPONSE,
-    GameTableResponseMessage
-  )
+  @EventBasedMessage('response', GameTableResponseMessage)
   protected _internal_sgt_onResponse(
     socket: SyncedGameTableClientSocket,
-    body: GameTableResponseMessage
+    body: GameTableResponseMessage,
   ): void {
-    if (socket.role !== "host") {
-      this._rejectUnauthorized(socket, "response");
+    if (socket.role !== 'host') {
+      this._rejectUnauthorized(socket, 'response');
       return;
     }
 
     const room = this._roomOf(socket);
-    if (!room) return;
+    if (!room) {
+      return;
+    }
 
     const target = room.slaves.get(body.to);
-    if (!target) return;
+    if (!target) {
+      return;
+    }
 
     this.send(target, {
-      type: SyncedGameTableMessageType.RESPONSE,
-      data: body.data
+      type: 'response',
+      data: body.data,
     });
   }
 
-  @EventBasedMessage(SyncedGameTableMessageType.SIGNAL, GameTableSignalMessage)
+  @EventBasedMessage('signal', GameTableSignalMessage)
   protected _internal_sgt_onSignal(
     socket: SyncedGameTableClientSocket,
-    body: GameTableSignalMessage
+    body: GameTableSignalMessage,
   ): void {
     const room = this._roomOf(socket);
-    if (!room)
+    if (!room) {
       return;
+    }
 
-    if (socket.role === "slave") {
-      if (!room.host)
+    if (socket.role === 'slave') {
+      if (!room.host) {
         return;
+      }
 
       this.send(room.host, {
-        type: SyncedGameTableMessageType.SIGNAL,
+        type: 'signal',
         from: socket.userId,
-        data: body.data
+        data: body.data,
       });
       return;
     }
 
-    if (body.to === undefined)
+    if (body.to === undefined) {
       return;
+    }
 
     const target = room.slaves.get(body.to);
-    if (!target)
+    if (!target) {
       return;
+    }
 
     this.send(target, {
-      type: SyncedGameTableMessageType.SIGNAL,
-      data: body.data
+      type: 'signal',
+      data: body.data,
     });
   }
 
   public connectedCount(sessionId: string): number {
     const room = this.wss<SyncedGameTableServerSocket>().rooms.get(sessionId);
 
-    if (!room)
+    if (!room) {
       return 0;
+    }
 
     return room.slaves.size + (room.host ? 1 : 0);
   }
@@ -446,6 +394,15 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
     super.shutdown();
   }
 
+  /** Applies a new seat count to a live room; the players already seated keep their seats. */
+  public resizeRoom(sessionId: string, maxPlayers: number): void {
+    const room = this.wss<SyncedGameTableServerSocket>().rooms.get(sessionId);
+
+    if (room) {
+      room.maxPlayers = maxPlayers;
+    }
+  }
+
   public closeRoom(sessionId: string): void {
     const serverSocket = this.wss<SyncedGameTableServerSocket>();
     const room = serverSocket.rooms.get(sessionId);
@@ -457,30 +414,25 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<SyncedGa
     this._clearHostGrace(room);
 
     if (room.host) {
-      this.send(room.host, { type: SyncedGameTableControlType.SESSION_ENDED });
+      this.send(room.host, { type: 'session-ended' });
       room.host.close();
     }
 
     room.slaves.forEach((slave) => {
-      this.send(slave, { type: SyncedGameTableControlType.SESSION_ENDED });
+      this.send(slave, { type: 'session-ended' });
       slave.close();
     });
 
     serverSocket.rooms.delete(sessionId);
   }
 
-  private _roomOf(
-    socket: SyncedGameTableClientSocket
-  ): SyncedGameTableRoom | undefined {
+  private _roomOf(socket: SyncedGameTableClientSocket): SyncedGameTableRoom | undefined {
     return this.wss<SyncedGameTableServerSocket>().rooms.get(socket.sessionId);
   }
 
-  private _rejectUnauthorized(
-    socket: SyncedGameTableClientSocket,
-    messageType: string
-  ): void {
+  private _rejectUnauthorized(socket: SyncedGameTableClientSocket, messageType: string): void {
     this.logger.verbose(
-      `Closing ${socket.role} ${socket.remoteAddress}: unauthorized "${messageType}"`
+      `Closing ${socket.role} ${socket.remoteAddress}: unauthorized "${messageType}"`,
     );
     socket.close();
   }

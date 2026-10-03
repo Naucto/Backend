@@ -1,14 +1,14 @@
-import { WorkSessionController } from "./work-session.controller";
-import { WorkSessionService } from "./work-session.service";
-import { WebRTCModule } from "@webrtc/webrtc.module";
-import { PrismaModule } from "@ourPrisma/prisma.module";
+import { Module } from '@nestjs/common';
 
-import { Module } from "@nestjs/common";
+import { PrismaModule } from '../../prisma/prisma.module';
+import { WebRTCModule } from '../../webrtc/webrtc.module';
+import { WorkSessionController } from './work-session.controller';
+import { WorkSessionService } from './work-session.service';
 
 @Module({
   imports: [PrismaModule, WebRTCModule],
   controllers: [WorkSessionController],
   providers: [WorkSessionService],
-  exports: [WorkSessionService]
+  exports: [WorkSessionService],
 })
 export class WorkSessionModule {}

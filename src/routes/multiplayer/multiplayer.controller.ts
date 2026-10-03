@@ -1,129 +1,90 @@
 import {
-  ApiBearerAuth,
-  ApiBody,
-  ApiOperation,
-  ApiQuery,
-  ApiResponse,
-  ApiTags
-} from "@nestjs/swagger";
-import { GameSessionEx, MultiplayerService } from "./multiplayer.service";
-
-import {
-  BadRequestException,
   Body,
-  ConflictException,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
-  InternalServerErrorException,
-  Logger,
-  NotFoundException,
   Param,
   ParseIntPipe,
   Patch,
   Post,
   Query,
   Req,
-  UseGuards
-} from "@nestjs/common";
-import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
-import { RequestWithUser } from "@auth/auth.types";
-import { ProjectNotFoundError } from "@project/project.error";
-import { getExcerrMessage } from "@util/errors";
+  UseFilters,
+} from '@nestjs/common';
+import { ApiBody, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 
-import {
-  MultiplayerForbiddenError,
-  MultiplayerGameSessionNotFoundError,
-  MultiplayerInvalidJoinCodeError,
-  MultiplayerSessionFullError,
-  MultiplayerUserAlreadyJoinedError,
-  MultiplayerUserNotInSessionError
-} from "./multiplayer.error";
+import { RequiresAuth } from '../../auth/access/access.decorators';
+import { RequestWithUser } from '../../auth/auth.types';
+import { CreateGameSessionDto } from './dto/create-game-session.dto';
+import { GameSessionListResponseDto, GameSessionResponseDto } from './dto/game-session.dto';
+import { GameSessionConnectionResponseDto } from './dto/game-session-connection.dto';
+import { InviteToSessionDto } from './dto/invite-to-session.dto';
+import { JoinByCodeDto } from './dto/join-by-code.dto';
+import { JoinGameSessionDto } from './dto/join-game-session.dto';
+import { RefreshTicketDto } from './dto/refresh-ticket.dto';
+import { SessionRosterResponseDto } from './dto/session-roster.dto';
+import { UpdateGameSessionDto } from './dto/update-game-session.dto';
+import { GameSessionEx, MultiplayerService } from './multiplayer.service';
+import { MultiplayerExceptionFilter } from './multiplayer-exception.filter';
 
-import { CreateGameSessionDto } from "./dto/create-game-session.dto";
-import { UpdateGameSessionDto } from "./dto/update-game-session.dto";
-import { JoinGameSessionDto } from "./dto/join-game-session.dto";
-import { JoinByCodeDto } from "./dto/join-by-code.dto";
-import { GameSessionConnectionResponseDto } from "./dto/game-session-connection.dto";
-import {
-  GameSessionListResponseDto,
-  GameSessionResponseDto
-} from "./dto/game-session.dto";
-
-@ApiTags("game-sessions")
-@ApiBearerAuth("JWT-auth")
-@Controller("game-sessions")
-@UseGuards(JwtAuthGuard)
+@ApiTags('game-sessions')
+@Controller('game-sessions')
+@RequiresAuth()
+@UseFilters(MultiplayerExceptionFilter)
 export class MultiplayerController {
-  private readonly _logger = new Logger(MultiplayerController.name);
-
   constructor(private readonly _multiplayerService: MultiplayerService) {}
 
   @Post()
   @ApiOperation({
-    summary: "Create a new game session, with the caller as host"
+    summary: 'Create a new game session, with the caller as host',
   })
   @ApiBody({ type: CreateGameSessionDto })
   @ApiResponse({
     status: HttpStatus.CREATED,
-    type: GameSessionConnectionResponseDto
+    type: GameSessionConnectionResponseDto,
   })
   async create(
     @Req() req: RequestWithUser,
-    @Body() dto: CreateGameSessionDto
+    @Body() dto: CreateGameSessionDto,
   ): Promise<GameSessionConnectionResponseDto> {
-    try {
-      return await this._multiplayerService.create(req.user.id, dto);
-    } catch (error) {
-      this._rethrow(error, `create session for user ${req.user.id}`);
-    }
+    return this._multiplayerService.create(req.user.id, dto);
   }
 
-  // Declared before the ":sessionId" routes so "join-by-code" is never matched as
-  // a session id.
-  @Post("join-by-code")
+  @Post('join-by-code')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Join an invite-code game session by its code" })
+  @ApiOperation({ summary: 'Join an invite-code game session by its code' })
   @ApiBody({ type: JoinByCodeDto })
   @ApiResponse({
     status: HttpStatus.OK,
-    type: GameSessionConnectionResponseDto
+    type: GameSessionConnectionResponseDto,
   })
   async joinByCode(
     @Req() req: RequestWithUser,
-    @Body() dto: JoinByCodeDto
+    @Body() dto: JoinByCodeDto,
   ): Promise<GameSessionConnectionResponseDto> {
-    try {
-      return await this._multiplayerService.joinByCode(
-        dto.joinCode,
-        req.user.id,
-        dto.editorTest
-      );
-    } catch (error) {
-      this._rethrow(error, "join session by code");
-    }
+    return this._multiplayerService.joinByCode(dto.joinCode, req.user.id, dto.editorTest);
   }
 
   @Get()
   @ApiOperation({
-    summary: "List game sessions for a project, from the caller's perspective"
+    summary: "List open game sessions from the caller's perspective, one game's or every game's",
   })
-  @ApiQuery({ name: "projectId", type: "number", required: true })
+  @ApiQuery({ name: 'projectId', type: 'number', required: false })
+  @ApiQuery({
+    name: 'q',
+    type: 'string',
+    required: false,
+    description: 'Narrow to sessions whose room or game name holds this',
+  })
   @ApiResponse({ status: HttpStatus.OK, type: GameSessionListResponseDto })
   async list(
     @Req() req: RequestWithUser,
-    @Query("projectId", ParseIntPipe) projectId: number
+    @Query('projectId', new ParseIntPipe({ optional: true })) projectId?: number,
+    @Query('q') query?: string,
   ): Promise<GameSessionListResponseDto> {
-    let sessions: GameSessionEx[];
-
-    try {
-      sessions = await this._multiplayerService.list(projectId, req.user.id);
-    } catch (error) {
-      this._rethrow(error, `list sessions for project ${projectId}`);
-    }
+    const sessions = await this._multiplayerService.list(projectId, req.user.id, query);
 
     const response = new GameSessionListResponseDto();
     response.sessions = sessions.map((session) => this._toResponse(session));
@@ -131,118 +92,100 @@ export class MultiplayerController {
     return response;
   }
 
-  @Get(":sessionId")
-  @ApiOperation({ summary: "Fetch a single game session" })
+  @Get(':sessionId')
+  @ApiOperation({ summary: 'Fetch a single game session' })
   @ApiResponse({ status: HttpStatus.OK, type: GameSessionResponseDto })
   async get(
     @Req() req: RequestWithUser,
-    @Param("sessionId") sessionId: string
+    @Param('sessionId') sessionId: string,
   ): Promise<GameSessionResponseDto> {
-    try {
-      const session = await this._multiplayerService.get(
-        sessionId,
-        req.user.id
-      );
-      return this._toResponse(session);
-    } catch (error) {
-      this._rethrow(error, `get session ${sessionId}`);
-    }
+    const session = await this._multiplayerService.get(sessionId, req.user.id);
+    return this._toResponse(session);
   }
 
-  @Patch(":sessionId")
-  @ApiOperation({ summary: "Update game session settings (host only)" })
+  @Get(':sessionId/players')
+  @ApiOperation({ summary: 'Who is in a game session' })
+  @ApiResponse({ status: HttpStatus.OK, type: SessionRosterResponseDto })
+  async players(
+    @Req() req: RequestWithUser,
+    @Param('sessionId') sessionId: string,
+  ): Promise<SessionRosterResponseDto> {
+    return this._multiplayerService.roster(sessionId, req.user.id);
+  }
+
+  @Post(':sessionId/invite')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Invite someone to a session (host only)' })
+  @ApiBody({ type: InviteToSessionDto })
+  @ApiResponse({ status: HttpStatus.OK })
+  async invite(
+    @Req() req: RequestWithUser,
+    @Param('sessionId') sessionId: string,
+    @Body() dto: InviteToSessionDto,
+  ): Promise<void> {
+    await this._multiplayerService.invite(sessionId, req.user.id, dto.userId);
+  }
+
+  @Patch(':sessionId')
+  @ApiOperation({ summary: 'Update game session settings (host only)' })
   @ApiBody({ type: UpdateGameSessionDto })
   @ApiResponse({ status: HttpStatus.OK })
   async update(
     @Req() req: RequestWithUser,
-    @Param("sessionId") sessionId: string,
-    @Body() dto: UpdateGameSessionDto
+    @Param('sessionId') sessionId: string,
+    @Body() dto: UpdateGameSessionDto,
   ): Promise<void> {
-    try {
-      await this._multiplayerService.update(sessionId, req.user.id, dto);
-    } catch (error) {
-      this._rethrow(error, `update session ${sessionId}`);
-    }
+    await this._multiplayerService.update(sessionId, req.user.id, dto);
   }
 
-  @Delete(":sessionId")
-  @ApiOperation({ summary: "Close/delete a game session (host only)" })
+  @Delete(':sessionId')
+  @ApiOperation({ summary: 'Close/delete a game session (host only)' })
   @ApiResponse({ status: HttpStatus.OK })
-  async remove(
-    @Req() req: RequestWithUser,
-    @Param("sessionId") sessionId: string
-  ): Promise<void> {
-    try {
-      await this._multiplayerService.delete(sessionId, req.user.id);
-    } catch (error) {
-      this._rethrow(error, `delete session ${sessionId}`);
-    }
+  async remove(@Req() req: RequestWithUser, @Param('sessionId') sessionId: string): Promise<void> {
+    await this._multiplayerService.delete(sessionId, req.user.id);
   }
 
-  @Post(":sessionId/join")
+  @Post(':sessionId/join')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Join a game session as a player" })
+  @ApiOperation({ summary: 'Join a game session as a player' })
   @ApiBody({ type: JoinGameSessionDto })
   @ApiResponse({
     status: HttpStatus.OK,
-    type: GameSessionConnectionResponseDto
+    type: GameSessionConnectionResponseDto,
   })
   async join(
     @Req() req: RequestWithUser,
-    @Param("sessionId") sessionId: string,
-    @Body() dto: JoinGameSessionDto
+    @Param('sessionId') sessionId: string,
+    @Body() dto: JoinGameSessionDto,
   ): Promise<GameSessionConnectionResponseDto> {
-    try {
-      return await this._multiplayerService.join(
-        sessionId,
-        req.user.id,
-        dto.joinCode,
-        dto.editorTest
-      );
-    } catch (error) {
-      this._rethrow(error, `join session ${sessionId}`);
-    }
+    return this._multiplayerService.join(sessionId, req.user.id, dto.joinCode, dto.editorTest);
   }
 
-  @Post(":sessionId/leave")
+  @Post(':sessionId/leave')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Leave a game session as a player" })
+  @ApiOperation({ summary: 'Leave a game session as a player' })
   @ApiResponse({ status: HttpStatus.OK })
-  async leave(
-    @Req() req: RequestWithUser,
-    @Param("sessionId") sessionId: string
-  ): Promise<void> {
-    try {
-      await this._multiplayerService.leave(sessionId, req.user.id);
-    } catch (error) {
-      this._rethrow(error, `leave session ${sessionId}`);
-    }
+  async leave(@Req() req: RequestWithUser, @Param('sessionId') sessionId: string): Promise<void> {
+    await this._multiplayerService.leave(sessionId, req.user.id);
   }
 
-  @Post(":sessionId/ticket")
+  @Post(':sessionId/ticket')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: "Mint a fresh connection ticket for the caller's session"
+    summary: "Mint a fresh connection ticket for the caller's session",
   })
+  @ApiBody({ type: RefreshTicketDto, required: false })
   @ApiResponse({
     status: HttpStatus.OK,
-    type: GameSessionConnectionResponseDto
+    type: GameSessionConnectionResponseDto,
   })
   async refreshTicket(
     @Req() req: RequestWithUser,
-    @Param("sessionId") sessionId: string
+    @Param('sessionId') sessionId: string,
+    @Body() dto: RefreshTicketDto,
   ): Promise<GameSessionConnectionResponseDto> {
-    try {
-      return await this._multiplayerService.refreshTicket(
-        sessionId,
-        req.user.id
-      );
-    } catch (error) {
-      this._rethrow(error, `refresh ticket for session ${sessionId}`);
-    }
+    return this._multiplayerService.refreshTicket(sessionId, req.user.id, dto.ticket);
   }
-
-  // --------------------------------------------------------------------------
 
   private _toResponse(session: GameSessionEx): GameSessionResponseDto {
     const dto = new GameSessionResponseDto();
@@ -255,7 +198,8 @@ export class MultiplayerController {
     if (session.host.nickname) {
       dto.hostNickname = session.host.nickname;
     }
-    dto.projectName = session.project.name;
+    dto.projectId = session.projectId;
+    dto.projectName = session.project.publishedName || session.project.name;
     dto.maxPlayers = session.maxPlayers;
     // Prefer the live connected count (includes editor self-joins); fall back to
     // persisted membership when no WebRTC room is up.
@@ -264,38 +208,5 @@ export class MultiplayerController {
       session.otherUsers.length + 1;
 
     return dto;
-  }
-
-  // Maps domain errors to HTTP exceptions; unknown errors become a 500.
-  private _rethrow(error: unknown, context: string): never {
-    if (
-      error instanceof ProjectNotFoundError ||
-      error instanceof MultiplayerGameSessionNotFoundError
-    ) {
-      throw new NotFoundException(error.message);
-    }
-
-    if (error instanceof MultiplayerForbiddenError) {
-      throw new ForbiddenException(error.message);
-    }
-
-    if (
-      error instanceof MultiplayerUserAlreadyJoinedError ||
-      error instanceof MultiplayerSessionFullError
-    ) {
-      throw new ConflictException(error.message);
-    }
-
-    if (
-      error instanceof MultiplayerInvalidJoinCodeError ||
-      error instanceof MultiplayerUserNotInSessionError
-    ) {
-      throw new BadRequestException(error.message);
-    }
-
-    this._logger.error(`Error while trying to ${context}`);
-    this._logger.error(error);
-
-    throw new InternalServerErrorException(getExcerrMessage(error));
   }
 }
