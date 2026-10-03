@@ -3,6 +3,17 @@ networks:
     name: naucto
     driver: bridge
 
+x-backend-build: &backend-build
+  context: .
+  dockerfile: Dockerfile
+  args:
+    - BACKEND_PORT=${BACKEND_PORT}
+    - POSTGRES_USER=${POSTGRES_USER}
+    - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    - POSTGRES_DB=${POSTGRES_DB}
+    - POSTGRES_HOST=${POSTGRES_HOST}
+    - POSTGRES_PORT=${POSTGRES_PORT}
+
 services:
   db:
     image: postgres
@@ -23,16 +34,8 @@ services:
 
   migrate:
     build:
-      context: .
-      dockerfile: Dockerfile
+      <<: *backend-build
       target: migrate
-      args:
-        - BACKEND_PORT=${BACKEND_PORT}
-        - POSTGRES_USER=${POSTGRES_USER}
-        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-        - POSTGRES_DB=${POSTGRES_DB}
-        - POSTGRES_HOST=${POSTGRES_HOST}
-        - POSTGRES_PORT=${POSTGRES_PORT}
     depends_on:
       db:
         condition: service_healthy
@@ -44,16 +47,8 @@ services:
 
   backend:
     build:
-      context: .
-      dockerfile: Dockerfile
+      <<: *backend-build
       target: prod
-      args:
-        - BACKEND_PORT=${BACKEND_PORT}
-        - POSTGRES_USER=${POSTGRES_USER}
-        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-        - POSTGRES_DB=${POSTGRES_DB}
-        - POSTGRES_HOST=${POSTGRES_HOST}
-        - POSTGRES_PORT=${POSTGRES_PORT}
     depends_on:
       db:
         condition: service_healthy
