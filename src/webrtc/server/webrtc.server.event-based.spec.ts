@@ -1,14 +1,15 @@
-import { IsString } from "class-validator";
+import { IsString } from 'class-validator';
 
-import { WebRTCClientSocket } from "@webrtc/server/webrtc.server";
-import { WebRTCService } from "@webrtc/webrtc.service";
+import { WebRTCService } from '../webrtc.service';
+import { WebRTCClientSocket } from './webrtc.server';
 import {
   EventBasedMessage,
   EventBasedWebRTCServer,
-  EventBasedWebRTCServerOptions
-} from "@webrtc/server/webrtc.server.event-based";
+  EventBasedWebRTCServerOptions,
+} from './webrtc.server.event-based';
 
 class GreetMessage {
+  @IsString()
   type!: string;
 
   @IsString()
@@ -16,46 +17,46 @@ class GreetMessage {
 }
 
 class BoomMessage {
+  @IsString()
   type!: string;
 }
 
 class TestEventBasedServer extends EventBasedWebRTCServer {
   public readonly greeted: string[] = [];
+  public boomed = false;
 
-  @EventBasedMessage("greet", GreetMessage)
+  @EventBasedMessage('greet', GreetMessage)
   protected _onGreet(_socket: WebRTCClientSocket, body: GreetMessage): void {
     this.greeted.push(body.name);
   }
 
-  @EventBasedMessage("boom", BoomMessage)
+  @EventBasedMessage('boom', BoomMessage)
   protected _onBoom(): void {
-    throw new Error("handler blew up");
+    this.boomed = true;
+    throw new Error('handler blew up');
   }
 }
 
 function fakeSocket(): WebRTCClientSocket {
   return {
-    remoteAddress: "test",
+    remoteAddress: 'test',
     readyState: 1,
     close: jest.fn(),
-    send: jest.fn()
+    send: jest.fn(),
   } as unknown as WebRTCClientSocket;
 }
 
-describe("EventBasedWebRTCServer", () => {
+describe('EventBasedWebRTCServer', () => {
   const webrtcService = {
-    registerServer: jest.fn()
+    registerServer: jest.fn(),
   } as unknown as WebRTCService;
 
   let server: TestEventBasedServer;
-  let nextPort = 14096;
 
-  function build(
-    opts: Partial<EventBasedWebRTCServerOptions> = {}
-  ): TestEventBasedServer {
+  function build(opts: Partial<EventBasedWebRTCServerOptions> = {}): TestEventBasedServer {
     const options = new EventBasedWebRTCServerOptions();
-    Object.assign(options, opts, { port: nextPort++ });
-    return new TestEventBasedServer(webrtcService, "test", options);
+    Object.assign(options, opts, { port: 14096 });
+    return new TestEventBasedServer(webrtcService, 'test', options);
   }
 
   afterEach(() => {
@@ -63,66 +64,78 @@ describe("EventBasedWebRTCServer", () => {
   });
 
   function dispatch(
-    s: TestEventBasedServer,
+    instance: TestEventBasedServer,
     socket: WebRTCClientSocket,
-    payload: unknown
+    payload: unknown,
   ): void {
     (
-      s as unknown as {
+      instance as unknown as {
         _internal_eb_onMessage(sock: WebRTCClientSocket, raw: string): void;
       }
     )._internal_eb_onMessage(socket, JSON.stringify(payload));
   }
 
-  it("dispatches a valid message to the registered handler", () => {
+  it('dispatches a valid message to the registered handler', () => {
     server = build();
     const socket = fakeSocket();
 
-    dispatch(server, socket, { type: "greet", name: "ada" });
+    dispatch(server, socket, { type: 'greet', name: 'ada' });
 
-    expect(server.greeted).toEqual(["ada"]);
+    expect(server.greeted).toEqual(['ada']);
     expect(socket.close).not.toHaveBeenCalled();
   });
 
-  it("closes the socket on a validation failure (default policy)", () => {
+  it('closes the socket on a validation failure (default policy)', () => {
     server = build();
     const socket = fakeSocket();
 
     // `name` is required and missing
-    dispatch(server, socket, { type: "greet" });
+    dispatch(server, socket, { type: 'greet' });
 
     expect(server.greeted).toEqual([]);
     expect(socket.close).toHaveBeenCalled();
   });
 
-  it("ignores an unknown message type by default", () => {
+  it('ignores an unknown message type by default', () => {
     server = build();
     const socket = fakeSocket();
 
-    dispatch(server, socket, { type: "unknown", name: "x" });
+    dispatch(server, socket, { type: 'unknown', name: 'x' });
 
     expect(server.greeted).toEqual([]);
     expect(socket.close).not.toHaveBeenCalled();
   });
 
-  it("closes on an unknown type when configured to", () => {
-    server = build({ onUnknownType: "close" });
+  it('closes on an unknown type when configured to', () => {
+    server = build({ onUnknownType: 'close' });
     const socket = fakeSocket();
 
-    dispatch(server, socket, { type: "unknown" });
+    dispatch(server, socket, { type: 'unknown' });
 
     expect(socket.close).toHaveBeenCalled();
   });
 
-  it("contains a throwing handler to its own socket without crashing", () => {
+  it('contains a throwing handler to its own socket without crashing', () => {
     server = build();
     const socket = fakeSocket();
 
-    expect(() => dispatch(server, socket, { type: "boom" })).not.toThrow();
+    expect(() => dispatch(server, socket, { type: 'boom' })).not.toThrow();
+    expect(server.boomed).toBe(true);
     expect(socket.close).toHaveBeenCalled();
   });
 
-  it("closes the socket on malformed JSON", () => {
+  it.each([[null], ['x'], [5], [[]]])(
+    'closes the socket on a frame whose JSON is not an object: %j',
+    (payload) => {
+      server = build();
+      const socket = fakeSocket();
+
+      expect(() => dispatch(server, socket, payload)).not.toThrow();
+      expect(socket.close).toHaveBeenCalled();
+    },
+  );
+
+  it('closes the socket on malformed JSON', () => {
     server = build();
     const socket = fakeSocket();
 
@@ -130,7 +143,7 @@ describe("EventBasedWebRTCServer", () => {
       server as unknown as {
         _internal_eb_onMessage(sock: WebRTCClientSocket, raw: string): void;
       }
-    )._internal_eb_onMessage(socket, "{not json");
+    )._internal_eb_onMessage(socket, '{not json');
 
     expect(socket.close).toHaveBeenCalled();
   });
