@@ -43,7 +43,7 @@ export function prepareSound(doc: Y.Doc, operation: Operation, touch: (key: stri
   const category = operation["category"];
   if (category !== "MUSIC" && category !== "SFX") return fail();
   const instruments = operation["instruments"], patterns = operation["patterns"], samples = operation["samples"] ?? [];
-  if (!Array.isArray(instruments) || instruments.length > 16 || !Array.isArray(patterns) || !patterns.length || patterns.length > 32 || !Array.isArray(samples) || samples.length > 8) return fail();
+  if (!Array.isArray(instruments) || !Array.isArray(patterns) || !patterns.length || !Array.isArray(samples)) return fail();
   const library = doc.getMap<string>("sound.instruments"), bank = doc.getMap<string>("sound.patterns"), store = doc.getMap<string>("sound.samples");
   const writes: (() => void)[] = [];
   const created = { instruments: [] as string[], patterns: [] as string[], samples: [] as string[] };
@@ -80,7 +80,7 @@ export function prepareSound(doc: Y.Doc, operation: Operation, touch: (key: stri
     range(pattern["bpm"], 40, 240);
     if (![1, 2, 4, 8].includes(Number(pattern["stepsPerBeat"])) || typeof pattern["name"] !== "string" || pattern["name"].length > 100) return fail();
     const notes = pattern["notes"];
-    if (!Array.isArray(notes) || notes.length > 2048) return fail();
+    if (!Array.isArray(notes)) return fail();
     for (const rawNote of notes as unknown[]) {
       const note = obj(rawNote);
       const step = range(note["step"], 0, steps - 0.125), length = range(note["length"], 0.125, 1024), pitch = range(note["pitch"], 0, 127);
@@ -102,7 +102,7 @@ export function prepareSound(doc: Y.Doc, operation: Operation, touch: (key: stri
     slotValue = id(obj(patterns[0])["id"]);
   } else {
     const song = obj(operation["song"]), sequence = song["sequence"];
-    if (!Array.isArray(sequence) || !sequence.length || sequence.length > 128 || typeof song["name"] !== "string" || typeof song["loop"] !== "boolean") return fail();
+    if (!Array.isArray(sequence) || !sequence.length || typeof song["name"] !== "string" || typeof song["loop"] !== "boolean") return fail();
     if (sequence.some(key => typeof key !== "string" || !patternIds.has(key))) return fail();
     const loopStart = range(song["loopStart"], 0, sequence.length - 1);
     if (!Number.isInteger(loopStart)) return fail();

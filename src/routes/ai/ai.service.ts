@@ -6,7 +6,7 @@ import { Readable } from "stream";
 import { S3Service } from "@s3/s3.service";
 import { AiMcpProjectDto, AiProposalDto, AiReviewDto } from "./ai.dto";
 import { buildContext } from "./ai-context";
-import { NON_INVERTIBLE_KINDS, OPERATION_KINDS } from "./ai-commit";
+import { MAX_CODE_BYTES, NON_INVERTIBLE_KINDS, OPERATION_KINDS } from "./ai-commit";
 import { hasReceipt } from "./ai-receipt";
 
 export interface AiKeyResponse { id: string; name: string; token: string; expiresAt: Date | null; createdAt: Date }
@@ -201,10 +201,11 @@ export class AiService {
     const stored = await this.storedContext(connection);
     if (!stored) throw new ConflictException("This project has no saved state yet: open it once in the editor");
     if (stored.hash !== dto.snapshotHash) throw new ConflictException("Context changed; read it again");
-    if (Buffer.byteLength(JSON.stringify(dto)) > 1024 * 1024) throw new BadRequestException("Proposal exceeds 1 MiB");
+    // The only size limit is on a code file; the request body limit bounds everything else.
+    for (const op of dto.operations) {
+      if (op["kind"] === "code" && typeof op["after"] === "string" && Buffer.byteLength(op["after"]) > MAX_CODE_BYTES) throw new BadRequestException("A code file cannot be larger than 1 MiB");
+    }
     if (dto.operations.some(op => !OPERATION_KINDS.includes(String(op["kind"]) as typeof OPERATION_KINDS[number]))) throw new BadRequestException("Unsupported operation");
-    const pending = await this.prisma.aiProposal.count({ where: { projectId: connection.projectId, status: "PENDING" } });
-    if (pending >= 50) throw new ConflictException("Too many proposals await review; review or reject some first");
     const contentHash = hash(JSON.stringify({ title: dto.title, summary: dto.summary, snapshotHash: dto.snapshotHash, operations: dto.operations }));
     return this.prisma.aiProposal.create({ data: {
       projectId: connection.projectId, userId: connection.userId, title: dto.title,

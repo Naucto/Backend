@@ -4,6 +4,9 @@ import { type Operation, prepareAsset } from "./ai-assets";
 export type { Operation } from "./ai-assets";
 import { prepareNetPermissions } from "./ai-net";
 
+/** The one size limit on a proposal: a code file may not be larger than this many bytes. */
+export const MAX_CODE_BYTES = 1024 * 1024;
+
 export const OPERATION_KINDS = ["code", "pixels", "tiles", "catalog", "sound", "delete_sound", "create_map", "delete_map", "resize_map", "net_permissions"] as const;
 
 /**
@@ -38,7 +41,7 @@ export function commitSnapshots(snapshots: string[], operations: unknown, propos
       throw new BadRequestException("Snapshot is not a readable document");
     }
     if (doc.getMap("ai.applied").has(proposalId)) throw new ConflictException("Already applied");
-    if (!Array.isArray(operations) || !operations.length || operations.length > 100) throw new ConflictException("Invalid operations");
+    if (!Array.isArray(operations) || !operations.length) throw new ConflictException("Invalid operations");
     const writes: (() => void)[] = [];
     const inverse: Operation[] = [];
     const categories = new Set<string>();
@@ -61,7 +64,8 @@ export function commitSnapshots(snapshots: string[], operations: unknown, propos
         continue;
       }
       const id = op["fileId"], before = op["before"], after = op["after"];
-      if (typeof id !== "string" || typeof before !== "string" || typeof after !== "string" || after.length > 100000) throw new ConflictException("Invalid code operation");
+      if (typeof id !== "string" || typeof before !== "string" || typeof after !== "string") throw new ConflictException("Invalid code operation");
+      if (Buffer.byteLength(after) > MAX_CODE_BYTES) throw new ConflictException("A code file cannot be larger than 1 MiB");
       if (before === after) throw new ConflictException("Proposal contains no-op code changes");
       const file = doc.getMap("code.files").get(id);
       const text = file instanceof Y.Map ? file.get("text") : null;

@@ -111,3 +111,28 @@ describe("collaborative AI commit", () => {
     expect(() => commitCodeSnapshots([encode(fixture())], [{ kind: "opaqueUpdate" }], "p")).toThrow("Unsupported operation");
   });
 });
+
+describe("proposal size limits", () => {
+  const edit = (after: string): { kind: string; fileId: string; before: string; after: string } => ({ kind: "code", fileId: "main", before: "old", after });
+
+  it("takes a code file of several hundred kilobytes, where it once stopped at 100,000 characters", () => {
+    const doc = fixture();
+    const big = "-- line\n".repeat(60000); // 480 kB
+    const result = commitSnapshots([encode(doc)], [edit(big)], "p");
+    const merged = new Y.Doc();
+    Y.applyUpdate(merged, Buffer.from(result.result, "base64"));
+    expect(code(merged)).toHaveLength(big.length);
+  });
+
+  it("refuses a code file over 1 MiB, counted in bytes", () => {
+    expect(() => commitSnapshots([encode(fixture())], [edit("é".repeat(600000))], "p")).toThrow("1 MiB");
+    expect(() => commitSnapshots([encode(fixture())], [edit("a".repeat(1024 * 1024 + 1))], "p")).toThrow("1 MiB");
+    expect(() => commitSnapshots([encode(fixture())], [edit("a".repeat(1024 * 1024))], "p")).not.toThrow();
+  });
+
+  it("takes more than a hundred operations in one proposal", () => {
+    const doc = fixture();
+    const ops = Array.from({ length: 150 }, (_, i) => ({ kind: "net_permissions", path: `p${String(i)}`, clientRead: true, clientWrite: false, default: 0, expect: null }));
+    expect(() => commitSnapshots([encode(doc)], ops, "p")).not.toThrow();
+  });
+});

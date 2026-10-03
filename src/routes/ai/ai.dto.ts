@@ -22,13 +22,11 @@ export class AiProposalDto {
   @ApiProperty()
   @IsString()
   @MinLength(1)
-  @MaxLength(160)
     title!: string;
 
   @ApiProperty()
   @IsString()
   @MinLength(1)
-  @MaxLength(4000)
     summary!: string;
 
   @ApiProperty()
@@ -38,7 +36,6 @@ export class AiProposalDto {
   @ApiProperty({ type: [Object], description: "Native operations; validated again against the editor document before preview" })
   @IsArray()
   @ArrayMinSize(1)
-  @ArrayMaxSize(100)
   @IsObject({ each: true })
     operations!: Record<string, unknown>[];
 }
