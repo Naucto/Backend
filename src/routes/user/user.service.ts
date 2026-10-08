@@ -220,17 +220,18 @@ export class UserService {
     }
   }
 
-  async getUserRole(userId: number): Promise<RoleName> {
+  /** What the access guard decides on: the role, and whether admin routes need a verified second factor. */
+  async getAccessFacts(userId: number): Promise<{ role: RoleName; twoFactorEnabled: boolean }> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { role: true },
+      select: { role: true, twoFactorSecret: true },
     });
 
     if (!user) {
       throw new NotFoundException(`User with ID ${userId} not found`);
     }
 
-    return parseRole(user.role);
+    return { role: parseRole(user.role), twoFactorEnabled: user.twoFactorSecret !== null };
   }
 
   async create(createUserDto: CreateUserDto): Promise<User> {

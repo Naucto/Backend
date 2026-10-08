@@ -92,6 +92,7 @@ Create it with `cp config/webrtc.example.json config/webrtc.json`.
 | `src/routes/<feature>/` | One folder per HTTP feature: `*.controller.ts`, `*.service.ts`, `*.module.ts`, `*.error.ts`, `dto/`, co-located `*.spec.ts` (`recommendations` = featured release / game of the week, admin-only writes via `@RequiresRole(ADMIN)`) |
 | `src/webrtc/` | `ws` + Yjs real-time multiplayer server (`server/`); `WebRTCService` allocates one port per server and advertises its public URL (see *WebSocket servers* below) |
 | `src/routes/analytics/` | Usage analytics: ingest from browsers, business facts, multiplayer accounting, minute presence sampling, finalization into rollups, account history projection, purge, and the admin and user read APIs (see *Analytics* below) |
+| `src/routes/admin/` | The admin console's own sign-in (password, then an authenticator code when enabled) and admin accounts: who holds the role, promoting and revoking, each admin's second factor (see *Admin console* below) |
 | `src/tasks/` | Scheduled jobs (`@nestjs/schedule` cron) |
 | `src/prisma/` | `PrismaService` + module |
 | `src/common/` | Cross-feature DTOs + decorators (pagination, signed-CDN, `@AtLeastOne`) |
@@ -165,6 +166,19 @@ at the controller boundary (see `project.controller.ts` catching `S3ObjectNotFou
   analytics must take them; erasure relies on it.
 - Every day is a UTC day. Raw data is kept 90 days and purged only once every period built from
   it is final and every linked account's history has it; rollups and account histories stay.
+
+**Admin console** (`src/routes/admin/`), for the separate Admin-Panel app:
+- `admin/auth/*` signs an admin in: the password, then a TOTP code (`otpauth`) when the account
+  enrolled one. It answers an access token with an `mfa` claim and sets the httpOnly
+  `naucto_admin_session` cookie that renews it for eight hours. Challenge, setup and session tokens
+  are each signed with a key of their own, so none of them verifies as a bearer token.
+- The access guard asks an admin who enrolled a second factor for a token carrying `mfa: true` on
+  every `@RequiresRole(ADMIN)` route, so the site's own sign-in never reaches admin routes for
+  them. Moderator and user routes are unaffected.
+- TOTP secrets are stored sealed (AES-256-GCM, `TWO_FACTOR_ENCRYPTION_KEY`, falling back to
+  `JWT_SECRET`). Wrong passwords per address and wrong codes per account are limited in memory
+  (`attempt-limiter.ts`), which holds while the backend runs as one instance.
+- An admin cannot change their own role, and the last admin cannot be demoted.
 
 ## Conventions (not all enforced by tooling — follow these)
 

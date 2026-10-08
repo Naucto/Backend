@@ -37,6 +37,11 @@ model User {
   // added without a type migration.
   role String @default("User")
 
+  // The admin panel's second factor: a TOTP secret sealed by src/routes/admin/secret-box.ts, and
+  // when its holder confirmed it. Both null while two-factor sign-in is off.
+  twoFactorSecret    String?
+  twoFactorEnabledAt DateTime?
+
   friendsInitiated Friendship[]    @relation("UserAFriends")
   friendsReceived  Friendship[]    @relation("UserBFriends")
   sentRequests     FriendRequest[] @relation("SentFriendRequests")

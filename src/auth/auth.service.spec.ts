@@ -31,6 +31,8 @@ const userRow = (overrides: Partial<User> = {}): User => ({
   sessionJoinPolicy: 'ANYONE',
   deletedAt: null,
   role: USER,
+  twoFactorSecret: null,
+  twoFactorEnabledAt: null,
   ...overrides,
 });
 

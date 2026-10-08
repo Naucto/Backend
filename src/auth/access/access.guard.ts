@@ -1,10 +1,11 @@
-import { ExecutionContext, Injectable } from '@nestjs/common';
+import { ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
 import { isObservable, lastValueFrom } from 'rxjs';
 
 import { UserService } from '../../routes/user/user.service';
 import { Access, ACCESS_KEY } from './access.decorators';
+import { bearerClaims } from './bearer-claims';
 import { ADMIN, holdsRole } from './roles';
 
 /** What a route that states nothing gets: forgetting to annotate one must not open it. */
@@ -35,7 +36,10 @@ export class AccessGuard extends AuthGuard('jwt') {
         context.getHandler(),
         context.getClass(),
       ]) ?? DEFAULT_ACCESS;
-    const request = context.switchToHttp().getRequest<{ user?: { id: number } | null }>();
+    const request = context.switchToHttp().getRequest<{
+      user?: { id: number } | null;
+      headers?: Record<string, string | string[] | undefined>;
+    }>();
 
     if (access.kind === 'public') {
       try {
@@ -56,6 +60,15 @@ export class AccessGuard extends AuthGuard('jwt') {
     if (userId === undefined) {
       return false;
     }
-    return holdsRole(await this.userService.getUserRole(userId), access.role);
+    const facts = await this.userService.getAccessFacts(userId);
+    if (!holdsRole(facts.role, access.role)) {
+      return false;
+    }
+    // An admin who turned on two-factor sign-in reaches admin routes only with a token the admin
+    // panel issued after the code step, never with one from the site's own sign-in.
+    if (access.role === ADMIN && facts.twoFactorEnabled && bearerClaims(request)?.mfa !== true) {
+      throw new ForbiddenException('Sign in through the admin panel with your authenticator code');
+    }
+    return true;
   }
 }

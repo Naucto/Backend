@@ -8,6 +8,7 @@ import { gracefulShutdownModule } from './graceful-shutdown.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PresenceModule } from './presence/presence.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { AdminModule } from './routes/admin/admin.module';
 import { AnalyticsModule } from './routes/analytics/analytics.module';
 import { FeaturesModule } from './routes/features/features.module';
 import { FriendsModule } from './routes/friends/friends.module';
@@ -41,6 +42,7 @@ import { WebRTCModule } from './webrtc/webrtc.module';
     RecommendationsModule,
     FeaturesModule,
     AnalyticsModule,
+    AdminModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: AccessGuard }],
 })

@@ -19,6 +19,10 @@ import { NotificationsService } from './notifications/notifications.service';
 import { PresenceController, UserPresenceController } from './presence/presence.controller';
 import { PresenceService } from './presence/presence.service';
 import { PrismaService } from './prisma/prisma.service';
+import { AdminAccountController } from './routes/admin/admin-account.controller';
+import { AdminAccountService } from './routes/admin/admin-account.service';
+import { AdminAuthController } from './routes/admin/admin-auth.controller';
+import { AdminSessionService } from './routes/admin/admin-session.service';
 import { AdminAnalyticsController } from './routes/analytics/admin-analytics.controller';
 import { AnalyticsIngestController } from './routes/analytics/analytics-ingest.controller';
 import { AnalyticsIngestService } from './routes/analytics/analytics-ingest.service';
@@ -81,6 +85,8 @@ const nullProvider = (token: InjectionToken): Provider => ({
     AnalyticsIngestController,
     AdminAnalyticsController,
     UserAnalyticsController,
+    AdminAuthController,
+    AdminAccountController,
   ],
   providers: [
     { provide: APP_GUARD, useClass: AccessGuard },
@@ -101,6 +107,8 @@ const nullProvider = (token: InjectionToken): Provider => ({
     nullProvider(AnalyticsTallyService),
     nullProvider(AnalyticsQueryService),
     nullProvider(UserAnalyticsService),
+    nullProvider(AdminSessionService),
+    nullProvider(AdminAccountService),
   ],
 })
 export class SwaggerAppModule {}
