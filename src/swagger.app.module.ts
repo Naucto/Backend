@@ -25,6 +25,8 @@ import { AnalyticsIngestService } from './routes/analytics/analytics-ingest.serv
 import { AnalyticsQueryService } from './routes/analytics/analytics-query.service';
 import { AnalyticsTallyService } from './routes/analytics/analytics-tally.service';
 import { ANALYTICS_THROTTLERS } from './routes/analytics/analytics-throttler.guard';
+import { UserAnalyticsController } from './routes/analytics/user-analytics.controller';
+import { UserAnalyticsService } from './routes/analytics/user-analytics.service';
 import { FeaturesModule } from './routes/features/features.module';
 import { FriendsController, UserFriendshipController } from './routes/friends/friends.controller';
 import { FriendsService } from './routes/friends/friends.service';
@@ -78,6 +80,7 @@ const nullProvider = (token: InjectionToken): Provider => ({
     AdminFeaturedReleaseController,
     AnalyticsIngestController,
     AdminAnalyticsController,
+    UserAnalyticsController,
   ],
   providers: [
     { provide: APP_GUARD, useClass: AccessGuard },
@@ -97,6 +100,7 @@ const nullProvider = (token: InjectionToken): Provider => ({
     nullProvider(AnalyticsIngestService),
     nullProvider(AnalyticsTallyService),
     nullProvider(AnalyticsQueryService),
+    nullProvider(UserAnalyticsService),
   ],
 })
 export class SwaggerAppModule {}

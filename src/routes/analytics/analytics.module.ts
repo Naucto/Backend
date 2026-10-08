@@ -16,6 +16,8 @@ import { AnalyticsTallyService } from './analytics-tally.service';
 import { ANALYTICS_THROTTLERS } from './analytics-throttler.guard';
 import { GeoIpService } from './geo-ip.service';
 import { PublishedReleasesService } from './published-releases.service';
+import { UserAnalyticsController } from './user-analytics.controller';
+import { UserAnalyticsService } from './user-analytics.service';
 
 @Module({
   imports: [
@@ -24,7 +26,7 @@ import { PublishedReleasesService } from './published-releases.service';
     PresenceModule,
     ThrottlerModule.forRoot({ throttlers: ANALYTICS_THROTTLERS }),
   ],
-  controllers: [AnalyticsIngestController, AdminAnalyticsController],
+  controllers: [AnalyticsIngestController, AdminAnalyticsController, UserAnalyticsController],
   providers: [
     AnalyticsFinalizeService,
     AnalyticsIngestService,
@@ -35,6 +37,7 @@ import { PublishedReleasesService } from './published-releases.service';
     AnalyticsTallyService,
     GeoIpService,
     PublishedReleasesService,
+    UserAnalyticsService,
   ],
 })
 export class AnalyticsModule {}

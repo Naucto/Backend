@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { RequiresRole } from '../../auth/access/access.decorators';
@@ -25,12 +25,17 @@ import {
   AnalyticsRetentionDto,
   AnalyticsSeriesDto,
 } from './dto/admin-analytics-response.dto';
+import { UserAnalyticsSummaryDto } from './dto/user-analytics.dto';
+import { UserAnalyticsService } from './user-analytics.service';
 
 @ApiTags('admin')
 @Controller('admin/analytics')
 @RequiresRole(ADMIN)
 export class AdminAnalyticsController {
-  constructor(private readonly analytics: AnalyticsQueryService) {}
+  constructor(
+    private readonly analytics: AnalyticsQueryService,
+    private readonly users: UserAnalyticsService,
+  ) {}
 
   @Get('metrics')
   @ApiOperation({ summary: 'Every metric with what it counts, how it combines and its version' })
@@ -95,6 +100,13 @@ export class AdminAnalyticsController {
   @ApiResponse({ status: 200, type: AnalyticsGamesDto })
   games(@Query() query: AnalyticsGamesQueryDto): Promise<AnalyticsGamesDto> {
     return this.analytics.games(query);
+  }
+
+  @Get('users/:id')
+  @ApiOperation({ summary: 'What analytics counted of one account' })
+  @ApiResponse({ status: 200, type: UserAnalyticsSummaryDto })
+  user(@Param('id', ParseIntPipe) id: number): Promise<UserAnalyticsSummaryDto> {
+    return this.users.summary(id);
   }
 
   @Get('health')
