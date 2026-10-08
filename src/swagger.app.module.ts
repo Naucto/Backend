@@ -19,8 +19,10 @@ import { NotificationsService } from './notifications/notifications.service';
 import { PresenceController, UserPresenceController } from './presence/presence.controller';
 import { PresenceService } from './presence/presence.service';
 import { PrismaService } from './prisma/prisma.service';
+import { AdminAnalyticsController } from './routes/analytics/admin-analytics.controller';
 import { AnalyticsIngestController } from './routes/analytics/analytics-ingest.controller';
 import { AnalyticsIngestService } from './routes/analytics/analytics-ingest.service';
+import { AnalyticsQueryService } from './routes/analytics/analytics-query.service';
 import { AnalyticsTallyService } from './routes/analytics/analytics-tally.service';
 import { ANALYTICS_THROTTLERS } from './routes/analytics/analytics-throttler.guard';
 import { FeaturesModule } from './routes/features/features.module';
@@ -75,6 +77,7 @@ const nullProvider = (token: InjectionToken): Provider => ({
     FeaturedReleaseController,
     AdminFeaturedReleaseController,
     AnalyticsIngestController,
+    AdminAnalyticsController,
   ],
   providers: [
     { provide: APP_GUARD, useClass: AccessGuard },
@@ -93,6 +96,7 @@ const nullProvider = (token: InjectionToken): Provider => ({
     nullProvider(RecommendationsService),
     nullProvider(AnalyticsIngestService),
     nullProvider(AnalyticsTallyService),
+    nullProvider(AnalyticsQueryService),
   ],
 })
 export class SwaggerAppModule {}
