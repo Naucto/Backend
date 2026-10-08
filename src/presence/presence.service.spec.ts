@@ -50,6 +50,20 @@ describe('PresenceService', () => {
     service.setFanOut(fanOut);
   });
 
+  it('counts the accounts online in each state, each account once', async () => {
+    project.findFirst.mockResolvedValue({ id: 42, name: 'Game', publishedName: 'Game' });
+    await service.onSocketOpen(1);
+    await service.onSocketOpen(1);
+    await service.onSocketOpen(2);
+    await service.onSet(2, { kind: 'PLAYING', releaseId: 42 });
+
+    expect(service.countsByKind()).toEqual({ IDLE: 1, PLAYING: 1, BUILDING: 0, HOSTING: 0 });
+
+    await service.onSocketClose(1);
+    await service.onSocketClose(1);
+    expect(service.countsByKind()).toEqual({ IDLE: 0, PLAYING: 1, BUILDING: 0, HOSTING: 0 });
+  });
+
   it('comes online IDLE on first socket and offline when the last one closes', async () => {
     await service.onSocketOpen(1);
     expect(service.get(1)).toMatchObject({ userId: 1, kind: 'IDLE' });

@@ -6,6 +6,7 @@ import { MultiplayerService } from '../routes/multiplayer/multiplayer.service';
 import { PresenceServerMessage } from './dto/presence-message.dto';
 import {
   CLIENT_PRESENCE_KINDS,
+  PresenceKind,
   PresenceSetInput,
   PresenceSocketHandler,
   PresenceState,
@@ -85,6 +86,15 @@ export class PresenceService implements PresenceSocketHandler {
 
   get(userId: number): PresenceState | null {
     return this.entries.get(userId)?.state ?? null;
+  }
+
+  /** How many accounts are online now in each state; one still being derived counts as idle. */
+  countsByKind(): Record<PresenceKind, number> {
+    const counts: Record<PresenceKind, number> = { IDLE: 0, PLAYING: 0, BUILDING: 0, HOSTING: 0 };
+    for (const entry of this.entries.values()) {
+      counts[entry.state?.kind ?? 'IDLE'] += 1;
+    }
+    return counts;
   }
 
   async friendsPresence(userId: number): Promise<PresenceState[]> {
