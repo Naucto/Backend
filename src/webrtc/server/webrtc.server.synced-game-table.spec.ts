@@ -7,6 +7,7 @@ import { WebRTCService } from '../webrtc.service';
 import { WebRTCClientReadyState } from './webrtc.server';
 import {
   SyncedGameTableHostDisconnectHandler,
+  SyncedGameTableObserver,
   SyncedGameTableTicketVerifier,
   SyncedGameTableWebRTCServer,
   SyncedGameTableWebRTCServerOptions,
@@ -76,17 +77,20 @@ function harness(onHostDisconnected?: SyncedGameTableHostDisconnectHandler): {
   deliver(socket: FakeSocket, frame: Frame): void;
   disconnect(socket: FakeSocket): void;
   roomOf(sessionId: string): Room | undefined;
+  observer: Record<keyof SyncedGameTableObserver, jest.Mock>;
 } {
   const webrtcService = { registerServer: jest.fn() } as unknown as WebRTCService;
   const verifyTicket: jest.MockedFunction<SyncedGameTableTicketVerifier> = jest.fn();
   const options = new SyncedGameTableWebRTCServerOptions();
   options.port = 14096;
 
+  const observer = { seatConnected: jest.fn(), seatDisconnected: jest.fn(), roomClosed: jest.fn() };
   const server = new SyncedGameTableWebRTCServer(
     webrtcService,
     'test',
     verifyTicket,
     onHostDisconnected,
+    observer,
     options,
   );
   const internals = server as unknown as Internals;
@@ -126,6 +130,7 @@ function harness(onHostDisconnected?: SyncedGameTableHostDisconnectHandler): {
     roomOf(sessionId: string): Room | undefined {
       return internals.wss().rooms.get(sessionId);
     },
+    observer,
   };
 }
 
@@ -329,6 +334,45 @@ describe('SyncedGameTableWebRTCServer — connection lifecycle', () => {
 
     expect(table.roomOf('s2')!.slaves.has(2)).toBe(false);
     expect(framesSentTo(host)).toEqual([{ type: 'peer-left', userId: 2 }]);
+  });
+
+  it('tells its observer each seat that connects and leaves', () => {
+    const host = table.connect(ticket('s2', 1, 'host'));
+    const slave = table.connect(ticket('s2', 2, 'slave'));
+
+    table.disconnect(slave);
+    table.disconnect(host);
+
+    expect(table.observer.seatConnected.mock.calls).toEqual([
+      ['s2', 1],
+      ['s2', 2],
+    ]);
+    expect(table.observer.seatDisconnected.mock.calls).toEqual([
+      ['s2', 2],
+      ['s2', 1],
+    ]);
+  });
+
+  it('never reports a seat it turned away', () => {
+    table.connect(ticket('s2', 1, 'host', 2));
+    table.connect(ticket('s2', 1, 'host', 2));
+    table.connect(ticket('s2', 2, 'slave', 2));
+    table.connect(ticket('s2', 3, 'slave', 2));
+
+    expect(table.observer.seatConnected.mock.calls).toEqual([
+      ['s2', 1],
+      ['s2', 2],
+    ]);
+  });
+
+  it('tells its observer when a room closes, whether it timed out or was closed', () => {
+    table.connect(ticket('s2', 2, 'slave'));
+    jest.advanceTimersByTime(HOST_DISCONNECT_GRACE_MS);
+
+    table.connect(ticket('s3', 1, 'host'));
+    table.server.closeRoom('s3');
+
+    expect(table.observer.roomClosed.mock.calls).toEqual([['s2'], ['s3']]);
   });
 
   it('ends a room whose host never arrives after a slave connected first', () => {

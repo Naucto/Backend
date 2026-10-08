@@ -38,6 +38,7 @@ import {
   MultiplayerUserNotFoundError,
   MultiplayerUserNotInSessionError,
 } from './multiplayer.error';
+import { MultiplayerAccountingService } from './multiplayer-accounting.service';
 
 const PLAYER_SELECT = { id: true, username: true, nickname: true } as const;
 
@@ -103,6 +104,7 @@ export class MultiplayerService {
     private readonly _jwtService: JwtService,
     private readonly _friendsService: FriendsService,
     private readonly _notifications: NotificationsService,
+    private readonly _accounting: MultiplayerAccountingService,
   ) {
     this._syncServer = new SyncedGameTableWebRTCServer(
       _webrtcService,
@@ -111,6 +113,7 @@ export class MultiplayerService {
       // The host leaving (reload/disconnect/ping timeout) ends the session: it is
       // the sole authority, and there is no promotion.
       (sessionId) => void this.endSession(sessionId),
+      _accounting,
     );
   }
 
@@ -157,6 +160,12 @@ export class MultiplayerService {
         : await this._prismaService.gameSession.create({
             data: { ...baseData, joinCode: null },
           });
+
+    await this._accounting.roomCreated(
+      created.sessionId,
+      created.projectId,
+      dto.editorTest === true,
+    );
 
     return this._buildConnection(created, userId, 'host');
   }
@@ -403,6 +412,7 @@ export class MultiplayerService {
     });
 
     orphaned.forEach((session) => this._syncServer.closeRoom(session.sessionId));
+    await Promise.all(orphaned.map((session) => this._accounting.sessionEnded(session.sessionId)));
 
     this._logger.log(`Reaped ${orphaned.length} stale game session(s)`);
   }
@@ -423,6 +433,7 @@ export class MultiplayerService {
 
       // Host only: any other member could mint synthetic players without limit and fill the session against real ones.
       if (editorTest) {
+        await this._accounting.editorJoined(sessionId);
         return this._buildConnection(session, this._syntheticSlaveId(), 'slave');
       }
 
@@ -547,6 +558,7 @@ export class MultiplayerService {
       where: { sessionId, endedAt: null },
       data: { endedAt: new Date() },
     });
+    await this._accounting.sessionEnded(sessionId);
   }
 
   private async _findSessionOrThrow(sessionId: string): Promise<GameSessionEx> {

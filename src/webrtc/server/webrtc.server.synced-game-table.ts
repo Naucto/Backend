@@ -34,6 +34,13 @@ export type SyncedGameTableTicketVerifier = (raw: string) => SyncedGameTableTick
 
 export type SyncedGameTableHostDisconnectHandler = (sessionId: string) => void;
 
+/** Told which seats are connected to which room, for anything accounting for rooms over time. */
+export interface SyncedGameTableObserver {
+  seatConnected(sessionId: string, seatId: number): void;
+  seatDisconnected(sessionId: string, seatId: number): void;
+  roomClosed(sessionId: string): void;
+}
+
 const TICKET_KEY = Symbol('syncedGameTable:ticket');
 type TicketedRequest = IncomingMessage & {
   [TICKET_KEY]?: SyncedGameTableTicket;
@@ -74,18 +81,21 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<
 
   private readonly _verifyTicket: SyncedGameTableTicketVerifier;
   private readonly _onHostDisconnected: SyncedGameTableHostDisconnectHandler | undefined;
+  private readonly _observer: SyncedGameTableObserver | undefined;
 
   constructor(
     webrtcService: WebRTCService,
     whatFor: string,
     verifyTicket: SyncedGameTableTicketVerifier,
     onHostDisconnected?: SyncedGameTableHostDisconnectHandler,
+    observer?: SyncedGameTableObserver,
     extraOpts: SyncedGameTableWebRTCServerOptions = new SyncedGameTableWebRTCServerOptions(),
   ) {
     super(webrtcService, whatFor, extraOpts);
 
     this._verifyTicket = verifyTicket;
     this._onHostDisconnected = onHostDisconnected;
+    this._observer = observer;
 
     const serverSocket = this.wss<SyncedGameTableServerSocket>();
     serverSocket.rooms = new Map<string, SyncedGameTableRoom>();
@@ -169,6 +179,8 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<
       serverSocket.rooms.set(ticket.sessionId, room);
     }
 
+    this._observer?.seatConnected(ticket.sessionId, ticket.userId);
+
     if (ticket.role === 'host') {
       this._clearHostGrace(room);
       room.host = socket;
@@ -217,6 +229,7 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<
 
     if (socket.role === 'host' && room.host === socket) {
       room.host = null;
+      this._observer?.seatDisconnected(socket.sessionId, socket.userId);
       this._scheduleHostGrace(room, socket.sessionId);
     } else if (socket.role === 'slave') {
       if (room.slaves.get(socket.userId) !== socket) {
@@ -224,6 +237,7 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<
       }
 
       room.slaves.delete(socket.userId);
+      this._observer?.seatDisconnected(socket.sessionId, socket.userId);
 
       if (room.host) {
         this.send(room.host, {
@@ -234,6 +248,7 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<
 
       if (!room.host && room.slaves.size === 0 && !room.hostGraceTimer) {
         serverSocket.rooms.delete(socket.sessionId);
+        this._observer?.roomClosed(socket.sessionId);
       }
     }
   }
@@ -257,6 +272,7 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<
       });
 
       serverSocket.rooms.delete(sessionId);
+      this._observer?.roomClosed(sessionId);
       this._onHostDisconnected?.(sessionId);
     }, SyncedGameTableWebRTCServer.HOST_DISCONNECT_GRACE_MS);
   }
@@ -424,6 +440,7 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<
     });
 
     serverSocket.rooms.delete(sessionId);
+    this._observer?.roomClosed(sessionId);
   }
 
   private _roomOf(socket: SyncedGameTableClientSocket): SyncedGameTableRoom | undefined {

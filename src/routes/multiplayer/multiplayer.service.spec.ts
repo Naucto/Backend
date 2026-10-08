@@ -25,6 +25,7 @@ import {
   MultiplayerUserNotInSessionError,
 } from './multiplayer.error';
 import { GameSessionEx, MAX_DB_RETRIES, MultiplayerService } from './multiplayer.service';
+import { MultiplayerAccountingService } from './multiplayer-accounting.service';
 
 // Avoid spinning up a real WebRTC/HTTP server during the service constructor.
 jest.mock('../../webrtc/server/webrtc.server.synced-game-table');
@@ -97,6 +98,14 @@ describe('MultiplayerService', () => {
   const projectService = { findOne: jest.fn() };
   const webrtcService = { buildOffer: jest.fn() };
   const jwtService = { sign: jest.fn(), verify: jest.fn() };
+  const accounting = {
+    roomCreated: jest.fn(),
+    editorJoined: jest.fn(),
+    sessionEnded: jest.fn(),
+    seatConnected: jest.fn(),
+    seatDisconnected: jest.fn(),
+    roomClosed: jest.fn(),
+  };
 
   function mintedPayload(): SyncedGameTableTicketPayload {
     return jwtService.sign.mock.calls[0]![0] as SyncedGameTableTicketPayload;
@@ -142,6 +151,7 @@ describe('MultiplayerService', () => {
         { provide: JwtService, useValue: jwtService },
         { provide: FriendsService, useValue: friendsService },
         { provide: NotificationsService, useValue: notificationsService },
+        { provide: MultiplayerAccountingService, useValue: accounting },
       ],
     }).compile();
 
@@ -247,6 +257,31 @@ describe('MultiplayerService', () => {
       expect(result.sessionUuid).toBe('session-uuid');
       expect(result.connectionTicket).toBe('signed.ticket');
       expect(jwtService.sign).toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a real game', undefined, false],
+      ['an editor test', true, true],
+    ])('records the room it creates as %s', async (_case, editorTest, recorded) => {
+      projectService.findOne.mockResolvedValueOnce(makeProject());
+      gameSession.findFirst.mockResolvedValueOnce(null);
+      gameSession.create.mockResolvedValueOnce(makeSession({ projectId: 3 }));
+
+      await service.create(1, {
+        projectId: 3,
+        title: 'My session',
+        maxPlayers: 4,
+        visibility: GameSessionVisibility.PUBLIC,
+        ...(editorTest === undefined ? {} : { editorTest }),
+      });
+
+      expect(accounting.roomCreated).toHaveBeenCalledWith('session-uuid', 3, recorded);
+    });
+
+    it('hands its accounting to the room server as the observer of seats', () => {
+      const { mock } = jest.mocked(SyncedGameTableWebRTCServer);
+
+      expect(mock.calls[0]?.[4]).toBe(accounting);
     });
 
     it('generates a join code for INVITE_CODE sessions', async () => {
@@ -706,6 +741,7 @@ describe('MultiplayerService', () => {
       const result = await service.join('session-uuid', 1, undefined, true);
 
       expect(result.connectionTicket).toBe('signed.ticket');
+      expect(accounting.editorJoined).toHaveBeenCalledWith('session-uuid');
       expect(gameSession.update).not.toHaveBeenCalled();
       const payload = mintedPayload();
       expect(payload.role).toBe('slave');
@@ -1209,6 +1245,7 @@ describe('MultiplayerService', () => {
           where: { sessionId: 'session-uuid', endedAt: null },
         }),
       );
+      expect(accounting.sessionEnded).toHaveBeenCalledWith('session-uuid');
     });
 
     it('logs a failure instead of throwing it', async () => {
@@ -1245,6 +1282,8 @@ describe('MultiplayerService', () => {
       );
       expect(gameTable().server.closeRoom).toHaveBeenCalledWith('stale-1');
       expect(gameTable().server.closeRoom).toHaveBeenCalledWith('stale-2');
+      expect(accounting.sessionEnded).toHaveBeenCalledWith('stale-1');
+      expect(accounting.sessionEnded).toHaveBeenCalledWith('stale-2');
     });
 
     it('leaves a still-live long-running session untouched', async () => {
