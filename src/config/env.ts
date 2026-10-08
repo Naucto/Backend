@@ -79,6 +79,8 @@ const ENV = {
   BACKEND_WEBRTC_TURN_KEY_ID: text,
   BACKEND_WEBRTC_TURN_API_TOKEN: text,
 
+  GEOIP_DB_PATH: text,
+
   ENABLE_SWAGGER: flag,
 } satisfies Record<string, Parser<unknown>>;
 
