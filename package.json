@@ -11,6 +11,8 @@
         "generate:client": "openapi-ts",
         "repair:publish-state": "node dist/tasks/repair/repair-publish-state.main",
         "repair:publish-state:dev": "ts-node -r tsconfig-paths/register src/tasks/repair/repair-publish-state.main.ts",
+        "repair:release-view-keys": "node dist/tasks/repair/repair-release-view-keys.main",
+        "repair:release-view-keys:dev": "ts-node -r tsconfig-paths/register src/tasks/repair/repair-release-view-keys.main.ts",
         "format": "prettier --write \"{src,test,prisma,tool}/**/*.ts\" \"*.{ts,mjs}\"",
         "start": "npm run build && node dist/main",
         "start:dev": "nest start --watch",

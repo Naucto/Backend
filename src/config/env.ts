@@ -49,7 +49,6 @@ const ENV = {
   POSTGRES_PORT: integer,
 
   JWT_SECRET: text,
-  VIEW_HASH_SECRET: text,
   JWT_EXPIRES_IN: text,
   JWT_REFRESH_EXPIRES_IN: text,
   REFRESH_TOKEN_ENCRYPTION_KEY: text,

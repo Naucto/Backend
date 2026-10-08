@@ -100,6 +100,7 @@ export class ProjectMocks {
       (): Promise<ReleaseStateRow[]> =>
         Promise.resolve([{ publishedAt: null, releaseContentHash: null, releaseRevision: 0 }]),
     ),
+    $executeRaw: jest.fn(),
     like: {
       create: jest.fn(),
       deleteMany: jest.fn(),
@@ -107,6 +108,16 @@ export class ProjectMocks {
     project: {
       create: jest.fn(),
       update: jest.fn(),
+    },
+    releaseView: {
+      count: jest.fn(),
+      createMany: jest.fn(),
+    },
+    analyticsVisitor: {
+      findUnique: jest.fn(),
+    },
+    analyticsVisitorTombstone: {
+      findUnique: jest.fn(),
     },
   };
 

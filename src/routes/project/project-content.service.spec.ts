@@ -51,7 +51,6 @@ describe('ProjectContentService', () => {
       'S3_MAX_AUTO_HISTORY_VERSION',
       'S3_AUTO_HISTORY_DELAY',
       'S3_MAX_CHECKPOINTS',
-      'VIEW_HASH_SECRET',
       'JWT_SECRET',
     ] as const;
 
@@ -80,7 +79,6 @@ describe('ProjectContentService', () => {
       S3_MAX_AUTO_HISTORY_VERSION: '',
       S3_AUTO_HISTORY_DELAY: '',
       S3_MAX_CHECKPOINTS: '',
-      VIEW_HASH_SECRET: '',
       JWT_SECRET: 'jwt-secret',
     };
 
