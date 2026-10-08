@@ -15,7 +15,8 @@ COPY prisma ./prisma
 # Full dependency set (build + dev tooling), shared by the dev and build stages. No database is
 # needed to build: DATABASE_URL is injected at runtime by every environment.
 FROM base AS deps
-RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
+# No cache mount: the deploying host builds with the classic builder, which rejects --mount.
+RUN npm ci --no-audit --no-fund
 RUN npx prisma generate
 
 FROM deps AS dev
