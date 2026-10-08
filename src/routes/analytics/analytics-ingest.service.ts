@@ -32,7 +32,7 @@ import {
   AnalyticsRotationDto,
 } from './dto/analytics-ingest-response.dto';
 import { GeoIpService } from './geo-ip.service';
-import { lockAccount, lockVisitors } from './identity-locks';
+import { lockAccount, lockPurgeGate, lockVisitors } from './identity-locks';
 import { PublishedReleasesService } from './published-releases.service';
 import {
   isBotUserAgent,
@@ -249,6 +249,7 @@ export class AnalyticsIngestService {
     }
     const status = await this.prisma.$transaction(
       async (tx): Promise<AnalyticsLinkResponseDto['status']> => {
+        await lockPurgeGate(tx, 'shared');
         await lockAccount(tx, userId, 'exclusive');
         await lockVisitors(tx, [visitorId], 'exclusive');
 

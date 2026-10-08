@@ -489,12 +489,13 @@ describe('AnalyticsIngestService', () => {
   });
 
   describe('link', () => {
-    it('locks the account, then the visitor, both exclusively', async () => {
+    it('holds the purge gate shared, then locks the account and the visitor exclusively', async () => {
       tx.analyticsVisitor.findUnique.mockResolvedValue(null);
 
       await service.link(5, VISITOR, NOW);
 
-      const [account, visitor] = tx.$executeRaw.mock.calls;
+      const [gate, account, visitor] = tx.$executeRaw.mock.calls;
+      expect(sqlOf(gate ?? [])).toContain('pg_advisory_xact_lock_shared(');
       expect(sqlOf(account ?? [])).toContain('pg_advisory_xact_lock(');
       expect(account).toContain(5);
       expect(sqlOf(visitor ?? [])).toContain('pg_advisory_xact_lock(');

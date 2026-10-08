@@ -114,12 +114,15 @@ export class AnalyticsFinalizeService implements OnApplicationBootstrap, OnAppli
     this.running = true;
     let finalized = 0;
     try {
-      const earliest = await earliestRawDay(this.prisma);
+      // Every class starts from the first day any class has data: a day without multiplayer
+      // has multiplayer metrics of zero, final like any other, so the purge can rely on it.
+      const fromDay = Object.values(await earliestRawDay(this.prisma))
+        .filter((day): day is string => day !== null)
+        .sort()[0];
+      if (fromDay === undefined) {
+        return 0;
+      }
       for (const rollupClass of ROLLUP_CLASSES) {
-        const fromDay = earliest[rollupClass];
-        if (fromDay === null) {
-          continue;
-        }
         for (const grain of GRAINS) {
           for (const period of await this.pendingPeriods(rollupClass, grain, fromDay, now)) {
             if (await this.finalizePeriod(rollupClass, period)) {

@@ -43,6 +43,10 @@ describe('AnalyticsFinalizeService', () => {
       PRESENCE: null,
     });
     mocked.activityMetrics.mockResolvedValue([{ metric: 'visitors', dimension: '', value: 2 }]);
+    mocked.sessionMetrics.mockResolvedValue([]);
+    mocked.factMetrics.mockResolvedValue([]);
+    mocked.multiplayerMetrics.mockResolvedValue([]);
+    mocked.presenceMetrics.mockResolvedValue([]);
     mocked.samplerCoverage.mockResolvedValue(0.5);
     mocked.ingestErrorRate.mockResolvedValue(0.01);
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
@@ -50,15 +54,32 @@ describe('AnalyticsFinalizeService', () => {
     service = new AnalyticsFinalizeService(prisma as unknown as PrismaService);
   });
 
-  it('finalizes every due period of a class that has data, oldest first', async () => {
-    await expect(service.finalizeDue(NOW)).resolves.toBe(2);
+  it('finalizes every due period of every class from the first day with data, oldest first', async () => {
+    await service.finalizeDue(NOW);
 
     const ranges = mocked.activityMetrics.mock.calls.map(([, range]) => range);
     expect(ranges).toEqual([
       { start: '2026-10-02', end: '2026-10-03' },
       { start: '2026-10-03', end: '2026-10-04' },
     ]);
-    expect(mocked.sessionMetrics).not.toHaveBeenCalled();
+    // Classes without data of their own are finalized from the same first day, with zeroes.
+    expect(mocked.factMetrics.mock.calls.map(([, range]) => range.start)).toEqual([
+      '2026-10-02',
+      '2026-10-03',
+    ]);
+  });
+
+  it('finalizes nothing while no class has data', async () => {
+    mocked.earliestRawDay.mockResolvedValue({
+      ACTIVITY: null,
+      SESSION: null,
+      FACT: null,
+      MULTIPLAYER: null,
+      PRESENCE: null,
+    });
+
+    await expect(service.finalizeDue(NOW)).resolves.toBe(0);
+    expect(mocked.activityMetrics).not.toHaveBeenCalled();
   });
 
   it('writes the values and a FINAL status for every metric of the class, with its coverage', async () => {

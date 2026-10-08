@@ -2,14 +2,28 @@ import { Prisma } from '@prisma/client';
 
 /**
  * Transaction-scoped advisory locks over analytics identities. Every writer that can create or
- * reach an account's analytics takes them, always the account first and then visitors in key
- * order, so two writers never wait on each other in a cycle. They only coordinate the callers
+ * reach an account's analytics takes them, always in the order purge gate, account, then
+ * visitors in key order, so two writers never wait on each other in a cycle. They only coordinate the callers
  * that take them: a writer added without them is not protected by them.
  */
 const ACCOUNT_LOCK_CLASS = 1;
 const VISITOR_LOCK_CLASS = 2;
+const PURGE_GATE_LOCK_CLASS = 3;
 
 export type LockMode = 'shared' | 'exclusive';
+
+/**
+ * Taken before any other identity lock. The purge holds it exclusively while it checks that no
+ * linked visitor still needs a day's raw data and deletes that day; a link holds it shared, so a
+ * link either lands before the check and is seen by it, or waits until the day is gone.
+ */
+export async function lockPurgeGate(tx: Prisma.TransactionClient, mode: LockMode): Promise<void> {
+  if (mode === 'shared') {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock_shared(${PURGE_GATE_LOCK_CLASS}::int, 0)`;
+  } else {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${PURGE_GATE_LOCK_CLASS}::int, 0)`;
+  }
+}
 
 export async function lockAccount(
   tx: Prisma.TransactionClient,
