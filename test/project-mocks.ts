@@ -43,6 +43,8 @@ export const aProject = (overrides: Partial<ProjectWithPeople> = {}): ProjectWit
   likes: 0,
   updatedAt: new Date(),
   publishedAt: null,
+  releaseRevision: 0,
+  releaseContentHash: null,
   forkedFromId: null,
   contentSize: null,
   contentSizeTotal: null,

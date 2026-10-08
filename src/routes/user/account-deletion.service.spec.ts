@@ -5,6 +5,7 @@ import * as bcrypt from 'bcryptjs';
 
 import { USER } from '../../auth/access/roles';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AnalyticsErasureService } from '../analytics/analytics-erasure.service';
 import { ProjectService } from '../project/project.service';
 import { EdgeService } from '../s3/edge.service';
 import { S3Service } from '../s3/s3.service';
@@ -28,13 +29,16 @@ describe('AccountDeletionService', () => {
     notification: { deleteMany: jest.fn() },
   };
   const projectService = { remove: jest.fn() };
+  const analyticsErasure = { eraseWithin: jest.fn() };
   const s3Service = { deleteFile: jest.fn() };
 
   beforeEach(async () => {
     jest.resetAllMocks();
-    // Array-style transaction: the operations are already "queued" mocks, so
-    // resolving is enough.
-    prisma.$transaction.mockResolvedValue([]);
+    // Array-style transactions hold already "queued" mocks, so resolving is enough; an interactive
+    // one runs its callback against the same mocks.
+    prisma.$transaction.mockImplementation((operations: unknown) =>
+      typeof operations === 'function' ? operations(prisma) : Promise.resolve([]),
+    );
     prisma.user.findUnique.mockResolvedValue({ id: 7, password: null, deletedAt: null });
     prisma.project.findMany.mockResolvedValue([]);
     s3Service.deleteFile.mockResolvedValue(undefined);
@@ -44,6 +48,7 @@ describe('AccountDeletionService', () => {
         AccountDeletionService,
         { provide: PrismaService, useValue: prisma },
         { provide: ProjectService, useValue: projectService },
+        { provide: AnalyticsErasureService, useValue: analyticsErasure },
         ProfileAssetService,
         { provide: S3Service, useValue: s3Service },
         { provide: EdgeService, useValue: {} },
@@ -146,6 +151,15 @@ describe('AccountDeletionService', () => {
           collaborators: { set: [] },
         }),
       }),
+    );
+  });
+
+  it('erases analytics in the transaction that marks the account deleted, before marking it', async () => {
+    await service.deleteAccount(7, false, { by: 'self' });
+
+    expect(analyticsErasure.eraseWithin).toHaveBeenCalledWith(prisma, 7);
+    expect(analyticsErasure.eraseWithin.mock.invocationCallOrder[0]).toBeLessThan(
+      prisma.user.update.mock.invocationCallOrder[0] ?? Infinity,
     );
   });
 

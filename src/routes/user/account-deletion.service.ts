@@ -5,6 +5,7 @@ import { randomBytes } from 'crypto';
 
 import { USER } from '../../auth/access/roles';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AnalyticsErasureService } from '../analytics/analytics-erasure.service';
 import { ProjectService } from '../project/project.service';
 import { PROFILE_ASSETS, ProfileAssetService } from './profile-asset.service';
 
@@ -39,6 +40,9 @@ export const USER_RELATION_FATES: Record<UserRelation, 'deleted' | 'unlinked' | 
     comments: 'kept',
     likes: 'kept',
     featuredReleases: 'kept',
+    analyticsVisitors: 'deleted',
+    analyticsDays: 'deleted',
+    analyticsProjectionWork: 'deleted',
   };
 
 /**
@@ -60,6 +64,7 @@ export class AccountDeletionService {
     private readonly prisma: PrismaService,
     private readonly projectService: ProjectService,
     private readonly profileAssetService: ProfileAssetService,
+    private readonly analyticsErasure: AnalyticsErasureService,
   ) {}
 
   async deleteAccount(
@@ -118,22 +123,25 @@ export class AccountDeletionService {
     // guessed could be taken in advance and make this update fail.
     const tag = randomBytes(8).toString('hex');
 
-    await this.prisma.$transaction([
-      this.prisma.refreshToken.deleteMany({ where: { userId } }),
-      this.prisma.friendship.deleteMany({
+    // One commit with the analytics erasure, under its account lock: a business fact written
+    // concurrently either lands before and is unlinked here, or waits and sees the account deleted.
+    await this.prisma.$transaction(async (tx) => {
+      await this.analyticsErasure.eraseWithin(tx, userId);
+      await tx.refreshToken.deleteMany({ where: { userId } });
+      await tx.friendship.deleteMany({
         where: { OR: [{ userAId: userId }, { userBId: userId }] },
-      }),
-      this.prisma.friendRequest.deleteMany({
+      });
+      await tx.friendRequest.deleteMany({
         where: { OR: [{ fromId: userId }, { toId: userId }] },
-      }),
-      this.prisma.notification.deleteMany({ where: { userId } }),
-      this.prisma.gameSession.updateMany({
+      });
+      await tx.notification.deleteMany({ where: { userId } });
+      await tx.gameSession.updateMany({
         where: { hostId: userId, endedAt: null },
         data: { endedAt: now },
-      }),
+      });
       // Collaborators recreate a work session on their next join.
-      this.prisma.workSession.deleteMany({ where: { hostId: userId } }),
-      this.prisma.user.update({
+      await tx.workSession.deleteMany({ where: { hostId: userId } });
+      await tx.user.update({
         where: { id: userId },
         data: {
           email: `deleted-${userId}-${tag}@deleted.naucto.invalid`,
@@ -149,8 +157,8 @@ export class AccountDeletionService {
           joinedGameSessions: { set: [] },
         },
         select: { id: true },
-      }),
-    ]);
+      });
+    });
   }
 
   private async removeProfileAssets(userId: number): Promise<void> {

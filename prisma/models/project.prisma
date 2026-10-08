@@ -27,6 +27,10 @@ model Project {
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
   publishedAt  DateTime?
+  // Bumped on each release transition (publish, content change, unpublish); keys its analytics fact.
+  releaseRevision    Int     @default(0)
+  // Hash of the released content and published metadata, so republishing them unchanged is no-op.
+  releaseContentHash String?
   userId       Int
 
   // Logical size breakdown of the last saved content (see src/routes/project/content-size.ts)

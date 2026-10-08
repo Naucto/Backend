@@ -1,0 +1,328 @@
+// Platform analytics. The metric definitions these tables serve live in
+// src/routes/analytics/analytics-metrics.ts. Every day is a UTC day.
+
+// Declared in rank order: Postgres orders enum values as declared, so GREATEST() over a minute's
+// beats keeps a browser's highest state.
+enum AnalyticsLiveState {
+  BROWSING
+  BUILDING
+  PLAYING
+  HOSTING
+}
+
+enum AnalyticsFactType {
+  SIGNUP
+  PROJECT_CREATED
+  RELEASE_PUBLISHED
+  RELEASE_UPDATED
+  RELEASE_UNPUBLISHED
+}
+
+enum AnalyticsGrain {
+  DAY
+  WEEK
+  MONTH
+}
+
+enum AnalyticsRollupState {
+  FINAL
+  // Finalized after its raw data was already purged: there is nothing to compute it from.
+  UNAVAILABLE
+}
+
+enum AnalyticsRetentionKind {
+  VISITOR
+  ACCOUNT
+}
+
+// A browser that granted consent; the id is its first-party visitor cookie. The row outlives the
+// cookie until its activity is purged, so a returning cookie never recreates it.
+model AnalyticsVisitor {
+  id               String             @id @db.Uuid
+  user             User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId           Int?
+  linkedAt         DateTime?
+  // Last UTC day copied into AnalyticsUserDaily; null for a linked visitor means nothing is yet.
+  projectedThrough DateTime?          @db.Date
+  firstSeenAt      DateTime           @default(now())
+  lastSeenAt       DateTime           @default(now())
+  sessions         AnalyticsSession[]
+
+  @@index([userId])
+  @@index([firstSeenAt])
+  @@index([lastSeenAt])
+}
+
+// An erased visitor id, refused so nothing still queued under it can recreate the visitor.
+model AnalyticsVisitorTombstone {
+  id       String   @id @db.Uuid
+  erasedAt DateTime @default(now())
+
+  @@index([erasedAt])
+}
+
+model AnalyticsSession {
+  id             String              @id @db.Uuid
+  visitor        AnalyticsVisitor    @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  visitorId      String              @db.Uuid
+  startedAt      DateTime
+  lastSeenAt     DateTime
+  closedAt       DateTime?
+  referrerDomain String?
+  utmSource      String?
+  utmMedium      String?
+  utmCampaign    String?
+  device         String
+  browser        String?
+  os             String?
+  country        String?             @db.Char(2)
+  screen         String?
+  language       String?
+  days           AnalyticsSessionDay[]
+  pageViews      AnalyticsPageView[]
+  plays          AnalyticsPlay[]
+
+  @@index([startedAt])
+  @@index([visitorId, startedAt])
+  @@index([closedAt])
+}
+
+// One session's activity on one UTC day. The bitmaps hold one bit per minute of the day (180
+// bytes), so a minute counts once whatever order or how many times its activity arrives.
+model AnalyticsSessionDay {
+  session   AnalyticsSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId String           @db.Uuid
+  day       DateTime         @db.Date
+  pageViews Int              @default(0)
+  activeBits Bytes
+  buildBits  Bytes
+  playMs    BigInt           @default(0)
+
+  @@id([sessionId, day])
+  @@index([day])
+}
+
+model AnalyticsPageView {
+  // The client's event id, so a retried batch inserts nothing twice.
+  id         String           @id @db.Uuid
+  session    AnalyticsSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId  String           @db.Uuid
+  occurredAt DateTime
+  route      String
+
+  @@index([occurredAt])
+  @@index([sessionId])
+}
+
+model AnalyticsPlay {
+  id         String           @id @db.Uuid
+  session    AnalyticsSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId  String           @db.Uuid
+  // No foreign key: deleting a project must not rewrite the history of its plays.
+  releaseId  Int
+  // A play reopened after a consent, identity or session change; never counted as a new play.
+  continued  Boolean
+  startedAt  DateTime
+  lastSeenAt DateTime
+  // Credited running time; the client reports `activeMs + baselineMs` cumulatively.
+  activeMs   BigInt           @default(0)
+  // Running time the client reported that the server could not verify when it first saw the play.
+  baselineMs BigInt           @default(0)
+  endedAt    DateTime?
+  endReason  String?
+  days       AnalyticsPlayDay[]
+
+  @@index([startedAt])
+  @@index([sessionId])
+  @@index([releaseId, startedAt])
+}
+
+model AnalyticsPlayDay {
+  play     AnalyticsPlay @relation(fields: [playId], references: [id], onDelete: Cascade)
+  playId   String        @db.Uuid
+  day      DateTime      @db.Date
+  activeMs BigInt        @default(0)
+
+  @@id([playId, day])
+  @@index([day])
+}
+
+// Consenting browsers seen in a minute, kept two hours for the presence sampler and the live view.
+model AnalyticsLiveMinute {
+  minute    DateTime
+  visitorId String             @db.Uuid
+  state     AnalyticsLiveState
+  releaseId Int?
+
+  @@id([minute, visitorId])
+  @@index([minute])
+}
+
+// Identifier-free pings of tabs that declined or never answered, tallied per minute.
+model AnalyticsAnonTally {
+  minute       DateTime
+  state        AnalyticsLiveState
+  signedIn     Boolean
+  // 0 when the tab was not on a game.
+  releaseId    Int                @default(0)
+  beats        Int                @default(0)
+  playsStarted Int                @default(0)
+  playMs       BigInt             @default(0)
+
+  @@id([minute, state, signedIn, releaseId])
+  @@index([minute])
+}
+
+// A business transition, written in the transaction that performed it. The key is unique per
+// transition and never embeds an account id.
+model AnalyticsFact {
+  id          BigInt            @id @default(autoincrement())
+  dedupeKey   String            @unique
+  at          DateTime          @default(now())
+  type        AnalyticsFactType
+  // No foreign key: nulled when the account is deleted or its analytics erased.
+  actorUserId Int?
+  projectId   Int?
+
+  @@index([type, at])
+  @@index([actorUserId])
+}
+
+// One multiplayer room, kept apart from GameSession so deleting a project leaves its history.
+model AnalyticsMpSession {
+  // GameSession.sessionId.
+  id               String    @id @db.Uuid
+  projectId        Int
+  createdAt        DateTime  @default(now())
+  editorTest       Boolean   @default(false)
+  // Set at the first connection; the classification never changes afterwards.
+  classifiedAt     DateTime?
+  firstConnectedAt DateTime?
+  reachedMultiAt   DateTime?
+  endedAt          DateTime?
+  peakConnected    Int       @default(0)
+  multiMs          BigInt    @default(0)
+  playerMs         BigInt    @default(0)
+
+  @@index([createdAt])
+  @@index([firstConnectedAt])
+  @@index([reachedMultiAt])
+}
+
+// A seat of a room under a random token the room mints, so nothing derived from an account is
+// stored.
+model AnalyticsMpSeat {
+  sessionId        String   @db.Uuid
+  seatToken        String   @db.Uuid
+  firstConnectedAt DateTime @default(now())
+
+  @@id([sessionId, seatToken])
+  @@index([firstConnectedAt])
+}
+
+model AnalyticsMpDay {
+  sessionId String   @db.Uuid
+  day       DateTime @db.Date
+  multiMs   BigInt   @default(0)
+  playerMs  BigInt   @default(0)
+
+  @@id([sessionId, day])
+  @@index([day])
+}
+
+// A linked visitor whose activity still has to be copied into AnalyticsUserDaily.
+model AnalyticsProjectionWork {
+  visitorId     String    @id @db.Uuid
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        Int
+  enqueuedAt    DateTime  @default(now())
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now())
+  lastError     String?
+
+  @@index([nextAttemptAt])
+  @@index([userId])
+}
+
+model ConcurrencySample {
+  at                    DateTime @id
+  activeBrowsers        Int
+  activeBrowsersPlaying Int
+  activeBrowsersBuilding Int
+  activeBrowsersHosting Int
+  anonTabs              Int
+  anonTabsPlaying       Int
+  anonTabsBuilding      Int
+  anonTabsHosting       Int
+  accounts              Int
+  accountsPlaying       Int
+  accountsBuilding      Int
+  accountsHosting       Int
+}
+
+model AnalyticsIngestStat {
+  minute      DateTime
+  instanceId  String
+  accepted    Int      @default(0)
+  rejected    Int      @default(0)
+  throttled   Int      @default(0)
+  writeErrors Int      @default(0)
+
+  @@id([minute, instanceId])
+}
+
+model AnalyticsRollup {
+  metric      String
+  version     Int
+  grain       AnalyticsGrain
+  periodStart DateTime       @db.Date
+  // '' for the metric's total, otherwise the dimension and its value as "country:FR".
+  dimension   String         @default("")
+  value       Float
+
+  @@id([metric, version, grain, periodStart, dimension])
+}
+
+model AnalyticsRollupStatus {
+  metric          String
+  version         Int
+  grain           AnalyticsGrain
+  periodStart     DateTime             @db.Date
+  status          AnalyticsRollupState
+  finalizedAt     DateTime             @default(now())
+  // Sampled minutes over the minutes of the period: whether we were measuring, not completeness.
+  samplerCoverage Float
+  ingestErrorRate Float
+
+  @@id([metric, version, grain, periodStart])
+}
+
+model AnalyticsCohort {
+  kind       AnalyticsRetentionKind
+  version    Int
+  cohortDay  DateTime               @db.Date
+  offsetDays Int
+  size       Int
+  // Null until day cohortDay + offsetDays is final, which keeps immature cohorts apart from zero.
+  retained   Int?
+  mature     Boolean                @default(false)
+
+  @@id([kind, version, cohortDay, offsetDays])
+}
+
+// An account's lifetime history, projected from its linked visitors' activity. No foreign key to
+// the visitor, so it outlives the raw data it was built from.
+model AnalyticsUserDaily {
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        Int
+  visitorId     String   @db.Uuid
+  day           DateTime @db.Date
+  // 0 for activity outside a game.
+  releaseId     Int      @default(0)
+  plays         Int      @default(0)
+  activeMs      BigInt   @default(0)
+  activeMinutes Int      @default(0)
+
+  @@id([userId, visitorId, day, releaseId])
+  @@index([userId, day])
+}
