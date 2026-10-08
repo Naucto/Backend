@@ -12,7 +12,7 @@ import express, { NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module';
 import { ViolationValidationPipe } from './common/pipes/violation-validation.pipe';
 import { getOptionalEnv } from './config/env';
-import { ANALYTICS_INGEST_PATHS } from './routes/analytics/analytics-ingest-paths';
+import { useTextJsonParser } from './routes/analytics/analytics-ingest-paths';
 import { setupSwagger } from './swagger';
 
 const isProduction = getOptionalEnv('NODE_ENV') === 'production';
@@ -40,7 +40,7 @@ if (isProduction) {
   app.use(cookieParser());
   // Browsers report usage as JSON sent as text/plain, which needs no preflight, so a report sent
   // as a page closes still leaves.
-  app.use(ANALYTICS_INGEST_PATHS, express.json({ type: 'text/plain', limit: '32kb' }));
+  useTextJsonParser(app);
   app.useLogger(['log', 'error', 'warn', 'debug']);
 
   app.useGlobalPipes(
