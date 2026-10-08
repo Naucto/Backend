@@ -4,6 +4,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { PresenceModule } from '../../presence/presence.module';
 import { FeaturesModule } from '../features/features.module';
 import { AnalyticsCoreModule } from './analytics-core.module';
+import { AnalyticsFinalizeService } from './analytics-finalize.service';
 import { AnalyticsIngestController } from './analytics-ingest.controller';
 import { AnalyticsIngestService } from './analytics-ingest.service';
 import { AnalyticsSamplerService } from './analytics-sampler.service';
@@ -21,6 +22,7 @@ import { PublishedReleasesService } from './published-releases.service';
   ],
   controllers: [AnalyticsIngestController],
   providers: [
+    AnalyticsFinalizeService,
     AnalyticsIngestService,
     AnalyticsSamplerService,
     AnalyticsTallyService,
