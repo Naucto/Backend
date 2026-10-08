@@ -3,9 +3,17 @@ networks:
     name: naucto
     driver: bridge
 
+x-backend-build: &backend-build
+  context: .
+  dockerfile: Dockerfile
+  args:
+    - BACKEND_PORT=${BACKEND_PORT}
+
 services:
   db:
-    image: postgres
+    # Match the major running on production theta: the image decides the data layout of
+    # db-data, and a major bump across an existing volume needs its own migration.
+    image: postgres:18
     restart: always
     env_file:
       - .env
@@ -23,37 +31,24 @@ services:
 
   migrate:
     build:
-      context: .
-      dockerfile: Dockerfile
+      <<: *backend-build
       target: migrate
-      args:
-        - BACKEND_PORT=${BACKEND_PORT}
-        - POSTGRES_USER=${POSTGRES_USER}
-        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-        - POSTGRES_DB=${POSTGRES_DB}
-        - POSTGRES_HOST=${POSTGRES_HOST}
-        - POSTGRES_PORT=${POSTGRES_PORT}
     depends_on:
       db:
         condition: service_healthy
     env_file:
       - .env
+    environment: &database-url
+      # The database by its service name on this network; a DATABASE_URL in .env still wins.
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}}
     restart: "no"
     networks:
       - naucto
 
   backend:
     build:
-      context: .
-      dockerfile: Dockerfile
+      <<: *backend-build
       target: prod
-      args:
-        - BACKEND_PORT=${BACKEND_PORT}
-        - POSTGRES_USER=${POSTGRES_USER}
-        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-        - POSTGRES_DB=${POSTGRES_DB}
-        - POSTGRES_HOST=${POSTGRES_HOST}
-        - POSTGRES_PORT=${POSTGRES_PORT}
     depends_on:
       db:
         condition: service_healthy
@@ -61,11 +56,11 @@ services:
         condition: service_completed_successfully
     env_file:
       - .env
+    environment: *database-url
     ports:
       - "${BACKEND_PORT}:3000"
-      # WebRTC signaling servers bind sequentially from BACKEND_WEBRTC_PORT_BASE
-      # (one per server: collaboration + multiplayer). Published identity-mapped
-      # because the backend advertises the exact bound port to clients.
+      # Identity-mapped: without BACKEND_WEBRTC_PUBLIC_URL_TEMPLATE the backend advertises the port
+      # it bound, so the host port must be the same one.
       - "${BACKEND_WEBRTC_PORT_BASE:-10000}-${BACKEND_WEBRTC_PORT_END:-10009}:${BACKEND_WEBRTC_PORT_BASE:-10000}-${BACKEND_WEBRTC_PORT_END:-10009}"
     restart: on-failure
     networks:

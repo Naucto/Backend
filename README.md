@@ -1,6 +1,6 @@
 # Naucto Backend
 
-This is the backend for the EIP project, developed using [NestJS](https://nestjs.com/), [Prisma](https://www.prisma.io/), and TypeScript.
+This is the backend for Naucto, a browser fantasy console, developed using [NestJS](https://nestjs.com/), [Prisma](https://www.prisma.io/), and TypeScript.
 
 ---
 
@@ -21,59 +21,29 @@ This project is open source. You are welcome to contribute on GitHub at the foll
    npm install
    ```
 
-3. Create a `.env` file in the root directory and set the following environment variables:
+3. Copy `.env.example` to `.env` and fill in the blanks; the object-storage values it carries are the local MinIO defaults.
 
    ```bash
-    AWS_ACCESS_KEY_ID=MY_SECRET_ACCESS_KEY_ID
-    AWS_SECRET_ACCESS_KEY=MY_SECRET_ACCESS_KEY
-    AWS_REGION=MY_REGION
-    POSTGRES_USER=USER
-    POSTGRES_PASSWORD=PASSWORD
-    POSTGRES_DB=DB_NAME
-    POSTGRES_HOST=HOST
-    POSTGRES_PORT=PORT
-    DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DB_NAME?schema=public
-    S3_BUCKET_NAME=bucket-name
-
-    CDN_URL=URL
-    CLOUDFRONT_KEY_PAIR_ID=PAIR_ID
-    CLOUDFRONT_PRIVATE_KEY=
-    CLOUDFRONT_PRIVATE_KEY_PATH=
-
-    JWT_SECRET=JWT_SECRET
-    JWT_EXPIRES_IN=EXPIRATION_TIME
-    PORT=PORT_NUMBER
-    NODE_ENV=
-    ```
-
-4. Run the Prisma migration to create the database schema:
-
-   ```bash
-   npx prisma migrate dev --name init
+   cp .env.example .env
    ```
 
-5. Seed the database with initial data (optional):
+4. Copy the WebRTC configuration template; it carries the connection limit and the ICE servers handed to browsers.
 
    ```bash
-   npx prisma db seed
+   cp config/webrtc.example.json config/webrtc.json
    ```
-6. Start the application:
+
+5. Start Postgres, MinIO and the API with hot reload; migrations are applied on start.
 
    ```bash
-    npm start:dev
-    ```
+   ./dev.sh
+   ```
 
-### 📁 Project Structure
+6. Optionally seed people, friendships and sessions:
 
-- `src/auth` : JWT authentication, roles, guards, strategy
-- `src/routes/user` : User management
-- `src/routes/project` : Project management
-- `src/routes/work-session` : Work session management
-- `src/routes/aws` : AWS S3 integration (upload, buckets, policies)
-- `src/aws` : Shared AWS logic
-- `src/common` : Common DTOs and decorators
-- `src/prisma` : Prisma service and module configuration
-- `prisma/schema.prisma` : Data model definition
+   ```bash
+   npm run seed:dev
+   ```
 
 ---
 
@@ -90,11 +60,11 @@ npm run test
 To generate the API client for the frontend, use the following command:
 
 ```bash
-npm run generate:swagger
-npm run generate:client
+npm run client:build       # emit swagger.json, then build @naucto/api-client into client/dist
 ```
 
-a folder named `generated_client` will be created in the root directory containing the generated API client, copy this folder to the frontend project in the `src/api` directory.
+The client is published to GitHub Packages as `@naucto/api-client` by `.github/workflows/api-client.yml`
+(see `client/README.md` for install and versioning).
 
 ### 🤝 Conventions & project structure
 

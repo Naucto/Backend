@@ -1,25 +1,23 @@
+import { IsArray, IsEnum, IsString } from 'class-validator';
+
+import { WebRTCService } from '../webrtc.service';
 import {
+  WEBRTC_SERVER_NAMES,
   WebRTCClientEvent,
   WebRTCClientSocket,
   WebRTCServerEvent,
-  WebRTCServerSocket
-} from "@webrtc/server/webrtc.server";
+  WebRTCServerName,
+  WebRTCServerSocket,
+} from './webrtc.server';
 import {
   EventBasedMessage,
   EventBasedWebRTCServer,
-  EventBasedWebRTCServerOptions
-} from "@webrtc/server/webrtc.server.event-based";
-import { WebRTCService } from "@webrtc/webrtc.service";
-
-import { IsArray, IsEnum, IsString } from "class-validator";
-
-// ----------------------------------------------------------------------------
+  EventBasedWebRTCServerOptions,
+} from './webrtc.server.event-based';
 
 type YjsWebRTCTopicID = string;
 
 type YjsWebRTCClientSocket = WebRTCClientSocket<{
-  pinged: boolean;
-  pingChecker: NodeJS.Timeout;
   subscribedTopics: Set<YjsWebRTCTopicID>;
 }>;
 
@@ -27,14 +25,14 @@ type YjsWebRTCServerSocket = WebRTCServerSocket<{
   topics: Map<YjsWebRTCTopicID, Set<YjsWebRTCClientSocket>>;
 }>;
 
-// ----------------------------------------------------------------------------
-
+// The signalling protocol of y-webrtc, which the editor's collaboration provider speaks; the names
+// are that library's, not ours to change.
 enum YjsMessageType {
-  SUBSCRIBE = "subscribe",
-  UNSUBSCRIBE = "unsubscribe",
-  PUBLISH = "publish",
-  PING = "ping",
-  PONG = "pong"
+  SUBSCRIBE = 'subscribe',
+  UNSUBSCRIBE = 'unsubscribe',
+  PUBLISH = 'publish',
+  PING = 'ping',
+  PONG = 'pong',
 }
 
 class YjsMessage {
@@ -63,21 +61,19 @@ class YjsMessagePublish extends YjsMessage {
 
 class YjsMessagePing extends YjsMessage {}
 
-// ----------------------------------------------------------------------------
-
 export class YjsWebRTCServerOptions extends EventBasedWebRTCServerOptions {
-  pingTimeout: number = 30000;
+  override name: WebRTCServerName = WEBRTC_SERVER_NAMES.collab;
+  /** Signalling only: session descriptions and candidates, a few kilobytes each. */
+  override maxPayload: number = 64 * 1024;
 }
 
-// y-webrtc compatible signaling/relay server. The message handling
-// (subscribe/unsubscribe/publish/ping) is expressed as @EventBasedMessage
-// handlers; the per-socket ping lifecycle and topic bookkeeping remain
-// Yjs-specific.
+// Signalling server compatible with y-webrtc: topic subscriptions, and a publish relayed to the
+// topic's other subscribers.
 export class YjsWebRTCServer extends EventBasedWebRTCServer<YjsWebRTCServerOptions> {
   constructor(
     webrtcService: WebRTCService,
     whatFor: string,
-    extraOpts: YjsWebRTCServerOptions = new YjsWebRTCServerOptions()
+    extraOpts: YjsWebRTCServerOptions = new YjsWebRTCServerOptions(),
   ) {
     super(webrtcService, whatFor, extraOpts);
 
@@ -86,47 +82,24 @@ export class YjsWebRTCServer extends EventBasedWebRTCServer<YjsWebRTCServerOptio
     serverSocket.topics = new Map<string, Set<YjsWebRTCClientSocket>>();
   }
 
-  @WebRTCServerEvent("connection")
+  @WebRTCServerEvent('connection')
   protected _internal_yjs_onConnection(
     _serverSocket: YjsWebRTCServerSocket,
-    clientSocket: YjsWebRTCClientSocket
+    clientSocket: YjsWebRTCClientSocket,
   ): void {
     clientSocket.subscribedTopics = new Set<string>();
-
-    clientSocket.pinged = true;
-    clientSocket.pingChecker = setInterval(() => {
-      if (!clientSocket.pinged) {
-        this.logger.verbose(
-          `Client ${clientSocket.remoteAddress} ping timed out`
-        );
-        clearInterval(clientSocket.pingChecker);
-        clientSocket.close();
-        return;
-      }
-
-      clientSocket.pinged = false;
-
-      try {
-        clientSocket.ping();
-      } catch (err) {
-        this.logger.verbose(
-          `Failed to ping client ${clientSocket.remoteAddress}: ${err}`
-        );
-        clientSocket.close();
-      }
-    }, this.extraOpts.pingTimeout);
   }
 
-  @WebRTCClientEvent("close")
+  @WebRTCClientEvent('close')
   protected _internal_yjs_onClosed(socket: YjsWebRTCClientSocket): void {
     const serverSocket = this.wss<YjsWebRTCServerSocket>();
-
-    clearInterval(socket.pingChecker);
 
     socket.subscribedTopics.forEach((topicId) => {
       const topic = serverSocket.topics.get(topicId);
 
-      if (topic === undefined) return;
+      if (topic === undefined) {
+        return;
+      }
 
       topic.delete(socket);
 
@@ -136,15 +109,10 @@ export class YjsWebRTCServer extends EventBasedWebRTCServer<YjsWebRTCServerOptio
     });
   }
 
-  @WebRTCClientEvent("pong")
-  protected _internal_yjs_onPonged(socket: YjsWebRTCClientSocket): void {
-    socket.pinged = true;
-  }
-
   @EventBasedMessage(YjsMessageType.SUBSCRIBE, YjsMessageSubscribe)
   protected _internal_yjs_onSubscribe(
     socket: YjsWebRTCClientSocket,
-    messageBody: YjsMessageSubscribe
+    messageBody: YjsMessageSubscribe,
   ): void {
     const serverSocket = this.wss<YjsWebRTCServerSocket>();
 
@@ -165,7 +133,7 @@ export class YjsWebRTCServer extends EventBasedWebRTCServer<YjsWebRTCServerOptio
   @EventBasedMessage(YjsMessageType.UNSUBSCRIBE, YjsMessageUnsubscribe)
   protected _internal_yjs_onUnsubscribe(
     socket: YjsWebRTCClientSocket,
-    messageBody: YjsMessageUnsubscribe
+    messageBody: YjsMessageUnsubscribe,
   ): void {
     const serverSocket = this.wss<YjsWebRTCServerSocket>();
 
@@ -178,18 +146,24 @@ export class YjsWebRTCServer extends EventBasedWebRTCServer<YjsWebRTCServerOptio
 
       topic.delete(socket);
       socket.subscribedTopics.delete(topicId);
+
+      if (topic.size === 0) {
+        serverSocket.topics.delete(topicId);
+      }
     });
   }
 
   @EventBasedMessage(YjsMessageType.PUBLISH, YjsMessagePublish)
   protected _internal_yjs_onPublish(
     socket: YjsWebRTCClientSocket,
-    messageBody: YjsMessagePublish
+    messageBody: YjsMessagePublish,
   ): void {
     const serverSocket = this.wss<YjsWebRTCServerSocket>();
     const topic = serverSocket.topics.get(messageBody.topic);
 
-    if (!topic) return;
+    if (!topic) {
+      return;
+    }
 
     this.broadcast(topic, { ...messageBody }, { except: socket });
   }

@@ -1,56 +1,10 @@
-import { Module } from "@nestjs/common";
-import { MulterModule } from "@nestjs/platform-express";
-import { ConfigModule, ConfigService } from "@nestjs/config";
-import { S3Client } from "@aws-sdk/client-s3";
-import { S3Service } from "./s3.service";
-import { CloudfrontService } from "./edge.service";
-import { PrismaService } from "@ourPrisma/prisma.service";
-import { S3ConfigurationException } from "./s3.error";
+import { Module } from '@nestjs/common';
+
+import { EdgeService } from './edge.service';
+import { S3Service } from './s3.service';
 
 @Module({
-  imports: [
-    ConfigModule,
-    MulterModule.register({
-      limits: { fileSize: 10 * 1024 * 1024 } // 10MB
-    })
-  ],
-  providers: [
-    {
-      provide: S3Client,
-      useFactory: (configService: ConfigService) => {
-        const region = configService.get<string>("S3_REGION");
-        const accessKeyId = configService.get<string>("S3_ACCESS_KEY_ID");
-        const secretAccessKey = configService.get<string>(
-          "S3_SECRET_ACCESS_KEY"
-        );
-        const envVars = {
-          S3_REGION: region,
-          S3_ACCESS_KEY_ID: accessKeyId,
-          S3_SECRET_ACCESS_KEY: secretAccessKey
-        };
-
-        const missingKeys = Object.entries(envVars)
-          .filter(([, value]) => !value)
-          .map(([key]) => key);
-
-        if (missingKeys.length > 0) {
-          throw new S3ConfigurationException(missingKeys);
-        }
-
-        return new S3Client({
-          region: region!,
-          credentials: {
-            accessKeyId: accessKeyId!,
-            secretAccessKey: secretAccessKey!
-          }
-        });
-      },
-      inject: [ConfigService]
-    },
-    S3Service,
-    CloudfrontService,
-    PrismaService
-  ],
-  exports: [S3Service, CloudfrontService]
+  providers: [S3Service, EdgeService],
+  exports: [S3Service, EdgeService],
 })
 export class S3Module {}

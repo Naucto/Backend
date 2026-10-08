@@ -1,76 +1,36 @@
 import {
   BadRequestException,
   ForbiddenException,
-  Inject,
   Injectable,
-  InternalServerErrorException,
-  NotFoundException
-} from "@nestjs/common";
-import { PrismaService } from "@ourPrisma/prisma.service";
-import { CreateProjectDto } from "./dto/create-project.dto";
-import { UpdateProjectDto } from "./dto/update-project.dto";
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
+import { Prisma, Project } from '@prisma/client';
+
+import { pageWindow } from '../../common/page-window';
+import { NotificationsService } from '../../notifications/notifications.service';
+import { CreateNotificationInput } from '../../notifications/notifications.types';
+import { PrismaService } from '../../prisma/prisma.service';
+import { EdgeService, versionedUrl } from '../s3/edge.service';
+import { DownloadedFile } from '../s3/s3.interface';
+import { S3Service } from '../s3/s3.service';
+import { WorkSessionService } from '../work-session/work-session.service';
+import { AddCollaboratorDto, RemoveCollaboratorDto } from './dto/collaborator-project.dto';
+import { CreateProjectDto } from './dto/create-project.dto';
+import { UpdateProjectDto } from './dto/update-project.dto';
+import { projectKeys } from './project-keys';
 import {
-  AddCollaboratorDto,
-  RemoveCollaboratorDto
-} from "./dto/collaborator-project.dto";
-import { S3Service } from "@s3/s3.service";
-import { Prisma, Project, User } from "@prisma/client";
-import { ConfigService } from "@nestjs/config";
-import { DownloadedFile } from "@s3/s3.interface";
-import { Readable } from "stream";
+  DEFAULT_LIMIT,
+  PaginatedProjectsResult,
+  ProjectEx,
+  PUBLISHED,
+  WITH_PEOPLE,
+} from './project-select';
+import { normalizeTags } from './project-tags';
 
-export const CREATOR_SELECT = {
-  id: true,
-  username: true,
-  email: true
-};
-
-export const COLLABORATOR_SELECT = {
-  id: true,
-  username: true,
-  email: true
-};
-
-export type ProjectEx = Project & {
-  collaborators: Array<{ id: number; username: string; email: string }>;
-  creator: { id: number; username: string; email: string };
-};
-
-export type ProjectSave = {
-  name: string;
-  date: Date;
-};
-
-type ProjectWithCounts = ProjectEx & {
-  _count: {
-    comments: number;
-    forks: number;
-  };
-};
-
-type ReleaseProject = ProjectEx & {
-  commentCount: number;
-  forkCount: number;
-};
-
-export type PaginatedProjectsResult<T> = {
-  projects: T[];
-  total: number;
-  page: number;
-  limit: number;
-};
-
-export const RELEASE_WINDOWS = ["all", "365d", "30d", "7d"] as const;
-export type ReleaseWindow = (typeof RELEASE_WINDOWS)[number];
-
-export const USER_PROJECT_STATUSES = ["all", "drafts", "published"] as const;
+export const USER_PROJECT_STATUSES = ['all', 'drafts', 'published'] as const;
 export type UserProjectStatus = (typeof USER_PROJECT_STATUSES)[number];
-
-export type PublishedProjectFilters = {
-  search?: string;
-  tags?: string[];
-  releaseWindow?: ReleaseWindow;
-};
 
 export type UserProjectFilters = {
   search?: string;
@@ -78,241 +38,76 @@ export type UserProjectFilters = {
   status?: UserProjectStatus;
 };
 
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 24;
-const MAX_LIMIT = 100;
-const DAY_IN_MS = 24 * 60 * 60 * 1000;
-const RELEASE_WINDOW_DAYS: Record<Exclude<ReleaseWindow, "all">, number> = {
-  "7d": 7,
-  "30d": 30,
-  "365d": 365
-};
-
 @Injectable()
 export class ProjectService {
-  static COLLABORATOR_SELECT = COLLABORATOR_SELECT;
-  static CREATOR_SELECT = CREATOR_SELECT;
+  private readonly logger = new Logger(ProjectService.name);
 
-  private readonly max_history_version;
-  private readonly max_checkpoints;
-  private readonly auto_save_delay;
+  private notificationsService?: NotificationsService;
 
   constructor(
-    @Inject(ConfigService) configService: ConfigService,
     private prisma: PrismaService,
-    private readonly s3Service: S3Service
-  ) {
-    this.max_history_version =
-      configService.get<number>("S3_MAX_AUTO_HISTORY_VERSION") ?? 10;
-    this.max_checkpoints =
-      configService.get<number>("S3_MAX_CHECKPOINTS") ?? 10;
-    this.auto_save_delay =
-      (configService.get<number>("S3_AUTO_HISTORY_DELAY") ?? 10) * 60000; // from minutes to milliseconds
+    private readonly s3Service: S3Service,
+    private readonly edgeService: EdgeService,
+    private readonly moduleRef: ModuleRef,
+  ) {}
+
+  private async notify(notification: CreateNotificationInput): Promise<void> {
+    // Resolved through ModuleRef: importing the notifications module would close an import cycle
+    // through auth and users that forwardRef cannot break.
+    this.notificationsService ??= this.moduleRef.get(NotificationsService, { strict: false });
+    await this.notificationsService.notifyBestEffort(notification);
   }
 
-  private normalizeTags(tags?: string[]): string[] {
-    if (!tags) {
-      return [];
+  /** The project's row narrowed to `select`, or a 404. */
+  async requireProject<S extends Prisma.ProjectSelect>(
+    id: number,
+    select: S,
+  ): Promise<Prisma.ProjectGetPayload<{ select: S }>> {
+    const project = await this.prisma.project.findUnique({ where: { id }, select });
+
+    if (!project) {
+      throw new NotFoundException(`Project with ID ${id} not found`);
     }
 
-    const normalized = tags
-      .map((tag) => tag.trim())
-      .filter((tag) => tag.length > 0)
-      .slice(0, 12);
-
-    return normalized.filter(
-      (tag, index, array) =>
-        array.findIndex(
-          (candidate) =>
-            candidate.toLocaleLowerCase() === tag.toLocaleLowerCase()
-        ) === index
-    );
-  }
-
-  private normalizePagination(
-    page: number,
-    limit: number
-  ): { page: number; limit: number; skip: number } {
-    const safePage = Number.isFinite(page)
-      ? Math.max(DEFAULT_PAGE, Math.trunc(page))
-      : DEFAULT_PAGE;
-    const safeLimit = Number.isFinite(limit)
-      ? Math.min(MAX_LIMIT, Math.max(1, Math.trunc(limit)))
-      : DEFAULT_LIMIT;
-
-    return {
-      page: safePage,
-      limit: safeLimit,
-      skip: (safePage - 1) * safeLimit
-    };
-  }
-
-  private withCommentCount(project: ProjectWithCounts): ReleaseProject {
-    const { _count, ...rest } = project;
-    return {
-      ...rest,
-      commentCount: _count.comments,
-      forkCount: _count.forks
-    };
-  }
-
-  private applyPublishedSnapshot(project: ReleaseProject): ReleaseProject {
-    const publishedTags = project.publishedTags ?? [];
-
-    return {
-      ...project,
-      name: project.publishedName || project.name,
-      shortDesc: project.publishedShortDesc || project.shortDesc,
-      longDesc: project.publishedLongDesc ?? project.longDesc,
-      tags: publishedTags.length > 0 ? publishedTags : project.tags
-    };
-  }
-
-  private normalizePage(page?: number): number {
-    if (!page || Number.isNaN(page) || page < 1) {
-      return DEFAULT_PAGE;
-    }
-
-    return Math.floor(page);
-  }
-
-  private normalizeLimit(limit?: number): number {
-    if (!limit || Number.isNaN(limit) || limit < 1) {
-      return DEFAULT_LIMIT;
-    }
-
-    return Math.min(Math.floor(limit), MAX_LIMIT);
-  }
-
-  private getReleaseWindowThreshold(releaseWindow: ReleaseWindow): Date | undefined {
-    if (releaseWindow === "all") {
-      return undefined;
-    }
-
-    return new Date(
-      Date.now() - RELEASE_WINDOW_DAYS[releaseWindow] * DAY_IN_MS
-    );
-  }
-
-  private buildPublishedGamesWhere(
-    filters: PublishedProjectFilters = {}
-  ): Prisma.ProjectWhereInput {
-    const where: Prisma.ProjectWhereInput = {
-      status: "COMPLETED"
-    };
-    const andClauses: Prisma.ProjectWhereInput[] = [];
-    const normalizedSearch = filters.search?.trim();
-    const normalizedTags = this.normalizeTags(filters.tags);
-
-    if (filters.releaseWindow && filters.releaseWindow !== "all") {
-      const threshold = this.getReleaseWindowThreshold(filters.releaseWindow);
-
-      if (threshold) {
-        andClauses.push({
-          OR: [
-            { publishedAt: { gte: threshold } },
-            {
-              AND: [{ publishedAt: null }, { createdAt: { gte: threshold } }]
-            }
-          ]
-        });
-      }
-    }
-
-    if (normalizedSearch) {
-      andClauses.push({
-        OR: [
-          {
-            publishedName: {
-              contains: normalizedSearch,
-              mode: "insensitive"
-            }
-          },
-          {
-            name: {
-              contains: normalizedSearch,
-              mode: "insensitive"
-            }
-          }
-        ]
-      });
-    }
-
-    if (normalizedTags.length > 0) {
-      andClauses.push({
-        OR: [
-          {
-            publishedTags: {
-              hasEvery: normalizedTags
-            }
-          },
-          {
-            AND: [
-              {
-                publishedTags: {
-                  isEmpty: true
-                }
-              },
-              {
-                tags: {
-                  hasEvery: normalizedTags
-                }
-              }
-            ]
-          }
-        ]
-      });
-    }
-
-    if (andClauses.length > 0) {
-      where.AND = andClauses;
-    }
-
-    return where;
+    return project as Prisma.ProjectGetPayload<{ select: S }>;
   }
 
   private buildUserProjectsWhere(
     userId: number,
-    filters: UserProjectFilters = {}
+    filters: UserProjectFilters = {},
   ): Prisma.ProjectWhereInput {
     const where: Prisma.ProjectWhereInput = {
       collaborators: {
         some: {
-          id: userId
-        }
-      }
+          id: userId,
+        },
+      },
     };
 
     const andClauses: Prisma.ProjectWhereInput[] = [];
     const normalizedSearch = filters.search?.trim();
-    const normalizedTags = this.normalizeTags(filters.tags);
+    const normalizedTags = normalizeTags(filters.tags);
 
-    if (filters.status === "published") {
-      andClauses.push({
-        status: "COMPLETED"
-      });
-    } else if (filters.status === "drafts") {
-      andClauses.push({
-        NOT: {
-          status: "COMPLETED"
-        }
-      });
+    if (filters.status === 'published') {
+      andClauses.push(PUBLISHED);
+    } else if (filters.status === 'drafts') {
+      andClauses.push({ publishedAt: null });
     }
 
     if (normalizedSearch) {
       andClauses.push({
         name: {
           contains: normalizedSearch,
-          mode: "insensitive"
-        }
+          mode: 'insensitive',
+        },
       });
     }
 
     if (normalizedTags.length > 0) {
       andClauses.push({
         tags: {
-          hasEvery: normalizedTags
-        }
+          hasEvery: normalizedTags,
+        },
       });
     }
 
@@ -326,52 +121,42 @@ export class ProjectService {
   async findAll(
     userId: number,
     page?: number,
-    limit?: number
+    limit?: number,
   ): Promise<PaginatedProjectsResult<ProjectEx>> {
-    const safePage = this.normalizePage(page);
-    const safeLimit = this.normalizeLimit(limit);
-    const skip = (safePage - 1) * safeLimit;
+    const window = pageWindow(page, limit, DEFAULT_LIMIT);
     const where = this.buildUserProjectsWhere(userId);
 
     const [total, projects] = await this.prisma.$transaction([
       this.prisma.project.count({
-        where
+        where,
       }),
       this.prisma.project.findMany({
         where,
-        include: {
-          collaborators: {
-            select: ProjectService.COLLABORATOR_SELECT
-          },
-          creator: {
-            select: ProjectService.CREATOR_SELECT
-          }
-        },
-        orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
-        skip,
-        take: safeLimit
-      })
+        include: WITH_PEOPLE,
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+        skip: window.skip,
+        take: window.take,
+      }),
     ]);
 
     return {
       projects,
       total,
-      page: safePage,
-      limit: safeLimit
+      page: window.page,
+      limit: window.limit,
     };
+  }
+
+  async countUserProjects(userId: number, filters: UserProjectFilters = {}): Promise<number> {
+    return this.prisma.project.count({
+      where: this.buildUserProjectsWhere(userId, filters),
+    });
   }
 
   async findOne(id: number): Promise<ProjectEx> {
     const project = await this.prisma.project.findUnique({
       where: { id },
-      include: {
-        collaborators: {
-          select: ProjectService.COLLABORATOR_SELECT
-        },
-        creator: {
-          select: ProjectService.CREATOR_SELECT
-        }
-      }
+      include: WITH_PEOPLE,
     });
 
     if (!project) {
@@ -381,803 +166,238 @@ export class ProjectService {
     return project;
   }
 
-  async create(
-    createProjectDto: CreateProjectDto,
-    userId: number
-  ): Promise<Project> {
+  async create(createProjectDto: CreateProjectDto, userId: number): Promise<Project> {
     const user = await this.prisma.user.findUnique({
-      where: { id: userId }
+      where: { id: userId },
+      select: { id: true },
     });
 
     if (!user) {
       throw new NotFoundException(`User with ID ${userId} not found`);
     }
 
-    try {
-      return await this.prisma.project.create({
-        data: {
-          ...createProjectDto,
-          tags: this.normalizeTags(createProjectDto.tags),
-          collaborators: {
-            connect: [{ id: userId }]
-          },
-          creator: { connect: { id: userId } }
+    return this.prisma.project.create({
+      data: {
+        ...createProjectDto,
+        tags: normalizeTags(createProjectDto.tags),
+        collaborators: {
+          connect: [{ id: userId }],
         },
-        include: {
-          collaborators: {
-            select: ProjectService.COLLABORATOR_SELECT
-          },
-          creator: {
-            select: ProjectService.CREATOR_SELECT
-          }
-        }
-      });
-    } catch (error) {
-      throw new InternalServerErrorException("Failed to create project", {
-        cause: error
-      });
-    }
+        creator: { connect: { id: userId } },
+      },
+      include: WITH_PEOPLE,
+    });
   }
 
-  async update(
-    id: number,
-    updateProjectDto: UpdateProjectDto
-  ): Promise<Project> {
+  async update(id: number, updateProjectDto: UpdateProjectDto): Promise<Project> {
     await this.findOne(id);
 
     return this.prisma.project.update({
       where: { id },
       data: {
         ...updateProjectDto,
-        ...(updateProjectDto.tags
-          ? { tags: this.normalizeTags(updateProjectDto.tags) }
-          : {})
-      }
+        ...(updateProjectDto.tags ? { tags: normalizeTags(updateProjectDto.tags) } : {}),
+      },
     });
+  }
+
+  private async storeCover(
+    projectId: number,
+    file: Express.Multer.File | DownloadedFile,
+    metadata: Record<string, string> = {},
+  ): Promise<void> {
+    const key = projectKeys.cover(projectId);
+    await this.s3Service.uploadFile({
+      file,
+      keyName: key,
+      metadata,
+      cacheControl: 'no-cache',
+    });
+    await this.s3Service.setObjectPublicRead(key);
+
+    // The row keeps the image's public URL, so readers of the project need no storage lookup.
+    await this.prisma.project.update({
+      where: { id: projectId },
+      data: { iconUrl: this.edgeService.getCDNUrl(key) },
+    });
+  }
+
+  async uploadImage(id: number, file: Express.Multer.File, uploaderId: number): Promise<void> {
+    await this.findOne(id);
+    await this.storeCover(id, file, {
+      uploadedBy: uploaderId.toString(),
+      projectId: id.toString(),
+    });
+  }
+
+  /** Gives `targetProjectId` the cover of `sourceProjectId`, when the source has one. */
+  async copyCover(sourceProjectId: number, targetProjectId: number): Promise<void> {
+    const sourceCover = projectKeys.cover(sourceProjectId);
+    if (await this.s3Service.fileExists(sourceCover)) {
+      await this.storeCover(
+        targetProjectId,
+        await this.s3Service.downloadFile({ key: sourceCover }),
+      );
+    }
+  }
+
+  /** The versioned CDN URL of the cover, or null when the project has none. */
+  async coverUrl(projectId: number): Promise<string | null> {
+    const key = projectKeys.cover(projectId);
+    const head = await this.s3Service.getFileMetadataOrNull(key);
+
+    return head ? versionedUrl(this.edgeService.getCDNUrl(key), head.ETag) : null;
+  }
+
+  private async removeStoredContent(id: number): Promise<void> {
+    try {
+      const { keys, prefixes } = projectKeys.owned(id);
+      for (const key of keys) {
+        await this.s3Service.deleteFile({ key });
+      }
+
+      for (const prefix of prefixes) {
+        const objects = await this.s3Service.listObjects({ prefix });
+        if (objects.length > 0) {
+          await this.s3Service.deleteFiles({ keys: objects.map((object) => object.Key!) });
+        }
+      }
+    } catch (error: unknown) {
+      this.logger.error(
+        `Project ${id} was deleted but its stored content was not: ${
+          error instanceof Error ? error.message : 'unknown error'
+        }`,
+      );
+    }
   }
 
   async remove(id: number): Promise<void> {
     await this.findOne(id);
 
-    try {
-      await this.s3Service.deleteFile({ key: `release/${id}` });
+    // Both session tables reference the project with ON DELETE RESTRICT, so their rows go first,
+    // in the same transaction as the project.
+    await this.prisma.$transaction([
+      this.prisma.gameSession.deleteMany({ where: { projectId: id } }),
+      this.prisma.workSession.deleteMany({ where: { projectId: id } }),
+      this.prisma.project.delete({ where: { id } }),
+    ]);
 
-      const checkpoint_prefix = `checkpoint/${id}/`;
-      const checkpoints = await this.s3Service.listObjects({
-        prefix: checkpoint_prefix
-      });
-      if (checkpoints.length > 0) {
-        const objects = checkpoints.map((o) => o.Key!);
-        await this.s3Service.deleteFiles({ keys: objects });
-      }
-
-      const save_prefix = `save/${id}/`;
-      const saves = await this.s3Service.listObjects({ prefix: save_prefix });
-      if (saves.length > 0) {
-        const objects = saves.map((o) => o.Key!);
-        await this.s3Service.deleteFiles({ keys: objects });
-      }
-    } catch (error: unknown) {
-      if (error instanceof Error) {
-        throw new InternalServerErrorException(
-          `Error deleting S3 file with key ${id}: ${error.message}`,
-          { cause: error }
-        );
-      } else {
-        throw new InternalServerErrorException(
-          `Error deleting S3 file with key ${id}: Unknown error`,
-          { cause: error }
-        );
-      }
-    }
-
-    await this.prisma.project.delete({
-      where: { id }
-    });
-
-    return;
+    // After the row, and never fatally: an orphaned blob can still be swept, content dropped
+    // ahead of a failed delete cannot be restored.
+    await this.removeStoredContent(id);
   }
 
   private async findUserByIdentifier(
-    dto: AddCollaboratorDto | RemoveCollaboratorDto
-  ): Promise<User> {
-    let user: User | null = null;
+    dto: AddCollaboratorDto | RemoveCollaboratorDto,
+  ): Promise<{ id: number }> {
+    let user: { id: number } | null = null;
     let identifier: string;
 
-    if ("userId" in dto && dto.userId) {
+    if (dto.userId) {
       identifier = dto.userId.toString();
-      user = await this.prisma.user.findUnique({ where: { id: dto.userId } });
-    } else if ("username" in dto && dto.username) {
+      user = await this.prisma.user.findUnique({
+        where: { id: dto.userId },
+        select: { id: true },
+      });
+    } else if (dto.username) {
       identifier = dto.username;
       user = await this.prisma.user.findUnique({
-        where: { username: dto.username }
+        where: { username: dto.username },
+        select: { id: true },
       });
-    } else if ("email" in dto && dto.email) {
+    } else if (dto.email) {
       identifier = dto.email;
-      user = await this.prisma.user.findUnique({ where: { email: dto.email } });
+      user = await this.prisma.user.findUnique({
+        where: { email: dto.email },
+        select: { id: true },
+      });
     } else {
-      throw new BadRequestException(
-        "Either userId, username or email must be provided"
-      );
+      throw new BadRequestException('Either userId, username or email must be provided');
     }
 
     if (!user) {
-      throw new NotFoundException(
-        `User with identifier '${identifier}' not found`
-      );
+      throw new NotFoundException(`User with identifier '${identifier}' not found`);
     }
 
     return user;
   }
 
-  async addCollaborator(
-    id: number,
-    addCollaboratorDto: AddCollaboratorDto
-  ): Promise<Project> {
+  async addCollaborator(id: number, addCollaboratorDto: AddCollaboratorDto): Promise<ProjectEx> {
     const user = await this.findUserByIdentifier(addCollaboratorDto);
-
-    if (!user) {
-      const identifier =
-        addCollaboratorDto.userId ||
-        addCollaboratorDto.username ||
-        addCollaboratorDto.email;
-      throw new NotFoundException(
-        `User with identifier '${identifier}' not found`
-      );
-    }
-
     const project = await this.findOne(id);
 
-    if (!project) {
-      throw new NotFoundException(`Project with ID ${id} not found`);
-    }
-
     if (project.collaborators.some((collab) => collab.id === user.id)) {
-      throw new BadRequestException(
-        "User is already a collaborator on this project"
-      );
+      throw new BadRequestException('User is already a collaborator on this project');
     }
 
-    return this.prisma.project.update({
+    const updated = await this.prisma.project.update({
       where: { id },
       data: {
-        collaborators: { connect: { id: user.id } }
+        collaborators: { connect: { id: user.id } },
       },
-      include: {
-        collaborators: {
-          select: ProjectService.COLLABORATOR_SELECT
-        },
-        creator: {
-          select: ProjectService.CREATOR_SELECT
-        }
-      }
+      include: WITH_PEOPLE,
     });
+
+    // The invitee has no other signal that they were added; the project id lets the notification
+    // open the project.
+    await this.notify({
+      userId: user.id,
+      title: updated.name,
+      message: `${project.creator.username} added you to ${updated.name}`,
+      type: 'INFO',
+      kind: 'COLLABORATOR_ADDED',
+      data: { projectId: updated.id },
+    });
+
+    return updated;
   }
 
   async removeCollaborator(
     id: number,
-    removeCollaboratorDto: RemoveCollaboratorDto
-  ): Promise<Project> {
+    removeCollaboratorDto: RemoveCollaboratorDto,
+  ): Promise<ProjectEx> {
     const user = await this.findUserByIdentifier(removeCollaboratorDto);
     const project = await this.findOne(id);
-    const projectWithRelations = project;
 
     if (user.id === project.userId) {
-      throw new ForbiddenException("Cannot remove the project creator");
+      throw new ForbiddenException('Cannot remove the project creator');
     }
 
-    if (
-      !projectWithRelations.collaborators.some(
-        (collab) => collab.id === user.id
-      )
-    ) {
-      throw new BadRequestException(
-        "User is not a collaborator on this project"
-      );
-    }
-
-    return this.prisma.project.update({
-      where: { id },
-      data: {
-        collaborators: {
-          disconnect: { id: user.id }
-        }
-      },
-      include: {
-        collaborators: {
-          select: ProjectService.COLLABORATOR_SELECT
-        },
-        creator: {
-          select: ProjectService.CREATOR_SELECT
-        }
-      }
-    });
-  }
-
-  async updateLastTimeUpdate(projectId: number): Promise<void> {
-    const sessions = await this.prisma.workSession.findMany({
-      where: { projectId }
-    });
-    if (sessions.length === 0) return;
-    await this.prisma.workSession.update({
-      data: {
-        lastSaveAt: new Date()
-      },
-      where: { projectId }
-    });
-  }
-
-  async updateContentInfo(
-    projectId: number,
-    contentKey: string,
-    extension: string
-  ): Promise<void> {
-    await this.prisma.project.update({
-      where: { id: projectId },
-      data: {
-        contentKey,
-        contentExtension: extension,
-        contentUploadedAt: new Date()
-      }
-    });
-  }
-
-  async save(projectId: number, file: Express.Multer.File): Promise<void> {
-    const files = (await this.listVersions(projectId)).sort(
-      (a, b) => b.date.getTime() - a.date.getTime()
-    );
-    const actual_time = Date.now();
-
-    if (files.length >= this.max_history_version) {
-      const last_save_time = actual_time - files[1]!.date.getTime();
-      const filename_prefix = `save/${projectId}/`;
-      if (last_save_time < this.auto_save_delay) {
-        await this.s3Service.deleteFile({
-          key: filename_prefix + (files[0]?.name ?? "")
-        });
-      } else {
-        await this.s3Service.deleteFile({
-          key: filename_prefix + (files[files.length - 1]?.name ?? "")
-        });
-      }
-    }
-
-    await this.updateLastTimeUpdate(projectId);
-    await this.s3Service.uploadFile({
-      file,
-      keyName: `save/${projectId}/${actual_time}`
-    });
-  }
-
-  async checkpoint(projectId: number, name: string): Promise<void> {
-    const checkpoints = (await this.listCheckpoints(projectId)).length;
-    if (checkpoints >= this.max_checkpoints) {
-      throw new BadRequestException(
-        `Reached maximum number of checkpoints (${this.max_checkpoints})`
-      );
-    }
-
-    const file = await this.fetchLastVersion(projectId);
-
-    await this.s3Service.uploadFile({
-      file: file,
-      keyName: `checkpoint/${projectId}/${name}`
-    });
-  }
-
-  async removeCheckpoint(projectId: number, checkpoint: string): Promise<void> {
-    await this.s3Service.deleteFile({
-      key: `checkpoint/${projectId}/${checkpoint}`
-    });
-  }
-
-  async publish(projectId: number): Promise<void> {
-    const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
-      select: {
-        name: true,
-        shortDesc: true,
-        longDesc: true,
-        tags: true
-      }
-    });
-
-    if (!project) {
-      throw new NotFoundException(`Project with ID ${projectId} not found`);
-    }
-
-    await this.prisma.project.update({
-      where: { id: projectId },
-      data: {
-        status: "COMPLETED",
-        publishedAt: new Date(),
-        publishedName: project.name,
-        publishedShortDesc: project.shortDesc,
-        publishedLongDesc: project.longDesc,
-        publishedTags: project.tags
-      }
-    });
-
-    const file = await this.fetchLastVersion(projectId);
-    const releaseKey = `release/${projectId}`;
-    await this.s3Service.uploadFile({
-      file: file,
-      keyName: releaseKey
-    });
-    await this.s3Service.setObjectPublicRead(releaseKey);
-  }
-
-  async unpublish(projectId: number): Promise<void> {
-    await this.prisma.project.update({
-      where: { id: projectId },
-      data: {
-        status: "IN_PROGRESS"
-      }
-    });
-
-    await this.s3Service.deleteFile({ key: `release/${projectId}` });
-  }
-
-  async updateRelease(projectId: number): Promise<void> {
-    const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
-      select: {
-        status: true,
-        name: true,
-        shortDesc: true,
-        longDesc: true,
-        tags: true
-      }
-    });
-
-    if (!project || project.status !== "COMPLETED") {
-      throw new BadRequestException(
-        `Project with ID ${projectId} is not published`
-      );
-    }
-
-    const file = await this.fetchLastVersion(projectId);
-    const releaseKey = `release/${projectId}`;
-    await this.s3Service.uploadFile({
-      file: file,
-      keyName: releaseKey
-    });
-    await this.s3Service.setObjectPublicRead(releaseKey);
-
-    await this.prisma.project.update({
-      where: { id: projectId },
-      data: {
-        publishedAt: new Date(),
-        publishedName: project.name,
-        publishedShortDesc: project.shortDesc,
-        publishedLongDesc: project.longDesc,
-        publishedTags: project.tags
-      }
-    });
-  }
-
-  async listVersions(projectId: number): Promise<ProjectSave[]> {
-    return (
-      await this.s3Service.listObjects({ prefix: `save/${projectId}/` })
-    ).map((o) => ({ name: o.Key!.split("/").pop()!, date: o.LastModified! }));
-  }
-
-  async listCheckpoints(projectId: number): Promise<ProjectSave[]> {
-    return (
-      await this.s3Service.listObjects({ prefix: `checkpoint/${projectId}/` })
-    ).map((o) => ({ name: o.Key!.split("/").pop()!, date: o.LastModified! }));
-  }
-
-  async fetchSavedVersion(
-    projectId: number,
-    version: string
-  ): Promise<DownloadedFile> {
-    return this.s3Service.downloadFile({ key: `save/${projectId}/${version}` });
-  }
-
-  async fetchLastVersion(projectId: number): Promise<DownloadedFile> {
-    let files = await this.listVersions(projectId);
-    files = files.sort((a, b) => b.date.getTime() - a.date.getTime());
-
-    if (files.length === 0 || !files[0]?.name) {
-      return {
-        body: Readable.from([]),
-        contentType: "application/octet-stream",
-        contentLength: 0
-      };
-    }
-
-    const filename = `save/${projectId}/${files[0].name}`;
-    return this.s3Service.downloadFile({ key: filename });
-  }
-
-  async fetchCheckpoint(
-    projectId: number,
-    checkpoint: string
-  ): Promise<DownloadedFile> {
-    const file = `checkpoint/${projectId}/${checkpoint}`;
-    return this.s3Service.downloadFile({ key: file });
-  }
-
-  async fetchRelease(projectId: number): Promise<ReleaseProject> {
-    const project = await this.prisma.project.findFirst({
-      where: {
-        id: projectId
-      },
-      include: {
-        collaborators: {
-          select: ProjectService.COLLABORATOR_SELECT
-        },
-        creator: {
-          select: ProjectService.CREATOR_SELECT
-        },
-        _count: {
-          select: {
-            forks: true,
-            comments: {
-              where: { deleted: false }
-            }
-          }
-        }
-      }
-    });
-
-    if (!project) {
-      throw new NotFoundException(`Project with ID ${projectId} not found`);
-    }
-
-    return this.applyPublishedSnapshot(
-      this.withCommentCount(project as ProjectWithCounts)
-    );
-  }
-
-  async fetchReleaseContent(projectId: number): Promise<DownloadedFile> {
-    return this.s3Service.downloadFile({ key: `release/${projectId}` });
-  }
-
-  async fetchPublishedGames(): Promise<ReleaseProject[]> {
-    const projects = await this.prisma.project.findMany({
-      where: {
-        status: "COMPLETED"
-      },
-      include: {
-        collaborators: {
-          select: ProjectService.COLLABORATOR_SELECT
-        },
-        creator: {
-          select: ProjectService.CREATOR_SELECT
-        },
-        _count: {
-          select: {
-            forks: true,
-            comments: { where: { deleted: false } }
-          }
-        }
-      }
-    });
-    return projects.map((project) =>
-      this.applyPublishedSnapshot(
-        this.withCommentCount(project as ProjectWithCounts)
-      )
-    );
-  }
-
-  async fetchPublishedGamesPaginated(
-    page?: number,
-    limit?: number
-  ): Promise<PaginatedProjectsResult<ReleaseProject>> {
-    const safePage = this.normalizePage(page);
-    const safeLimit = this.normalizeLimit(limit);
-    const skip = (safePage - 1) * safeLimit;
-    const where = this.buildPublishedGamesWhere();
-
-    const [total, projects] = await this.prisma.$transaction([
-      this.prisma.project.count({
-        where
-      }),
-      this.prisma.project.findMany({
-        where,
-        include: {
-          collaborators: {
-            select: ProjectService.COLLABORATOR_SELECT
-          },
-          creator: {
-            select: ProjectService.CREATOR_SELECT
-          },
-          _count: {
-            select: {
-              forks: true,
-              comments: { where: { deleted: false } }
-            }
-          }
-        },
-        orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
-        skip,
-        take: safeLimit
-      })
-    ]);
-
-    return {
-      projects: projects.map((project) =>
-        this.applyPublishedSnapshot(
-          this.withCommentCount(project as ProjectWithCounts)
-        )
-      ),
-      total,
-      page: safePage,
-      limit: safeLimit
-    };
-  }
-
-  async countPublishedGames(
-    filters: PublishedProjectFilters = {}
-  ): Promise<number> {
-    return this.prisma.project.count({
-      where: this.buildPublishedGamesWhere(filters)
-    });
-  }
-
-  async countUserProjects(
-    userId: number,
-    filters: UserProjectFilters = {}
-  ): Promise<number> {
-    return this.prisma.project.count({
-      where: this.buildUserProjectsWhere(userId, filters)
-    });
-  }
-
-  async fetchPublishedGamesByUser(
-    userId: number,
-    page: number = DEFAULT_PAGE,
-    limit: number = DEFAULT_LIMIT
-  ): Promise<ReleaseProject[]> {
-    return this.fetchPublishedGamesByUserWhere(
-      {
-        status: "COMPLETED",
-        OR: [
-          { userId },
-          {
-            collaborators: {
-              some: { id: userId }
-            }
-          }
-        ]
-      },
-      page,
-      limit
-    );
-  }
-
-  async fetchLikedPublishedGamesByUser(
-    userId: number,
-    page: number = DEFAULT_PAGE,
-    limit: number = DEFAULT_LIMIT
-  ): Promise<ReleaseProject[]> {
-    return this.fetchPublishedGamesByUserWhere(
-      {
-        status: "COMPLETED",
-        userLikes: {
-          some: { userId }
-        }
-      },
-      page,
-      limit
-    );
-  }
-
-  private async fetchPublishedGamesByUserWhere(
-    where: Prisma.ProjectWhereInput,
-    page: number,
-    limit: number
-  ): Promise<ReleaseProject[]> {
-    const pagination = this.normalizePagination(page, limit);
-
-    const projects = await this.prisma.project.findMany({
-      where,
-      orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }],
-      skip: pagination.skip,
-      take: pagination.limit,
-      include: {
-        collaborators: {
-          select: ProjectService.COLLABORATOR_SELECT
-        },
-        creator: {
-          select: ProjectService.CREATOR_SELECT
-        },
-        _count: {
-          select: {
-            forks: true,
-            comments: { where: { deleted: false } }
-          }
-        }
-      }
-    });
-
-    return projects.map((project) =>
-      this.applyPublishedSnapshot(
-        this.withCommentCount(project as ProjectWithCounts & {
-          publishedName?: string | null;
-          publishedShortDesc?: string | null;
-          publishedLongDesc?: string | null;
-          publishedTags?: string[];
-        })
-      )
-    );
-  }
-
-  async registerReleaseView(projectId: number): Promise<{ viewCount: number }> {
-    const project = await this.prisma.project.findFirst({
-      where: {
-        id: projectId,
-        status: "COMPLETED"
-      },
-      select: { id: true }
-    });
-
-    if (!project) {
-      throw new NotFoundException(
-        `Published project with ID ${projectId} not found`
-      );
+    if (!project.collaborators.some((collab) => collab.id === user.id)) {
+      throw new BadRequestException('User is not a collaborator on this project');
     }
 
     const updated = await this.prisma.project.update({
-      where: { id: projectId },
-      data: { viewCount: { increment: 1 } },
-      select: { viewCount: true }
-    });
-
-    return { viewCount: updated.viewCount };
-  }
-
-  // ─── Like Methods ───────────────────────────────────────────────────
-
-  /**
-   * Recompute the denormalized `likes` counter from the actual Like rows and
-   * persist it. Using a count instead of increment/decrement keeps the counter
-   * accurate even under concurrent / rapidly repeated requests (no drift).
-   */
-  private async syncLikeCount(projectId: number): Promise<number> {
-    const likes = await this.prisma.like.count({ where: { projectId } });
-    await this.prisma.project.update({
-      where: { id: projectId },
-      data: { likes }
-    });
-    return likes;
-  }
-
-  async likeProject(
-    projectId: number,
-    userId: number
-  ): Promise<{ likes: number; liked: boolean }> {
-    const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
-      select: { id: true }
-    });
-
-    if (!project) {
-      throw new NotFoundException(`Project with ID ${projectId} not found`);
-    }
-
-    // Idempotent: a user can only ever hold a single like for a project.
-    // Spamming the endpoint creates no duplicates and never over-counts.
-    await this.prisma.like.upsert({
-      where: { userId_projectId: { userId, projectId } },
-      create: { userId, projectId },
-      update: {}
-    });
-
-    const likes = await this.syncLikeCount(projectId);
-    return { likes, liked: true };
-  }
-
-  async unlikeProject(
-    projectId: number,
-    userId: number
-  ): Promise<{ likes: number; liked: boolean }> {
-    const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
-      select: { id: true }
-    });
-
-    if (!project) {
-      throw new NotFoundException(`Project with ID ${projectId} not found`);
-    }
-
-    // Idempotent: removing a non-existent like is a no-op rather than an error.
-    await this.prisma.like.deleteMany({ where: { userId, projectId } });
-
-    const likes = await this.syncLikeCount(projectId);
-    return { likes, liked: false };
-  }
-
-  async getLikeStatus(
-    projectId: number,
-    userId: number
-  ): Promise<{ likes: number; liked: boolean }> {
-    const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
-      select: { likes: true }
-    });
-
-    if (!project) {
-      throw new NotFoundException(`Project with ID ${projectId} not found`);
-    }
-
-    const existingLike = await this.prisma.like.findUnique({
-      where: {
-        userId_projectId: { userId, projectId }
-      }
-    });
-
-    return { likes: project.likes, liked: !!existingLike };
-  }
-
-  async fork(sourceProjectId: number, userId: number): Promise<ProjectEx> {
-    const sourceProject = await this.prisma.project.findUnique({
-      where: { id: sourceProjectId }
-    });
-
-    if (!sourceProject) {
-      throw new NotFoundException(
-        `Project with ID ${sourceProjectId} not found`
-      );
-    }
-
-    if (sourceProject.status !== "COMPLETED") {
-      throw new BadRequestException("Only published projects can be forked");
-    }
-
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId }
-    });
-
-    if (!user) {
-      throw new NotFoundException(`User with ID ${userId} not found`);
-    }
-
-    const newProject = await this.prisma.project.create({
+      where: { id },
       data: {
-        name: `Fork of ${sourceProject.name}`,
-        shortDesc: sourceProject.shortDesc,
-        longDesc: sourceProject.longDesc,
-        forkedFrom: { connect: { id: sourceProjectId } },
-        creator: { connect: { id: userId } },
-        collaborators: { connect: [{ id: userId }] }
-      },
-      include: {
         collaborators: {
-          select: ProjectService.COLLABORATOR_SELECT
+          disconnect: { id: user.id },
         },
-        creator: {
-          select: ProjectService.CREATOR_SELECT
-        }
-      }
-    }) as ProjectEx;
-
-    const releaseContent = await this.s3Service.downloadFile({
-      key: `release/${sourceProjectId}`
-    });
-    await this.s3Service.uploadFile({
-      file: releaseContent,
-      keyName: `save/${newProject.id}/${Date.now()}`
+      },
+      include: WITH_PEOPLE,
     });
 
-    try {
-      const imageKey = `projects/${sourceProjectId}/image`;
-      const imageExists = await this.s3Service.fileExists(imageKey);
-      if (imageExists) {
-        const imageFile = await this.s3Service.downloadFile({ key: imageKey });
-        const newImageKey = `projects/${newProject.id}/image`;
-        await this.s3Service.uploadFile({
-          file: imageFile,
-          keyName: newImageKey
-        });
-        await this.s3Service.setObjectPublicRead(newImageKey);
-      }
-    } catch {
-      // Image copy failure is non-critical
-    }
+    // No projectId: the removed collaborator has nothing left to open.
+    await this.notify({
+      userId: user.id,
+      title: updated.name,
+      message: `${project.creator.username} removed you from ${updated.name}`,
+      type: 'INFO',
+      kind: 'COLLABORATOR_REMOVED',
+    });
 
-    return newProject;
+    // The live session keeps its own member list, so the removal has to evict them from it too.
+    const sessions = this.moduleRef.get(WorkSessionService, { strict: false });
+    await sessions.kick(id, user.id).catch((error: unknown) => {
+      // No open session on the project is the common case, not a failure of the removal.
+      if (!(error instanceof NotFoundException)) {
+        this.logger.error(
+          `Could not close the session of user ${user.id} on project ${id}`,
+          error instanceof Error ? error.stack : undefined,
+        );
+      }
+    });
+
+    return updated;
   }
 }

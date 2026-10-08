@@ -1,38 +1,28 @@
-import { Module } from "@nestjs/common";
-import { ConfigModule } from "@nestjs/config";
-import { S3Module } from "@s3/s3.module";
-import { UserModule } from "@user/user.module";
-import { ProjectModule } from "@project/project.module";
-import { WorkSessionModule } from "@work-session/work-session.module";
-import { PrismaModule } from "@ourPrisma/prisma.module";
-import { AuthModule } from "@auth/auth.module";
-import { ScheduleModule } from "@nestjs/schedule";
-import { TasksModule } from "src/tasks/tasks.module";
-import { WebRTCModule } from "@webrtc/webrtc.module";
-import { WebRTCService } from "@webrtc/webrtc.service";
-import { MultiplayerModule } from "@multiplayer/multiplayer.module";
-import { ProjectCommentModule } from "@project-comment/project-comment.module";
-import { NotificationsModule } from "src/notifications/notifications.module";
-import { AppConfig } from "src/app.config";
-import {
-  GracefulShutdownModule,
-  IGracefulShutdownConfigOptions
-} from "@tygra/nestjs-graceful-shutdown";
+import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
+
+import { AccessGuard } from './auth/access/access.guard';
+import { AuthModule } from './auth/auth.module';
+import { gracefulShutdownModule } from './graceful-shutdown.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { PresenceModule } from './presence/presence.module';
+import { PrismaModule } from './prisma/prisma.module';
+import { FeaturesModule } from './routes/features/features.module';
+import { FriendsModule } from './routes/friends/friends.module';
+import { MultiplayerModule } from './routes/multiplayer/multiplayer.module';
+import { ProjectModule } from './routes/project/project.module';
+import { ProjectCommentModule } from './routes/project-comment/project-comment.module';
+import { RecommendationsModule } from './routes/recommendations/recommendations.module';
+import { S3Module } from './routes/s3/s3.module';
+import { UserModule } from './routes/user/user.module';
+import { WorkSessionModule } from './routes/work-session/work-session.module';
+import { TasksModule } from './tasks/tasks.module';
+import { WebRTCModule } from './webrtc/webrtc.module';
 
 @Module({
   imports: [
-    GracefulShutdownModule.forRootAsync({
-      imports: [WebRTCModule],
-      inject: [WebRTCService],
-      useFactory: async (
-        webrtcService: WebRTCService
-      ): Promise<IGracefulShutdownConfigOptions> => {
-        return {
-          cleanup: async (): Promise<void> => webrtcService.shutdownAllServers()
-        };
-      }
-    }),
-    ConfigModule.forRoot({ isGlobal: true }),
+    gracefulShutdownModule(),
     ScheduleModule.forRoot(),
     PrismaModule,
     AuthModule,
@@ -44,9 +34,12 @@ import {
     WebRTCModule,
     MultiplayerModule,
     ProjectCommentModule,
-    NotificationsModule
+    NotificationsModule,
+    FriendsModule,
+    PresenceModule,
+    RecommendationsModule,
+    FeaturesModule,
   ],
-  providers: [AppConfig],
-  exports: [AppConfig]
+  providers: [{ provide: APP_GUARD, useClass: AccessGuard }],
 })
 export class AppModule {}

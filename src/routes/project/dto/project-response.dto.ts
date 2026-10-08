@@ -1,230 +1,206 @@
-import { ApiProperty } from "@nestjs/swagger";
-import { ProjectStatus, MonetizationType } from "@prisma/client";
+import { ApiProperty } from '@nestjs/swagger';
+import { MonetizationType, ProjectStatus } from '@prisma/client';
 
 export class UserBasicInfoDto {
   @ApiProperty({
     example: 1,
-    description: "The unique identifier of the user"
+    description: 'The unique identifier of the user',
   })
   id!: number;
 
   @ApiProperty({
-    example: "john_doe",
-    description: "The username"
+    example: 'john_doe',
+    description: 'The username',
   })
   username!: string;
-
-  @ApiProperty({
-    example: "john.doe@example.com",
-    description: "The email address"
-  })
-  email!: string;
 }
 
 export class ProjectResponseDto {
   @ApiProperty({
     example: 1,
-    description: "The unique identifier of the project"
+    description: 'The unique identifier of the project',
   })
   id!: number;
 
   @ApiProperty({
-    description: "The name of the project",
-    example: "MySuperVideoGame"
+    description: 'The name of the project',
+    example: 'MySuperVideoGame',
   })
   name!: string;
 
   @ApiProperty({
-    description: "A short description of the project",
-    example: "A 2D platformer game with pixel art graphics"
+    description: 'A short description of the project',
+    example: 'A 2D platformer game with pixel art graphics',
   })
   shortDesc!: string;
 
   @ApiProperty({
-    description: "A detailed description of the project",
-    example: "This game features multiple levels, power-ups, and boss fights.",
+    description: 'A detailed description of the project',
+    example: 'This game features multiple levels, power-ups, and boss fights.',
     type: String,
-    nullable: true
+    nullable: true,
   })
   longDesc?: string | null;
 
   @ApiProperty({
-    description: "Tags associated with the project",
-    example: ["Roguelike", "Action", "Custom Jam"],
-    type: [String]
+    description: 'Tags associated with the project',
+    example: ['Roguelike', 'Action', 'Custom Jam'],
+    type: [String],
   })
   tags!: string[];
 
   @ApiProperty({
-    description: "URL to the project icon",
-    example: "https://example.com/icons/MySuperVideoGame.png",
+    description: 'URL to the project icon',
+    example: 'https://example.com/icons/MySuperVideoGame.png',
     type: String,
-    nullable: true
+    nullable: true,
   })
   iconUrl?: string | null;
 
   @ApiProperty({
-    description: "The current status of the project",
+    description: 'The current status of the project',
     enum: ProjectStatus,
     example: ProjectStatus.IN_PROGRESS,
-    nullable: true
   })
-  status?: ProjectStatus | null;
+  status!: ProjectStatus;
 
   @ApiProperty({
-    description: "The monetization strategy for this project",
+    description: 'The monetization strategy for this project',
     enum: MonetizationType,
     example: MonetizationType.NONE,
-    nullable: true
   })
-  monetization?: MonetizationType | null;
+  monetization!: MonetizationType;
 
   @ApiProperty({
     example: 99.99,
-    description: "The price of the project, if applicable",
+    description: 'The price of the project, if applicable',
     type: Number,
-    nullable: true
+    nullable: true,
   })
   price?: number | null;
 
   @ApiProperty({
     example: 1,
-    description: "The ID of the user who owns this project"
+    description: 'The ID of the user who owns this project',
   })
   userId!: number;
 
   @ApiProperty({
-    example: "2023-04-15T12:00:00Z",
-    description: "The date and time when the project was created"
+    example: '2023-04-15T12:00:00Z',
+    description: 'The date and time when the project was created',
   })
   createdAt!: Date;
 
   @ApiProperty({
-    example: "2023-05-15T12:00:00Z",
-    description: "The date and time when the project was last updated"
+    example: '2023-05-15T12:00:00Z',
+    description: 'The date and time when the project was last updated',
   })
   updatedAt!: Date;
 
   @ApiProperty({
-    example: "2023-05-20T12:00:00Z",
-    description: "The date and time when the project was last published",
+    example: '2023-05-20T12:00:00Z',
+    description: 'The date and time when the project was last published',
     type: String,
-    nullable: true
+    nullable: true,
   })
   publishedAt?: Date | null;
 
   @ApiProperty({
     example: 123,
-    description: "The number of times players opened this game's play page"
+    description: "The number of times players opened this game's play page",
   })
   viewCount!: number;
 
   @ApiProperty({
     example: 123,
-    description:
-      "The number of unique players who have interacted with this project"
+    description: 'The number of unique players who have interacted with this project',
   })
   uniquePlayers!: number;
 
   @ApiProperty({
-    example: 42,
-    description: "The number of currently active players in this project"
-  })
-  activePlayers!: number;
-
-  @ApiProperty({
     example: 87,
-    description: "The number of likes received by the project"
+    description: 'The number of likes received by the project',
   })
   likes!: number;
 
   @ApiProperty({
     example: 12,
-    description: "The number of comments on the project",
-    required: false
+    description: 'The number of comments on the project',
+    required: false,
   })
   commentCount?: number;
 
   @ApiProperty({
     example: 7,
-    description: "The number of forks created from this project",
-    required: false
+    description: 'The number of forks created from this project',
+    required: false,
   })
   forkCount?: number;
 
   @ApiProperty({
     example: 42,
-    description: "The ID of the project this was forked from, if any",
+    description: 'The ID of the project this was forked from, if any',
     type: Number,
     nullable: true,
-    required: false
+    required: false,
   })
   forkedFromId?: number | null;
 }
 
 export class ProjectExResponseDto extends ProjectResponseDto {
   @ApiProperty({
-    description: "The users collaborating on this project",
-    type: [UserBasicInfoDto]
+    description: 'The users collaborating on this project',
+    type: [UserBasicInfoDto],
   })
   collaborators!: UserBasicInfoDto[];
 
   @ApiProperty({
-    description: "The creator of this project",
-    type: UserBasicInfoDto
+    description: 'The creator of this project',
+    type: UserBasicInfoDto,
   })
   creator!: UserBasicInfoDto;
 }
 
 export class PaginatedProjectsResponseDto {
   @ApiProperty({
-    description: "The projects included in the current page",
-    type: [ProjectExResponseDto]
+    description: 'The projects included in the current page',
+    type: [ProjectExResponseDto],
   })
   projects!: ProjectExResponseDto[];
 
   @ApiProperty({
-    description: "The total number of projects matching the request",
-    example: 128
+    description: 'The total number of projects matching the request',
+    example: 128,
   })
   total!: number;
 
   @ApiProperty({
-    description: "The current page number",
-    example: 1
+    description: 'The current page number',
+    example: 1,
   })
   page!: number;
 
   @ApiProperty({
-    description: "The number of projects requested per page",
-    example: 25
+    description: 'The number of projects requested per page',
+    example: 25,
   })
   limit!: number;
 }
 
 export class ProjectsCountResponseDto {
   @ApiProperty({
-    description: "The total number of projects matching the request",
-    example: 27
+    description: 'The total number of projects matching the request',
+    example: 27,
   })
   total!: number;
 }
 
 export class ForkProjectResponseDto extends ProjectExResponseDto {}
 
-export class CdnUrlResponseDto {
-  @ApiProperty({
-    example: "https://cdn.example.com/files/project-123?signature=abc123",
-    description: "The signed CDN URL for accessing the project file"
-  })
-  url!: string;
-}
-
 export class SignedUrlResponseDto {
   @ApiProperty({
-    example:
-      "https://cdn.example.com/files/project-123?Expires=1640995200&Signature=abc123",
-    description: "The signed CloudFront URL for accessing the protected file"
+    example: 'https://cdn.example.com/release/123?v=abc123',
+    description: 'The CDN URL of the file',
   })
   signedUrl!: string;
 }

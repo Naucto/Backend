@@ -1,15 +1,28 @@
-.idea
-.husky
+.git
 .github
+.husky
+.idea
+.vscode
 .prettierrc
-esling.config.js
-README.md
+eslint.config.mjs
+*.md
 license.txt
+LICENSE
+Dockerfile
+docker-compose*.yml
+dev.sh
 dist
 node_modules
 coverage
+client
 generated_client
 test
 memories
+swagger.json
 Session.vim
 .env
+.env.*
+# Gitignored and holds live TURN credentials in any environment that filled it in; the prod image
+# gets config/ without it. docker-compose.dev.yml bind-mounts the repo over /app at runtime, so the
+# dev container still sees the host's copy regardless of this.
+config/webrtc.json

@@ -1,9 +1,10 @@
-import { Module } from "@nestjs/common";
-import { WebRTCService } from "./webrtc.service";
-import { AppConfig } from "src/app.config";
+import { Module } from '@nestjs/common';
+
+import { TurnCredentialsService } from './turn-credentials.service';
+import { WebRTCService } from './webrtc.service';
 
 @Module({
-  providers: [WebRTCService, AppConfig],
-  exports: [WebRTCService]
+  providers: [WebRTCService, TurnCredentialsService],
+  exports: [WebRTCService],
 })
 export class WebRTCModule {}

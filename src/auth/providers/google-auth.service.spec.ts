@@ -1,62 +1,80 @@
-import { ServiceUnavailableException } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import { GoogleAuthService } from "./google-auth.service";
+import { ServiceUnavailableException } from '@nestjs/common';
 
-function configWith(values: Record<string, string | undefined>): ConfigService {
-  return { get: (key: string) => values[key] } as unknown as ConfigService;
-}
+import { withEnv } from '../../../test/env';
+import { GoogleAuthService } from './google-auth.service';
 
 const FULL_CONFIG = {
-  GOOGLE_CLIENT_ID: "client-id",
-  GOOGLE_CLIENT_SECRET: "client-secret",
-  GOOGLE_REDIRECT_URI: "https://app.example/callback"
+  GOOGLE_CLIENT_ID: 'client-id',
+  GOOGLE_CLIENT_SECRET: 'client-secret',
+  GOOGLE_REDIRECT_URI: 'https://app.example/callback',
 };
 
-describe("GoogleAuthService", () => {
+const NO_CONFIG = {
+  GOOGLE_CLIENT_ID: undefined,
+  GOOGLE_CLIENT_SECRET: undefined,
+  GOOGLE_REDIRECT_URI: undefined,
+};
+
+describe('GoogleAuthService', () => {
   const originalFetch = global.fetch;
 
   afterEach(() => {
     global.fetch = originalFetch;
   });
 
-  it("disables itself (no throw) when configuration is missing", async () => {
-    const service = new GoogleAuthService(configWith({}));
+  it('disables itself (no throw) when configuration is missing', async () => {
+    withEnv(NO_CONFIG);
+    const service = new GoogleAuthService();
 
     expect(service.isAvailable).toBe(false);
     await expect(
-      service.getUserFromCode("code", "verifier")
+      service.authenticate({ code: 'code', codeVerifier: 'verifier' }),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 
-  it("is available when fully configured", () => {
-    expect(new GoogleAuthService(configWith(FULL_CONFIG)).isAvailable).toBe(
-      true
-    );
+  it('is available when fully configured', () => {
+    withEnv(FULL_CONFIG);
+    expect(new GoogleAuthService().isAvailable).toBe(true);
   });
 
-  it("returns the user payload on a successful code exchange", async () => {
-    const service = new GoogleAuthService(configWith(FULL_CONFIG));
+  it('returns the user payload on a successful code exchange', async () => {
+    withEnv(FULL_CONFIG);
+    const service = new GoogleAuthService();
 
     const fetchMock = jest
       .fn()
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ access_token: "at" })
+        json: async () => ({ access_token: 'at' }),
       })
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
-          email: "ada@example.com",
+          email: 'ada@example.com',
           email_verified: true,
-          sub: "1",
-          name: "Ada"
-        })
+          sub: '1',
+          name: 'Ada',
+        }),
       });
     global.fetch = fetchMock as unknown as typeof fetch;
 
-    const result = await service.getUserFromCode("code", "verifier");
+    const result = await service.authenticate({ code: 'code', codeVerifier: 'verifier' });
 
-    expect(result).toEqual({ email: "ada@example.com", name: "Ada" });
+    expect(result).toEqual({ email: 'ada@example.com', name: 'Ada' });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('blames the provider, not the token, when the profile cannot be fetched', async () => {
+    withEnv(FULL_CONFIG);
+    const service = new GoogleAuthService();
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ access_token: 'at' }) })
+      .mockRejectedValueOnce(new Error('ECONNREFUSED')) as unknown as typeof fetch;
+
+    const refusal = service.authenticate({ code: 'code', codeVerifier: 'verifier' });
+
+    await expect(refusal).rejects.toBeInstanceOf(ServiceUnavailableException);
+    await expect(refusal).rejects.toThrow('Google authentication service unavailable');
   });
 });

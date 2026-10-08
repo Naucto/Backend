@@ -1,80 +1,50 @@
-/* eslint-disable no-console */
-// Fine for this file, not part of the main project
+import 'dotenv/config';
 
-import { setupGracefulShutdown } from "@tygra/nestjs-graceful-shutdown";
+import { writeFileSync } from 'node:fs';
 
-// This is only necessary for services that explicitly rely on ConfigService
-const stubEnv: NodeJS.ProcessEnv = {
-  DATABASE_URL: "postgresql://stub:stub@localhost:5432/stub",
-  JWT_SECRET: "stub-secret-for-swagger-generation-only",
-  JWT_EXPIRES_IN: "7d",
-  JWT_REFRESH_EXPIRES_IN: "30d",
-  NODE_ENV: "development",
-  FRONTEND_URL: "http://localhost:3001",
-  GOOGLE_CLIENT_ID: "stub-google-client-id",
-  GOOGLE_CLIENT_SECRET: "stub-google-client-secret",
-  GOOGLE_REDIRECT_URI: "http://localhost:3000/stub",
-  GITHUB_CLIENT_ID: "stub-github-client-id",
-  GITHUB_CLIENT_SECRET: "stub-github-client-secret",
-  MICROSOFT_CLIENT_ID: "stub-microsoft-client-id",
-  MICROSOFT_TENANT_ID: "stub-microsoft-tenant-id",
-  PORT: "3000",
-  S3_ENDPOINT: "http://localhost:9000",
-  S3_REGION: "stub-region",
-  S3_ACCESS_KEY_ID: "stub-key",
-  S3_SECRET_ACCESS_KEY: "stub",
-  S3_BUCKET_NAME: "stub-bucket",
-  S3_MAX_AUTO_HISTORY_VERSION: "5",
-  S3_AUTO_HISTORY_DELAY: "10",
-  S3_MAX_CHECKPOINTS: "5",
-  CDN_URL: "stub.cloudfront.net",
-  CLOUDFRONT_KEY_PAIR_ID: "stub-key-pair-id",
-  CLOUDFRONT_PRIVATE_KEY_PATH: "/dev/null",
+import { setupGracefulShutdown } from '@tygra/nestjs-graceful-shutdown';
+
+import type { EnvKey } from '../src/config/env';
+
+/**
+ * Only what booting the document module refuses to start without; anything else read at boot
+ * has a fallback, and an unset OAuth provider is merely disabled.
+ */
+const stubEnv: Partial<Record<EnvKey, string>> = {
+  // PrismaService builds its driver adapter from it at construction.
+  DATABASE_URL: 'postgresql://stub:stub@localhost:5432/stub',
+  // The JWT module and the JWT strategy both read it at construction.
+  JWT_SECRET: 'stub-secret-for-swagger-generation-only',
+  // S3Service refuses to construct without these four.
+  S3_ENDPOINT: 'http://localhost:9000',
+  S3_REGION: 'stub-region',
+  S3_ACCESS_KEY_ID: 'stub-key',
+  S3_SECRET_ACCESS_KEY: 'stub',
 };
 
 Object.assign(process.env, stubEnv);
 
 (async () => {
   try {
-    console.log("[swag-gen] Starting swagger generation...");
+    const { NestFactory } = await import('@nestjs/core');
+    const { SwaggerAppModule } = await import('../src/swagger.app.module');
+    const { buildSwaggerDocument } = await import('../src/swagger');
 
-    console.log("[swag-gen] Importing @nestjs/core...");
-    const { NestFactory } = await import("@nestjs/core");
-    console.log("[swag-gen] Imported @nestjs/core.");
-
-    console.log("[swag-gen] Importing SwaggerAppModule...");
-    const { SwaggerAppModule: AppModule } = await import("../src/swagger.app.module");
-    console.log("[swag-gen] Imported SwaggerAppModule.");
-
-    console.log("[swag-gen] Importing buildSwaggerDocument...");
-    const { buildSwaggerDocument } = await import("../src/swagger");
-    console.log("[swag-gen] Imported buildSwaggerDocument.");
-
-    const fs = await import("fs");
-
-    console.log("[swag-gen] Creating NestJS application...");
-    const app = await NestFactory.create(AppModule, { logger: ["error", "warn", "log", "debug", "verbose"] });
-    console.log("[swag-gen] NestJS application created.");
-    
-    console.log("[swag-gen] Setting up graceful shutdown from Tygra...");
+    const app = await NestFactory.create(SwaggerAppModule, {
+      logger: ['error', 'warn', 'log', 'debug', 'verbose'],
+    });
     setupGracefulShutdown({ app });
-    console.log("[swag-gen] Graceful shutdown hook set up");
 
-    console.log("[swag-gen] Building swagger document...");
     const document = buildSwaggerDocument(app);
-    console.log("[swag-gen] Swagger document built.");
+    writeFileSync('swagger.json', JSON.stringify(document, null, 2));
 
-    console.log("[swag-gen] Writing swagger.json...");
-    fs.writeFileSync("swagger.json", JSON.stringify(document, null, 2));
-    console.log("[swag-gen] swagger.json written successfully.");
-
-    console.log("[swag-gen] Closing NestJS application...");
     await app.close();
-    console.log("[swag-gen] Done.");
+    console.log('[swag-gen] swagger.json written');
   } catch (err) {
-    console.error("[swag-gen] Failed to generate swagger.json",
-                  err instanceof Error ? err.stack : String(err));
+    console.error(
+      '[swag-gen] Failed to generate swagger.json',
+      err instanceof Error ? err.stack : String(err),
+    );
     process.exit(1);
   }
 })();
-
