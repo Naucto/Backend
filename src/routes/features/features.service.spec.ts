@@ -18,7 +18,7 @@ describe('FeaturesService', () => {
   });
 
   it('keeps every feature off until the config is read', () => {
-    expect(service.features).toEqual({ monetization: false });
+    expect(service.features).toEqual({ monetization: false, analytics: false });
   });
 
   it('turns on a flag the config sets to true', async () => {
@@ -26,7 +26,15 @@ describe('FeaturesService', () => {
 
     await service.onModuleInit();
 
-    expect(service.features).toEqual({ monetization: true });
+    expect(service.features).toEqual({ monetization: true, analytics: false });
+  });
+
+  it('turns on analytics only when the config says exactly true', async () => {
+    readFile.mockResolvedValue('{"analytics": true}');
+
+    await service.onModuleInit();
+
+    expect(service.features).toEqual({ monetization: false, analytics: true });
   });
 
   it.each([
@@ -40,7 +48,7 @@ describe('FeaturesService', () => {
 
     await service.onModuleInit();
 
-    expect(service.features).toEqual({ monetization: false });
+    expect(service.features).toEqual({ monetization: false, analytics: false });
   });
 
   it('keeps every feature off when the config cannot be read', async () => {
@@ -48,6 +56,6 @@ describe('FeaturesService', () => {
 
     await expect(service.onModuleInit()).resolves.toBeUndefined();
 
-    expect(service.features).toEqual({ monetization: false });
+    expect(service.features).toEqual({ monetization: false, analytics: false });
   });
 });

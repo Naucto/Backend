@@ -1,3 +1,4 @@
 {
-  "monetization": true
+  "monetization": true,
+  "analytics": false
 }
