@@ -61,6 +61,9 @@ from `client/` (see `client/README.md`).
 | `npx prisma migrate dev --name <desc>` | Create + apply a dev migration from the schema |
 | `npx prisma generate` | Regenerate the Prisma client |
 | `npm run seed:dev` | Seed a local database with people, friendships, pending requests and shared game sessions (refuses non-local hosts) |
+| `npm run seed:analytics` | Fill a local database with 60 days of synthetic analytics and finalize it, so the admin panel has data (refuses non-local hosts) |
+| `npm run analytics:acceptance` | Run the analytics acceptance scenarios against a scratch copy of the local database, over two connections; by hand, never in CI |
+| `npm run repair:release-view-keys` | Delete the release view keys once derived from readers' addresses (one-off) |
 | `docker compose -f docker-compose.yml -f docker-compose.dev.yml up --watch backend` | Dev stack: Postgres, MinIO, and the API with hot reload |
 | `./dev.sh` | The line above with a `build` first — the shorthand, and the usual way in |
 
@@ -88,6 +91,7 @@ Create it with `cp config/webrtc.example.json config/webrtc.json`.
 | `src/auth/` | JWT auth, passport strategy, access control (`access/`: global guard, `@Public()`/`@RequiresAuth()`/`@RequiresRole()`, roles), project ownership guards, OAuth providers (Google/GitHub/Microsoft), refresh-token crypto |
 | `src/routes/<feature>/` | One folder per HTTP feature: `*.controller.ts`, `*.service.ts`, `*.module.ts`, `*.error.ts`, `dto/`, co-located `*.spec.ts` (`recommendations` = featured release / game of the week, admin-only writes via `@RequiresRole(ADMIN)`) |
 | `src/webrtc/` | `ws` + Yjs real-time multiplayer server (`server/`); `WebRTCService` allocates one port per server and advertises its public URL (see *WebSocket servers* below) |
+| `src/routes/analytics/` | Usage analytics: ingest from browsers, business facts, multiplayer accounting, minute presence sampling, finalization into rollups, account history projection, purge, and the admin and user read APIs (see *Analytics* below) |
 | `src/tasks/` | Scheduled jobs (`@nestjs/schedule` cron) |
 | `src/prisma/` | `PrismaService` + module |
 | `src/common/` | Cross-feature DTOs + decorators (pagination, signed-CDN, `@AtLeastOne`) |
@@ -144,6 +148,23 @@ Clients never guess the address — they fetch an offer whose signaling URL come
 (`NotFoundException`, `ForbiddenException`, `BadRequestException`, …) — they map to status codes
 automatically. Domain errors are small classes in `*.error.ts`; translate them to HTTP responses
 at the controller boundary (see `project.controller.ts` catching `S3ObjectNotFoundException`).
+
+**Analytics** (`src/routes/analytics/`), behind the `analytics` flag of `config/features.json`:
+- `analytics-metrics.ts` is the single source of every KPI: who it counts, how its values combine,
+  when a period of it becomes final, and its version. Change a definition by bumping its version;
+  values of different versions are never combined, and final periods are never recomputed.
+- Browsers that consented report under a visitor and a session cookie the frontend sets; the API
+  never reads them. Tabs that declined send identifier-free pings, tallied per minute. Ingest
+  routes take JSON sent as text/plain without credentials and never read an account; linking a
+  browser to an account is the one authenticated call.
+- Business facts (signups, projects, release transitions) are written in the transaction of the
+  operation they record, keyed per transition, never by an account id. Multiplayer is accounted
+  from the game room server through `SyncedGameTableObserver`.
+- Identities are coordinated by transaction-scoped advisory locks (`identity-locks.ts`), always
+  taken in the order purge gate, account, visitors. Any new writer that can reach an account's
+  analytics must take them; erasure relies on it.
+- Every day is a UTC day. Raw data is kept 90 days and purged only once every period built from
+  it is final and every linked account's history has it; rollups and account histories stay.
 
 ## Conventions (not all enforced by tooling — follow these)
 
@@ -240,6 +261,12 @@ See `SECURITY.md` for the disclosure policy. Rules for agents and contributors:
   the model files; let Prisma generate the migrations.
 - `npm run lint` runs ESLint with `--fix` (it **modifies files**); the pre-commit hook only lints
   staged files — still run typecheck / build / test yourself before pushing.
+- Country lookups read an IP-to-country database in MMDB format from `GEOIP_DB_PATH`. Mount it;
+  never bake it into the image or commit it. DB-IP Lite (CC BY 4.0) needs the credit the privacy
+  page gives. Without the file, every country is unknown.
+- The text/plain body parser of the analytics routes is mounted under its own function name: Nest
+  skips its own JSON parser when a middleware named `jsonParser` is already mounted, which a bare
+  `express.json()` is, and every JSON body then arrives empty.
 
 ## Known incoherencies (being addressed in later phases — don't "fix" ad-hoc)
 
