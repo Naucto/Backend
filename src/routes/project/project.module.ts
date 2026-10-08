@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { PrismaModule } from '../../prisma/prisma.module';
+import { AnalyticsCoreModule } from '../analytics/analytics-core.module';
 import { S3Module } from '../s3/s3.module';
 import { HubController } from './hub.controller';
 import { HubService } from './hub.service';
@@ -10,7 +11,7 @@ import { ProjectContentController } from './project-content.controller';
 import { ProjectContentService } from './project-content.service';
 
 @Module({
-  imports: [PrismaModule, S3Module],
+  imports: [PrismaModule, S3Module, AnalyticsCoreModule],
   // Express tries routes in registration order, controller by controller as listed here, and
   // `projects/:id` takes any first segment. The controllers holding literal routes (`releases…`,
   // `limits`, `count`) therefore come before the one holding `:id`, and inside a controller every

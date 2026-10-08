@@ -1,11 +1,12 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { PersonalColour, Prisma, SessionJoinPolicy, User } from '@prisma/client';
+import { AnalyticsFactType, PersonalColour, Prisma, SessionJoinPolicy, User } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
 import { parseRole, RoleName } from '../../auth/access/roles';
 import { toSkipTake } from '../../common/dto/pagination-query.dto';
 import { conflictViolation } from '../../common/validation/violation.exception';
 import { isUniqueViolation, PrismaService } from '../../prisma/prisma.service';
+import { AnalyticsFactService, signupFactKey } from '../analytics/analytics-fact.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { MeDto } from './dto/me.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -45,7 +46,10 @@ export type PublicProfile = Prisma.UserGetPayload<{ select: typeof PUBLIC_PROFIL
 
 @Injectable()
 export class UserService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly facts: AnalyticsFactService,
+  ) {}
   private static readonly BCRYPT_SALT_ROUNDS = 10;
   private static readonly FRIEND_CODE_MAX_RETRIES = 5;
 
@@ -235,19 +239,35 @@ export class UserService {
       UserService.BCRYPT_SALT_ROUNDS,
     );
 
-    return this.prisma.user.create({
-      data: {
-        email: createUserDto.email,
-        username: createUserDto.username,
-        nickname: createUserDto.nickname ?? null,
-        password: hashedPassword,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          email: createUserDto.email,
+          username: createUserDto.username,
+          nickname: createUserDto.nickname ?? null,
+          password: hashedPassword,
+        },
+      });
+      await this.recordSignup(tx, user.id);
+      return user;
     });
   }
 
   async createOAuthUser(email: string, username: string): Promise<User> {
-    return this.prisma.user.create({
-      data: { email, username, password: null },
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: { email, username, password: null },
+      });
+      await this.recordSignup(tx, user.id);
+      return user;
+    });
+  }
+
+  private recordSignup(tx: Prisma.TransactionClient, userId: number): Promise<void> {
+    return this.facts.record(tx, {
+      type: AnalyticsFactType.SIGNUP,
+      dedupeKey: signupFactKey(),
+      actorUserId: userId,
     });
   }
 

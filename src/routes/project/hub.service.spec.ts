@@ -7,6 +7,7 @@ import { Readable } from 'stream';
 import { withEnv } from '../../../test/env';
 import { draft, knownError, ProjectMocks, released } from '../../../test/project-mocks';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AnalyticsFactService } from '../analytics/analytics-fact.service';
 import { EdgeService } from '../s3/edge.service';
 import { S3Service } from '../s3/s3.service';
 import { PROJECT_NAME_MAX_LENGTH } from './dto/project-field-limits';
@@ -55,12 +56,14 @@ describe('HubService', () => {
         s3ServiceMock as unknown as S3Service,
         edgeMock as unknown as EdgeService,
         {} as ModuleRef,
+        {} as AnalyticsFactService,
       );
       const contentService = new ProjectContentService(
         prismaMock as unknown as PrismaService,
         s3ServiceMock as unknown as S3Service,
         edgeMock as unknown as EdgeService,
         projectService,
+        {} as AnalyticsFactService,
       );
 
       return new HubService(prismaMock as unknown as PrismaService, projectService, contentService);

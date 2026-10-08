@@ -526,6 +526,11 @@ export class HubService {
       throw error;
     }
 
+    // Only now is the fork there to stay: a failed copy above deletes it again.
+    await this.prisma.$transaction((tx) =>
+      this.projectService.recordProjectCreated(tx, newProject.id, userId),
+    );
+
     try {
       await this.projectService.copyCover(sourceProjectId, newProject.id);
     } catch (error) {

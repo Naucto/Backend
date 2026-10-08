@@ -11,6 +11,7 @@ import {
   Param,
   Patch,
   Post,
+  Req,
   Res,
   UploadedFile,
   UseGuards,
@@ -19,6 +20,7 @@ import { ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/s
 import { Response } from 'express';
 
 import { Public, RequiresAuth } from '../../auth/access/access.decorators';
+import { RequestWithUser } from '../../auth/auth.types';
 import { ProjectCollaboratorGuard } from '../../auth/guards/project.guard';
 import { S3ObjectNotFoundException } from '../s3/s3.error';
 import { DownloadedFile } from '../s3/s3.interface';
@@ -289,8 +291,11 @@ export class ProjectContentController {
     type: ProjectTooLargeDto,
   })
   @HttpCode(HttpStatus.CREATED)
-  async publish(@ProjectId() id: number): Promise<ProjectActionResponseDto> {
-    await this.contentService.publish(id);
+  async publish(
+    @ProjectId() id: number,
+    @Req() req: RequestWithUser,
+  ): Promise<ProjectActionResponseDto> {
+    await this.contentService.publish(id, req.user.id);
 
     return { message: 'Project published successfully', id };
   }
@@ -306,8 +311,11 @@ export class ProjectContentController {
   })
   @ApiResponse({ status: 403, description: 'Forbidden' })
   @HttpCode(HttpStatus.CREATED)
-  async unpublish(@ProjectId() id: number): Promise<ProjectActionResponseDto> {
-    await this.contentService.unpublish(id);
+  async unpublish(
+    @ProjectId() id: number,
+    @Req() req: RequestWithUser,
+  ): Promise<ProjectActionResponseDto> {
+    await this.contentService.unpublish(id, req.user.id);
 
     return { message: 'Project unpublished successfully', id };
   }
@@ -450,8 +458,11 @@ export class ProjectContentController {
     type: ProjectTooLargeDto,
   })
   @HttpCode(HttpStatus.OK)
-  async updateRelease(@ProjectId() id: number): Promise<ProjectActionResponseDto> {
-    await this.contentService.updateRelease(id);
+  async updateRelease(
+    @ProjectId() id: number,
+    @Req() req: RequestWithUser,
+  ): Promise<ProjectActionResponseDto> {
+    await this.contentService.updateRelease(id, req.user.id);
 
     return { message: 'Release updated successfully', id };
   }
