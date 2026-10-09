@@ -5,11 +5,10 @@ import { AdminAccountController } from './admin-account.controller';
 import { AdminAccountService } from './admin-account.service';
 import { AdminAuthController } from './admin-auth.controller';
 import { AdminSessionService } from './admin-session.service';
-import { TwoFactorService } from './two-factor.service';
 
 @Module({
   imports: [AuthModule],
   controllers: [AdminAuthController, AdminAccountController],
-  providers: [AdminSessionService, AdminAccountService, TwoFactorService],
+  providers: [AdminSessionService, AdminAccountService],
 })
 export class AdminModule {}

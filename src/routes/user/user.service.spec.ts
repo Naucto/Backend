@@ -331,29 +331,23 @@ describe('UserService', () => {
     });
   });
 
-  describe('getAccessFacts', () => {
-    it('reads the stored role and whether a second factor is enrolled', async () => {
-      prisma.user.findUnique.mockResolvedValue({ role: ADMIN, twoFactorSecret: 'sealed' });
+  describe('getUserRole', () => {
+    it('reads the stored role', async () => {
+      prisma.user.findUnique.mockResolvedValue({ role: ADMIN });
 
-      await expect(service.getAccessFacts(1)).resolves.toEqual({
-        role: ADMIN,
-        twoFactorEnabled: true,
-      });
+      await expect(service.getUserRole(1)).resolves.toBe(ADMIN);
     });
 
     it('reads a stored value the hierarchy does not know as the least privilege', async () => {
-      prisma.user.findUnique.mockResolvedValue({ role: 'Superuser', twoFactorSecret: null });
+      prisma.user.findUnique.mockResolvedValue({ role: 'Superuser' });
 
-      await expect(service.getAccessFacts(1)).resolves.toEqual({
-        role: USER,
-        twoFactorEnabled: false,
-      });
+      await expect(service.getUserRole(1)).resolves.toBe(USER);
     });
 
     it('answers not found for an unknown id', async () => {
       prisma.user.findUnique.mockResolvedValue(null);
 
-      await expect(service.getAccessFacts(42)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.getUserRole(42)).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 

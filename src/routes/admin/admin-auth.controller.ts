@@ -13,17 +13,9 @@ import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Request, Response } from 'express';
 
 import { Public } from '../../auth/access/access.decorators';
-import { AdminSessionService, IssuedSession } from './admin-session.service';
+import { AdminSessionService } from './admin-session.service';
 import { ADMIN_SESSION_COOKIE, adminSessionCookieOptions } from './admin-session-cookie';
-import { AdminLoginDto, AdminSessionDto, AdminTwoFactorLoginDto } from './dto/admin-auth.dto';
-
-/** Writes the session cookie when one was issued, and answers with the body alone. */
-export function respondWithSession(res: Response, issued: IssuedSession): AdminSessionDto {
-  if (issued.sessionToken) {
-    res.cookie(ADMIN_SESSION_COOKIE, issued.sessionToken, adminSessionCookieOptions(true));
-  }
-  return issued.session;
-}
+import { AdminLoginDto, AdminSessionDto } from './dto/admin-auth.dto';
 
 @ApiTags('admin')
 @Controller('admin/auth')
@@ -33,9 +25,7 @@ export class AdminAuthController {
   @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Sign in to the admin panel; asks for the authenticator code when it is enabled',
-  })
+  @ApiOperation({ summary: 'Sign in to the admin console with an admin account' })
   @ApiResponse({ status: HttpStatus.OK, type: AdminSessionDto })
   @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: 'Invalid email or password' })
   @ApiResponse({ status: HttpStatus.FORBIDDEN, description: 'Not an admin account' })
@@ -45,24 +35,11 @@ export class AdminAuthController {
     @Ip() ip: string,
     @Res({ passthrough: true }) res: Response,
   ): Promise<AdminSessionDto> {
-    return respondWithSession(res, await this.sessions.login(dto.email, dto.password, ip));
-  }
-
-  @Public()
-  @Post('two-factor')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Finish signing in with the authenticator code' })
-  @ApiResponse({ status: HttpStatus.OK, type: AdminSessionDto })
-  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: 'Invalid code or expired step' })
-  @ApiResponse({ status: HttpStatus.TOO_MANY_REQUESTS, description: 'Too many failed codes' })
-  async twoFactor(
-    @Body() dto: AdminTwoFactorLoginDto,
-    @Res({ passthrough: true }) res: Response,
-  ): Promise<AdminSessionDto> {
-    return respondWithSession(
-      res,
-      await this.sessions.completeTwoFactor(dto.challengeToken, dto.code),
-    );
+    const issued = await this.sessions.login(dto.email, dto.password, ip);
+    if (issued.sessionToken) {
+      res.cookie(ADMIN_SESSION_COOKIE, issued.sessionToken, adminSessionCookieOptions(true));
+    }
+    return issued.session;
   }
 
   @Public()

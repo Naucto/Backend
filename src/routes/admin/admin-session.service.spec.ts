@@ -1,21 +1,17 @@
-import { ForbiddenException, HttpException, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { Secret, TOTP } from 'otpauth';
 
 import { withEnv } from '../../../test/env';
 import { ADMIN, USER } from '../../auth/access/roles';
 import { AuthService } from '../../auth/auth.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AdminAccountRow, AdminSessionService } from './admin-session.service';
-import { TwoFactorService } from './two-factor.service';
 
 const SECRET = 'admin-session-spec-secret';
 
 describe('AdminSessionService', () => {
-  const twoFactor = new TwoFactorService();
   const jwt = new JwtService({ secret: SECRET });
   let rows: Map<number, AdminAccountRow>;
-  let base32: string;
   const auth = { validateUser: jest.fn() };
   const prisma = {
     user: { findUnique: jest.fn(({ where }: { where: { id: number } }) => rows.get(where.id)) },
@@ -30,19 +26,14 @@ describe('AdminSessionService', () => {
     role: ADMIN,
     createdAt: new Date('2026-01-01'),
     deletedAt: null,
-    twoFactorSecret: null,
-    twoFactorEnabledAt: null,
     ...overrides,
   });
-  const currentCode = (): string => new TOTP({ secret: Secret.fromBase32(base32) }).generate();
 
   beforeEach(() => {
     withEnv({ JWT_SECRET: SECRET });
-    base32 = twoFactor.enrol('ada@example.com').secret;
     rows = new Map([
       [1, row({})],
       [2, row({ id: 2, email: 'bob@example.com', role: USER })],
-      [3, row({ id: 3, email: 'cy@example.com', twoFactorSecret: twoFactor.sealSecret(base32) })],
     ]);
     auth.validateUser.mockImplementation(async (email: string) => {
       const found = [...rows.values()].find((account) => account.email === email);
@@ -55,19 +46,14 @@ describe('AdminSessionService', () => {
       auth as unknown as AuthService,
       jwt,
       prisma as unknown as PrismaService,
-      twoFactor,
     );
   });
 
-  it('signs an admin without a second factor straight in, unverified', async () => {
+  it('signs an admin in with an access token and a session for the cookie', async () => {
     const { session, sessionToken } = await service.login('ada@example.com', 'pw', '1.1.1.1');
 
-    expect(session.status).toBe('authenticated');
-    expect(session.account?.twoFactorEnabled).toBe(false);
-    expect(jwt.verify<{ sub: number; mfa: boolean }>(session.accessToken!)).toMatchObject({
-      sub: 1,
-      mfa: false,
-    });
+    expect(jwt.verify<{ sub: number }>(session.accessToken).sub).toBe(1);
+    expect(session.account).toMatchObject({ id: 1, role: ADMIN });
     expect(sessionToken).toBeDefined();
   });
 
@@ -77,39 +63,10 @@ describe('AdminSessionService', () => {
     );
   });
 
-  it('asks for the code, then signs in verified with it', async () => {
-    const first = await service.login('cy@example.com', 'pw', '1.1.1.1');
+  it('never lets the session cookie stand in for an access token', async () => {
+    const { sessionToken } = await service.login('ada@example.com', 'pw', '1.1.1.1');
 
-    expect(first.session).toEqual({
-      status: 'two_factor_required',
-      challengeToken: expect.any(String),
-    });
-    expect(first.sessionToken).toBeUndefined();
-
-    const { session } = await service.completeTwoFactor(
-      first.session.challengeToken!,
-      currentCode(),
-    );
-    expect(jwt.verify<{ mfa: boolean }>(session.accessToken!).mfa).toBe(true);
-  });
-
-  it('never lets a challenge stand in for an access token', async () => {
-    const { session } = await service.login('cy@example.com', 'pw', '1.1.1.1');
-
-    expect(() => jwt.verify(session.challengeToken!)).toThrow();
-  });
-
-  it('locks the code step after five wrong codes', async () => {
-    const { session } = await service.login('cy@example.com', 'pw', '1.1.1.1');
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      await expect(
-        service.completeTwoFactor(session.challengeToken!, '000000'),
-      ).rejects.toBeInstanceOf(UnauthorizedException);
-    }
-
-    await expect(
-      service.completeTwoFactor(session.challengeToken!, currentCode()),
-    ).rejects.toBeInstanceOf(HttpException);
+    expect(() => jwt.verify(sessionToken!)).toThrow();
   });
 
   it('locks password attempts from one address after ten failures', async () => {
@@ -125,19 +82,13 @@ describe('AdminSessionService', () => {
     await expect(service.login('ada@example.com', 'pw', '3.3.3.3')).resolves.toBeDefined();
   });
 
-  it('renews the access token from the session, keeping whether it was verified', async () => {
+  it('renews the access token from the session, without a new cookie', async () => {
     const { sessionToken } = await service.login('ada@example.com', 'pw', '1.1.1.1');
 
-    const { session } = await service.refresh(sessionToken!);
+    const renewed = await service.refresh(sessionToken!);
 
-    expect(jwt.verify<{ mfa: boolean }>(session.accessToken!).mfa).toBe(false);
-  });
-
-  it('ends an unverified session once the account turns its second factor on', async () => {
-    const { sessionToken } = await service.login('ada@example.com', 'pw', '1.1.1.1');
-    rows.set(1, row({ twoFactorSecret: twoFactor.sealSecret(base32) }));
-
-    await expect(service.refresh(sessionToken!)).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(jwt.verify<{ sub: number }>(renewed.session.accessToken).sub).toBe(1);
+    expect(renewed.sessionToken).toBeUndefined();
   });
 
   it('ends the session of an account that lost the admin role', async () => {
@@ -145,5 +96,9 @@ describe('AdminSessionService', () => {
     rows.set(1, row({ role: USER }));
 
     await expect(service.refresh(sessionToken!)).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('refuses a session that is not one', async () => {
+    await expect(service.refresh('not-a-token')).rejects.toBeInstanceOf(UnauthorizedException);
   });
 });

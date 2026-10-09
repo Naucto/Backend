@@ -58,7 +58,6 @@
         "jwks-rsa": "^4.0.1",
         "maxmind": "^5.0.7",
         "multer": "^2.0.2",
-        "otpauth": "^9.5.2",
         "passport": "^0.7.0",
         "passport-jwt": "^4.0.1",
         "pg": "^8.18.0",

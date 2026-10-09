@@ -25,14 +25,12 @@ const PLAIN_USER = 1;
 const MODERATOR_USER = 2;
 const ADMIN_USER = 3;
 const DELETED_USER = 4;
-const TWO_FACTOR_ADMIN = 5;
 
 const ROLES: Record<number, RoleName> = {
   [PLAIN_USER]: USER,
   [MODERATOR_USER]: MODERATOR,
   [ADMIN_USER]: ADMIN,
   [DELETED_USER]: ADMIN,
-  [TWO_FACTOR_ADMIN]: ADMIN,
 };
 
 type Caller = { user: { id: number } | null };
@@ -75,13 +73,10 @@ describe('AccessGuard', () => {
       }
       return { id, password: 'hash', deletedAt: id === DELETED_USER ? new Date() : null };
     }),
-    getAccessFacts: jest.fn(async (id: number) => ({
-      role: ROLES[id] ?? USER,
-      twoFactorEnabled: id === TWO_FACTOR_ADMIN,
-    })),
+    getUserRole: jest.fn(async (id: number) => ROLES[id] ?? USER),
   };
-  const tokenFor = (userId: number, mfa?: boolean): string =>
-    `Bearer ${new JwtService({ secret: SECRET }).sign({ sub: userId, email: 'someone@example.com', mfa })}`;
+  const tokenFor = (userId: number): string =>
+    `Bearer ${new JwtService({ secret: SECRET }).sign({ sub: userId, email: 'someone@example.com' })}`;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -175,29 +170,7 @@ describe('AccessGuard', () => {
       const response = await request(app.getHttpServer()).get('/probe/moderator');
 
       expect(response.status).toBe(HttpStatus.UNAUTHORIZED);
-      expect(userService.getAccessFacts).not.toHaveBeenCalled();
-    });
-
-    it.each([
-      ['a token from the code step', true, HttpStatus.OK],
-      ['a token from the site sign-in', undefined, HttpStatus.FORBIDDEN],
-    ])(
-      'admits an admin with a second factor on an admin route only with %s',
-      async (_token, mfa, status) => {
-        const response = await request(app.getHttpServer())
-          .get('/probe/admin')
-          .set('Authorization', tokenFor(TWO_FACTOR_ADMIN, mfa));
-
-        expect(response.status).toBe(status);
-      },
-    );
-
-    it('does not ask an admin with a second factor for it on a moderator route', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/probe/moderator')
-        .set('Authorization', tokenFor(TWO_FACTOR_ADMIN));
-
-      expect(response.status).toBe(HttpStatus.OK);
+      expect(userService.getUserRole).not.toHaveBeenCalled();
     });
   });
 
