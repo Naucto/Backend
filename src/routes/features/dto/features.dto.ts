@@ -8,4 +8,11 @@ export class FeaturesResponseDto {
     example: false,
   })
   monetization!: boolean;
+
+  @ApiProperty({
+    description:
+      'Whether usage analytics run: the consent banner shows and consenting browsers are measured. Off unless a deployment turns it on.',
+    example: false,
+  })
+  analytics!: boolean;
 }

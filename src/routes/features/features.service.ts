@@ -12,7 +12,7 @@ import { FeaturesResponseDto } from './dto/features.dto';
 @Injectable()
 export class FeaturesService implements OnModuleInit {
   private readonly logger = new Logger(FeaturesService.name);
-  private _features: FeaturesResponseDto = { monetization: false };
+  private _features: FeaturesResponseDto = { monetization: false, analytics: false };
 
   get features(): FeaturesResponseDto {
     return this._features;
@@ -26,7 +26,10 @@ export class FeaturesService implements OnModuleInit {
       const flags = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
 
       // A config written before a flag existed must not be read as turning that flag on.
-      this._features = { monetization: flags['monetization'] === true };
+      this._features = {
+        monetization: flags['monetization'] === true,
+        analytics: flags['analytics'] === true,
+      };
       this.logger.log(`Features loaded from ${configPath}: ${JSON.stringify(this._features)}`);
     } catch {
       this.logger.warn(`No readable ${configPath}; every feature stays off`);

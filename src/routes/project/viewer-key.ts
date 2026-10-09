@@ -1,10 +1,29 @@
-import { createHmac } from 'node:crypto';
+import { Prisma } from '@prisma/client';
+
+import {
+  releaseViewKeyOfUser,
+  releaseViewKeyOfVisitor,
+} from '../analytics/analytics-erasure.service';
+import { lockVisitors } from '../analytics/identity-locks';
 
 /**
- * Who is looking, for the purpose of counting a view once: a signed-in reader by id, anyone else
- * by a keyed hash of their address, so the address itself is never stored.
+ * Who is looking, for counting a view once a day: the account a consenting browser is linked to,
+ * else the browser itself. Read under the visitor's shared identity lock, so an erasure holding it
+ * can never be followed by a key it already removed. An erased visitor has no key.
  */
-export const viewerKeyOf = (userId: number | null, ip: string, secret: string): string =>
-  userId !== null
-    ? `u:${userId}`
-    : `ip:${createHmac('sha256', secret).update(ip).digest('hex').slice(0, 32)}`;
+export async function viewerKeyOf(
+  tx: Prisma.TransactionClient,
+  visitorId: string,
+): Promise<string | null> {
+  await lockVisitors(tx, [visitorId], 'shared');
+  if (await tx.analyticsVisitorTombstone.findUnique({ where: { id: visitorId } })) {
+    return null;
+  }
+  const visitor = await tx.analyticsVisitor.findUnique({
+    where: { id: visitorId },
+    select: { userId: true },
+  });
+  return visitor?.userId != null
+    ? releaseViewKeyOfUser(visitor.userId)
+    : releaseViewKeyOfVisitor(visitorId);
+}

@@ -44,25 +44,28 @@ from `client/` (see `client/README.md`).
 
 ## Commands
 
-| Command | Purpose |
-|---|---|
-| `npm run start:dev` | Start Nest in watch mode on `localhost:3000` |
-| `npm run build` | Compile with `nest build` (strict `tsc`) |
-| `npm run start:prod` | Run the compiled server (`node dist/main`) |
-| `npm run lint` | ESLint over `src/`, `test/`, `prisma/`, `tool/` and the root config files — **note: runs with `--fix` (mutates files)** |
-| `npm run lint:check` | ESLint, check-only (what CI runs) |
-| `npm run typecheck` | `tsc --noEmit` over the same files as `lint:check` (`tsconfig.eslint.json`) |
-| `npm run format` | Prettier-format `src/` and `test/` |
-| `npm run test` | Unit tests (Jest, co-located `*.spec.ts`) |
-| `npm run test:cov` | Unit tests with coverage |
-| `npm run generate:swagger` | Boot the app and emit `swagger.json` from the Swagger decorators |
-| `npm run generate:client` | Generate the typed API client sources into `client/src` |
-| `npm run client:build` | Emit `swagger.json`, then generate + compile `@naucto/api-client` into `client/dist` (what the publish workflow runs) |
-| `npx prisma migrate dev --name <desc>` | Create + apply a dev migration from the schema |
-| `npx prisma generate` | Regenerate the Prisma client |
-| `npm run seed:dev` | Seed a local database with people, friendships, pending requests and shared game sessions (refuses non-local hosts) |
-| `docker compose -f docker-compose.yml -f docker-compose.dev.yml up --watch backend` | Dev stack: Postgres, MinIO, and the API with hot reload |
-| `./dev.sh` | The line above with a `build` first — the shorthand, and the usual way in |
+| Command                                                                             | Purpose                                                                                                                          |
+| ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run start:dev`                                                                 | Start Nest in watch mode on `localhost:3000`                                                                                     |
+| `npm run build`                                                                     | Compile with `nest build` (strict `tsc`)                                                                                         |
+| `npm run start:prod`                                                                | Run the compiled server (`node dist/main`)                                                                                       |
+| `npm run lint`                                                                      | ESLint over `src/`, `test/`, `prisma/`, `tool/` and the root config files — **note: runs with `--fix` (mutates files)**          |
+| `npm run lint:check`                                                                | ESLint, check-only (what CI runs)                                                                                                |
+| `npm run typecheck`                                                                 | `tsc --noEmit` over the same files as `lint:check` (`tsconfig.eslint.json`)                                                      |
+| `npm run format`                                                                    | Prettier-format `src/` and `test/`                                                                                               |
+| `npm run test`                                                                      | Unit tests (Jest, co-located `*.spec.ts`)                                                                                        |
+| `npm run test:cov`                                                                  | Unit tests with coverage                                                                                                         |
+| `npm run generate:swagger`                                                          | Boot the app and emit `swagger.json` from the Swagger decorators                                                                 |
+| `npm run generate:client`                                                           | Generate the typed API client sources into `client/src`                                                                          |
+| `npm run client:build`                                                              | Emit `swagger.json`, then generate + compile `@naucto/api-client` into `client/dist` (what the publish workflow runs)            |
+| `npx prisma migrate dev --name <desc>`                                              | Create + apply a dev migration from the schema                                                                                   |
+| `npx prisma generate`                                                               | Regenerate the Prisma client                                                                                                     |
+| `npm run seed:dev`                                                                  | Seed a local database with people, friendships, pending requests and shared game sessions (refuses non-local hosts)              |
+| `npm run seed:analytics`                                                            | Fill a local database with 60 days of synthetic analytics and finalize it, so the admin panel has data (refuses non-local hosts) |
+| `npm run analytics:acceptance`                                                      | Run the analytics acceptance scenarios against a scratch copy of the local database, over two connections; by hand, never in CI  |
+| `npm run repair:release-view-keys`                                                  | Delete the release view keys once derived from readers' addresses (one-off)                                                      |
+| `docker compose -f docker-compose.yml -f docker-compose.dev.yml up --watch backend` | Dev stack: Postgres, MinIO, and the API with hot reload                                                                          |
+| `./dev.sh`                                                                          | The line above with a `build` first — the shorthand, and the usual way in                                                        |
 
 **The dev container and a host build share `dist/`.** The repo is bind-mounted into the container,
 which runs `nest start --watch` as root, so `dist/` on the host ends up root-owned and a subsequent
@@ -71,7 +74,7 @@ testing on the host (`docker compose ... stop backend`). Mounting a volume over 
 help: `nest build` removes the whole directory first and cannot remove a mountpoint.
 
 The dev stack includes **MinIO** (`:9000`, console `:9001`), because release content is fetched by
-the *browser* straight from `EDGE_ENDPOINT` — point that at a bucket the browser cannot reach and
+the _browser_ straight from `EDGE_ENDPOINT` — point that at a bucket the browser cannot reach and
 `/play/:id` renders a black screen with "Failed to fetch". `docker-compose.dev.yml` creates the
 bucket named by `S3_BUCKET_NAME` and makes it anonymously readable; set the five `S3_*` values and
 `EDGE_ENDPOINT` as `.env.example` shows and a published game plays on localhost.
@@ -81,22 +84,24 @@ Create it with `cp config/webrtc.example.json config/webrtc.json`.
 
 ## Architecture map
 
-| Path | Purpose |
-|---|---|
-| `src/main.ts` | Bootstrap: Express adapter, global `ValidationPipe`, CORS, `cookie-parser`, Swagger, request logging |
-| `src/app.module.ts` | Root module wiring every feature module |
-| `src/auth/` | JWT auth, passport strategy, access control (`access/`: global guard, `@Public()`/`@RequiresAuth()`/`@RequiresRole()`, roles), project ownership guards, OAuth providers (Google/GitHub/Microsoft), refresh-token crypto |
-| `src/routes/<feature>/` | One folder per HTTP feature: `*.controller.ts`, `*.service.ts`, `*.module.ts`, `*.error.ts`, `dto/`, co-located `*.spec.ts` (`recommendations` = featured release / game of the week, admin-only writes via `@RequiresRole(ADMIN)`) |
-| `src/webrtc/` | `ws` + Yjs real-time multiplayer server (`server/`); `WebRTCService` allocates one port per server and advertises its public URL (see *WebSocket servers* below) |
-| `src/tasks/` | Scheduled jobs (`@nestjs/schedule` cron) |
-| `src/prisma/` | `PrismaService` + module |
-| `src/common/` | Cross-feature DTOs + decorators (pagination, signed-CDN, `@AtLeastOne`) |
-| `src/util/` | Framework-agnostic helpers |
-| `src/swagger.ts`, `tool/generate-swagger.ts` | OpenAPI document build + emit |
-| `prisma/` | `schema.prisma` + split `models/*.prisma` + `migrations/` |
-| `client/` | `@naucto/api-client` package: `package.json`/`tsconfig.json`/`README.md` committed, `src/`+`dist/` **generated** (gitignored) |
-| `config/` | Runtime config read from the working directory: feature flags (`features.json`), ICE servers (`webrtc.json`, gitignored) |
-| `test/` | Specs for the code that lives outside `src/` |
+| Path                                         | Purpose                                                                                                                                                                                                                             |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/main.ts`                                | Bootstrap: Express adapter, global `ValidationPipe`, CORS, `cookie-parser`, Swagger, request logging                                                                                                                                |
+| `src/app.module.ts`                          | Root module wiring every feature module                                                                                                                                                                                             |
+| `src/auth/`                                  | JWT auth, passport strategy, access control (`access/`: global guard, `@Public()`/`@RequiresAuth()`/`@RequiresRole()`, roles), project ownership guards, OAuth providers (Google/GitHub/Microsoft), refresh-token crypto            |
+| `src/routes/<feature>/`                      | One folder per HTTP feature: `*.controller.ts`, `*.service.ts`, `*.module.ts`, `*.error.ts`, `dto/`, co-located `*.spec.ts` (`recommendations` = featured release / game of the week, admin-only writes via `@RequiresRole(ADMIN)`) |
+| `src/webrtc/`                                | `ws` + Yjs real-time multiplayer server (`server/`); `WebRTCService` allocates one port per server and advertises its public URL (see _WebSocket servers_ below)                                                                    |
+| `src/routes/analytics/`                      | Usage analytics: ingest from browsers, business facts, multiplayer accounting, minute presence sampling, finalization into rollups, account history projection, purge, and the admin and user read APIs (see _Analytics_ below)     |
+| `src/routes/admin/`                          | The admin console's own sign-in and admin accounts: who holds the role, promoting and revoking (see _Admin console_ below)                                                                                                          |
+| `src/tasks/`                                 | Scheduled jobs (`@nestjs/schedule` cron)                                                                                                                                                                                            |
+| `src/prisma/`                                | `PrismaService` + module                                                                                                                                                                                                            |
+| `src/common/`                                | Cross-feature DTOs + decorators (pagination, signed-CDN, `@AtLeastOne`)                                                                                                                                                             |
+| `src/util/`                                  | Framework-agnostic helpers                                                                                                                                                                                                          |
+| `src/swagger.ts`, `tool/generate-swagger.ts` | OpenAPI document build + emit                                                                                                                                                                                                       |
+| `prisma/`                                    | `schema.prisma` + split `models/*.prisma` + `migrations/`                                                                                                                                                                           |
+| `client/`                                    | `@naucto/api-client` package: `package.json`/`tsconfig.json`/`README.md` committed, `src/`+`dist/` **generated** (gitignored)                                                                                                       |
+| `config/`                                    | Runtime config read from the working directory: feature flags (`features.json`), ICE servers (`webrtc.json`, gitignored)                                                                                                            |
+| `test/`                                      | Specs for the code that lives outside `src/`                                                                                                                                                                                        |
 
 **Module pattern:** every feature is a NestJS `@Module` declaring `controllers`, `providers`,
 `imports`, `exports`. Keep **controllers thin** — HTTP + Swagger decorators + guards only; put
@@ -110,6 +115,7 @@ rejects unexpected ones** — so every accepted field needs a validator decorato
 **Access control — deny by default.** One global guard (`src/auth/access/access.guard.ts`,
 registered as `APP_GUARD`) decides every route from the access its handler, or failing that its
 controller, declares with exactly one of three decorators (`src/auth/access/access.decorators.ts`):
+
 - `@Public()` — anyone; a valid bearer token still sets `req.user`, a missing or bad one leaves it
   `null` and never refuses.
 - `@RequiresAuth()` — any signed-in user (401 otherwise).
@@ -132,6 +138,7 @@ don't re-implement.
 game table, `MultiplayerService`), `user` (per-user notifications, `NotificationsService`).
 Clients never guess the address — they fetch an offer whose signaling URL comes from
 `WebRTCService.buildSignalingUrl`:
+
 - **Local dev** (`BACKEND_WEBRTC_PUBLIC_URL_TEMPLATE` unset): `ws://{BACKEND_WEBRTC_HOSTNAME}:{port}`
   (`wss://` when the hostname isn't `localhost`), so the compose files publish the port range.
 - **Production**: set `BACKEND_WEBRTC_PUBLIC_URL_TEMPLATE=wss://{name}.ws.beta.naucto.net` and map one
@@ -144,6 +151,33 @@ Clients never guess the address — they fetch an offer whose signaling URL come
 (`NotFoundException`, `ForbiddenException`, `BadRequestException`, …) — they map to status codes
 automatically. Domain errors are small classes in `*.error.ts`; translate them to HTTP responses
 at the controller boundary (see `project.controller.ts` catching `S3ObjectNotFoundException`).
+
+**Analytics** (`src/routes/analytics/`), behind the `analytics` flag of `config/features.json`:
+
+- `analytics-metrics.ts` is the single source of every KPI: who it counts, how its values combine,
+  when a period of it becomes final, and its version. Change a definition by bumping its version;
+  values of different versions are never combined, and final periods are never recomputed.
+- Browsers that consented report under a visitor and a session cookie the frontend sets; the API
+  never reads them. Tabs that declined send identifier-free pings, tallied per minute. Ingest
+  routes take JSON sent as text/plain without credentials and never read an account; linking a
+  browser to an account is the one authenticated call.
+- Business facts (signups, projects, release transitions) are written in the transaction of the
+  operation they record, keyed per transition, never by an account id. Multiplayer is accounted
+  from the game room server through `SyncedGameTableObserver`.
+- Identities are coordinated by transaction-scoped advisory locks (`identity-locks.ts`), always
+  taken in the order purge gate, account, visitors. Any new writer that can reach an account's
+  analytics must take them; erasure relies on it.
+- Every day is a UTC day. Raw data is kept 90 days and purged only once every period built from
+  it is final and every linked account's history has it; rollups and account histories stay.
+
+**Admin console** (`src/routes/admin/`), for the separate Admin-Panel app:
+
+- `admin/auth/*` signs an admin in with a password and an account holding the admin role. It
+  answers an access token and sets the httpOnly `naucto_admin_session` cookie that renews it for
+  eight hours; that cookie is signed with a key of its own, so it never verifies as a bearer token.
+- Wrong passwords per address are limited in memory (`attempt-limiter.ts`), which holds while the
+  backend runs as one instance.
+- An admin cannot change their own role, and the last admin cannot be demoted.
 
 ## Conventions (not all enforced by tooling — follow these)
 
@@ -164,6 +198,7 @@ Frontend; ESLint only adds `curly: all`, so every `if`/`for` body is a braced bl
 **TypeScript** — the config is **very strict** (`strict` plus `noUncheckedIndexedAccess`,
 `exactOptionalPropertyTypes`, `noUnusedLocals`/`noUnusedParameters`, `noImplicitOverride`,
 `noPropertyAccessFromIndexSignature`, …). Practical consequences:
+
 - Mark overrides with `override` (e.g. a guard's `canActivate`).
 - Indexed access can be `undefined` — narrow it; don't assume.
 - No unused locals/params. `any` is discouraged (typescript-eslint warns) — prefer real types
@@ -182,6 +217,7 @@ values with `withEnv({...})` from `test/env.ts`, restored after each test.
 are exempted in `eslint.config.mjs`).
 
 **Files & folders**
+
 - **Folder names are `kebab-case`** (`work-session/`, `project-comment/`).
 - Files follow Nest's dot-suffix convention: `project.controller.ts`, `create-project.dto.ts`,
   `project.service.spec.ts`, `project.error.ts`. Classes are `PascalCase`.
@@ -240,6 +276,12 @@ See `SECURITY.md` for the disclosure policy. Rules for agents and contributors:
   the model files; let Prisma generate the migrations.
 - `npm run lint` runs ESLint with `--fix` (it **modifies files**); the pre-commit hook only lints
   staged files — still run typecheck / build / test yourself before pushing.
+- Country lookups read an IP-to-country database in MMDB format from `GEOIP_DB_PATH`. Mount it;
+  never bake it into the image or commit it. DB-IP Lite (CC BY 4.0) needs the credit the privacy
+  page gives. Without the file, every country is unknown.
+- The text/plain body parser of the analytics routes is mounted under its own function name: Nest
+  skips its own JSON parser when a middleware named `jsonParser` is already mounted, which a bare
+  `express.json()` is, and every JSON body then arrives empty.
 
 ## Known incoherencies (being addressed in later phases — don't "fix" ad-hoc)
 

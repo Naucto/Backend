@@ -9,6 +9,7 @@ import { S3Client } from '@aws-sdk/client-s3';
 import { InjectionToken, Module, Provider } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule } from '@nestjs/throttler';
 
 import { AccessGuard } from './auth/access/access.guard';
 import { AuthModule } from './auth/auth.module';
@@ -18,6 +19,18 @@ import { NotificationsService } from './notifications/notifications.service';
 import { PresenceController, UserPresenceController } from './presence/presence.controller';
 import { PresenceService } from './presence/presence.service';
 import { PrismaService } from './prisma/prisma.service';
+import { AdminAccountController } from './routes/admin/admin-account.controller';
+import { AdminAccountService } from './routes/admin/admin-account.service';
+import { AdminAuthController } from './routes/admin/admin-auth.controller';
+import { AdminSessionService } from './routes/admin/admin-session.service';
+import { AdminAnalyticsController } from './routes/analytics/admin-analytics.controller';
+import { AnalyticsIngestController } from './routes/analytics/analytics-ingest.controller';
+import { AnalyticsIngestService } from './routes/analytics/analytics-ingest.service';
+import { AnalyticsQueryService } from './routes/analytics/analytics-query.service';
+import { AnalyticsTallyService } from './routes/analytics/analytics-tally.service';
+import { ANALYTICS_THROTTLERS } from './routes/analytics/analytics-throttler.guard';
+import { UserAnalyticsController } from './routes/analytics/user-analytics.controller';
+import { UserAnalyticsService } from './routes/analytics/user-analytics.service';
 import { FeaturesModule } from './routes/features/features.module';
 import { FriendsController, UserFriendshipController } from './routes/friends/friends.controller';
 import { FriendsService } from './routes/friends/friends.service';
@@ -54,6 +67,7 @@ const nullProvider = (token: InjectionToken): Provider => ({
     WorkSessionModule,
     WebRTCModule,
     FeaturesModule,
+    ThrottlerModule.forRoot({ throttlers: ANALYTICS_THROTTLERS }),
   ],
   controllers: [
     HubController,
@@ -68,6 +82,11 @@ const nullProvider = (token: InjectionToken): Provider => ({
     UserPresenceController,
     FeaturedReleaseController,
     AdminFeaturedReleaseController,
+    AnalyticsIngestController,
+    AdminAnalyticsController,
+    UserAnalyticsController,
+    AdminAuthController,
+    AdminAccountController,
   ],
   providers: [
     { provide: APP_GUARD, useClass: AccessGuard },
@@ -84,6 +103,12 @@ const nullProvider = (token: InjectionToken): Provider => ({
     nullProvider(FriendsService),
     nullProvider(PresenceService),
     nullProvider(RecommendationsService),
+    nullProvider(AnalyticsIngestService),
+    nullProvider(AnalyticsTallyService),
+    nullProvider(AnalyticsQueryService),
+    nullProvider(UserAnalyticsService),
+    nullProvider(AdminSessionService),
+    nullProvider(AdminAccountService),
   ],
 })
 export class SwaggerAppModule {}

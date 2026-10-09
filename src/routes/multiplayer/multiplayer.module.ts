@@ -8,6 +8,7 @@ import { FriendsModule } from '../friends/friends.module';
 import { ProjectModule } from '../project/project.module';
 import { MultiplayerController } from './multiplayer.controller';
 import { MultiplayerService } from './multiplayer.service';
+import { MultiplayerAccountingService } from './multiplayer-accounting.service';
 
 @Module({
   imports: [
@@ -19,7 +20,7 @@ import { MultiplayerService } from './multiplayer.service';
     NotificationsModule,
   ],
   controllers: [MultiplayerController],
-  providers: [MultiplayerService],
+  providers: [MultiplayerService, MultiplayerAccountingService],
   exports: [MultiplayerService],
 })
 export class MultiplayerModule {}

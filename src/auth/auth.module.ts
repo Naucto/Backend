@@ -47,7 +47,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     }),
   ],
   providers: [AuthService, GoogleAuthService, GithubAuthService, MicrosoftAuthService, JwtStrategy],
-  exports: [JwtModule],
+  exports: [JwtModule, AuthService],
   controllers: [AuthController],
 })
 export class AuthModule {}

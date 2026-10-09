@@ -2,11 +2,11 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { Prisma } from '@prisma/client';
 
 import { pageWindow } from '../../common/page-window';
-import { getEnv, getOptionalEnv } from '../../config/env';
 import { isUniqueViolation, PrismaService } from '../../prisma/prisma.service';
 import { PROJECT_NAME_MAX_LENGTH } from './dto/project-field-limits';
 import { hubFields } from './hub-fields';
 import { keepEditTime } from './keep-edit-time';
+import { KeylessViewLimiter } from './keyless-view-limiter';
 import { ProjectService } from './project.service';
 import { ProjectContentService } from './project-content.service';
 import {
@@ -57,15 +57,13 @@ const RELEASE_WINDOW_DAYS: Record<Exclude<ReleaseWindow, 'all'>, number> = {
 export class HubService {
   private readonly logger = new Logger(HubService.name);
 
-  private readonly viewSecret: string;
+  private readonly keylessViews = new KeylessViewLimiter();
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly projectService: ProjectService,
     private readonly contentService: ProjectContentService,
-  ) {
-    this.viewSecret = getOptionalEnv('VIEW_HASH_SECRET') ?? getEnv('JWT_SECRET');
-  }
+  ) {}
 
   /** The row of a project on the hub narrowed to `select`, or a 404 for a draft as for a gap. */
   private async requirePublished<S extends Prisma.ProjectSelect>(
@@ -366,43 +364,55 @@ export class HubService {
    * One view per reader per UTC day. The unique row is what decides; the counter follows it, so a
    * reload, or a loop of requests, moves nothing.
    */
+  /**
+   * Counts a play of a published game. A consenting browser counts once a day, by its account
+   * when it is linked to one and by its visitor otherwise; a browser that declined counts every
+   * play, keyed by nothing, within the limits of its address.
+   */
   async registerReleaseView(
     projectId: number,
-    viewer: { userId: number | null; ip: string },
+    viewer: { visitorId: string | null; address: string },
+    now = new Date(),
   ): Promise<{ viewCount: number }> {
     const project = await this.requirePublished(projectId, {
       viewCount: true,
       updatedAt: true,
     });
 
-    const viewerKey = viewerKeyOf(viewer.userId, viewer.ip, this.viewSecret);
-    const now = new Date();
-    const day = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-    const seenBefore =
-      (await this.prisma.releaseView.count({ where: { projectId, viewerKey } })) > 0;
+    return this.prisma.$transaction(async (tx) => {
+      const viewerKey = viewer.visitorId ? await viewerKeyOf(tx, viewer.visitorId) : null;
 
-    try {
-      await this.prisma.releaseView.create({
-        data: { projectId, viewerKey, day },
+      if (viewerKey === null) {
+        if (!this.keylessViews.admit(viewer.address, projectId, now.getTime())) {
+          return { viewCount: project.viewCount };
+        }
+        return tx.project.update({
+          where: { id: projectId },
+          data: { viewCount: { increment: 1 }, ...keepEditTime(project) },
+          select: { viewCount: true },
+        });
+      }
+
+      const day = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+      const seenBefore = (await tx.releaseView.count({ where: { projectId, viewerKey } })) > 0;
+      const created = await tx.releaseView.createMany({
+        data: [{ projectId, viewerKey, day }],
+        skipDuplicates: true,
       });
-    } catch (error) {
-      if (isUniqueViolation(error)) {
+      if (created.count === 0) {
         return { viewCount: project.viewCount };
       }
-      throw error;
-    }
 
-    const updated = await this.prisma.project.update({
-      where: { id: projectId },
-      data: {
-        viewCount: { increment: 1 },
-        ...(seenBefore ? {} : { uniquePlayers: { increment: 1 } }),
-        ...keepEditTime(project),
-      },
-      select: { viewCount: true },
+      return tx.project.update({
+        where: { id: projectId },
+        data: {
+          viewCount: { increment: 1 },
+          ...(seenBefore ? {} : { uniquePlayers: { increment: 1 } }),
+          ...keepEditTime(project),
+        },
+        select: { viewCount: true },
+      });
     });
-
-    return { viewCount: updated.viewCount };
   }
 
   /** A like moves the counter only when its row was created, so a repeated request counts once. */
@@ -525,6 +535,11 @@ export class HubService {
       await this.prisma.project.delete({ where: { id: newProject.id } });
       throw error;
     }
+
+    // Only now is the fork there to stay: a failed copy above deletes it again.
+    await this.prisma.$transaction((tx) =>
+      this.projectService.recordProjectCreated(tx, newProject.id, userId),
+    );
 
     try {
       await this.projectService.copyCover(sourceProjectId, newProject.id);

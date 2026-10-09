@@ -6,12 +6,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
-import { Prisma, Project } from '@prisma/client';
+import { AnalyticsFactType, Prisma, Project } from '@prisma/client';
 
 import { pageWindow } from '../../common/page-window';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { CreateNotificationInput } from '../../notifications/notifications.types';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AnalyticsFactService, projectCreatedFactKey } from '../analytics/analytics-fact.service';
 import { EdgeService, versionedUrl } from '../s3/edge.service';
 import { DownloadedFile } from '../s3/s3.interface';
 import { S3Service } from '../s3/s3.service';
@@ -49,6 +50,7 @@ export class ProjectService {
     private readonly s3Service: S3Service,
     private readonly edgeService: EdgeService,
     private readonly moduleRef: ModuleRef,
+    private readonly facts: AnalyticsFactService,
   ) {}
 
   private async notify(notification: CreateNotificationInput): Promise<void> {
@@ -176,16 +178,34 @@ export class ProjectService {
       throw new NotFoundException(`User with ID ${userId} not found`);
     }
 
-    return this.prisma.project.create({
-      data: {
-        ...createProjectDto,
-        tags: normalizeTags(createProjectDto.tags),
-        collaborators: {
-          connect: [{ id: userId }],
+    return this.prisma.$transaction(async (tx) => {
+      const project = await tx.project.create({
+        data: {
+          ...createProjectDto,
+          tags: normalizeTags(createProjectDto.tags),
+          collaborators: {
+            connect: [{ id: userId }],
+          },
+          creator: { connect: { id: userId } },
         },
-        creator: { connect: { id: userId } },
-      },
-      include: WITH_PEOPLE,
+        include: WITH_PEOPLE,
+      });
+      await this.recordProjectCreated(tx, project.id, userId);
+      return project;
+    });
+  }
+
+  /** Called by every path that creates a project, once the project is there to stay. */
+  async recordProjectCreated(
+    tx: Prisma.TransactionClient,
+    projectId: number,
+    userId: number,
+  ): Promise<void> {
+    await this.facts.record(tx, {
+      type: AnalyticsFactType.PROJECT_CREATED,
+      dedupeKey: projectCreatedFactKey(projectId),
+      actorUserId: userId,
+      projectId,
     });
   }
 

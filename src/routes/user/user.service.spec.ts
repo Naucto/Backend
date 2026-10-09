@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 
 import { ADMIN, MODERATOR, USER } from '../../auth/access/roles';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AnalyticsFactService } from '../analytics/analytics-fact.service';
 import { UserService } from './user.service';
 
 function uniqueViolation(): Prisma.PrismaClientKnownRequestError {
@@ -16,8 +17,10 @@ function uniqueViolation(): Prisma.PrismaClientKnownRequestError {
 describe('UserService', () => {
   let service: UserService;
   let prisma: {
-    user: { findUnique: jest.Mock; update: jest.Mock; findMany: jest.Mock };
+    user: { findUnique: jest.Mock; update: jest.Mock; findMany: jest.Mock; create: jest.Mock };
+    $transaction: jest.Mock;
   };
+  const facts = { record: jest.fn() };
 
   beforeEach(async () => {
     prisma = {
@@ -25,8 +28,12 @@ describe('UserService', () => {
         findUnique: jest.fn(),
         update: jest.fn(),
         findMany: jest.fn(),
+        create: jest.fn(),
       },
+      $transaction: jest.fn(),
     };
+    prisma.$transaction.mockImplementation((run: (tx: typeof prisma) => unknown) => run(prisma));
+    facts.record.mockReset();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -39,10 +46,43 @@ describe('UserService', () => {
             ...prisma,
           },
         },
+        { provide: AnalyticsFactService, useValue: facts },
       ],
     }).compile();
 
     service = module.get<UserService>(UserService);
+  });
+
+  describe('account creation', () => {
+    it('records a signup in the transaction that creates a password account', async () => {
+      prisma.user.create.mockResolvedValue({ id: 5 });
+
+      await service.create({ email: 'a@b.c', username: 'abc', password: 'Secret-123' });
+
+      expect(facts.record).toHaveBeenCalledWith(
+        expect.objectContaining({ user: prisma.user }),
+        expect.objectContaining({ type: 'SIGNUP', actorUserId: 5 }),
+      );
+    });
+
+    it('records a signup for an account created by OAuth, under a key free of the account id', async () => {
+      prisma.user.create.mockResolvedValue({ id: 5 });
+
+      await service.createOAuthUser('a@b.c', 'abc');
+
+      const [, fact] = facts.record.mock.calls[0] as [unknown, { dedupeKey: string }];
+      expect(fact.dedupeKey).toMatch(
+        /^signup:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+      );
+    });
+
+    it('records nothing when the account cannot be created', async () => {
+      prisma.user.create.mockRejectedValue(new Error('taken'));
+
+      await expect(service.createOAuthUser('a@b.c', 'abc')).rejects.toThrow('taken');
+
+      expect(facts.record).not.toHaveBeenCalled();
+    });
   });
 
   describe('updateMyProfile', () => {

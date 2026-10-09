@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
@@ -9,7 +10,14 @@ import {
   Query,
   Req,
 } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiConsumes,
+  ApiOperation,
+  ApiParam,
+  ApiQuery,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { Request } from 'express';
 
 import { Public, RequiresAuth } from '../../auth/access/access.decorators';
@@ -22,6 +30,7 @@ import {
   ProjectExResponseDto,
   ProjectsCountResponseDto,
 } from './dto/project-response.dto';
+import { RegisterViewDto } from './dto/register-view.dto';
 import { ReleaseTagsResponseDto } from './dto/release-tags-response.dto';
 import { ViewResponseDto } from './dto/view-response.dto';
 import type { PublishedProjectFilters, ReleaseSort, ReleaseWindow } from './hub.service';
@@ -265,13 +274,14 @@ export class HubController {
     return this.hubService.getLikeStatus(id, req.user.id);
   }
 
-  // Public, yet it reads the bearer when there is one: a signed-in reader counts by account, an
-  // anonymous one by address.
+  // Never reads the account: a play is tied to a viewer only through the visitor of a browser that
+  // consented. Takes JSON sent as text/plain, like the analytics routes.
   @Public()
   @Post('releases/:id/view')
   @ApiOperation({
-    summary: 'Register a play view for a published project',
+    summary: 'Count a play of a published project',
   })
+  @ApiConsumes('text/plain', 'application/json')
   @ApiParam({ name: 'id', type: 'string' })
   @ApiResponse({
     status: 200,
@@ -281,11 +291,12 @@ export class HubController {
   @HttpCode(HttpStatus.OK)
   async registerReleaseView(
     @ProjectId() id: number,
-    @Req() req: Request & { user?: { id: number } | null },
+    @Body() dto: RegisterViewDto,
+    @Req() req: Request,
   ): Promise<ViewResponseDto> {
     return this.hubService.registerReleaseView(id, {
-      userId: req.user?.id ?? null,
-      ip: req.ip ?? '',
+      visitorId: dto.visitorId ?? null,
+      address: req.ip ?? '',
     });
   }
 

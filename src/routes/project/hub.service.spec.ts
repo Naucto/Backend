@@ -1,26 +1,19 @@
 import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
-import { ModuleRef } from '@nestjs/core';
 import { TestingModule } from '@nestjs/testing';
-import { Prisma, ProjectStatus } from '@prisma/client';
+import { ProjectStatus } from '@prisma/client';
 import { Readable } from 'stream';
 
 import { withEnv } from '../../../test/env';
 import { draft, knownError, ProjectMocks, released } from '../../../test/project-mocks';
-import { PrismaService } from '../../prisma/prisma.service';
-import { EdgeService } from '../s3/edge.service';
-import { S3Service } from '../s3/s3.service';
 import { PROJECT_NAME_MAX_LENGTH } from './dto/project-field-limits';
 import { HubService } from './hub.service';
-import { ProjectService } from './project.service';
-import { ProjectContentService } from './project-content.service';
 import { COLLABORATOR_SELECT, CREATOR_SELECT } from './project-select';
-import { viewerKeyOf } from './viewer-key';
 
 describe('HubService', () => {
   let service: HubService;
 
   const mocks = new ProjectMocks();
-  const { prismaMock, s3ServiceMock, edgeMock } = mocks;
+  const { prismaMock, txMock, s3ServiceMock } = mocks;
 
   beforeEach(async () => {
     withEnv({
@@ -34,70 +27,6 @@ describe('HubService', () => {
     service = module.get<HubService>(HubService);
 
     jest.clearAllMocks();
-  });
-
-  describe('configuration', () => {
-    const RELEVANT_KEYS = [
-      'S3_MAX_AUTO_HISTORY_VERSION',
-      'S3_AUTO_HISTORY_DELAY',
-      'S3_MAX_CHECKPOINTS',
-      'VIEW_HASH_SECRET',
-      'JWT_SECRET',
-    ] as const;
-
-    const serviceWith = (
-      env: Partial<Record<(typeof RELEVANT_KEYS)[number], string>>,
-    ): HubService => {
-      withEnv(Object.fromEntries(RELEVANT_KEYS.map((key) => [key, env[key]])));
-
-      const projectService = new ProjectService(
-        prismaMock as unknown as PrismaService,
-        s3ServiceMock as unknown as S3Service,
-        edgeMock as unknown as EdgeService,
-        {} as ModuleRef,
-      );
-      const contentService = new ProjectContentService(
-        prismaMock as unknown as PrismaService,
-        s3ServiceMock as unknown as S3Service,
-        edgeMock as unknown as EdgeService,
-        projectService,
-      );
-
-      return new HubService(prismaMock as unknown as PrismaService, projectService, contentService);
-    };
-    const blank = {
-      S3_MAX_AUTO_HISTORY_VERSION: '',
-      S3_AUTO_HISTORY_DELAY: '',
-      S3_MAX_CHECKPOINTS: '',
-      VIEW_HASH_SECRET: '',
-      JWT_SECRET: 'jwt-secret',
-    };
-
-    it('keys anonymous viewers with the JWT secret when no view secret is set', async () => {
-      prismaMock.project.findFirst.mockResolvedValue({
-        id: 1,
-        viewCount: 0,
-        updatedAt: new Date(),
-      });
-      prismaMock.releaseView.count.mockResolvedValue(0);
-      prismaMock.releaseView.create.mockResolvedValue({});
-      prismaMock.project.update.mockResolvedValue({ viewCount: 1 });
-
-      await serviceWith(blank).registerReleaseView(1, {
-        userId: null,
-        ip: '203.0.113.9',
-      });
-
-      expect(prismaMock.releaseView.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({
-          viewerKey: viewerKeyOf(null, '203.0.113.9', 'jwt-secret'),
-        }),
-      });
-    });
-
-    it('refuses to start without a secret to key viewers with', () => {
-      expect(() => serviceWith({})).toThrow();
-    });
   });
 
   describe('likeProject / unlikeProject', () => {
@@ -297,87 +226,117 @@ describe('HubService', () => {
   });
 
   describe('registerReleaseView', () => {
-    const viewer = { userId: 7, ip: '203.0.113.9' };
+    const VISITOR = '11111111-1111-4111-8111-111111111111';
     const updatedAt = new Date('2026-01-01T00:00:00Z');
+    const NOW = new Date('2026-10-08T12:00:00Z');
 
     beforeEach(() => {
-      prismaMock.project.findFirst.mockResolvedValue({
-        id: 1,
-        viewCount: 10,
-        updatedAt,
-      });
-      prismaMock.project.update.mockResolvedValue({ viewCount: 11 });
+      prismaMock.project.findFirst.mockResolvedValue({ id: 1, viewCount: 10, updatedAt });
+      txMock.project.update.mockResolvedValue({ viewCount: 11 });
+      txMock.analyticsVisitorTombstone.findUnique.mockResolvedValue(null);
+      txMock.analyticsVisitor.findUnique.mockResolvedValue({ userId: null });
+      txMock.releaseView.count.mockResolvedValue(0);
+      txMock.releaseView.createMany.mockResolvedValue({ count: 1 });
     });
 
-    it("counts a reader's first view of the day, and a first reader twice over", async () => {
-      prismaMock.releaseView.count.mockResolvedValue(0);
-      prismaMock.releaseView.create.mockResolvedValue({});
+    const viewAs = (
+      visitorId: string | null,
+      address = '203.0.113.9',
+    ): Promise<{ viewCount: number }> =>
+      service.registerReleaseView(1, { visitorId, address }, NOW);
 
-      await expect(service.registerReleaseView(1, viewer)).resolves.toEqual({
-        viewCount: 11,
-      });
+    it("counts a consenting browser's first view of the day, and a first viewer twice over", async () => {
+      await expect(viewAs(VISITOR)).resolves.toEqual({ viewCount: 11 });
 
-      expect(prismaMock.releaseView.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({ projectId: 1, viewerKey: 'u:7' }),
+      expect(txMock.releaseView.createMany).toHaveBeenCalledWith({
+        data: [{ projectId: 1, viewerKey: `v:${VISITOR}`, day: new Date('2026-10-08T00:00:00Z') }],
+        skipDuplicates: true,
       });
-      expect(prismaMock.project.update).toHaveBeenCalledWith(
+      expect(txMock.project.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: {
-            viewCount: { increment: 1 },
-            uniquePlayers: { increment: 1 },
-            updatedAt,
-          },
+          data: { viewCount: { increment: 1 }, uniquePlayers: { increment: 1 }, updatedAt },
         }),
+      );
+    });
+
+    it('keys a browser linked to an account by the account, so its devices count once', async () => {
+      txMock.analyticsVisitor.findUnique.mockResolvedValue({ userId: 7 });
+
+      await viewAs(VISITOR);
+
+      expect(txMock.releaseView.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({ data: [expect.objectContaining({ viewerKey: 'u:7' })] }),
+      );
+    });
+
+    it("reads the visitor under its shared identity lock, so an erasure can't be undone", async () => {
+      await viewAs(VISITOR);
+
+      const [lock] = txMock.$executeRaw.mock.calls;
+      expect((lock?.[0] as TemplateStringsArray).join('?')).toContain(
+        'pg_advisory_xact_lock_shared(',
+      );
+      expect(txMock.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
+        txMock.releaseView.createMany.mock.invocationCallOrder[0] ?? 0,
       );
     });
 
     it('moves nothing on a second view the same day', async () => {
-      prismaMock.releaseView.count.mockResolvedValue(1);
-      prismaMock.releaseView.create.mockRejectedValue(
-        new Prisma.PrismaClientKnownRequestError('taken', {
-          code: 'P2002',
-          clientVersion: 'test',
-        }),
-      );
+      txMock.releaseView.count.mockResolvedValue(1);
+      txMock.releaseView.createMany.mockResolvedValue({ count: 0 });
 
-      await expect(service.registerReleaseView(1, viewer)).resolves.toEqual({
-        viewCount: 10,
-      });
+      await expect(viewAs(VISITOR)).resolves.toEqual({ viewCount: 10 });
 
-      expect(prismaMock.project.update).not.toHaveBeenCalled();
+      expect(txMock.project.update).not.toHaveBeenCalled();
     });
 
-    it("counts a returning reader's view without counting them as new", async () => {
-      prismaMock.releaseView.count.mockResolvedValue(1);
-      prismaMock.releaseView.create.mockResolvedValue({});
+    it("counts a returning viewer's view without counting them as new", async () => {
+      txMock.releaseView.count.mockResolvedValue(1);
 
-      await service.registerReleaseView(1, viewer);
+      await viewAs(VISITOR);
 
-      expect(prismaMock.project.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: { viewCount: { increment: 1 }, updatedAt },
-        }),
+      expect(txMock.project.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { viewCount: { increment: 1 }, updatedAt } }),
       );
     });
 
-    it('keys an anonymous reader by address, apart from any account', async () => {
-      prismaMock.releaseView.count.mockResolvedValue(0);
-      prismaMock.releaseView.create.mockResolvedValue({});
+    it('counts a view without a viewer, keeping no row and no key at all', async () => {
+      await expect(viewAs(null)).resolves.toEqual({ viewCount: 11 });
 
-      await service.registerReleaseView(1, { userId: null, ip: '203.0.113.9' });
+      expect(txMock.releaseView.createMany).not.toHaveBeenCalled();
+      expect(txMock.analyticsVisitor.findUnique).not.toHaveBeenCalled();
+      expect(txMock.project.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { viewCount: { increment: 1 }, updatedAt } }),
+      );
+    });
 
-      const key = prismaMock.releaseView.create.mock.calls[0]![0].data.viewerKey as string;
-      expect(key).toMatch(/^ip:/);
-      expect(key).not.toContain('203.0.113.9');
+    it('treats an erased visitor as a view without a viewer', async () => {
+      txMock.analyticsVisitorTombstone.findUnique.mockResolvedValue({ id: VISITOR });
+
+      await viewAs(VISITOR);
+
+      expect(txMock.releaseView.createMany).not.toHaveBeenCalled();
+      expect(txMock.project.update).toHaveBeenCalled();
+    });
+
+    it('lets a whole class count from one address, then stops counting it', async () => {
+      for (let i = 0; i < 30; i++) {
+        await viewAs(null, '198.51.100.1');
+      }
+      txMock.project.update.mockClear();
+
+      await expect(viewAs(null, '198.51.100.1')).resolves.toEqual({ viewCount: 10 });
+      expect(txMock.project.update).not.toHaveBeenCalled();
+
+      await viewAs(null, '198.51.100.2');
+      expect(txMock.project.update).toHaveBeenCalledTimes(1);
     });
 
     it('counts nothing for a project the hub does not carry', async () => {
       prismaMock.project.findFirst.mockResolvedValue(null);
 
-      await expect(service.registerReleaseView(1, viewer)).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
-      expect(prismaMock.releaseView.create).not.toHaveBeenCalled();
+      await expect(viewAs(VISITOR)).rejects.toBeInstanceOf(NotFoundException);
+      expect(txMock.releaseView.createMany).not.toHaveBeenCalled();
     });
   });
 

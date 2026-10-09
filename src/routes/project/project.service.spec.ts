@@ -10,7 +10,8 @@ describe('ProjectService', () => {
   let service: ProjectService;
 
   const mocks = new ProjectMocks();
-  const { prismaMock, s3ServiceMock, notificationsMock, workSessionsMock } = mocks;
+  const { prismaMock, txMock, factsMock, s3ServiceMock, notificationsMock, workSessionsMock } =
+    mocks;
 
   beforeEach(async () => {
     withEnv({
@@ -101,7 +102,7 @@ describe('ProjectService', () => {
       const userId = 1;
 
       prismaMock.user.findUnique.mockResolvedValue({ id: userId });
-      prismaMock.project.create.mockResolvedValue({
+      txMock.project.create.mockResolvedValue({
         id: 10,
         ...createDto,
         collaborators: [{ id: userId, username: 'user1' }],
@@ -110,7 +111,7 @@ describe('ProjectService', () => {
 
       const result = await service.create(createDto, userId);
 
-      expect(prismaMock.project.create).toHaveBeenCalledWith(
+      expect(txMock.project.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             ...createDto,
@@ -123,6 +124,20 @@ describe('ProjectService', () => {
       expect(result).toHaveProperty('id', 10);
     });
 
+    it('records the creation in the transaction that creates the project', async () => {
+      prismaMock.user.findUnique.mockResolvedValue({ id: 1 });
+      txMock.project.create.mockResolvedValue({ id: 10 });
+
+      await service.create(createDto, 1);
+
+      expect(factsMock.record).toHaveBeenCalledWith(txMock, {
+        type: 'PROJECT_CREATED',
+        dedupeKey: 'project:10',
+        actorUserId: 1,
+        projectId: 10,
+      });
+    });
+
     it('should throw NotFoundException if user not found', async () => {
       prismaMock.user.findUnique.mockResolvedValue(null);
 
@@ -132,9 +147,10 @@ describe('ProjectService', () => {
     it('lets a database failure through as it is', async () => {
       const failure = new Error('DB error');
       prismaMock.user.findUnique.mockResolvedValue({ id: 1 });
-      prismaMock.project.create.mockRejectedValue(failure);
+      txMock.project.create.mockRejectedValue(failure);
 
       await expect(service.create(createDto, 1)).rejects.toBe(failure);
+      expect(factsMock.record).not.toHaveBeenCalled();
     });
   });
 

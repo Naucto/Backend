@@ -10,6 +10,7 @@ import { Readable } from 'stream';
 import { withEnv } from '../../../test/env';
 import { encodeGame, ProjectMocks } from '../../../test/project-mocks';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AnalyticsFactService } from '../analytics/analytics-fact.service';
 import { EdgeService } from '../s3/edge.service';
 import { S3Service } from '../s3/s3.service';
 import { PROJECT_CONTENT_MAX_BYTES } from './content-size';
@@ -21,7 +22,15 @@ describe('ProjectContentService', () => {
   let service: ProjectContentService;
 
   const mocks = new ProjectMocks();
-  const { prismaMock, s3ServiceMock, edgeMock, mockLastVersion, mockPublishable } = mocks;
+  const {
+    prismaMock,
+    txMock,
+    factsMock,
+    s3ServiceMock,
+    edgeMock,
+    mockLastVersion,
+    mockPublishable,
+  } = mocks;
 
   beforeEach(async () => {
     withEnv({
@@ -42,7 +51,6 @@ describe('ProjectContentService', () => {
       'S3_MAX_AUTO_HISTORY_VERSION',
       'S3_AUTO_HISTORY_DELAY',
       'S3_MAX_CHECKPOINTS',
-      'VIEW_HASH_SECRET',
       'JWT_SECRET',
     ] as const;
 
@@ -56,6 +64,7 @@ describe('ProjectContentService', () => {
         s3ServiceMock as unknown as S3Service,
         edgeMock as unknown as EdgeService,
         {} as ModuleRef,
+        {} as AnalyticsFactService,
       );
 
       return new ProjectContentService(
@@ -63,13 +72,13 @@ describe('ProjectContentService', () => {
         s3ServiceMock as unknown as S3Service,
         edgeMock as unknown as EdgeService,
         projectService,
+        {} as AnalyticsFactService,
       );
     };
     const blank = {
       S3_MAX_AUTO_HISTORY_VERSION: '',
       S3_AUTO_HISTORY_DELAY: '',
       S3_MAX_CHECKPOINTS: '',
-      VIEW_HASH_SECRET: '',
       JWT_SECRET: 'jwt-secret',
     };
 
@@ -388,33 +397,28 @@ describe('ProjectContentService', () => {
     it('rejects publishing a project above the budget with a 413', async () => {
       mockPublishable(encodeGame(PROJECT_CONTENT_MAX_BYTES + 1));
 
-      await expect(service.publish(1)).rejects.toBeInstanceOf(ProjectTooLargeException);
+      await expect(service.publish(1, 9)).rejects.toBeInstanceOf(ProjectTooLargeException);
 
-      const calls = prismaMock.project.update.mock.calls as Array<
-        [{ data: Record<string, unknown> }]
-      >;
-      expect(calls.some((call) => 'publishedAt' in call[0].data)).toBe(false);
+      expect(txMock.project.update).not.toHaveBeenCalled();
+      expect(factsMock.record).not.toHaveBeenCalled();
       expect(s3ServiceMock.uploadFile).not.toHaveBeenCalled();
     });
 
     it('publishes a project within the budget, and marks the row only once the blob is up', async () => {
       mockPublishable(encodeGame(3));
 
-      await service.publish(1);
+      await service.publish(1, 9);
 
       expect(s3ServiceMock.uploadFile).toHaveBeenCalledWith(
         expect.objectContaining({ keyName: 'release/1' }),
       );
-      // The budget check stores the content size first; the row that matters is the one that
-      // carries publishedAt.
-      const calls = prismaMock.project.update.mock.calls as Array<
+      const [marked] = txMock.project.update.mock.calls as unknown as Array<
         [{ data: Record<string, unknown> }]
       >;
-      const marked = calls.findIndex((call) => 'publishedAt' in call[0].data);
-      expect(marked).toBeGreaterThanOrEqual(0);
-      expect(calls[marked]![0].data).not.toHaveProperty('status');
+      expect(marked?.[0].data).toHaveProperty('publishedAt');
+      expect(marked?.[0].data).not.toHaveProperty('status');
       expect(s3ServiceMock.uploadFile.mock.invocationCallOrder[0]).toBeLessThan(
-        prismaMock.project.update.mock.invocationCallOrder[marked]!,
+        txMock.project.update.mock.invocationCallOrder[0]!,
       );
     });
   });
@@ -423,7 +427,7 @@ describe('ProjectContentService', () => {
     it('tells the edge to ask again before serving a release it kept', async () => {
       mockPublishable(encodeGame(3));
 
-      await service.publish(1);
+      await service.publish(1, 9);
 
       expect(s3ServiceMock.uploadFile).toHaveBeenCalledWith(
         expect.objectContaining({ keyName: 'release/1', cacheControl: 'no-cache' }),
@@ -431,17 +435,17 @@ describe('ProjectContentService', () => {
     });
 
     it('unpublishes by clearing the row before dropping the blob', async () => {
-      prismaMock.project.update.mockResolvedValue({});
+      txMock.project.update.mockResolvedValue({});
       s3ServiceMock.deleteFile.mockResolvedValue(undefined);
 
-      await service.unpublish(1);
+      await service.unpublish(1, 9);
 
-      expect(prismaMock.project.update).toHaveBeenCalledWith({
+      expect(txMock.project.update).toHaveBeenCalledWith({
         where: { id: 1 },
-        data: { publishedAt: null },
+        data: { publishedAt: null, releaseRevision: 0 },
       });
       expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({ key: 'release/1' });
-      expect(prismaMock.project.update.mock.invocationCallOrder[0]).toBeLessThan(
+      expect(txMock.project.update.mock.invocationCallOrder[0]).toBeLessThan(
         s3ServiceMock.deleteFile.mock.invocationCallOrder[0]!,
       );
     });
@@ -455,8 +459,107 @@ describe('ProjectContentService', () => {
         tags: [],
       });
 
-      await expect(service.updateRelease(1)).rejects.toBeInstanceOf(ProjectNotPublishedException);
+      await expect(service.updateRelease(1, 9)).rejects.toBeInstanceOf(
+        ProjectNotPublishedException,
+      );
       expect(s3ServiceMock.uploadFile).not.toHaveBeenCalled();
+    });
+  });
+  describe('release transitions', () => {
+    /** The release state of the project row, as the row lock reads it and the update writes it. */
+    let row: {
+      publishedAt: Date | null;
+      releaseContentHash: string | null;
+      releaseRevision: number;
+    };
+
+    const recorded = (): Array<{ type: string; dedupeKey: string }> =>
+      (factsMock.record.mock.calls as Array<[unknown, { type: string; dedupeKey: string }]>).map(
+        ([, fact]) => ({ type: fact.type, dedupeKey: fact.dedupeKey }),
+      );
+
+    const releaseWith = async (content: Buffer): Promise<void> => {
+      mockLastVersion(content);
+      await (row.publishedAt ? service.updateRelease(1, 9) : service.publish(1, 9));
+    };
+
+    beforeEach(() => {
+      row = { publishedAt: null, releaseContentHash: null, releaseRevision: 0 };
+      mockPublishable(encodeGame(3));
+      prismaMock.project.findUnique.mockImplementation(() =>
+        Promise.resolve({
+          publishedAt: row.publishedAt,
+          name: 'Small',
+          shortDesc: '',
+          longDesc: null,
+          tags: [],
+        }),
+      );
+      txMock.$queryRaw.mockImplementation(() => Promise.resolve([{ ...row }]));
+      txMock.project.update.mockImplementation(({ data }: { data: Partial<typeof row> }) => {
+        row = { ...row, ...data };
+        return Promise.resolve({});
+      });
+      s3ServiceMock.deleteFile.mockResolvedValue(undefined);
+    });
+
+    it('records a publish, then an update per content change, and nothing for a retry', async () => {
+      const contentA = encodeGame(3);
+      const contentB = encodeGame(4);
+
+      await releaseWith(contentA);
+      await releaseWith(contentB);
+      await releaseWith(contentA);
+      await releaseWith(contentB);
+      await releaseWith(contentB);
+
+      expect(recorded()).toEqual([
+        { type: 'RELEASE_PUBLISHED', dedupeKey: 'release:1:1' },
+        { type: 'RELEASE_UPDATED', dedupeKey: 'release:1:2' },
+        { type: 'RELEASE_UPDATED', dedupeKey: 'release:1:3' },
+        { type: 'RELEASE_UPDATED', dedupeKey: 'release:1:4' },
+      ]);
+      expect(row.releaseRevision).toBe(4);
+    });
+
+    it('records the acting collaborator and the project with each transition', async () => {
+      await releaseWith(encodeGame(3));
+
+      expect(factsMock.record).toHaveBeenCalledWith(
+        txMock,
+        expect.objectContaining({ actorUserId: 9, projectId: 1 }),
+      );
+    });
+
+    it('records an unpublish only when the project was published', async () => {
+      await service.unpublish(1, 9);
+      expect(recorded()).toEqual([]);
+
+      await releaseWith(encodeGame(3));
+      await service.unpublish(1, 9);
+
+      expect(recorded()).toEqual([
+        { type: 'RELEASE_PUBLISHED', dedupeKey: 'release:1:1' },
+        { type: 'RELEASE_UNPUBLISHED', dedupeKey: 'release:1:2' },
+      ]);
+    });
+
+    it('treats a changed published description as an update of the same content', async () => {
+      const content = encodeGame(3);
+      await releaseWith(content);
+
+      prismaMock.project.findUnique.mockImplementation(() =>
+        Promise.resolve({
+          publishedAt: row.publishedAt,
+          name: 'Small',
+          shortDesc: 'Now with a description',
+          longDesc: null,
+          tags: [],
+        }),
+      );
+      await releaseWith(content);
+
+      expect(recorded().map((fact) => fact.type)).toEqual(['RELEASE_PUBLISHED', 'RELEASE_UPDATED']);
     });
   });
 });

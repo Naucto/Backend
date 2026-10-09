@@ -5,6 +5,7 @@ import * as Y from 'yjs';
 
 import { NotificationsService } from '../src/notifications/notifications.service';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { AnalyticsFactService } from '../src/routes/analytics/analytics-fact.service';
 import { GAME_KEYS } from '../src/routes/project/content-size';
 import { HubService } from '../src/routes/project/hub.service';
 import { ProjectService } from '../src/routes/project/project.service';
@@ -43,6 +44,8 @@ export const aProject = (overrides: Partial<ProjectWithPeople> = {}): ProjectWit
   likes: 0,
   updatedAt: new Date(),
   publishedAt: null,
+  releaseRevision: 0,
+  releaseContentHash: null,
   forkedFromId: null,
   contentSize: null,
   contentSizeTotal: null,
@@ -81,16 +84,40 @@ export const encodeGame = (codeLength: number): Buffer => {
   return Buffer.from(Y.encodeStateAsUpdate(doc));
 };
 
+/** The release state a release change reads under its row lock. */
+export interface ReleaseStateRow {
+  publishedAt: Date | null;
+  releaseContentHash: string | null;
+  releaseRevision: number;
+}
+
 /** The stores the three project services stand on, mocked, and the services built over them. */
 export class ProjectMocks {
   /** The client an interactive `$transaction` callback receives, kept apart so a test can tell the two. */
   readonly txMock = {
+    // The row lock of a release change; an unpublished project by default.
+    $queryRaw: jest.fn(
+      (): Promise<ReleaseStateRow[]> =>
+        Promise.resolve([{ publishedAt: null, releaseContentHash: null, releaseRevision: 0 }]),
+    ),
+    $executeRaw: jest.fn(),
     like: {
       create: jest.fn(),
       deleteMany: jest.fn(),
     },
     project: {
+      create: jest.fn(),
       update: jest.fn(),
+    },
+    releaseView: {
+      count: jest.fn(),
+      createMany: jest.fn(),
+    },
+    analyticsVisitor: {
+      findUnique: jest.fn(),
+    },
+    analyticsVisitorTombstone: {
+      findUnique: jest.fn(),
     },
   };
 
@@ -153,6 +180,10 @@ export class ProjectMocks {
     kick: jest.fn().mockResolvedValue(undefined),
   };
 
+  readonly factsMock = {
+    record: jest.fn(),
+  };
+
   readonly mockLastVersion = (blob: Buffer): void => {
     this.s3ServiceMock.listObjects.mockResolvedValue([
       { Key: 'save/1/100', LastModified: new Date(100) },
@@ -173,6 +204,7 @@ export class ProjectMocks {
       tags: [],
     });
     this.prismaMock.project.update.mockResolvedValue({});
+    this.txMock.project.update.mockResolvedValue({});
     this.s3ServiceMock.uploadFile.mockResolvedValue(undefined);
     this.s3ServiceMock.setObjectPublicRead.mockResolvedValue(undefined);
     this.mockLastVersion(blob);
@@ -189,6 +221,7 @@ export class ProjectMocks {
         { provide: EdgeService, useValue: this.edgeMock },
         { provide: NotificationsService, useValue: this.notificationsMock },
         { provide: WorkSessionService, useValue: this.workSessionsMock },
+        { provide: AnalyticsFactService, useValue: this.factsMock },
       ],
     }).compile();
   }

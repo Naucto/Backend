@@ -49,7 +49,6 @@ const ENV = {
   POSTGRES_PORT: integer,
 
   JWT_SECRET: text,
-  VIEW_HASH_SECRET: text,
   JWT_EXPIRES_IN: text,
   JWT_REFRESH_EXPIRES_IN: text,
   REFRESH_TOKEN_ENCRYPTION_KEY: text,
@@ -78,6 +77,8 @@ const ENV = {
   BACKEND_WEBRTC_PUBLIC_URL_TEMPLATE: text,
   BACKEND_WEBRTC_TURN_KEY_ID: text,
   BACKEND_WEBRTC_TURN_API_TOKEN: text,
+
+  GEOIP_DB_PATH: text,
 
   ENABLE_SWAGGER: flag,
 } satisfies Record<string, Parser<unknown>>;

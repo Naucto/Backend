@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { buffer } from 'node:stream/consumers';
 
 import {
@@ -6,11 +7,12 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { Prisma, Project } from '@prisma/client';
+import { AnalyticsFactType, Prisma, Project } from '@prisma/client';
 import { Readable } from 'stream';
 
 import { getOptionalEnv } from '../../config/env';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AnalyticsFactService, releaseFactKey } from '../analytics/analytics-fact.service';
 import { EdgeService, versionedUrl } from '../s3/edge.service';
 import { DownloadedFile } from '../s3/s3.interface';
 import { S3Service } from '../s3/s3.service';
@@ -77,6 +79,37 @@ const keyName = (raw: string): string => {
   return name;
 };
 
+type ReleaseSnapshot = Pick<Project, 'name' | 'shortDesc' | 'longDesc' | 'tags'>;
+
+/** What a release shows: its content and the metadata published with it. */
+function releaseContentHash(bytes: Buffer, snapshot: ReleaseSnapshot): string {
+  return createHash('sha256')
+    .update(bytes)
+    .update(JSON.stringify([snapshot.name, snapshot.shortDesc, snapshot.longDesc, snapshot.tags]))
+    .digest('hex');
+}
+
+/**
+ * Locks the project row for the rest of the transaction and reads its release state, so two
+ * concurrent release changes are told apart one after the other.
+ */
+async function lockReleaseState(
+  tx: Prisma.TransactionClient,
+  projectId: number,
+): Promise<{ published: boolean; contentHash: string | null; revision: number }> {
+  const [row] = await tx.$queryRaw<
+    { publishedAt: Date | null; releaseContentHash: string | null; releaseRevision: number }[]
+  >`SELECT "publishedAt", "releaseContentHash", "releaseRevision" FROM "Project" WHERE id = ${projectId} FOR UPDATE`;
+  if (!row) {
+    throw new NotFoundException(`Project with ID ${projectId} not found`);
+  }
+  return {
+    published: row.publishedAt !== null,
+    contentHash: row.releaseContentHash,
+    revision: row.releaseRevision,
+  };
+}
+
 @Injectable()
 export class ProjectContentService {
   private readonly maxAutosaves: number;
@@ -88,6 +121,7 @@ export class ProjectContentService {
     private readonly s3Service: S3Service,
     private readonly edgeService: EdgeService,
     private readonly projectService: ProjectService,
+    private readonly facts: AnalyticsFactService,
   ) {
     // The default keeps only the last few autosaves: a state worth keeping longer is one the
     // author names, and a named version is never pruned.
@@ -245,9 +279,11 @@ export class ProjectContentService {
   /**
    * Recomputes the size of the latest save and rejects it with a 413 when it
    * exceeds the budget. Returns the release file so callers upload the exact
-   * bytes that were measured.
+   * bytes that were measured, and those bytes.
    */
-  private async assertWithinBudget(projectId: number): Promise<DownloadedFile> {
+  private async assertWithinBudget(
+    projectId: number,
+  ): Promise<{ file: DownloadedFile; bytes: Buffer }> {
     const file = await this.fetchLastVersion(projectId);
     const bytes = await buffer(file.body);
     const contentSize = computeContentSize(bytes);
@@ -258,9 +294,12 @@ export class ProjectContentService {
     }
 
     return {
-      body: Readable.from(bytes),
-      contentType: file.contentType ?? 'application/octet-stream',
-      contentLength: bytes.byteLength,
+      file: {
+        body: Readable.from(bytes),
+        contentType: file.contentType ?? 'application/octet-stream',
+        contentLength: bytes.byteLength,
+      },
+      bytes,
     };
   }
 
@@ -304,9 +343,11 @@ export class ProjectContentService {
    */
   private async writeRelease(
     projectId: number,
-    snapshot: Pick<Project, 'name' | 'shortDesc' | 'longDesc' | 'tags'>,
+    snapshot: ReleaseSnapshot,
+    actorUserId: number,
   ): Promise<void> {
-    const file = await this.assertWithinBudget(projectId);
+    const { file, bytes } = await this.assertWithinBudget(projectId);
+    const contentHash = releaseContentHash(bytes, snapshot);
     const releaseKey = projectKeys.release(projectId);
     await this.s3Service.uploadFile({
       file: file,
@@ -315,19 +356,39 @@ export class ProjectContentService {
     });
     await this.s3Service.setObjectPublicRead(releaseKey);
 
-    await this.prisma.project.update({
-      where: { id: projectId },
-      data: {
-        publishedAt: new Date(),
-        publishedName: snapshot.name,
-        publishedShortDesc: snapshot.shortDesc,
-        publishedLongDesc: snapshot.longDesc,
-        publishedTags: snapshot.tags,
-      },
+    await this.prisma.$transaction(async (tx) => {
+      const before = await lockReleaseState(tx, projectId);
+      const type = !before.published
+        ? AnalyticsFactType.RELEASE_PUBLISHED
+        : before.contentHash !== contentHash
+          ? AnalyticsFactType.RELEASE_UPDATED
+          : null;
+      const revision = type ? before.revision + 1 : before.revision;
+
+      await tx.project.update({
+        where: { id: projectId },
+        data: {
+          publishedAt: new Date(),
+          publishedName: snapshot.name,
+          publishedShortDesc: snapshot.shortDesc,
+          publishedLongDesc: snapshot.longDesc,
+          publishedTags: snapshot.tags,
+          releaseRevision: revision,
+          releaseContentHash: contentHash,
+        },
+      });
+      if (type) {
+        await this.facts.record(tx, {
+          type,
+          dedupeKey: releaseFactKey(projectId, revision),
+          actorUserId,
+          projectId,
+        });
+      }
     });
   }
 
-  async publish(projectId: number): Promise<void> {
+  async publish(projectId: number, actorUserId: number): Promise<void> {
     const project = await this.projectService.requireProject(projectId, {
       name: true,
       shortDesc: true,
@@ -335,20 +396,33 @@ export class ProjectContentService {
       tags: true,
     });
 
-    await this.writeRelease(projectId, project);
+    await this.writeRelease(projectId, project, actorUserId);
   }
 
-  async unpublish(projectId: number): Promise<void> {
+  async unpublish(projectId: number, actorUserId: number): Promise<void> {
     // The row first: a blob nobody points at is harmless, a row pointing at a deleted blob is not.
-    await this.prisma.project.update({
-      where: { id: projectId },
-      data: { publishedAt: null },
+    await this.prisma.$transaction(async (tx) => {
+      const before = await lockReleaseState(tx, projectId);
+      const revision = before.published ? before.revision + 1 : before.revision;
+
+      await tx.project.update({
+        where: { id: projectId },
+        data: { publishedAt: null, releaseRevision: revision },
+      });
+      if (before.published) {
+        await this.facts.record(tx, {
+          type: AnalyticsFactType.RELEASE_UNPUBLISHED,
+          dedupeKey: releaseFactKey(projectId, revision),
+          actorUserId,
+          projectId,
+        });
+      }
     });
 
     await this.s3Service.deleteFile({ key: projectKeys.release(projectId) });
   }
 
-  async updateRelease(projectId: number): Promise<void> {
+  async updateRelease(projectId: number, actorUserId: number): Promise<void> {
     const project = await this.projectService.requireProject(projectId, {
       publishedAt: true,
       name: true,
@@ -361,7 +435,7 @@ export class ProjectContentService {
       throw new ProjectNotPublishedException(projectId);
     }
 
-    await this.writeRelease(projectId, project);
+    await this.writeRelease(projectId, project, actorUserId);
   }
 
   /**

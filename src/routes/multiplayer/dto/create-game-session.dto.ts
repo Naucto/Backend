@@ -1,6 +1,6 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { GameSessionVisibility } from '@prisma/client';
-import { IsEnum, IsInt, IsString, Length, Max, Min } from 'class-validator';
+import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, Length, Max, Min } from 'class-validator';
 
 import {
   SESSION_MAX_PLAYERS,
@@ -32,4 +32,12 @@ export class CreateGameSessionDto {
   @ApiProperty({ enum: GameSessionVisibility })
   @IsEnum(GameSessionVisibility)
   visibility!: GameSessionVisibility;
+
+  @ApiPropertyOptional({
+    description:
+      'Set by the game editor when it hosts to test its own game, so the session is not counted as a real game',
+  })
+  @IsOptional()
+  @IsBoolean()
+  editorTest?: boolean;
 }

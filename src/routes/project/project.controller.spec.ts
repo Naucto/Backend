@@ -20,6 +20,7 @@ import request from 'supertest';
 import { withEnv } from '../../../test/env';
 import { ProjectCollaboratorGuard, ProjectCreatorGuard } from '../../auth/guards/project.guard';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AnalyticsFactService } from '../analytics/analytics-fact.service';
 import { EdgeService } from '../s3/edge.service';
 import { S3DownloadException, S3ObjectNotFoundException } from '../s3/s3.error';
 import { S3Service } from '../s3/s3.service';
@@ -103,6 +104,7 @@ describe('project controllers', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: S3Service, useValue: s3 },
         { provide: EdgeService, useValue: edge },
+        { provide: AnalyticsFactService, useValue: { record: jest.fn() } },
         {
           provide: APP_GUARD,
           useValue: {

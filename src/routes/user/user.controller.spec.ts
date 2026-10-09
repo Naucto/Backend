@@ -12,6 +12,7 @@ import request from 'supertest';
 import { ACCESS_KEY } from '../../auth/access/access.decorators';
 import { ADMIN, USER } from '../../auth/access/roles';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AnalyticsFactService } from '../analytics/analytics-fact.service';
 import { EdgeService } from '../s3/edge.service';
 import { S3Service } from '../s3/s3.service';
 import { AccountDeletionService } from './account-deletion.service';
@@ -48,6 +49,7 @@ describe('UserController', () => {
         UserService,
         ProfileAssetService,
         { provide: AccountDeletionService, useValue: accountDeletion },
+        { provide: AnalyticsFactService, useValue: { record: jest.fn() } },
         {
           provide: PrismaService,
           useValue: {
