@@ -42,18 +42,33 @@ export class AdminAuthController {
     return issued.session;
   }
 
+  /**
+   * The console asks this on every load, so having no session is an answer rather than an error.
+   * A cookie that no longer opens a session is cleared, so the browser stops sending it.
+   */
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'A new access token from the session cookie, until the session ends' })
   @ApiResponse({ status: HttpStatus.OK, type: AdminSessionDto })
-  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: 'No session, or it ended' })
-  async refresh(@Req() req: Request): Promise<AdminSessionDto> {
+  @ApiResponse({ status: HttpStatus.NO_CONTENT, description: 'No session, or it ended' })
+  async refresh(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AdminSessionDto | undefined> {
     const token = (req.cookies as Record<string, string | undefined>)[ADMIN_SESSION_COOKIE];
-    if (!token) {
-      throw new UnauthorizedException('Not signed in');
+    if (token) {
+      try {
+        return (await this.sessions.refresh(token)).session;
+      } catch (error) {
+        if (!(error instanceof UnauthorizedException)) {
+          throw error;
+        }
+        res.clearCookie(ADMIN_SESSION_COOKIE, adminSessionCookieOptions(false));
+      }
     }
-    return (await this.sessions.refresh(token)).session;
+    res.status(HttpStatus.NO_CONTENT);
+    return undefined;
   }
 
   @Public()
