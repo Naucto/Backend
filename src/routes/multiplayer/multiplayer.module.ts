@@ -4,6 +4,7 @@ import { AuthModule } from '../../auth/auth.module';
 import { NotificationsModule } from '../../notifications/notifications.module';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { WebRTCModule } from '../../webrtc/webrtc.module';
+import { FeedbackModule } from '../feedback/feedback.module';
 import { FriendsModule } from '../friends/friends.module';
 import { ProjectModule } from '../project/project.module';
 import { MultiplayerController } from './multiplayer.controller';
@@ -18,6 +19,7 @@ import { MultiplayerAccountingService } from './multiplayer-accounting.service';
     AuthModule,
     FriendsModule,
     NotificationsModule,
+    FeedbackModule,
   ],
   controllers: [MultiplayerController],
   providers: [MultiplayerService, MultiplayerAccountingService],

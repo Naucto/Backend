@@ -11,6 +11,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AdminModule } from './routes/admin/admin.module';
 import { AnalyticsModule } from './routes/analytics/analytics.module';
 import { FeaturesModule } from './routes/features/features.module';
+import { FeedbackModule } from './routes/feedback/feedback.module';
 import { FriendsModule } from './routes/friends/friends.module';
 import { MultiplayerModule } from './routes/multiplayer/multiplayer.module';
 import { ProjectModule } from './routes/project/project.module';
@@ -43,6 +44,7 @@ import { WebRTCModule } from './webrtc/webrtc.module';
     FeaturesModule,
     AnalyticsModule,
     AdminModule,
+    FeedbackModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: AccessGuard }],
 })

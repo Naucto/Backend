@@ -32,6 +32,13 @@ import { ANALYTICS_THROTTLERS } from './routes/analytics/analytics-throttler.gua
 import { UserAnalyticsController } from './routes/analytics/user-analytics.controller';
 import { UserAnalyticsService } from './routes/analytics/user-analytics.service';
 import { FeaturesModule } from './routes/features/features.module';
+import { AdminCrashController } from './routes/feedback/admin-crash.controller';
+import { AdminFeedbackController } from './routes/feedback/admin-feedback.controller';
+import { AdminFeedbackService } from './routes/feedback/admin-feedback.service';
+import { CrashService } from './routes/feedback/crash.service';
+import { CrashIngestController } from './routes/feedback/crash-ingest.controller';
+import { FeedbackController } from './routes/feedback/feedback.controller';
+import { FeedbackService } from './routes/feedback/feedback.service';
 import { FriendsController, UserFriendshipController } from './routes/friends/friends.controller';
 import { FriendsService } from './routes/friends/friends.service';
 import { MultiplayerController } from './routes/multiplayer/multiplayer.controller';
@@ -87,6 +94,10 @@ const nullProvider = (token: InjectionToken): Provider => ({
     UserAnalyticsController,
     AdminAuthController,
     AdminAccountController,
+    FeedbackController,
+    CrashIngestController,
+    AdminFeedbackController,
+    AdminCrashController,
   ],
   providers: [
     { provide: APP_GUARD, useClass: AccessGuard },
@@ -109,6 +120,9 @@ const nullProvider = (token: InjectionToken): Provider => ({
     nullProvider(UserAnalyticsService),
     nullProvider(AdminSessionService),
     nullProvider(AdminAccountService),
+    nullProvider(FeedbackService),
+    nullProvider(CrashService),
+    nullProvider(AdminFeedbackService),
   ],
 })
 export class SwaggerAppModule {}

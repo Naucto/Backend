@@ -5,11 +5,14 @@ import {
   HttpStatus,
   InternalServerErrorException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { HttpErrorByCode } from '@nestjs/common/utils/http-error-by-code.util';
 import { BaseExceptionFilter } from '@nestjs/core';
 import { Request } from 'express';
 
+import { CrashService } from '../feedback/crash.service';
+import { backendCrash } from '../feedback/crash-capture.filter';
 import { MultiplayerError } from './multiplayer.error';
 
 /**
@@ -19,6 +22,11 @@ import { MultiplayerError } from './multiplayer.error';
 @Catch()
 export class MultiplayerExceptionFilter extends BaseExceptionFilter {
   private readonly logger = new Logger(MultiplayerExceptionFilter.name);
+
+  // Caught here, a crash never reaches the global filter that records it.
+  constructor(@Optional() private readonly crashes?: CrashService) {
+    super();
+  }
 
   override catch(exception: unknown, host: ArgumentsHost): void {
     if (exception instanceof HttpException) {
@@ -40,6 +48,7 @@ export class MultiplayerExceptionFilter extends BaseExceptionFilter {
       `Error while answering ${request.method} ${request.url}`,
       exception instanceof Error ? exception.stack : String(exception),
     );
+    void this.crashes?.recordSafely(backendCrash(exception, request));
 
     super.catch(new InternalServerErrorException(), host);
   }
