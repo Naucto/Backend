@@ -122,7 +122,7 @@ export class CrashService {
     try {
       group = await upsert();
     } catch (error) {
-      // Two first reports of a crash raced to create its group; the loser now finds it.
+      // Two first reports of a crash raced to create its group, and the loser now finds it.
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === UNIQUE_VIOLATION

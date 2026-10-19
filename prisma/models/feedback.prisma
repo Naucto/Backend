@@ -95,7 +95,7 @@ model BugReport {
   ratingId        Int?
   // What the browser attached: user agent summary, viewport, app release, engine error, console.
   context         Json
-  // Private object key; served to admins through the API, never public-read.
+  // Private object key, served to admins through the API and never public-read.
   screenshotKey   String?
   screenshotMime  String?
   screenshotBytes Int?

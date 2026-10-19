@@ -32,7 +32,7 @@ export const PATH_PATTERN = /^\/[A-Za-z0-9_\-/.:]*$/;
 const trimmed = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
 
-/** A multipart field arrives as text; an empty one means the field was left out. */
+/** A multipart field arrives as text, and an empty one means the field was left out. */
 const optionalNumber = ({ value }: { value: unknown }): unknown =>
   value === '' || value === undefined || value === null ? undefined : Number(value);
 
@@ -132,7 +132,7 @@ export class CreatedFeedbackDto {
   id!: number;
 }
 
-/** What the browser attaches to a bug report; every field is listed to the person before sending. */
+/** What the browser attaches to a bug report, every field of it listed to the person first. */
 export class BugContextDto {
   @ApiPropertyOptional({ example: '1920x1080' })
   @IsOptional()
