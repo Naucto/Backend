@@ -68,7 +68,7 @@ export class UpdateFeedbackPromptDto {
   @ApiPropertyOptional({
     enum: FeedbackContext,
     enumName: 'FeedbackContext',
-    description: 'The prompt to act on; both when absent, as the Settings toggle does',
+    description: 'The prompt to act on. Without it, both, as the Settings toggle does',
   })
   @IsOptional()
   @IsEnum(FeedbackContext)
