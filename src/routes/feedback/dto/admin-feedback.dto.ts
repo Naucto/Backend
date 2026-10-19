@@ -39,7 +39,7 @@ export class FeedbackAccountDto extends AccountSummaryDto {
   @ApiPropertyOptional({
     type: String,
     nullable: true,
-    description: 'The public profile on the web app; null once the account is deleted',
+    description: 'The public profile on the web app, null once the account is deleted',
   })
   profileUrl!: string | null;
 
