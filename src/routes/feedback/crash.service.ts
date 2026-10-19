@@ -11,7 +11,7 @@ import {
   CRASH_STACK_MAX_LENGTH,
 } from './dto/crash-report.dto';
 
-/** The occurrences kept per group; the count keeps counting past them. */
+/** The occurrences kept per group. The count goes on past them. */
 export const CRASH_EVENTS_KEPT = 20;
 
 export interface CrashInput {
