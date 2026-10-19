@@ -63,7 +63,7 @@ model User {
 
   platformRatings PlatformRating[]
   bugReports      BugReport[]
-  feedbackPrompt  FeedbackPrompt?
+  feedbackPrompts FeedbackPrompt[]
 }
 
 model RefreshToken {

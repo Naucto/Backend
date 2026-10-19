@@ -108,13 +108,17 @@ model BugReport {
   @@index([userId])
 }
 
-// Whether the rating prompt may still ask an account. No row means it has never been shown.
+// Whether the rating prompt may still ask an account, once as a player and once as a creator. No
+// row means it has never been shown in that context.
 model FeedbackPrompt {
   user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId       Int                  @id
+  userId       Int
+  context      FeedbackContext
   status       FeedbackPromptStatus
   snoozedUntil DateTime?
   updatedAt    DateTime             @updatedAt
+
+  @@id([userId, context])
 }
 
 // One kind of crash: every report with the same fingerprint lands here and bumps the count.

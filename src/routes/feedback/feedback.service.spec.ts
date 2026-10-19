@@ -10,6 +10,7 @@ describe('FeedbackService', () => {
     $transaction: jest.fn(),
     feedbackPrompt: {
       findUnique: jest.fn(),
+      findMany: jest.fn(),
       upsert: jest.fn(),
       updateMany: jest.fn(),
       deleteMany: jest.fn(),
@@ -43,8 +44,10 @@ describe('FeedbackService', () => {
   });
 
   describe('prompt', () => {
+    const ASKABLE = { eligible: true, declined: false };
+
     it.each([
-      ['never shown', null, { eligible: true, declined: false }],
+      ['never shown', null, ASKABLE],
       [
         'answered',
         { status: 'ANSWERED', snoozedUntil: null },
@@ -59,43 +62,56 @@ describe('FeedbackService', () => {
       [
         'snoozed until before now',
         { status: 'SNOOZED', snoozedUntil: new Date(now.getTime() - 1) },
-        { eligible: true, declined: false },
+        ASKABLE,
       ],
-    ])('when %s', async (_case, row, expected) => {
-      prisma.feedbackPrompt.findUnique.mockResolvedValue(row);
+    ])('as a player, when %s, and still asks as a creator', async (_case, row, expected) => {
+      prisma.feedbackPrompt.findMany.mockResolvedValue(row ? [{ context: 'PLAYER', ...row }] : []);
 
-      await expect(service.promptState(7, now)).resolves.toEqual(expected);
+      await expect(service.promptState(7, now)).resolves.toEqual({
+        player: expected,
+        creator: ASKABLE,
+      });
     });
 
-    it('snoozes for 14 days', async () => {
+    it('snoozes one context for 14 days', async () => {
       prisma.feedbackPrompt.findUnique.mockResolvedValue(null);
+      prisma.feedbackPrompt.findMany.mockResolvedValue([]);
 
-      await service.updatePrompt(7, 'snooze', now);
+      await service.updatePrompt(7, 'snooze', 'CREATOR', now);
 
       const snoozedUntil = new Date(now.getTime() + PROMPT_SNOOZE_MS);
+      expect(prisma.feedbackPrompt.upsert).toHaveBeenCalledTimes(1);
       expect(prisma.feedbackPrompt.upsert).toHaveBeenCalledWith({
-        where: { userId: 7 },
-        create: { userId: 7, status: 'SNOOZED', snoozedUntil },
+        where: { userId_context: { userId: 7, context: 'CREATOR' } },
+        create: { userId: 7, context: 'CREATOR', status: 'SNOOZED', snoozedUntil },
         update: { status: 'SNOOZED', snoozedUntil },
       });
     });
 
     it('never turns an answer back into a snooze', async () => {
       prisma.feedbackPrompt.findUnique.mockResolvedValue({ status: 'ANSWERED' });
+      prisma.feedbackPrompt.findMany.mockResolvedValue([]);
 
-      await service.updatePrompt(7, 'snooze', now);
+      await service.updatePrompt(7, 'snooze', 'PLAYER', now);
 
       expect(prisma.feedbackPrompt.upsert).not.toHaveBeenCalled();
     });
 
-    it('declines for good, and a reset forgets the answer', async () => {
-      await service.updatePrompt(7, 'decline', now);
-      expect(prisma.feedbackPrompt.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({ create: { userId: 7, status: 'DECLINED' } }),
+    it('declines and resets both contexts when none is named', async () => {
+      prisma.feedbackPrompt.findMany.mockResolvedValue([]);
+      prisma.$transaction.mockImplementation((work: unknown) =>
+        typeof work === 'function'
+          ? (work as (tx: typeof prisma) => unknown)(prisma)
+          : Promise.all(work as unknown[]),
       );
 
-      await service.updatePrompt(7, 'reset', now);
-      expect(prisma.feedbackPrompt.deleteMany).toHaveBeenCalledWith({ where: { userId: 7 } });
+      await service.updatePrompt(7, 'decline', undefined, now);
+      expect(prisma.feedbackPrompt.upsert).toHaveBeenCalledTimes(2);
+
+      await service.updatePrompt(7, 'reset', undefined, now);
+      expect(prisma.feedbackPrompt.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 7, context: { in: ['PLAYER', 'CREATOR'] } },
+      });
     });
   });
 
@@ -124,12 +140,12 @@ describe('FeedbackService', () => {
       select: { id: true },
     });
     expect(prisma.feedbackPrompt.upsert).toHaveBeenCalledWith({
-      where: { userId: 7 },
-      create: { userId: 7, status: 'ANSWERED' },
+      where: { userId_context: { userId: 7, context: 'PLAYER' } },
+      create: { userId: 7, context: 'PLAYER', status: 'ANSWERED' },
       update: {},
     });
     expect(prisma.feedbackPrompt.updateMany).toHaveBeenCalledWith({
-      where: { userId: 7, status: 'SNOOZED' },
+      where: { userId: 7, context: 'PLAYER', status: 'SNOOZED' },
       data: { status: 'ANSWERED', snoozedUntil: null },
     });
   });

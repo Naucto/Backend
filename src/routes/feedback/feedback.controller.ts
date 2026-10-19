@@ -23,7 +23,7 @@ import {
   CreateBugReportDto,
   CreatedFeedbackDto,
   CreateRatingDto,
-  FeedbackPromptStateDto,
+  FeedbackPromptsDto,
   UpdateFeedbackPromptDto,
 } from './dto/feedback.dto';
 import { FeedbackService } from './feedback.service';
@@ -40,24 +40,27 @@ export class FeedbackController {
   constructor(private readonly feedback: FeedbackService) {}
 
   @Get('prompt')
-  @ApiOperation({ summary: 'Whether the rating prompt may ask the signed-in account now' })
-  @ApiResponse({ status: HttpStatus.OK, type: FeedbackPromptStateDto })
+  @ApiOperation({
+    summary:
+      'Whether the rating prompt may ask the signed-in account now, as a player and as a creator',
+  })
+  @ApiResponse({ status: HttpStatus.OK, type: FeedbackPromptsDto })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'Feedback is off' })
-  prompt(@Req() req: RequestWithUser): Promise<FeedbackPromptStateDto> {
+  prompt(@Req() req: RequestWithUser): Promise<FeedbackPromptsDto> {
     this.feedback.assertEnabled();
     return this.feedback.promptState(req.user.id);
   }
 
   @Put('prompt')
   @ApiOperation({ summary: 'Snooze or decline the rating prompt, or let it ask again' })
-  @ApiResponse({ status: HttpStatus.OK, type: FeedbackPromptStateDto })
+  @ApiResponse({ status: HttpStatus.OK, type: FeedbackPromptsDto })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'Feedback is off' })
   updatePrompt(
     @Req() req: RequestWithUser,
     @Body() dto: UpdateFeedbackPromptDto,
-  ): Promise<FeedbackPromptStateDto> {
+  ): Promise<FeedbackPromptsDto> {
     this.feedback.assertEnabled();
-    return this.feedback.updatePrompt(req.user.id, dto.action);
+    return this.feedback.updatePrompt(req.user.id, dto.action, dto.context);
   }
 
   @Post('ratings')

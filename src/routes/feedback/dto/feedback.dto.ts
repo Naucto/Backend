@@ -40,11 +40,20 @@ export const PROMPT_ACTIONS = ['snooze', 'decline', 'reset'] as const;
 export type PromptAction = (typeof PROMPT_ACTIONS)[number];
 
 export class FeedbackPromptStateDto {
-  @ApiProperty({ description: 'Whether the rating prompt may be shown to this account now' })
+  @ApiProperty({ description: 'Whether the rating prompt may be shown in this context now' })
   eligible!: boolean;
 
-  @ApiProperty({ description: 'Whether this account asked never to be prompted again' })
+  @ApiProperty({ description: 'Whether this account asked never to be asked again here' })
   declined!: boolean;
+}
+
+/** The prompt asks once as a player and once as a creator, so each context has its own state. */
+export class FeedbackPromptsDto {
+  @ApiProperty({ type: FeedbackPromptStateDto })
+  player!: FeedbackPromptStateDto;
+
+  @ApiProperty({ type: FeedbackPromptStateDto })
+  creator!: FeedbackPromptStateDto;
 }
 
 export class UpdateFeedbackPromptDto {
@@ -55,6 +64,15 @@ export class UpdateFeedbackPromptDto {
   })
   @IsIn(PROMPT_ACTIONS)
   action!: PromptAction;
+
+  @ApiPropertyOptional({
+    enum: FeedbackContext,
+    enumName: 'FeedbackContext',
+    description: 'The prompt to act on; both when absent, as the Settings toggle does',
+  })
+  @IsOptional()
+  @IsEnum(FeedbackContext)
+  context?: FeedbackContext;
 }
 
 export class CreateRatingDto {

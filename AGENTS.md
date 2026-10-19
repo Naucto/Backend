@@ -183,8 +183,10 @@ at the controller boundary (see `project.controller.ts` catching `S3ObjectNotFou
 
 - Ratings (1 to 10, with optional "liked" and "improve" comments) and bug reports need an account,
   so the admin console always shows who said what. Every route answers 404 while the flag is off.
-- The rating prompt asks an account once: an answer or a refusal ends it, closing it snoozes it 14
-  days. `FeedbackPrompt` holds that state; no row means never shown.
+- The rating prompt asks an account once as a player and once as a creator, so someone who starts
+  making games is asked again. In each context an answer or a refusal ends it, and "not now"
+  snoozes it 14 days. `FeedbackPrompt` holds that state per account and context, and no row means
+  never shown.
 - Crash reports are anonymous: `POST /reports/crash` takes text/plain JSON like the analytics
   ingest, never reads an account, and keeps only the user agent's families. Crashes group by a
   fingerprint of source, name, normalised message and top frames (`crash-fingerprint.ts`), with

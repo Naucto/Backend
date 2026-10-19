@@ -44,7 +44,7 @@ export const USER_RELATION_FATES: Record<UserRelation, 'deleted' | 'unlinked' | 
     analyticsVisitors: 'deleted',
     analyticsDays: 'deleted',
     analyticsProjectionWork: 'deleted',
-    feedbackPrompt: 'deleted',
+    feedbackPrompts: 'deleted',
     // Their screenshots go: an image can show the person, the words stay with the platform.
     platformRatings: 'kept',
     bugReports: 'kept',

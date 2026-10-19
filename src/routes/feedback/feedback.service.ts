@@ -1,5 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { FeedbackContext, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { summarizeUserAgent } from '../analytics/request-context';
@@ -9,9 +9,12 @@ import {
   CreateBugReportDto,
   CreatedFeedbackDto,
   CreateRatingDto,
+  FeedbackPromptsDto,
   FeedbackPromptStateDto,
   PromptAction,
 } from './dto/feedback.dto';
+
+const FEEDBACK_CONTEXTS = Object.values(FeedbackContext);
 
 export const PROMPT_SNOOZE_MS = 14 * 24 * 60 * 60 * 1000;
 
@@ -45,48 +48,62 @@ export class FeedbackService {
     }
   }
 
-  async promptState(userId: number, now: Date = new Date()): Promise<FeedbackPromptStateDto> {
-    const prompt = await this.prisma.feedbackPrompt.findUnique({
+  async promptState(userId: number, now: Date = new Date()): Promise<FeedbackPromptsDto> {
+    const prompts = await this.prisma.feedbackPrompt.findMany({
       where: { userId },
-      select: { status: true, snoozedUntil: true },
+      select: { context: true, status: true, snoozedUntil: true },
     });
-    if (!prompt) {
-      return { eligible: true, declined: false };
-    }
-    const snoozeOver =
-      prompt.status === 'SNOOZED' && (!prompt.snoozedUntil || prompt.snoozedUntil <= now);
-    return { eligible: snoozeOver, declined: prompt.status === 'DECLINED' };
+    const stateOf = (context: FeedbackContext): FeedbackPromptStateDto => {
+      const prompt = prompts.find((row) => row.context === context);
+      if (!prompt) {
+        return { eligible: true, declined: false };
+      }
+      const snoozeOver =
+        prompt.status === 'SNOOZED' && (!prompt.snoozedUntil || prompt.snoozedUntil <= now);
+      return { eligible: snoozeOver, declined: prompt.status === 'DECLINED' };
+    };
+    return { player: stateOf('PLAYER'), creator: stateOf('CREATOR') };
   }
 
   async updatePrompt(
     userId: number,
     action: PromptAction,
+    context: FeedbackContext | undefined,
     now: Date = new Date(),
-  ): Promise<FeedbackPromptStateDto> {
+  ): Promise<FeedbackPromptsDto> {
+    const contexts = context ? [context] : FEEDBACK_CONTEXTS;
     if (action === 'reset') {
-      await this.prisma.feedbackPrompt.deleteMany({ where: { userId } });
-    } else if (action === 'decline') {
-      await this.prisma.feedbackPrompt.upsert({
-        where: { userId },
-        create: { userId, status: 'DECLINED' },
-        update: { status: 'DECLINED', snoozedUntil: null },
+      await this.prisma.feedbackPrompt.deleteMany({
+        where: { userId, context: { in: contexts } },
       });
+    } else if (action === 'decline') {
+      await this.prisma.$transaction(
+        contexts.map((each) =>
+          this.prisma.feedbackPrompt.upsert({
+            where: { userId_context: { userId, context: each } },
+            create: { userId, context: each, status: 'DECLINED' },
+            update: { status: 'DECLINED', snoozedUntil: null },
+          }),
+        ),
+      );
     } else {
       const snoozedUntil = new Date(now.getTime() + PROMPT_SNOOZE_MS);
       // Closing the prompt never undoes an answer or a refusal given before.
       await this.prisma.$transaction(async (tx) => {
-        const current = await tx.feedbackPrompt.findUnique({
-          where: { userId },
-          select: { status: true },
-        });
-        if (current && current.status !== 'SNOOZED') {
-          return;
+        for (const each of contexts) {
+          const current = await tx.feedbackPrompt.findUnique({
+            where: { userId_context: { userId, context: each } },
+            select: { status: true },
+          });
+          if (current && current.status !== 'SNOOZED') {
+            continue;
+          }
+          await tx.feedbackPrompt.upsert({
+            where: { userId_context: { userId, context: each } },
+            create: { userId, context: each, status: 'SNOOZED', snoozedUntil },
+            update: { status: 'SNOOZED', snoozedUntil },
+          });
         }
-        await tx.feedbackPrompt.upsert({
-          where: { userId },
-          create: { userId, status: 'SNOOZED', snoozedUntil },
-          update: { status: 'SNOOZED', snoozedUntil },
-        });
       });
     }
     return this.promptState(userId, now);
@@ -108,14 +125,14 @@ export class FeedbackService {
         },
         select: { id: true },
       });
-      // An answer ends the prompt for good; a declined prompt stays declined.
+      // An answer ends the prompt of its context for good. A declined one stays declined.
       await tx.feedbackPrompt.upsert({
-        where: { userId },
-        create: { userId, status: 'ANSWERED' },
+        where: { userId_context: { userId, context: dto.context } },
+        create: { userId, context: dto.context, status: 'ANSWERED' },
         update: {},
       });
       await tx.feedbackPrompt.updateMany({
-        where: { userId, status: 'SNOOZED' },
+        where: { userId, context: dto.context, status: 'SNOOZED' },
         data: { status: 'ANSWERED', snoozedUntil: null },
       });
       return created;
