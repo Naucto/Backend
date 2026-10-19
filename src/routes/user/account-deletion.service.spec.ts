@@ -27,6 +27,8 @@ describe('AccountDeletionService', () => {
     friendship: { deleteMany: jest.fn() },
     friendRequest: { deleteMany: jest.fn() },
     notification: { deleteMany: jest.fn() },
+    feedbackPrompt: { deleteMany: jest.fn() },
+    bugReport: { findMany: jest.fn(), updateMany: jest.fn() },
   };
   const projectService = { remove: jest.fn() };
   const analyticsErasure = { eraseWithin: jest.fn() };
@@ -41,6 +43,7 @@ describe('AccountDeletionService', () => {
     );
     prisma.user.findUnique.mockResolvedValue({ id: 7, password: null, deletedAt: null });
     prisma.project.findMany.mockResolvedValue([]);
+    prisma.bugReport.findMany.mockResolvedValue([]);
     s3Service.deleteFile.mockResolvedValue(undefined);
 
     const module = await Test.createTestingModule({
@@ -170,6 +173,21 @@ describe('AccountDeletionService', () => {
 
     expect(s3Service.deleteFile).toHaveBeenCalledWith({ key: 'users/7/profile' });
     expect(s3Service.deleteFile).toHaveBeenCalledWith({ key: 'users/7/background' });
+  });
+
+  it('forgets the feedback prompt and deletes bug screenshots, keeping the reports', async () => {
+    prisma.bugReport.findMany.mockResolvedValue([
+      { id: 4, screenshotKey: 'feedback/bugs/4/screenshot.png' },
+    ]);
+
+    await service.deleteAccount(7, false, { by: 'self' });
+
+    expect(prisma.feedbackPrompt.deleteMany).toHaveBeenCalledWith({ where: { userId: 7 } });
+    expect(prisma.bugReport.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: [4] } },
+      data: { screenshotKey: null, screenshotMime: null, screenshotBytes: null },
+    });
+    expect(s3Service.deleteFile).toHaveBeenCalledWith({ key: 'feedback/bugs/4/screenshot.png' });
   });
 
   it('has decided the fate of every relation the User model holds', () => {

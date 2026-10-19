@@ -1,0 +1,156 @@
+// What players and creators tell us about the platform, and what breaks while they use it. Read
+// from the admin console only.
+
+enum FeedbackContext {
+  PLAYER
+  CREATOR
+}
+
+enum FeedbackSource {
+  // Asked by the prompt shown after a play or an editing session.
+  PROMPT
+  // Opened by the person from the footer or the account menu.
+  MANUAL
+}
+
+enum RatingReason {
+  BUGS
+  PERFORMANCE
+  HARD_TO_USE
+  MISSING_FEATURE
+  CONTENT
+  OTHER
+}
+
+enum BugCategory {
+  GAMEPLAY
+  EDITOR
+  GRAPHICS
+  SOUND
+  NETPLAY
+  ACCOUNT
+  PERFORMANCE
+  OTHER
+}
+
+enum BugStatus {
+  NEW
+  TRIAGED
+  IN_PROGRESS
+  RESOLVED
+  WONT_FIX
+  DUPLICATE
+}
+
+enum FeedbackPromptStatus {
+  ANSWERED
+  DECLINED
+  SNOOZED
+}
+
+enum CrashSource {
+  WEB
+  ENGINE
+  BACKEND
+}
+
+enum CrashStatus {
+  OPEN
+  RESOLVED
+  IGNORED
+}
+
+model PlatformRating {
+  id         Int             @id @default(autoincrement())
+  user       User            @relation(fields: [userId], references: [id])
+  userId     Int
+  // 1 to 10.
+  score      Int
+  reasons    RatingReason[]  @default([])
+  liked      String?
+  improve    String?
+  context    FeedbackContext
+  source     FeedbackSource
+  // The release the player had just played, for a prompt that followed a play.
+  releaseId  Int?
+  appRelease String?
+  createdAt  DateTime        @default(now())
+  bugReports BugReport[]
+
+  @@index([createdAt])
+  @@index([userId])
+}
+
+model BugReport {
+  id              Int             @id @default(autoincrement())
+  user            User            @relation(fields: [userId], references: [id])
+  userId          Int
+  category        BugCategory
+  title           String
+  description     String
+  route           String
+  releaseId       Int?
+  projectId       Int?
+  rating          PlatformRating? @relation(fields: [ratingId], references: [id], onDelete: SetNull)
+  ratingId        Int?
+  // What the browser attached: user agent summary, viewport, app release, engine error, console.
+  context         Json
+  // Private object key; served to admins through the API, never public-read.
+  screenshotKey   String?
+  screenshotMime  String?
+  screenshotBytes Int?
+  status          BugStatus       @default(NEW)
+  adminNote       String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([status, createdAt])
+  @@index([userId])
+}
+
+// Whether the rating prompt may still ask an account. No row means it has never been shown.
+model FeedbackPrompt {
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       Int                  @id
+  status       FeedbackPromptStatus
+  snoozedUntil DateTime?
+  updatedAt    DateTime             @updatedAt
+}
+
+// One kind of crash: every report with the same fingerprint lands here and bumps the count.
+model CrashGroup {
+  id          Int          @id @default(autoincrement())
+  fingerprint String       @unique
+  source      CrashSource
+  name        String
+  message     String
+  lastStack   String
+  count       Int          @default(1)
+  firstSeen   DateTime     @default(now())
+  lastSeen    DateTime     @default(now())
+  lastRelease String?
+  status      CrashStatus  @default(OPEN)
+  // Set when a resolved group is reported again.
+  regressedAt DateTime?
+  events      CrashEvent[]
+
+  @@index([lastSeen])
+  @@index([status, lastSeen])
+}
+
+// The latest occurrences of a group, pruned to a few per group as new ones arrive.
+model CrashEvent {
+  id         Int        @id @default(autoincrement())
+  group      CrashGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  groupId    Int
+  createdAt  DateTime   @default(now())
+  route      String
+  stack      String
+  appRelease String?
+  device     String?
+  browser    String?
+  os         String?
+  extra      Json?
+
+  @@index([groupId, createdAt])
+}

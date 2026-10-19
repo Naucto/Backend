@@ -60,6 +60,10 @@ model User {
   analyticsVisitors       AnalyticsVisitor[]
   analyticsDays           AnalyticsUserDaily[]
   analyticsProjectionWork AnalyticsProjectionWork[]
+
+  platformRatings PlatformRating[]
+  bugReports      BugReport[]
+  feedbackPrompt  FeedbackPrompt?
 }
 
 model RefreshToken {

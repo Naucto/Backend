@@ -12,7 +12,11 @@ import { FeaturesResponseDto } from './dto/features.dto';
 @Injectable()
 export class FeaturesService implements OnModuleInit {
   private readonly logger = new Logger(FeaturesService.name);
-  private _features: FeaturesResponseDto = { monetization: false, analytics: false };
+  private _features: FeaturesResponseDto = {
+    monetization: false,
+    analytics: false,
+    feedback: false,
+  };
 
   get features(): FeaturesResponseDto {
     return this._features;
@@ -29,6 +33,7 @@ export class FeaturesService implements OnModuleInit {
       this._features = {
         monetization: flags['monetization'] === true,
         analytics: flags['analytics'] === true,
+        feedback: flags['feedback'] === true,
       };
       this.logger.log(`Features loaded from ${configPath}: ${JSON.stringify(this._features)}`);
     } catch {

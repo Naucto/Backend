@@ -1,4 +1,5 @@
 {
   "monetization": true,
-  "analytics": true
+  "analytics": true,
+  "feedback": true
 }

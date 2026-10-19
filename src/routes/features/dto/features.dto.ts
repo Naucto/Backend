@@ -15,4 +15,11 @@ export class FeaturesResponseDto {
     example: false,
   })
   analytics!: boolean;
+
+  @ApiProperty({
+    description:
+      'Whether feedback runs: the rating prompt, bug reports and crash reports. Off unless a deployment turns it on.',
+    example: false,
+  })
+  feedback!: boolean;
 }

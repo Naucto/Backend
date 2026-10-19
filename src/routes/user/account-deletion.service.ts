@@ -7,6 +7,7 @@ import { USER } from '../../auth/access/roles';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AnalyticsErasureService } from '../analytics/analytics-erasure.service';
 import { ProjectService } from '../project/project.service';
+import { S3Service } from '../s3/s3.service';
 import { PROFILE_ASSETS, ProfileAssetService } from './profile-asset.service';
 
 /** Every relation of a user, the name the User model gives it. */
@@ -43,6 +44,10 @@ export const USER_RELATION_FATES: Record<UserRelation, 'deleted' | 'unlinked' | 
     analyticsVisitors: 'deleted',
     analyticsDays: 'deleted',
     analyticsProjectionWork: 'deleted',
+    feedbackPrompt: 'deleted',
+    // Their screenshots go: an image can show the person, the words stay with the platform.
+    platformRatings: 'kept',
+    bugReports: 'kept',
   };
 
 /**
@@ -65,6 +70,7 @@ export class AccountDeletionService {
     private readonly projectService: ProjectService,
     private readonly profileAssetService: ProfileAssetService,
     private readonly analyticsErasure: AnalyticsErasureService,
+    private readonly s3Service: S3Service,
   ) {}
 
   async deleteAccount(
@@ -93,6 +99,7 @@ export class AccountDeletionService {
     await this.removeOwnedProjects(userId, removePublishedGames);
     await this.purgeAndAnonymise(userId);
     await this.removeProfileAssets(userId);
+    await this.removeBugScreenshots(userId);
 
     this.logger.log(`Account ${userId} deleted`);
   }
@@ -135,6 +142,7 @@ export class AccountDeletionService {
         where: { OR: [{ fromId: userId }, { toId: userId }] },
       });
       await tx.notification.deleteMany({ where: { userId } });
+      await tx.feedbackPrompt.deleteMany({ where: { userId } });
       await tx.gameSession.updateMany({
         where: { hostId: userId, endedAt: null },
         data: { endedAt: now },
@@ -167,6 +175,30 @@ export class AccountDeletionService {
         await this.profileAssetService.remove(userId, asset);
       } catch (error) {
         this.logger.warn(`Failed to delete the ${asset} image of user ${userId}: ${error}`);
+      }
+    }
+  }
+
+  private async removeBugScreenshots(userId: number): Promise<void> {
+    const reports = await this.prisma.bugReport.findMany({
+      where: { userId, screenshotKey: { not: null } },
+      select: { id: true, screenshotKey: true },
+    });
+    if (reports.length === 0) {
+      return;
+    }
+    await this.prisma.bugReport.updateMany({
+      where: { id: { in: reports.map((report) => report.id) } },
+      data: { screenshotKey: null, screenshotMime: null, screenshotBytes: null },
+    });
+    for (const report of reports) {
+      if (!report.screenshotKey) {
+        continue;
+      }
+      try {
+        await this.s3Service.deleteFile({ key: report.screenshotKey });
+      } catch (error) {
+        this.logger.warn(`Failed to delete the screenshot of bug report ${report.id}: ${error}`);
       }
     }
   }
