@@ -179,6 +179,23 @@ at the controller boundary (see `project.controller.ts` catching `S3ObjectNotFou
   backend runs as one instance.
 - An admin cannot change their own role, and the last admin cannot be demoted.
 
+**Feedback and crashes** (`src/routes/feedback/`), behind the `feedback` flag of `config/features.json`:
+
+- Ratings (1 to 10, with optional "liked" and "improve" comments) and bug reports need an account,
+  so the admin console always shows who said what. Every route answers 404 while the flag is off.
+- The rating prompt asks an account once: an answer or a refusal ends it, closing it snoozes it 14
+  days. `FeedbackPrompt` holds that state; no row means never shown.
+- Crash reports are anonymous: `POST /reports/crash` takes text/plain JSON like the analytics
+  ingest, never reads an account, and keeps only the user agent's families. Crashes group by a
+  fingerprint of source, name, normalised message and top frames (`crash-fingerprint.ts`), with
+  only the latest 20 occurrences kept; a resolved group that recurs reopens as a regression.
+- `CrashCaptureFilter` (global `APP_FILTER`) records every request that fails with a 500 or an
+  unknown error, named by its route pattern, then answers as Nest would. A scoped filter that
+  swallows errors (`MultiplayerExceptionFilter`) records them itself.
+- Bug screenshots (PNG, JPEG or WebP, 2 MB) are stored under `feedback/bugs/<id>/` and **never made
+  public-read**: the admin console streams them through `GET /admin/feedback/bugs/:id/screenshot`.
+  The dev bucket is anonymously readable as a whole, so this only holds in a deployed bucket.
+
 ## Conventions (not all enforced by tooling — follow these)
 
 These complement the lint/TS rules (which you should read from the config files, not restate).
