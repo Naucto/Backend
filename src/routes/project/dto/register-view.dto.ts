@@ -4,7 +4,7 @@ import { IsOptional, IsUUID } from 'class-validator';
 export class RegisterViewDto {
   @ApiPropertyOptional({
     description:
-      'The visitor cookie of a browser that consented to analytics; without it the play counts but no viewer is kept',
+      'Ignored: views are counted by account or network address. Accepted so older pages are not refused',
     format: 'uuid',
   })
   @IsOptional()
