@@ -57,6 +57,9 @@ function generator(seed: number): () => number {
 }
 const random = generator(276);
 const pick = <T>(items: readonly T[]): T => items[Math.floor(random() * items.length)] as T;
+/** Each item repeated as many times as its weight, so `pick` draws it that often. */
+const weightedList = <T>(items: readonly [T, number][]): T[] =>
+  items.flatMap(([item, weight]) => Array.from({ length: weight }, () => item));
 const between = (low: number, high: number): number =>
   low + Math.floor(random() * (high - low + 1));
 const chance = (probability: number): boolean => random() < probability;
@@ -110,18 +113,46 @@ const OSES = ['Windows', 'Mac OS', 'Linux', 'iOS', 'Android'] as const;
 const COUNTRIES = ['FR', 'FR', 'FR', 'FR', 'BE', 'CH', 'CA', 'US', 'DE', 'GB', null] as const;
 const LANGUAGES = ['fr', 'fr', 'fr', 'en', 'en', 'de'] as const;
 const SCREENS = ['lg', 'lg', 'xl', 'md', 'xs'] as const;
-const REFERRERS = [
-  null,
-  null,
-  null,
-  null,
-  'google.com',
-  'google.com',
-  'reddit.com',
-  'itch.io',
-  'discord.com',
-  'youtube.com',
-] as const;
+/** Where a visit with no post behind it comes from, as often as each appears here. */
+const REFERRERS = weightedList([
+  [null, 34],
+  ['google.com', 20],
+  ['bing.com', 3],
+  ['duckduckgo.com', 3],
+  ['reddit.com', 7],
+  ['itch.io', 7],
+  ['discord.com', 6],
+  ['youtube.com', 5],
+  ['x.com', 3],
+  ['bsky.app', 2],
+  ['news.ycombinator.com', 2],
+  ['github.com', 3],
+  ['twitch.tv', 2],
+]);
+
+interface Campaign {
+  referrer: string | null;
+  utmSource: string;
+  utmMedium: string;
+  utmCampaign: string;
+}
+
+/** Links that always carry a campaign: the README badge and the Discord welcome message. */
+const STANDING_CAMPAIGNS: Campaign[] = [
+  {
+    referrer: 'github.com',
+    utmSource: 'github',
+    utmMedium: 'readme',
+    utmCampaign: 'readme-badge',
+  },
+  {
+    referrer: 'discord.com',
+    utmSource: 'discord',
+    utmMedium: 'community',
+    utmCampaign: 'server-welcome',
+  },
+];
+
 const ROUTES = ['hub', 'play/:id', 'play/:id', 'learn', 'u/:username', 'games'] as const;
 
 interface SampleGame {
@@ -145,11 +176,15 @@ const SAMPLE_GAMES: SampleGame[] = [
 ];
 
 interface Post {
+  /** Day of the window and UTC time it went out, or how long before the seed runs. */
   day: number;
   hour: number;
+  minute?: number;
+  hoursAgo?: number;
   label: string;
   channel: string;
-  domain: string;
+  /** The referrer its visitors arrive with, null for a link opened from an email. */
+  domain: string | null;
   url: string;
   /** The game to play, or for creators the game to fork. */
   game: string | null;
@@ -157,11 +192,25 @@ interface Post {
   /** New consenting visitors it brings over the two days after it. */
   strength: number;
   utmSource: string | null;
+  utmMedium: string | null;
   utmCampaign: string | null;
 }
 
+const post = (fields: Partial<Post> & Pick<Post, 'label' | 'channel' | 'strength'>): Post => ({
+  day: 0,
+  hour: 0,
+  domain: null,
+  url: 'https://naucto.net/',
+  game: null,
+  audience: 'EVERYONE',
+  utmSource: null,
+  utmMedium: null,
+  utmCampaign: null,
+  ...fields,
+});
+
 const POSTS: Post[] = [
-  {
+  post({
     day: 29,
     hour: 17,
     label: 'Pixel Garden on r/indiegaming',
@@ -171,10 +220,18 @@ const POSTS: Post[] = [
     game: 'Pixel Garden',
     audience: 'PLAYERS',
     strength: 22,
-    utmSource: null,
-    utmCampaign: null,
-  },
-  {
+  }),
+  post({
+    day: 36,
+    hour: 9,
+    label: 'September newsletter',
+    channel: 'Newsletter',
+    strength: 12,
+    utmSource: 'newsletter',
+    utmMedium: 'email',
+    utmCampaign: 'september-newsletter',
+  }),
+  post({
     day: 42,
     hour: 18,
     label: 'Dungeon Bell trailer',
@@ -183,11 +240,12 @@ const POSTS: Post[] = [
     url: 'https://www.youtube.com/',
     game: 'Dungeon Bell',
     audience: 'PLAYERS',
-    strength: 40,
+    strength: 34,
     utmSource: 'youtube',
+    utmMedium: 'video',
     utmCampaign: 'dungeon-bell-trailer',
-  },
-  {
+  }),
+  post({
     day: 51,
     hour: 12,
     label: 'Devlog #4: remix Orbit Run',
@@ -197,10 +255,9 @@ const POSTS: Post[] = [
     game: 'Orbit Run',
     audience: 'CREATORS',
     strength: 14,
-    utmSource: null,
-    utmCampaign: null,
-  },
-  {
+  }),
+  // A launch on three platforms within minutes: the charts draw them as one line.
+  post({
     day: 58,
     hour: 19,
     label: 'Neon Drift launch clip',
@@ -209,23 +266,74 @@ const POSTS: Post[] = [
     url: 'https://www.tiktok.com/',
     game: 'Neon Drift',
     audience: 'PLAYERS',
-    strength: 34,
-    utmSource: null,
-    utmCampaign: null,
-  },
-  {
+    strength: 22,
+  }),
+  post({
+    day: 58,
+    hour: 19,
+    label: 'Neon Drift launch trailer',
+    channel: 'YouTube',
+    domain: 'youtube.com',
+    url: 'https://www.youtube.com/',
+    game: 'Neon Drift',
+    audience: 'PLAYERS',
+    strength: 12,
+    utmSource: 'youtube',
+    utmMedium: 'video',
+    utmCampaign: 'neon-drift-launch',
+  }),
+  post({
+    day: 58,
+    hour: 19,
+    minute: 5,
+    label: 'Neon Drift launch thread',
+    channel: 'X',
+    domain: 'x.com',
+    url: 'https://x.com/',
+    game: 'Neon Drift',
+    audience: 'PLAYERS',
+    strength: 8,
+  }),
+  post({
+    day: 66,
+    hour: 15,
+    label: 'Making a platformer in an evening',
+    channel: 'Bluesky',
+    domain: 'bsky.app',
+    url: 'https://bsky.app/',
+    audience: 'CREATORS',
+    strength: 10,
+  }),
+  post({
     day: 72,
     hour: 16,
     label: 'Naucto on itch.io',
     channel: 'itch.io',
     domain: 'itch.io',
     url: 'https://itch.io/',
-    game: null,
-    audience: 'EVERYONE',
-    strength: 18,
-    utmSource: null,
-    utmCampaign: null,
-  },
+    strength: 16,
+    utmSource: 'itch',
+    utmMedium: 'listing',
+    utmCampaign: 'itch-page',
+  }),
+  post({
+    day: 77,
+    hour: 14,
+    label: 'Show HN: Naucto',
+    channel: 'Hacker News',
+    domain: 'news.ycombinator.com',
+    url: 'https://news.ycombinator.com/',
+    strength: 24,
+  }),
+  post({
+    hoursAgo: 5,
+    label: 'Live stream: building a game from scratch',
+    channel: 'Twitch',
+    domain: 'twitch.tv',
+    url: 'https://www.twitch.tv/',
+    audience: 'CREATORS',
+    strength: 8,
+  }),
 ];
 /** Hours over which a post's visitors fade to a third. */
 const POST_DECAY_HOURS = 8;
@@ -318,6 +426,12 @@ async function main(): Promise<void> {
   const today = new Date(Math.floor(now.getTime() / DAY_MS) * DAY_MS);
   const from = new Date(today.getTime() - (DAYS - 1) * DAY_MS);
   const dayStart = (index: number): Date => new Date(from.getTime() + index * DAY_MS);
+  const postAt = (one: Post): Date =>
+    one.hoursAgo === undefined
+      ? new Date(dayStart(one.day).getTime() + one.hour * HOUR_MS + (one.minute ?? 0) * MINUTE_MS)
+      : new Date(Math.floor((now.getTime() - one.hoursAgo * HOUR_MS) / MINUTE_MS) * MINUTE_MS);
+  const postDay = (one: Post): number =>
+    Math.floor((postAt(one).getTime() - from.getTime()) / DAY_MS);
 
   await clearPrevious(now);
   if (process.argv.includes('--clear')) {
@@ -452,6 +566,7 @@ async function main(): Promise<void> {
     const views = length <= 2 || chance(0.25) ? 1 : between(2, 6);
     const sessionId = seedUuid();
     const fromPost = firstVisit && visitor.post !== null;
+    const campaign = firstVisit && !fromPost && chance(0.06) ? pick(STANDING_CAMPAIGNS) : null;
     sessions.push({
       id: sessionId,
       visitorId: visitor.id,
@@ -462,14 +577,16 @@ async function main(): Promise<void> {
         ? chance(0.85)
           ? (visitor.post?.domain ?? null)
           : null
-        : firstVisit
-          ? pick(REFERRERS)
-          : chance(0.75)
-            ? null
-            : pick(REFERRERS),
-      utmSource: fromPost ? (visitor.post?.utmSource ?? null) : null,
-      utmMedium: fromPost && visitor.post?.utmSource ? 'video' : null,
-      utmCampaign: fromPost ? (visitor.post?.utmCampaign ?? null) : null,
+        : campaign
+          ? campaign.referrer
+          : firstVisit
+            ? pick(REFERRERS)
+            : chance(0.75)
+              ? null
+              : pick(REFERRERS),
+      utmSource: fromPost ? (visitor.post?.utmSource ?? null) : (campaign?.utmSource ?? null),
+      utmMedium: fromPost ? (visitor.post?.utmMedium ?? null) : (campaign?.utmMedium ?? null),
+      utmCampaign: fromPost ? (visitor.post?.utmCampaign ?? null) : (campaign?.utmCampaign ?? null),
       device: visitor.device,
       browser: visitor.browser,
       os: visitor.os,
@@ -725,7 +842,7 @@ async function main(): Promise<void> {
     }
   }
   for (const post of POSTS) {
-    const at = new Date(dayStart(post.day).getTime() + post.hour * HOUR_MS);
+    const at = postAt(post);
     for (let hour = 0; hour < 48; hour++) {
       const rate = (post.strength / POST_DECAY_HOURS) * Math.exp(-hour / POST_DECAY_HOURS);
       for (let one = poisson(rate); one > 0; one--) {
@@ -792,7 +909,7 @@ async function main(): Promise<void> {
 
   // Accounts created by people who declined: never linked to a browser.
   for (let day = 0; day < DAYS; day++) {
-    const wave = POSTS.filter((post) => post.day === day || post.day === day - 1).reduce(
+    const wave = POSTS.filter((one) => postDay(one) === day || postDay(one) === day - 1).reduce(
       (sum, post) => sum + post.strength / 20,
       0,
     );
@@ -839,7 +956,7 @@ async function main(): Promise<void> {
     day: Date;
   }[] = [];
   for (let day = 0; day < DAYS; day++) {
-    const wave = POSTS.filter((post) => post.day === day).reduce(
+    const wave = POSTS.filter((one) => postDay(one) === day).reduce(
       (sum, post) => sum + post.strength / 15,
       0,
     );
@@ -956,7 +1073,7 @@ async function main(): Promise<void> {
   );
 
   for (const post of POSTS) {
-    const at = new Date(dayStart(post.day).getTime() + post.hour * HOUR_MS);
+    const at = postAt(post);
     if (at >= now) {
       continue;
     }
