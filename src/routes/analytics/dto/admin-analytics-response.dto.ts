@@ -109,6 +109,12 @@ export class AnalyticsGameNowDto {
   @ApiProperty({ description: 'Anonymous pings from it in the last minute' }) anonTabs!: number;
 }
 
+export class AnalyticsAnonAnswersDto {
+  @ApiProperty({ description: 'Pings from tabs that refused analytics' }) declined!: number;
+  @ApiProperty({ description: 'Pings from tabs that have not answered yet' }) unanswered!: number;
+  @ApiProperty({ description: 'Pings that did not say' }) unknown!: number;
+}
+
 export class AnalyticsLiveDto {
   @ApiProperty({ description: 'Minute-active, not instantaneous; accounts are instantaneous' })
   note!: string;
@@ -119,6 +125,11 @@ export class AnalyticsLiveDto {
     description: 'The current minute so far, provisional',
   })
   current!: AnalyticsPresenceSampleDto;
+  @ApiProperty({
+    type: AnalyticsAnonAnswersDto,
+    description: 'The anonymous tabs of the current minute, by what they answered',
+  })
+  anonymousByAnswer!: AnalyticsAnonAnswersDto;
   @ApiProperty({ type: [AnalyticsGameNowDto] }) gamesNow!: AnalyticsGameNowDto[];
 }
 

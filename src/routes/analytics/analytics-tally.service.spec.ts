@@ -14,6 +14,7 @@ describe('AnalyticsTallyService', () => {
     kind: 'BEAT',
     state: 'PLAYING',
     signedIn: false,
+    consent: 'DECLINED',
     releaseId: 7,
     playMs: 0,
     ...overrides,
@@ -34,7 +35,7 @@ describe('AnalyticsTallyService', () => {
     service = new AnalyticsTallyService(prisma as unknown as PrismaService);
   });
 
-  it('adds up pings of the same minute, state, sign-in and game into one row', async () => {
+  it('adds up pings of the same minute, state, sign-in, game and answer into one row', async () => {
     service.recordPing(ping({ kind: 'PLAY_START' }), AT);
     service.recordPing(ping({ kind: 'BEAT', playMs: 20_000 }), AT);
     service.recordPing(ping({ kind: 'FLUSH', playMs: 5_000 }), AT);
@@ -43,19 +44,20 @@ describe('AnalyticsTallyService', () => {
 
     const [tally] = flushed();
     expect(tally?.[0]).toContain('INSERT INTO "AnalyticsAnonTally"');
-    // minute, state, signedIn, releaseId, beats, playsStarted, playMs
-    expect(tally?.slice(1)).toEqual([MINUTE, 'PLAYING', false, 7, 1, 1, 25_000]);
+    // minute, state, signedIn, releaseId, consent, beats, playsStarted, playMs
+    expect(tally?.slice(1)).toEqual([MINUTE, 'PLAYING', false, 7, 'DECLINED', 1, 1, 25_000]);
   });
 
   it('keeps apart pings that differ in any key', async () => {
     service.recordPing(ping(), AT);
     service.recordPing(ping({ signedIn: true }), AT);
     service.recordPing(ping({ releaseId: 0 }), AT);
+    service.recordPing(ping({ consent: 'UNANSWERED' }), AT);
     service.recordPing(ping(), new Date(AT.getTime() + 60_000));
 
     await service.flush();
 
-    expect(flushed()).toHaveLength(4);
+    expect(flushed()).toHaveLength(5);
   });
 
   it('writes nothing when nothing was tallied', async () => {
@@ -87,7 +89,7 @@ describe('AnalyticsTallyService', () => {
     await service.flush();
 
     const [tally, outcome] = flushed();
-    expect(tally?.slice(1)).toEqual([MINUTE, 'PLAYING', false, 7, 2, 0, 3_000]);
+    expect(tally?.slice(1)).toEqual([MINUTE, 'PLAYING', false, 7, 'DECLINED', 2, 0, 3_000]);
     expect(outcome?.slice(3)).toEqual([2, 0, 0, 0]);
   });
 

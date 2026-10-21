@@ -158,7 +158,9 @@ at the controller boundary (see `project.controller.ts` catching `S3ObjectNotFou
   when a period of it becomes final, and its version. Change a definition by bumping its version;
   values of different versions are never combined, and final periods are never recomputed.
 - Browsers that consented report under a visitor and a session cookie the frontend sets; the API
-  never reads them. Tabs that declined send identifier-free pings, tallied per minute. Ingest
+  never reads them. Tabs that declined send identifier-free pings, tallied per minute. A ping says
+  whether the tab refused analytics or has not answered yet (`AnalyticsAnonTally.consent`). One
+  that does not say, from an older client or a suspended account, is tallied as `UNKNOWN`. Ingest
   routes take JSON sent as text/plain without credentials and never read an account; linking a
   browser to an account is the one authenticated call.
 - Business facts (signups, projects, release transitions) are written in the transaction of the

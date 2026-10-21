@@ -30,6 +30,14 @@ enum AnalyticsRollupState {
   UNAVAILABLE
 }
 
+// What an anonymous tab answered to analytics. UNKNOWN is a ping that did not say: those from before
+// the answer was sent, and a consenting tab pinging while its account is suspended.
+enum AnalyticsAnonConsent {
+  DECLINED
+  UNANSWERED
+  UNKNOWN
+}
+
 enum AnalyticsRetentionKind {
   VISITOR
   ACCOUNT
@@ -164,12 +172,13 @@ model AnalyticsAnonTally {
   state        AnalyticsLiveState
   signedIn     Boolean
   // 0 when the tab was not on a game.
-  releaseId    Int                @default(0)
-  beats        Int                @default(0)
-  playsStarted Int                @default(0)
-  playMs       BigInt             @default(0)
+  releaseId    Int                  @default(0)
+  consent      AnalyticsAnonConsent @default(UNKNOWN)
+  beats        Int                  @default(0)
+  playsStarted Int                  @default(0)
+  playMs       BigInt               @default(0)
 
-  @@id([minute, state, signedIn, releaseId])
+  @@id([minute, state, signedIn, releaseId, consent])
   @@index([minute])
 }
 
