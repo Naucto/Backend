@@ -171,6 +171,26 @@ at the controller boundary (see `project.controller.ts` catching `S3ObjectNotFou
   analytics must take them; erasure relies on it.
 - Every day is a UTC day. Raw data is kept 90 days and purged only once every period built from
   it is final and every linked account's history has it; rollups and account histories stay.
+- The timeline (`analytics-timeline.ts`, `analytics-timeline.queries.ts`,
+  `analytics-timeline.service.ts`) reads raw rows between two instants, in buckets of a minute to a
+  day, and never rollups. Its window is the raw retention and its values are never final. A bucket
+  before the raw window or after now has no value. A presence bucket without a sample has none
+  either, rather than a 0. Each timeline metric declares the filters it is split by (a game, a
+  source) and ignores the others, and the answer names what it ignored.
+- A source is the session's `referrer:<domain>`, `utmSource:<value>` or `utmCampaign:<value>`, with
+  `referrer:(none)` for a direct visit. Visitor metrics take the source of the visitor's first
+  session, and accounts the source of their linked visitor.
+- `activity` and `arrivals` show consenting browsers one by one under a journey code: an HMAC of the
+  visitor id under a key drawn at boot. It is the same in every answer while the backend runs and
+  never reveals the cookie. They name no account.
+- Markers (`AnalyticsMarker`, `admin/analytics/markers`) are moments admins draw on the charts,
+  such as a post going out. Each says who it speaks to (`EVERYONE`, `PLAYERS`, `CREATORS`) and
+  may name a published project: the game to play, or for creators the game to fork. They hold no
+  visitor or account data and are never purged.
+- `admin/analytics/releases` searches published games by name or id a few at a time, and names
+  projects by id. Nothing in the admin API hands out every game at once.
+- `projects_forked` reads forks from `Project.forkedFromId`, which every fork path records with
+  its `PROJECT_CREATED` fact. A fork deleted since is no longer counted.
 
 **Admin console** (`src/routes/admin/`), for the separate Admin-Panel app:
 
