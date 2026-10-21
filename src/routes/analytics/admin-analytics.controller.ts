@@ -4,6 +4,7 @@ import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RequiresRole } from '../../auth/access/access.decorators';
 import { ADMIN } from '../../auth/access/roles';
 import { AnalyticsQueryService } from './analytics-query.service';
+import { AnalyticsTimelineService } from './analytics-timeline.service';
 import {
   AnalyticsBreakdownQueryDto,
   AnalyticsGamesQueryDto,
@@ -25,6 +26,20 @@ import {
   AnalyticsRetentionDto,
   AnalyticsSeriesDto,
 } from './dto/admin-analytics-response.dto';
+import {
+  AnalyticsActivityQueryDto,
+  AnalyticsArrivalsQueryDto,
+  AnalyticsInstantRangeQueryDto,
+  AnalyticsReleasesQueryDto,
+  AnalyticsTimelineQueryDto,
+} from './dto/admin-timeline-query.dto';
+import {
+  AnalyticsActivityDto,
+  AnalyticsArrivalsDto,
+  AnalyticsReleasesDto,
+  AnalyticsSourcesDto,
+  AnalyticsTimelineDto,
+} from './dto/admin-timeline-response.dto';
 import { UserAnalyticsSummaryDto } from './dto/user-analytics.dto';
 import { UserAnalyticsService } from './user-analytics.service';
 
@@ -35,6 +50,7 @@ export class AdminAnalyticsController {
   constructor(
     private readonly analytics: AnalyticsQueryService,
     private readonly users: UserAnalyticsService,
+    private readonly timelines: AnalyticsTimelineService,
   ) {}
 
   @Get('metrics')
@@ -100,6 +116,47 @@ export class AdminAnalyticsController {
   @ApiResponse({ status: 200, type: AnalyticsGamesDto })
   games(@Query() query: AnalyticsGamesQueryDto): Promise<AnalyticsGamesDto> {
     return this.analytics.games(query);
+  }
+
+  @Get('timeline')
+  @ApiOperation({
+    summary: 'Raw metrics between two instants, per minute to per day, for a game or a source',
+  })
+  @ApiResponse({ status: 200, type: AnalyticsTimelineDto })
+  timeline(@Query() query: AnalyticsTimelineQueryDto): Promise<AnalyticsTimelineDto> {
+    return this.timelines.timeline(query);
+  }
+
+  @Get('sources')
+  @ApiOperation({ summary: 'Where consenting sessions came from between two instants' })
+  @ApiResponse({ status: 200, type: AnalyticsSourcesDto })
+  sources(@Query() query: AnalyticsInstantRangeQueryDto): Promise<AnalyticsSourcesDto> {
+    return this.timelines.sources(query);
+  }
+
+  @Get('activity')
+  @ApiOperation({
+    summary: 'First visits, first plays, sign-ups, projects, releases and anonymous plays',
+  })
+  @ApiResponse({ status: 200, type: AnalyticsActivityDto })
+  activity(@Query() query: AnalyticsActivityQueryDto): Promise<AnalyticsActivityDto> {
+    return this.timelines.activity(query);
+  }
+
+  @Get('arrivals')
+  @ApiOperation({ summary: 'Browsers first seen between two instants, and what each did since' })
+  @ApiResponse({ status: 200, type: AnalyticsArrivalsDto })
+  arrivals(@Query() query: AnalyticsArrivalsQueryDto): Promise<AnalyticsArrivalsDto> {
+    return this.timelines.arrivals(query);
+  }
+
+  @Get('releases')
+  @ApiOperation({
+    summary: 'Published games by part of their name or their id, to narrow a chart to one',
+  })
+  @ApiResponse({ status: 200, type: AnalyticsReleasesDto })
+  releases(@Query() query: AnalyticsReleasesQueryDto): Promise<AnalyticsReleasesDto> {
+    return this.timelines.releases(query);
   }
 
   @Get('users/:id')

@@ -460,16 +460,39 @@ describe('AnalyticsIngestService', () => {
   describe('anonymous pings', () => {
     it('tallies a ping without any identifier', async () => {
       await service.recordPing(
-        { kind: 'BEAT', state: 'PLAYING', signedIn: false, releaseId: 7, playMs: 20_000 },
+        {
+          kind: 'BEAT',
+          state: 'PLAYING',
+          signedIn: false,
+          consent: 'DECLINED',
+          releaseId: 7,
+          playMs: 20_000,
+        },
         BROWSER,
         NOW,
       );
 
       expect(tally.recordPing).toHaveBeenCalledWith(
-        { kind: 'BEAT', state: 'PLAYING', signedIn: false, releaseId: 7, playMs: 20_000 },
+        {
+          kind: 'BEAT',
+          state: 'PLAYING',
+          signedIn: false,
+          consent: 'DECLINED',
+          releaseId: 7,
+          playMs: 20_000,
+        },
         NOW,
       );
       expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('tallies a ping that does not say what the tab answered as unknown', async () => {
+      await service.recordPing({ kind: 'BEAT', state: 'BROWSING', signedIn: true }, BROWSER, NOW);
+
+      expect(tally.recordPing).toHaveBeenCalledWith(
+        expect.objectContaining({ consent: 'UNKNOWN', signedIn: true }),
+        NOW,
+      );
     });
 
     it('counts no running time against a game that is not published', async () => {
