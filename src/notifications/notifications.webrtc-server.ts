@@ -29,6 +29,7 @@ import { NotificationPayload } from './notifications.types';
 
 type NotificationClientSocket = WebRTCClientSocket<{
   userId: number | null;
+  connectionId: number;
 }>;
 
 type NotificationServerSocket = WebRTCServerSocket<{
@@ -48,6 +49,7 @@ export class NotificationWebRTCServer extends EventBasedWebRTCServer<
   NotificationServerMessage
 > {
   private presenceHandler: PresenceSocketHandler | null = null;
+  private lastConnectionId = 0;
 
   constructor(
     webrtcService: WebRTCService,
@@ -69,6 +71,7 @@ export class NotificationWebRTCServer extends EventBasedWebRTCServer<
     clientSocket: NotificationClientSocket,
   ): void {
     clientSocket.userId = null;
+    clientSocket.connectionId = ++this.lastConnectionId;
   }
 
   @WebRTCClientEvent('close')
@@ -104,7 +107,7 @@ export class NotificationWebRTCServer extends EventBasedWebRTCServer<
     }
 
     this.presenceHandler
-      .onSet(socket.userId, {
+      .onSet(socket.userId, socket.connectionId, {
         kind: message.kind,
         releaseId: message.releaseId ?? null,
         projectId: message.projectId ?? null,
@@ -184,7 +187,7 @@ export class NotificationWebRTCServer extends EventBasedWebRTCServer<
     }
 
     try {
-      const snapshot = await this.presenceHandler.onSocketOpen(userId);
+      const snapshot = await this.presenceHandler.onSocketOpen(userId, socket.connectionId);
       this.send(socket, {
         type: 'presence:snapshot',
         payload: snapshot,
@@ -226,7 +229,7 @@ export class NotificationWebRTCServer extends EventBasedWebRTCServer<
     socket.userId = null;
 
     this.presenceHandler
-      ?.onSocketClose(userId)
+      ?.onSocketClose(userId, socket.connectionId)
       .catch((error) => this.logger.warn(`presence close failed: ${error}`));
   }
 

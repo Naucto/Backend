@@ -1,9 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { JwtService, JwtVerifyOptions } from '@nestjs/jwt';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { GameSession, GameSessionVisibility, Prisma, SessionJoinPolicy } from '@prisma/client';
 import { randomBytes } from 'crypto';
 
+import { ACTIVITY_CHANGED, ActivityChangedEvent } from '../../common/domain-events';
 import { NotificationsService } from '../../notifications/notifications.service';
 import {
   isSerializationConflict,
@@ -105,6 +107,7 @@ export class MultiplayerService {
     private readonly _friendsService: FriendsService,
     private readonly _notifications: NotificationsService,
     private readonly _accounting: MultiplayerAccountingService,
+    private readonly _eventEmitter: EventEmitter2,
   ) {
     this._syncServer = new SyncedGameTableWebRTCServer(
       _webrtcService,
@@ -166,6 +169,8 @@ export class MultiplayerService {
       created.projectId,
       dto.editorTest === true,
     );
+
+    this._eventEmitter.emit(ACTIVITY_CHANGED, new ActivityChangedEvent(userId));
 
     return this._buildConnection(created, userId, 'host');
   }
@@ -365,6 +370,7 @@ export class MultiplayerService {
     if (dto.maxPlayers !== undefined) {
       this._syncServer.resizeRoom(sessionId, updated.maxPlayers);
     }
+    this._eventEmitter.emit(ACTIVITY_CHANGED, new ActivityChangedEvent(userId));
 
     return updated;
   }
@@ -394,7 +400,7 @@ export class MultiplayerService {
 
     const candidates = await this._prismaService.gameSession.findMany({
       where: { endedAt: null, startedAt: { lt: cutoff } },
-      select: { sessionId: true },
+      select: { sessionId: true, hostId: true },
     });
 
     // Age alone also matches a long-running session whose room is still live; ending its row would desync it from that room.
@@ -413,6 +419,9 @@ export class MultiplayerService {
 
     orphaned.forEach((session) => this._syncServer.closeRoom(session.sessionId));
     await Promise.all(orphaned.map((session) => this._accounting.sessionEnded(session.sessionId)));
+    orphaned.forEach((session) =>
+      this._eventEmitter.emit(ACTIVITY_CHANGED, new ActivityChangedEvent(session.hostId)),
+    );
 
     this._logger.log(`Reaped ${orphaned.length} stale game session(s)`);
   }
@@ -452,6 +461,7 @@ export class MultiplayerService {
     }
 
     await this._claimSeat(sessionId, userId);
+    this._eventEmitter.emit(ACTIVITY_CHANGED, new ActivityChangedEvent(session.hostId));
 
     return this._buildConnection(session, userId, 'slave');
   }
@@ -513,6 +523,7 @@ export class MultiplayerService {
       where: { sessionId },
       data: { otherUsers: { disconnect: { id: userId } } },
     });
+    this._eventEmitter.emit(ACTIVITY_CHANGED, new ActivityChangedEvent(session.hostId));
   }
 
   /**
@@ -554,11 +565,16 @@ export class MultiplayerService {
   }
 
   private async _softEnd(sessionId: string): Promise<void> {
-    await this._prismaService.gameSession.updateMany({
+    const ended = await this._prismaService.gameSession.updateManyAndReturn({
       where: { sessionId, endedAt: null },
       data: { endedAt: new Date() },
+      select: { hostId: true },
     });
     await this._accounting.sessionEnded(sessionId);
+
+    for (const { hostId } of ended) {
+      this._eventEmitter.emit(ACTIVITY_CHANGED, new ActivityChangedEvent(hostId));
+    }
   }
 
   private async _findSessionOrThrow(sessionId: string): Promise<GameSessionEx> {

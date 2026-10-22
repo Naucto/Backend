@@ -8,6 +8,7 @@
 import { S3Client } from '@aws-sdk/client-s3';
 import { InjectionToken, Module, Provider } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 
@@ -61,6 +62,7 @@ const nullProvider = (token: InjectionToken): Provider => ({
 @Module({
   imports: [
     gracefulShutdownModule(),
+    EventEmitterModule.forRoot(),
     ScheduleModule.forRoot(),
     AuthModule,
     UserModule,

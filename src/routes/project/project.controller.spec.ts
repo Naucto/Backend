@@ -12,6 +12,7 @@ import {
   ROUTE_ARGS_METADATA,
 } from '@nestjs/common/constants';
 import { APP_GUARD } from '@nestjs/core';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Response } from 'express';
 import { Readable, Writable } from 'stream';
@@ -105,6 +106,7 @@ describe('project controllers', () => {
         { provide: S3Service, useValue: s3 },
         { provide: EdgeService, useValue: edge },
         { provide: AnalyticsFactService, useValue: { record: jest.fn() } },
+        { provide: EventEmitter2, useValue: { emit: jest.fn() } },
         {
           provide: APP_GUARD,
           useValue: {

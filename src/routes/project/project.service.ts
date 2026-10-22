@@ -6,8 +6,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AnalyticsFactType, Prisma, Project } from '@prisma/client';
 
+import { PROJECT_CHANGED, ProjectChangedEvent } from '../../common/domain-events';
 import { pageWindow } from '../../common/page-window';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { CreateNotificationInput } from '../../notifications/notifications.types';
@@ -51,6 +53,7 @@ export class ProjectService {
     private readonly edgeService: EdgeService,
     private readonly moduleRef: ModuleRef,
     private readonly facts: AnalyticsFactService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   private async notify(notification: CreateNotificationInput): Promise<void> {
@@ -212,13 +215,16 @@ export class ProjectService {
   async update(id: number, updateProjectDto: UpdateProjectDto): Promise<Project> {
     await this.findOne(id);
 
-    return this.prisma.project.update({
+    const updated = await this.prisma.project.update({
       where: { id },
       data: {
         ...updateProjectDto,
         ...(updateProjectDto.tags ? { tags: normalizeTags(updateProjectDto.tags) } : {}),
       },
     });
+    this.eventEmitter.emit(PROJECT_CHANGED, new ProjectChangedEvent(id));
+
+    return updated;
   }
 
   private async storeCover(
@@ -240,6 +246,7 @@ export class ProjectService {
       where: { id: projectId },
       data: { iconUrl: this.edgeService.getCDNUrl(key) },
     });
+    this.eventEmitter.emit(PROJECT_CHANGED, new ProjectChangedEvent(projectId));
   }
 
   async uploadImage(id: number, file: Express.Multer.File, uploaderId: number): Promise<void> {
