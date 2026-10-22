@@ -1,5 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import { EventEmitter2, EventEmitterModule } from '@nestjs/event-emitter';
+import { ScheduleModule, SchedulerRegistry } from '@nestjs/schedule';
 import { Test } from '@nestjs/testing';
 
 import {
@@ -13,7 +14,14 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { FriendsService } from '../routes/friends/friends.service';
 import { HostedSession, MultiplayerService } from '../routes/multiplayer/multiplayer.service';
-import { PresenceService } from './presence.service';
+import {
+  PRESENCE_RESYNC_AFTER_MS,
+  PRESENCE_RESYNC_CONCURRENCY,
+  PRESENCE_RESYNC_MAX_BATCH,
+  PRESENCE_RESYNC_MIN_BATCH,
+  presenceResyncBatch,
+  PresenceService,
+} from './presence.service';
 
 function aHostedSession(overrides: Partial<HostedSession> = {}): HostedSession {
   return {
@@ -397,6 +405,109 @@ describe('PresenceService', () => {
     expect(user.findUnique).toHaveBeenCalledTimes(1);
   });
 
+  it('tells friends nothing when a refresh finds what they already have', async () => {
+    friendsService.friendIdsOf.mockImplementation(async (id: number) => (id === 1 ? [2] : [1]));
+    await service.onSocketOpen(2, 21);
+    await service.onSocketOpen(1, 11);
+    fanOut.mockClear();
+
+    await service.onSet(1, 11, { kind: 'IDLE' });
+    await service.onActivityChanged(new ActivityChangedEvent(1));
+
+    expect(fanOut).not.toHaveBeenCalled();
+  });
+
+  it('tells friends when only a detail of the same activity changes', async () => {
+    friendsService.friendIdsOf.mockImplementation(async (id: number) => (id === 1 ? [2] : [1]));
+    multiplayerService.hostedSession.mockResolvedValue(aHostedSession({ players: 1 }));
+    await service.onSocketOpen(2, 21);
+    await service.onSocketOpen(1, 11);
+    fanOut.mockClear();
+
+    multiplayerService.hostedSession.mockResolvedValue(aHostedSession({ players: 2 }));
+    await service.onActivityChanged(new ActivityChangedEvent(1));
+
+    expect(fanOut).toHaveBeenCalledWith(2, {
+      type: 'presence:changed',
+      payload: expect.objectContaining({ userId: 1, players: 2 }),
+    });
+  });
+
+  describe('resync', () => {
+    let now: jest.SpyInstance<number, []>;
+
+    beforeEach(() => {
+      now = jest.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    });
+
+    afterEach(() => {
+      now.mockRestore();
+    });
+
+    it('re-derives only the users nobody refreshed for the resync delay, oldest first', async () => {
+      await service.onSocketOpen(2, 21);
+      now.mockReturnValue(1_000_500);
+      await service.onSocketOpen(1, 11);
+      now.mockReturnValue(1_060_000);
+      await service.onSocketOpen(3, 31);
+      user.findUnique.mockClear();
+
+      now.mockReturnValue(1_000_500 + PRESENCE_RESYNC_AFTER_MS);
+      await service.resyncStale();
+
+      expect(user.findUnique.mock.calls.map(([query]) => query.where.id)).toEqual([2, 1]);
+    });
+
+    it('re-derives at most one batch per tick', async () => {
+      for (let id = 1; id <= PRESENCE_RESYNC_MIN_BATCH + 1; id++) {
+        await service.onSocketOpen(id, id);
+      }
+      user.findUnique.mockClear();
+
+      now.mockReturnValue(1_000_000 + PRESENCE_RESYNC_AFTER_MS);
+      await service.resyncStale();
+
+      expect(user.findUnique).toHaveBeenCalledTimes(PRESENCE_RESYNC_MIN_BATCH);
+    });
+
+    it('sizes a batch so that everyone online is re-derived within the resync delay', () => {
+      expect(presenceResyncBatch(0)).toBe(PRESENCE_RESYNC_MIN_BATCH);
+      expect(presenceResyncBatch(600)).toBe(PRESENCE_RESYNC_MIN_BATCH);
+      expect(presenceResyncBatch(5_000)).toBe(417);
+      expect(presenceResyncBatch(20_000)).toBe(1_667);
+      expect(presenceResyncBatch(100_000)).toBe(PRESENCE_RESYNC_MAX_BATCH);
+    });
+
+    it('re-derives a batch a few users at a time', async () => {
+      for (let id = 1; id <= PRESENCE_RESYNC_CONCURRENCY + 1; id++) {
+        await service.onSocketOpen(id, id);
+      }
+      user.findUnique.mockClear();
+      user.findUnique.mockReturnValue(new Promise(() => undefined));
+
+      now.mockReturnValue(1_000_000 + PRESENCE_RESYNC_AFTER_MS);
+      void service.resyncStale();
+      await new Promise(setImmediate);
+
+      expect(user.findUnique).toHaveBeenCalledTimes(PRESENCE_RESYNC_CONCURRENCY);
+    });
+
+    it('carries on past a user whose derivation fails', async () => {
+      await service.onSocketOpen(1, 11);
+      await service.onSocketOpen(2, 21);
+      user.findUnique.mockClear();
+      user.findUnique
+        .mockRejectedValueOnce(new Error('database down'))
+        .mockResolvedValueOnce({ username: 'other', nickname: null });
+
+      now.mockReturnValue(1_000_000 + PRESENCE_RESYNC_AFTER_MS);
+      await service.resyncStale();
+
+      expect(user.findUnique).toHaveBeenCalledTimes(2);
+      expect(service.get(2)).toMatchObject({ username: 'other' });
+    });
+  });
+
   it('answers not found for an offline user, friend or not', async () => {
     friendsService.areFriends.mockResolvedValue(true);
 
@@ -404,7 +515,24 @@ describe('PresenceService', () => {
   });
 });
 
-describe('PresenceService events', () => {
+describe('PresenceService wiring', () => {
+  it('has its resync run by the scheduler', async () => {
+    const module = await Test.createTestingModule({
+      imports: [ScheduleModule.forRoot()],
+      providers: [
+        PresenceService,
+        { provide: PrismaService, useValue: {} },
+        { provide: FriendsService, useValue: {} },
+        { provide: MultiplayerService, useValue: {} },
+      ],
+    }).compile();
+    await module.init();
+
+    expect(module.get(SchedulerRegistry).getIntervals()).toHaveLength(1);
+
+    await module.close();
+  });
+
   it('listens to the domain events the rest of the backend emits', async () => {
     const module = await Test.createTestingModule({
       imports: [EventEmitterModule.forRoot()],

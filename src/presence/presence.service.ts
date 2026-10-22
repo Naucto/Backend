@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
+import { Interval } from '@nestjs/schedule';
 
 import {
   ACTIVITY_CHANGED,
@@ -24,11 +25,27 @@ import {
 type Entry = {
   connections: Map<number, PresenceSetInput>;
   generation: number;
+  refreshedAt: number;
   // Null while the first derivation is in flight or after it failed: counted, not yet visible.
   state: PresenceState | null;
 };
 
 export type PresenceFanOut = (userId: number, message: PresenceServerMessage) => void;
+
+export const PRESENCE_RESYNC_AFTER_MS = 2 * 60 * 1000;
+export const PRESENCE_RESYNC_TICK_MS = 10 * 1000;
+export const PRESENCE_RESYNC_MIN_BATCH = 100;
+export const PRESENCE_RESYNC_MAX_BATCH = 2000;
+export const PRESENCE_RESYNC_CONCURRENCY = 10;
+
+export function presenceResyncBatch(online: number): number {
+  const share = Math.ceil((online * PRESENCE_RESYNC_TICK_MS) / PRESENCE_RESYNC_AFTER_MS);
+  return Math.min(PRESENCE_RESYNC_MAX_BATCH, Math.max(PRESENCE_RESYNC_MIN_BATCH, share));
+}
+
+function samePresence(a: PresenceState, b: PresenceState): boolean {
+  return (Object.keys(a) as (keyof PresenceState)[]).every((key) => a[key] === b[key]);
+}
 
 // In-memory, single-process presence registry keyed by user id. A user is
 // "online" while at least one authenticated notifications socket is open;
@@ -61,6 +78,7 @@ export class PresenceService implements PresenceSocketHandler {
       const entry: Entry = {
         connections: new Map([[connectionId, { kind: 'IDLE' }]]),
         generation: 0,
+        refreshedAt: 0,
         state: null,
       };
       this.entries.set(userId, entry);
@@ -138,6 +156,27 @@ export class PresenceService implements PresenceSocketHandler {
     );
   }
 
+  @Interval(PRESENCE_RESYNC_TICK_MS)
+  async resyncStale(): Promise<void> {
+    const cutoff = Date.now() - PRESENCE_RESYNC_AFTER_MS;
+    const stale = [...this.entries]
+      .filter(([, entry]) => entry.refreshedAt <= cutoff)
+      .sort(([, a], [, b]) => a.refreshedAt - b.refreshedAt)
+      .slice(0, presenceResyncBatch(this.entries.size));
+
+    for (let i = 0; i < stale.length; i += PRESENCE_RESYNC_CONCURRENCY) {
+      await Promise.all(
+        stale
+          .slice(i, i + PRESENCE_RESYNC_CONCURRENCY)
+          .map(([userId, entry]) =>
+            this.refresh(userId, entry).catch((error) =>
+              this.logger.warn(`presence resync failed for user ${userId}: ${error}`),
+            ),
+          ),
+      );
+    }
+  }
+
   get(userId: number): PresenceState | null {
     return this.entries.get(userId)?.state ?? null;
   }
@@ -173,6 +212,7 @@ export class PresenceService implements PresenceSocketHandler {
 
   private async refresh(userId: number, entry: Entry): Promise<void> {
     const generation = ++entry.generation;
+    entry.refreshedAt = Date.now();
     const next = await this.derive(userId, this.latestDeclaration(entry));
 
     // The last socket may have closed, or a later refresh begun its own derivation, while the
@@ -195,6 +235,10 @@ export class PresenceService implements PresenceSocketHandler {
     }
 
     entry.state = next;
+    if (previous && samePresence(previous, next)) {
+      return;
+    }
+
     for (const friendId of await this.onlineFriendIds(userId)) {
       this.fanOut(friendId, { type: 'presence:changed', payload: next });
     }
