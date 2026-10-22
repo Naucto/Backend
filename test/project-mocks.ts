@@ -1,3 +1,4 @@
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Test, TestingModule } from '@nestjs/testing';
 import { MonetizationType, Prisma, ProjectStatus } from '@prisma/client';
 import { Readable } from 'stream';
@@ -184,6 +185,10 @@ export class ProjectMocks {
     record: jest.fn(),
   };
 
+  readonly eventEmitterMock = {
+    emit: jest.fn(),
+  };
+
   readonly mockLastVersion = (blob: Buffer): void => {
     this.s3ServiceMock.listObjects.mockResolvedValue([
       { Key: 'save/1/100', LastModified: new Date(100) },
@@ -222,6 +227,7 @@ export class ProjectMocks {
         { provide: NotificationsService, useValue: this.notificationsMock },
         { provide: WorkSessionService, useValue: this.workSessionsMock },
         { provide: AnalyticsFactService, useValue: this.factsMock },
+        { provide: EventEmitter2, useValue: this.eventEmitterMock },
       ],
     }).compile();
   }

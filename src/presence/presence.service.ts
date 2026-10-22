@@ -1,5 +1,15 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { OnEvent } from '@nestjs/event-emitter';
+import { Interval } from '@nestjs/schedule';
 
+import {
+  ACTIVITY_CHANGED,
+  ActivityChangedEvent,
+  FRIENDSHIP_CHANGED,
+  FriendshipChangedEvent,
+  PROJECT_CHANGED,
+  ProjectChangedEvent,
+} from '../common/domain-events';
 import { PrismaService } from '../prisma/prisma.service';
 import { FriendsService } from '../routes/friends/friends.service';
 import { MultiplayerService } from '../routes/multiplayer/multiplayer.service';
@@ -13,17 +23,33 @@ import {
 } from './presence.types';
 
 type Entry = {
-  sockets: number;
-  declared: PresenceSetInput;
+  connections: Map<number, PresenceSetInput>;
+  generation: number;
+  refreshedAt: number;
   // Null while the first derivation is in flight or after it failed: counted, not yet visible.
   state: PresenceState | null;
 };
 
 export type PresenceFanOut = (userId: number, message: PresenceServerMessage) => void;
 
+export const PRESENCE_RESYNC_AFTER_MS = 2 * 60 * 1000;
+export const PRESENCE_RESYNC_TICK_MS = 10 * 1000;
+export const PRESENCE_RESYNC_MIN_BATCH = 100;
+export const PRESENCE_RESYNC_MAX_BATCH = 2000;
+export const PRESENCE_RESYNC_CONCURRENCY = 10;
+
+export function presenceResyncBatch(online: number): number {
+  const share = Math.ceil((online * PRESENCE_RESYNC_TICK_MS) / PRESENCE_RESYNC_AFTER_MS);
+  return Math.min(PRESENCE_RESYNC_MAX_BATCH, Math.max(PRESENCE_RESYNC_MIN_BATCH, share));
+}
+
+function samePresence(a: PresenceState, b: PresenceState): boolean {
+  return (Object.keys(a) as (keyof PresenceState)[]).every((key) => a[key] === b[key]);
+}
+
 // In-memory, single-process presence registry keyed by user id. A user is
-// "online" while at least one authenticated notifications socket is open
-// (refcount); activity is what the client last declared, with HOSTING /
+// "online" while at least one authenticated notifications socket is open;
+// activity is the latest one any of those sockets declared, with HOSTING /
 // BUILDING derived from live game / work sessions so it cannot be spoofed.
 @Injectable()
 export class PresenceService implements PresenceSocketHandler {
@@ -42,14 +68,19 @@ export class PresenceService implements PresenceSocketHandler {
     this.fanOut = fanOut;
   }
 
-  async onSocketOpen(userId: number): Promise<PresenceState[]> {
+  async onSocketOpen(userId: number, connectionId: number): Promise<PresenceState[]> {
     const existing = this.entries.get(userId);
 
     if (existing) {
-      existing.sockets += 1;
+      existing.connections.set(connectionId, { kind: 'IDLE' });
     } else {
       // Counted before the first await, so a close or another open arriving meanwhile finds it.
-      const entry: Entry = { sockets: 1, declared: { kind: 'IDLE' }, state: null };
+      const entry: Entry = {
+        connections: new Map([[connectionId, { kind: 'IDLE' }]]),
+        generation: 0,
+        refreshedAt: 0,
+        state: null,
+      };
       this.entries.set(userId, entry);
       await this.refresh(userId, entry);
     }
@@ -57,14 +88,14 @@ export class PresenceService implements PresenceSocketHandler {
     return this.friendsPresence(userId);
   }
 
-  async onSocketClose(userId: number): Promise<void> {
+  async onSocketClose(userId: number, connectionId: number): Promise<void> {
     const entry = this.entries.get(userId);
-    if (!entry) {
+    if (!entry?.connections.delete(connectionId)) {
       return;
     }
 
-    entry.sockets -= 1;
-    if (entry.sockets > 0) {
+    if (entry.connections.size > 0) {
+      await this.refresh(userId, entry);
       return;
     }
 
@@ -74,14 +105,76 @@ export class PresenceService implements PresenceSocketHandler {
     }
   }
 
-  async onSet(userId: number, input: PresenceSetInput): Promise<void> {
+  async onSet(userId: number, connectionId: number, input: PresenceSetInput): Promise<void> {
+    const entry = this.entries.get(userId);
+    if (!entry?.connections.has(connectionId)) {
+      return;
+    }
+
+    entry.connections.delete(connectionId);
+    entry.connections.set(connectionId, input);
+    await this.refresh(userId, entry);
+  }
+
+  @OnEvent(ACTIVITY_CHANGED)
+  async onActivityChanged({ userId }: ActivityChangedEvent): Promise<void> {
     const entry = this.entries.get(userId);
     if (!entry) {
       return;
     }
 
-    entry.declared = input;
     await this.refresh(userId, entry);
+  }
+
+  @OnEvent(FRIENDSHIP_CHANGED)
+  async onFriendshipChanged({ userId, otherId }: FriendshipChangedEvent): Promise<void> {
+    const friends = await this.friendsService.areFriends(userId, otherId);
+
+    for (const [viewerId, subjectId] of [
+      [userId, otherId],
+      [otherId, userId],
+    ] as const) {
+      const state = this.get(subjectId);
+      this.fanOut(
+        viewerId,
+        friends && state
+          ? { type: 'presence:changed', payload: state }
+          : { type: 'presence:offline', payload: { userId: subjectId } },
+      );
+    }
+  }
+
+  @OnEvent(PROJECT_CHANGED)
+  async onProjectChanged({ projectId }: ProjectChangedEvent): Promise<void> {
+    await Promise.all(
+      [...this.entries]
+        .filter(
+          ([, entry]) =>
+            entry.state?.projectId === projectId || entry.state?.releaseId === projectId,
+        )
+        .map(([userId, entry]) => this.refresh(userId, entry)),
+    );
+  }
+
+  @Interval(PRESENCE_RESYNC_TICK_MS)
+  async resyncStale(): Promise<void> {
+    const cutoff = Date.now() - PRESENCE_RESYNC_AFTER_MS;
+    const stale = [...this.entries]
+      .filter(([, entry]) => entry.refreshedAt <= cutoff)
+      .sort(([, a], [, b]) => a.refreshedAt - b.refreshedAt)
+      .slice(0, presenceResyncBatch(this.entries.size));
+
+    for (let i = 0; i < stale.length; i += PRESENCE_RESYNC_CONCURRENCY) {
+      await Promise.all(
+        stale
+          .slice(i, i + PRESENCE_RESYNC_CONCURRENCY)
+          .map(([userId, entry]) =>
+            this.refresh(userId, entry).catch((error) =>
+              this.logger.warn(`presence resync failed for user ${userId}: ${error}`),
+            ),
+          ),
+      );
+    }
   }
 
   get(userId: number): PresenceState | null {
@@ -118,12 +211,13 @@ export class PresenceService implements PresenceSocketHandler {
   }
 
   private async refresh(userId: number, entry: Entry): Promise<void> {
-    const declared = entry.declared;
-    const next = await this.derive(userId, declared);
+    const generation = ++entry.generation;
+    entry.refreshedAt = Date.now();
+    const next = await this.derive(userId, this.latestDeclaration(entry));
 
-    // The last socket may have closed, or a later declaration begun its own derivation, while
-    // the queries ran; either way this result is stale.
-    if (this.entries.get(userId) !== entry || entry.declared !== declared) {
+    // The last socket may have closed, or a later refresh begun its own derivation, while the
+    // queries ran; either way this result is stale.
+    if (this.entries.get(userId) !== entry || entry.generation !== generation) {
       return;
     }
 
@@ -141,9 +235,21 @@ export class PresenceService implements PresenceSocketHandler {
     }
 
     entry.state = next;
+    if (previous && samePresence(previous, next)) {
+      return;
+    }
+
     for (const friendId of await this.onlineFriendIds(userId)) {
       this.fanOut(friendId, { type: 'presence:changed', payload: next });
     }
+  }
+
+  private latestDeclaration(entry: Entry): PresenceSetInput {
+    return (
+      [...entry.connections.values()].reverse().find((input) => input.kind === 'PLAYING') ?? {
+        kind: 'IDLE',
+      }
+    );
   }
 
   // Builds the effective state: a live hosted game session wins, then a work

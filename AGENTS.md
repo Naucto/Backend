@@ -92,10 +92,11 @@ Create it with `cp config/webrtc.example.json config/webrtc.json`.
 | `src/routes/<feature>/`                      | One folder per HTTP feature: `*.controller.ts`, `*.service.ts`, `*.module.ts`, `*.error.ts`, `dto/`, co-located `*.spec.ts` (`recommendations` = featured release / game of the week, admin-only writes via `@RequiresRole(ADMIN)`) |
 | `src/webrtc/`                                | `ws` + Yjs real-time multiplayer server (`server/`); `WebRTCService` allocates one port per server and advertises its public URL (see _WebSocket servers_ below)                                                                    |
 | `src/routes/analytics/`                      | Usage analytics: ingest from browsers, business facts, multiplayer accounting, minute presence sampling, finalization into rollups, account history projection, purge, and the admin and user read APIs (see _Analytics_ below)     |
+| `src/presence/`                              | What friends see each other doing (online, playing, building, hosting), fed by the notifications socket and by domain events (see _Presence_ below)                                                                                 |
 | `src/routes/admin/`                          | The admin console's own sign-in and admin accounts: who holds the role, promoting and revoking (see _Admin console_ below)                                                                                                          |
 | `src/tasks/`                                 | Scheduled jobs (`@nestjs/schedule` cron)                                                                                                                                                                                            |
 | `src/prisma/`                                | `PrismaService` + module                                                                                                                                                                                                            |
-| `src/common/`                                | Cross-feature DTOs + decorators (pagination, signed-CDN, `@AtLeastOne`)                                                                                                                                                             |
+| `src/common/`                                | Cross-feature DTOs + decorators (pagination, signed-CDN, `@AtLeastOne`), and the domain events (`domain-events.ts`)                                                                                                                 |
 | `src/util/`                                  | Framework-agnostic helpers                                                                                                                                                                                                          |
 | `src/swagger.ts`, `tool/generate-swagger.ts` | OpenAPI document build + emit                                                                                                                                                                                                       |
 | `prisma/`                                    | `schema.prisma` + split `models/*.prisma` + `migrations/`                                                                                                                                                                           |
@@ -178,6 +179,23 @@ at the controller boundary (see `project.controller.ts` catching `S3ObjectNotFou
 - Wrong passwords per address are limited in memory (`attempt-limiter.ts`), which holds while the
   backend runs as one instance.
 - An admin cannot change their own role, and the last admin cannot be demoted.
+
+**Presence** (`src/presence/`), what friends see each other doing:
+
+- A user is online while one of their notifications sockets is open, and each socket declares its
+  own activity; the latest PLAYING of any socket wins. HOSTING and BUILDING are never taken from a
+  client: they are derived from the live game session and the work session in the database.
+- The state is held in memory, which holds while the backend runs as one instance.
+- **Any write that changes what a friend would see emits an event of
+  `src/common/domain-events.ts`** after its transaction commits: `ACTIVITY_CHANGED` for game and
+  work sessions, `FRIENDSHIP_CHANGED` for friendships, `PROJECT_CHANGED` for a project's name,
+  cover or release. `PresenceService` listens with `@OnEvent`. A writer that forgets is caught by
+  the background resync, but only up to two minutes later.
+- The resync re-derives whoever nobody refreshed for two minutes, in batches sized to the number
+  of users online and capped so it never crowds out real queries. Friends are told only what
+  actually changed.
+- A work session is swept once nobody has saved into it for ten minutes **and** its collaboration
+  room is empty, so an editor left open is never dropped.
 
 ## Conventions (not all enforced by tooling — follow these)
 

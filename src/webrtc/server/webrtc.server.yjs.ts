@@ -82,6 +82,10 @@ export class YjsWebRTCServer extends EventBasedWebRTCServer<YjsWebRTCServerOptio
     serverSocket.topics = new Map<string, Set<YjsWebRTCClientSocket>>();
   }
 
+  subscriberCount(topicId: YjsWebRTCTopicID): number {
+    return this.wss<YjsWebRTCServerSocket>().topics.get(topicId)?.size ?? 0;
+  }
+
   @WebRTCServerEvent('connection')
   protected _internal_yjs_onConnection(
     _serverSocket: YjsWebRTCServerSocket,

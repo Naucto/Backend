@@ -4,11 +4,13 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { TestingModule } from '@nestjs/testing';
 import { Readable } from 'stream';
 
 import { withEnv } from '../../../test/env';
 import { encodeGame, ProjectMocks } from '../../../test/project-mocks';
+import { PROJECT_CHANGED, ProjectChangedEvent } from '../../common/domain-events';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AnalyticsFactService } from '../analytics/analytics-fact.service';
 import { EdgeService } from '../s3/edge.service';
@@ -30,6 +32,7 @@ describe('ProjectContentService', () => {
     edgeMock,
     mockLastVersion,
     mockPublishable,
+    eventEmitterMock,
   } = mocks;
 
   beforeEach(async () => {
@@ -65,6 +68,7 @@ describe('ProjectContentService', () => {
         edgeMock as unknown as EdgeService,
         {} as ModuleRef,
         {} as AnalyticsFactService,
+        {} as EventEmitter2,
       );
 
       return new ProjectContentService(
@@ -73,6 +77,7 @@ describe('ProjectContentService', () => {
         edgeMock as unknown as EdgeService,
         projectService,
         {} as AnalyticsFactService,
+        {} as EventEmitter2,
       );
     };
     const blank = {
@@ -420,6 +425,10 @@ describe('ProjectContentService', () => {
       expect(s3ServiceMock.uploadFile.mock.invocationCallOrder[0]).toBeLessThan(
         txMock.project.update.mock.invocationCallOrder[0]!,
       );
+      expect(eventEmitterMock.emit).toHaveBeenCalledWith(
+        PROJECT_CHANGED,
+        new ProjectChangedEvent(1),
+      );
     });
   });
 
@@ -447,6 +456,10 @@ describe('ProjectContentService', () => {
       expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({ key: 'release/1' });
       expect(txMock.project.update.mock.invocationCallOrder[0]).toBeLessThan(
         s3ServiceMock.deleteFile.mock.invocationCallOrder[0]!,
+      );
+      expect(eventEmitterMock.emit).toHaveBeenCalledWith(
+        PROJECT_CHANGED,
+        new ProjectChangedEvent(1),
       );
     });
 

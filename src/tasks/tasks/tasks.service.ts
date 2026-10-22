@@ -1,12 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
-import { PrismaService } from '../../prisma/prisma.service';
 import { ProjectContentService } from '../../routes/project/project-content.service';
+import { WorkSessionService } from '../../routes/work-session/work-session.service';
 
 /**
- * A work session nobody has saved into for this long is presumed abandoned. The sweep only runs
- * on its schedule, so a session may outlive its last save by up to one interval more.
+ * A work session nobody is connected to, and nobody has saved into for this long, is presumed
+ * abandoned. The sweep only runs on its schedule, so a session may outlive its last save by up to
+ * one interval more.
  */
 export const WORK_SESSION_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -18,19 +19,13 @@ export class TasksService {
   private readonly logger = new Logger(TasksService.name);
 
   constructor(
-    private prisma: PrismaService,
     private readonly contentService: ProjectContentService,
+    private readonly workSessions: WorkSessionService,
   ) {}
 
   @Cron(CronExpression.EVERY_10_MINUTES)
   async cleanTimedOutWorkSessions(): Promise<void> {
-    await this.prisma.workSession.deleteMany({
-      where: {
-        lastSaveAt: {
-          lt: new Date(Date.now() - WORK_SESSION_TIMEOUT_MS),
-        },
-      },
-    });
+    await this.workSessions.sweepAbandoned(new Date(Date.now() - WORK_SESSION_TIMEOUT_MS));
   }
 
   /**
