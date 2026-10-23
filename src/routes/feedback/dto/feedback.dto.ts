@@ -7,6 +7,7 @@ import {
   IsEnum,
   IsIn,
   IsInt,
+  IsObject,
   IsOptional,
   IsString,
   Matches,
@@ -178,7 +179,10 @@ const parseContext = ({ value }: { value: unknown }): unknown => {
     return value;
   }
   try {
-    return plainToInstance(BugContextDto, JSON.parse(value) as unknown);
+    const parsed = JSON.parse(value) as unknown;
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? plainToInstance(BugContextDto, parsed)
+      : value;
   } catch {
     return value;
   }
@@ -237,6 +241,7 @@ export class CreateBugReportDto {
   })
   @IsOptional()
   @Transform(parseContext)
+  @IsObject()
   @ValidateNested()
   @Type(() => BugContextDto)
   context?: BugContextDto;

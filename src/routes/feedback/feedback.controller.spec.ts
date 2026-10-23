@@ -127,6 +127,16 @@ describe('FeedbackController and CrashIngestController', () => {
     expect(file).toBeUndefined();
   });
 
+  it.each([
+    ['an array', '[{}]'],
+    ['a string', '"x"'],
+    ['null', 'null'],
+  ])('refuses a context that is %s', async (_, context) => {
+    const response = await bug().field('context', context);
+
+    expect(response.status).toBe(400);
+  });
+
   it('refuses a context field it does not know', async () => {
     const response = await bug().field('context', JSON.stringify({ cookies: 'secret' }));
 
