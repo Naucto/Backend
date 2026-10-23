@@ -16,6 +16,7 @@ WORKDIR /app
 ENV DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}"
 
 COPY package.json package-lock.json ./
+COPY vendor ./vendor
 COPY prisma.config.ts ./
 COPY prisma ./prisma
 

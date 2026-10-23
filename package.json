@@ -35,6 +35,7 @@
     "@aws-sdk/cloudfront-signer": "^3.975.0",
     "@aws-sdk/lib-storage": "^3.986.0",
     "@aws-sdk/s3-request-presigner": "^3.986.0",
+    "@naucto/engine": "file:vendor/naucto-engine-0.1.0-node.0940d741ef3e.tgz",
     "@nestjs/common": "^11.1.12",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.1.12",

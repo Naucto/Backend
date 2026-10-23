@@ -50,4 +50,27 @@ describe("buildContext", () => {
     }));
     expect((context["sheets"] as { id: string; base: number }[]).map((s) => [s.id, s.base])).toEqual([["0", 0], ["x", 64]]);
   });
+
+  it("preserves named sheets, geometry, locks, audio and network declarations", () => {
+    const context = buildContext(state((doc) => {
+      doc.getMap("game.meta").set("mapWidth", 12);
+      const sheet = new Y.Map<unknown>();
+      doc.getMap("gfx.sheets").set("art", sheet);
+      sheet.set("name", "Characters");
+      sheet.set("w", 16);
+      sheet.set("h", 8);
+      sheet.set("pixels", new Y.Map([["0,0", 7]]));
+      doc.getMap("ai.locks").set("protected", { target: "sheet", resourceId: "art", x: 0, y: 0, width: 8, height: 8 });
+      doc.getMap("sound.patterns").set("p", JSON.stringify({ id: "p", notes: [] }));
+      doc.getMap("net.permissions").set("players.score", { flags: 1, default: 0 });
+    }));
+    expect(context["sheets"]).toEqual([
+      expect.objectContaining({ id: "art", name: "Characters", width: 16, height: 8, pixels: "7" + "0".repeat(127) }),
+    ]);
+    expect(context["maps"]).toEqual([expect.objectContaining({ width: 12 })]);
+    expect(context["locks"]).toEqual({ protected: { target: "sheet", resourceId: "art", x: 0, y: 0, width: 8, height: 8 } });
+    expect(context["patterns"]).toEqual({ p: JSON.stringify({ id: "p", notes: [] }) });
+    expect(context["netPermissions"]).toEqual({ "players.score": { flags: 1, default: 0 } });
+  });
+
 });

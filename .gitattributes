@@ -1,1 +1,4 @@
 * text eolf=lf
+
+# npm archives must retain their exact bytes for lockfile integrity.
+*.tgz -text

@@ -108,3 +108,11 @@ and the vulnerability disclosure policy is in [`SECURITY.md`](./SECURITY.md).
 ### 📄 License
 
 This project is licensed under the **GNU General Public License v3.0 (GPLv3)**.
+
+## Shared game model for AI context
+
+`src/routes/ai/ai-context.ts` projects saved Yjs bytes using `Game` and `aiContext` from
+`@naucto/engine/headless`, the Frontend engine's Node distribution. Its immutable archive
+is installed from `vendor/` (see `vendor/README.md`) and copied into Docker before `npm ci`.
+No frontend checkout or private npm registry token is needed. The Backend remains responsible
+for authorization and proposal validation/application; only document reading is delegated here.
