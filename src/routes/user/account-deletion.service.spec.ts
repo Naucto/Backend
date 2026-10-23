@@ -190,6 +190,23 @@ describe('AccountDeletionService', () => {
     expect(s3Service.deleteFile).toHaveBeenCalledWith({ key: 'feedback/bugs/4/screenshot.png' });
   });
 
+  it('keeps the key of a screenshot it could not delete, so it can be found again', async () => {
+    prisma.bugReport.findMany.mockResolvedValue([
+      { id: 4, screenshotKey: 'feedback/bugs/4/screenshot.png' },
+      { id: 5, screenshotKey: 'feedback/bugs/5/screenshot.webp' },
+    ]);
+    s3Service.deleteFile.mockImplementation(({ key }: { key: string }) =>
+      key.includes('/4/') ? Promise.reject(new Error('denied')) : Promise.resolve(),
+    );
+
+    await service.deleteAccount(7, false, { by: 'self' });
+
+    expect(prisma.bugReport.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: [5] } },
+      data: { screenshotKey: null, screenshotMime: null, screenshotBytes: null },
+    });
+  });
+
   it('has decided the fate of every relation the User model holds', () => {
     const userModel = Prisma.dmmf.datamodel.models.find(
       (model) => model.name === Prisma.ModelName.User,

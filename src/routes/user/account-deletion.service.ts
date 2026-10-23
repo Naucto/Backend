@@ -187,19 +187,25 @@ export class AccountDeletionService {
     if (reports.length === 0) {
       return;
     }
-    await this.prisma.bugReport.updateMany({
-      where: { id: { in: reports.map((report) => report.id) } },
-      data: { screenshotKey: null, screenshotMime: null, screenshotBytes: null },
-    });
+    // A key is cleared only once its file is gone, so a failed delete stays findable: a report of a
+    // deleted account that still holds a key is a screenshot left to remove.
+    const removed: number[] = [];
     for (const report of reports) {
       if (!report.screenshotKey) {
         continue;
       }
       try {
         await this.s3Service.deleteFile({ key: report.screenshotKey });
+        removed.push(report.id);
       } catch (error) {
         this.logger.warn(`Failed to delete the screenshot of bug report ${report.id}: ${error}`);
       }
+    }
+    if (removed.length > 0) {
+      await this.prisma.bugReport.updateMany({
+        where: { id: { in: removed } },
+        data: { screenshotKey: null, screenshotMime: null, screenshotBytes: null },
+      });
     }
   }
 }
