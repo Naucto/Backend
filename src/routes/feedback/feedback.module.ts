@@ -10,6 +10,7 @@ import { AdminFeedbackService } from './admin-feedback.service';
 import { CrashService } from './crash.service';
 import { CrashCaptureFilter } from './crash-capture.filter';
 import { CrashIngestController } from './crash-ingest.controller';
+import { CrashNotifier } from './crash-notifier';
 import { FeedbackController } from './feedback.controller';
 import { FeedbackService } from './feedback.service';
 
@@ -24,6 +25,7 @@ import { FeedbackService } from './feedback.service';
   providers: [
     FeedbackService,
     CrashService,
+    CrashNotifier,
     AdminFeedbackService,
     { provide: APP_FILTER, useClass: CrashCaptureFilter },
   ],

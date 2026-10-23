@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FeaturesService } from '../features/features.service';
 import { CRASH_EVENTS_KEPT, CrashInput, CrashService } from './crash.service';
+import { CrashNotifier } from './crash-notifier';
 
 describe('CrashService', () => {
   const prisma = {
@@ -10,6 +11,7 @@ describe('CrashService', () => {
     crashEvent: { create: jest.fn(), findMany: jest.fn(), deleteMany: jest.fn() },
   };
   const features = { features: { monetization: false, analytics: false, feedback: true } };
+  const notifier = { notify: jest.fn() };
   let service: CrashService;
 
   const crash: CrashInput = {
@@ -27,9 +29,11 @@ describe('CrashService', () => {
     features.features.feedback = true;
     prisma.crashGroup.upsert.mockResolvedValue({ id: 3, status: 'OPEN' });
     prisma.crashEvent.findMany.mockResolvedValue([]);
+    prisma.crashGroup.updateMany.mockResolvedValue({ count: 1 });
     service = new CrashService(
       prisma as unknown as PrismaService,
       features as unknown as FeaturesService,
+      notifier as unknown as CrashNotifier,
     );
     jest.spyOn(service['logger'], 'warn').mockImplementation();
   });
@@ -103,6 +107,40 @@ describe('CrashService', () => {
       expect.objectContaining({ where: { groupId: 3 }, skip: CRASH_EVENTS_KEPT }),
     );
     expect(prisma.crashEvent.deleteMany).toHaveBeenCalledWith({ where: { id: { in: [1, 2] } } });
+  });
+
+  it.each([
+    ['a first occurrence', { status: 'OPEN', count: 1 }, 'new'],
+    ['a regression', { status: 'RESOLVED', count: 7 }, 'regressed'],
+    ['a milestone', { status: 'OPEN', count: 100 }, 'milestone'],
+  ])('announces %s', async (_, group, kind) => {
+    prisma.crashGroup.upsert.mockResolvedValue({ id: 3, ...group });
+
+    await service.record(crash);
+
+    expect(notifier.notify).toHaveBeenCalledWith(
+      expect.objectContaining({ kind, groupId: 3, count: group.count, route: '/hub' }),
+    );
+  });
+
+  it.each([
+    ['an ordinary repeat', { status: 'OPEN', count: 4 }],
+    ['an ignored group', { status: 'IGNORED', count: 1 }],
+  ])('stays quiet on %s', async (_, group) => {
+    prisma.crashGroup.upsert.mockResolvedValue({ id: 3, ...group });
+
+    await service.record(crash);
+
+    expect(notifier.notify).not.toHaveBeenCalled();
+  });
+
+  it('announces a regression once when two reports reopen it together', async () => {
+    prisma.crashGroup.upsert.mockResolvedValue({ id: 3, status: 'RESOLVED', count: 7 });
+    prisma.crashGroup.updateMany.mockResolvedValue({ count: 0 });
+
+    await service.record(crash);
+
+    expect(notifier.notify).not.toHaveBeenCalled();
   });
 
   it('never throws from recordSafely', async () => {

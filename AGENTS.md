@@ -194,6 +194,10 @@ at the controller boundary (see `project.controller.ts` catching `S3ObjectNotFou
 - `CrashCaptureFilter` (global `APP_FILTER`) records every request that fails with a 500 or an
   unknown error, named by its route pattern, then answers as Nest would. A scoped filter that
   swallows errors (`MultiplayerExceptionFilter`) records them itself.
+- `CrashNotifier` posts a crash to the Discord webhook in `DISCORD_CRASH_WEBHOOK_URL` when its group
+  is new, comes back after being resolved, or reaches 10, 100, 1000 or 10000 occurrences. An ignored
+  group stays quiet. At most 20 alerts go out a minute, under Discord's own limit, and a failed post
+  is only logged.
 - Bug screenshots (PNG, JPEG or WebP, 2 MB) are stored under `feedback/bugs/<id>/` and **never made
   public-read**: the admin console streams them through `GET /admin/feedback/bugs/:id/screenshot`.
   The dev bucket is anonymously readable as a whole, so this only holds in a deployed bucket.

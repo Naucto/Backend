@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { summarizeUserAgent } from '../analytics/request-context';
 import { FeaturesService } from '../features/features.service';
 import { crashFingerprint } from './crash-fingerprint';
+import { CRASH_MILESTONES, CrashNoticeKind, CrashNotifier } from './crash-notifier';
 import {
   CRASH_MESSAGE_MAX_LENGTH,
   CRASH_NAME_MAX_LENGTH,
@@ -35,6 +36,7 @@ export class CrashService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly features: FeaturesService,
+    private readonly notifier: CrashNotifier,
   ) {}
 
   /** Records a crash, logging rather than throwing: reporting one failure must not cause another. */
@@ -82,6 +84,20 @@ export class CrashService {
       },
     });
     await this.prune(group.id);
+
+    if (group.notice) {
+      void this.notifier.notify({
+        kind: group.notice,
+        groupId: group.id,
+        source: input.source,
+        name,
+        message,
+        stack,
+        route: input.route,
+        count: group.count,
+        appRelease: input.appRelease ?? null,
+      });
+    }
   }
 
   private async upsertGroup(
@@ -94,8 +110,8 @@ export class CrashService {
       appRelease: string | null;
       now: Date;
     },
-  ): Promise<{ id: number }> {
-    const upsert = (): Promise<{ id: number; status: string }> =>
+  ): Promise<{ id: number; count: number; notice: CrashNoticeKind | null }> {
+    const upsert = (): Promise<{ id: number; status: string; count: number }> =>
       this.prisma.crashGroup.upsert({
         where: { fingerprint },
         create: {
@@ -115,10 +131,10 @@ export class CrashService {
           lastRelease: fields.appRelease,
           lastSeen: fields.now,
         },
-        select: { id: true, status: true },
+        select: { id: true, status: true, count: true },
       });
 
-    let group: { id: number; status: string };
+    let group: { id: number; status: string; count: number };
     try {
       group = await upsert();
     } catch (error) {
@@ -133,13 +149,21 @@ export class CrashService {
       }
     }
 
+    const counted = { id: group.id, count: group.count };
     if (group.status === 'RESOLVED') {
-      await this.prisma.crashGroup.updateMany({
+      const reopened = await this.prisma.crashGroup.updateMany({
         where: { id: group.id, status: 'RESOLVED' },
         data: { status: 'OPEN', regressedAt: fields.now },
       });
+      return { ...counted, notice: reopened.count > 0 ? 'regressed' : null };
     }
-    return group;
+    if (group.status === 'IGNORED') {
+      return { ...counted, notice: null };
+    }
+    if (group.count === 1) {
+      return { ...counted, notice: 'new' };
+    }
+    return { ...counted, notice: CRASH_MILESTONES.has(group.count) ? 'milestone' : null };
   }
 
   private async prune(groupId: number): Promise<void> {

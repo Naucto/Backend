@@ -80,6 +80,9 @@ const ENV = {
 
   GEOIP_DB_PATH: text,
 
+  DISCORD_CRASH_WEBHOOK_URL: text,
+  ADMIN_PANEL_URL: text,
+
   ENABLE_SWAGGER: flag,
 } satisfies Record<string, Parser<unknown>>;
 
