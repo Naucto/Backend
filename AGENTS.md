@@ -191,6 +191,13 @@ at the controller boundary (see `project.controller.ts` catching `S3ObjectNotFou
   ingest, never reads an account, and keeps only the user agent's families. Crashes group by a
   fingerprint of source, name, normalised message and top frames (`crash-fingerprint.ts`), with
   only the latest 20 occurrences kept; a resolved group that recurs reopens as a regression.
+- Before a crash is stored, `crash-scrub.ts` takes out emails, tokens, URL queries and the username
+  of a profile path (`/u/:username`). The rest of a message and stack is kept as sent, since it is
+  what a fix needs, so treat crash text as possibly personal anyway.
+- Browser reports open at most 100 new groups an hour (counted in memory, one instance), so varying
+  a message cannot flood the table. Known groups and backend crashes always count. A daily job
+  deletes resolved and ignored groups after 90 days without an occurrence, and open groups seen
+  only once after 30.
 - `CrashCaptureFilter` (global `APP_FILTER`) records every request that fails with a 500 or an
   unknown error, named by its route pattern, then answers as Nest would. A scoped filter that
   swallows errors (`MultiplayerExceptionFilter`) records them itself.

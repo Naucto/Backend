@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { CrashSource, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
@@ -6,6 +7,7 @@ import { summarizeUserAgent } from '../analytics/request-context';
 import { FeaturesService } from '../features/features.service';
 import { crashFingerprint } from './crash-fingerprint';
 import { CRASH_MILESTONES, CrashNoticeKind, CrashNotifier } from './crash-notifier';
+import { scrubMessage, scrubRoute, scrubStack } from './crash-scrub';
 import {
   CRASH_MESSAGE_MAX_LENGTH,
   CRASH_NAME_MAX_LENGTH,
@@ -14,6 +16,21 @@ import {
 
 /** The occurrences kept per group. The count goes on past them. */
 export const CRASH_EVENTS_KEPT = 20;
+
+/**
+ * New groups opened per hour from browser reports. The ingest is public, so a message changed a
+ * little on each report would otherwise open a group each time. Counted in memory, which holds
+ * while the backend runs as one instance.
+ */
+export const CRASH_NEW_GROUPS_PER_HOUR = 100;
+
+/** A resolved or ignored group is deleted once it has not happened for this long. */
+export const CRASH_CLOSED_RETENTION_DAYS = 90;
+/** An open group seen only once is deleted once it has not happened again for this long. */
+export const CRASH_SINGLE_RETENTION_DAYS = 30;
+
+const HOUR_MS = 3_600_000;
+const DAY_MS = 24 * HOUR_MS;
 
 export interface CrashInput {
   source: CrashSource;
@@ -32,6 +49,8 @@ const UNIQUE_VIOLATION = 'P2002';
 @Injectable()
 export class CrashService {
   private readonly logger = new Logger(CrashService.name);
+  private openedAt: number[] = [];
+  private refusing = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -55,10 +74,15 @@ export class CrashService {
       return;
     }
     const name = input.name.slice(0, CRASH_NAME_MAX_LENGTH) || 'Error';
-    const message = input.message.slice(0, CRASH_MESSAGE_MAX_LENGTH);
-    const stack = input.stack.slice(0, CRASH_STACK_MAX_LENGTH);
+    const message = scrubMessage(input.message).slice(0, CRASH_MESSAGE_MAX_LENGTH);
+    const stack = scrubStack(input.stack).slice(0, CRASH_STACK_MAX_LENGTH);
+    const route = scrubRoute(input.route);
     const fingerprint = crashFingerprint(input.source, name, message, stack);
     const now = new Date();
+
+    if (input.source !== 'BACKEND' && !(await this.mayOpen(fingerprint, now.getTime()))) {
+      return;
+    }
 
     const group = await this.upsertGroup(fingerprint, {
       source: input.source,
@@ -74,7 +98,7 @@ export class CrashService {
       data: {
         groupId: group.id,
         createdAt: now,
-        route: input.route,
+        route,
         stack,
         appRelease: input.appRelease ?? null,
         device: userAgent?.device ?? null,
@@ -93,11 +117,62 @@ export class CrashService {
         name,
         message,
         stack,
-        route: input.route,
+        route,
         count: group.count,
         appRelease: input.appRelease ?? null,
       });
     }
+  }
+
+  /** Deletes the groups nobody needs any more, with their occurrences. */
+  @Cron('0 45 2 * * *', { timeZone: 'UTC' })
+  async purgeStale(now = new Date()): Promise<void> {
+    try {
+      const { count } = await this.prisma.crashGroup.deleteMany({
+        where: {
+          OR: [
+            {
+              status: { in: ['RESOLVED', 'IGNORED'] },
+              lastSeen: { lt: new Date(now.getTime() - CRASH_CLOSED_RETENTION_DAYS * DAY_MS) },
+            },
+            {
+              status: 'OPEN',
+              count: 1,
+              lastSeen: { lt: new Date(now.getTime() - CRASH_SINGLE_RETENTION_DAYS * DAY_MS) },
+            },
+          ],
+        },
+      });
+      if (count > 0) {
+        this.logger.log(`Deleted ${String(count)} stale crash groups`);
+      }
+    } catch (error) {
+      this.logger.warn(`Crash purge stopped: ${String(error)}`);
+    }
+  }
+
+  /** Whether a report may count: always into a known group, into a new one within the budget. */
+  private async mayOpen(fingerprint: string, now: number): Promise<boolean> {
+    const known = await this.prisma.crashGroup.findUnique({
+      where: { fingerprint },
+      select: { id: true },
+    });
+    if (known) {
+      return true;
+    }
+    this.openedAt = this.openedAt.filter((at) => now - at < HOUR_MS);
+    if (this.openedAt.length < CRASH_NEW_GROUPS_PER_HOUR) {
+      this.openedAt.push(now);
+      this.refusing = false;
+      return true;
+    }
+    if (!this.refusing) {
+      this.refusing = true;
+      this.logger.warn(
+        `More than ${String(CRASH_NEW_GROUPS_PER_HOUR)} new crashes in an hour, new ones are dropped`,
+      );
+    }
+    return false;
   }
 
   private async upsertGroup(

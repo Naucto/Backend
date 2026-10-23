@@ -2,12 +2,22 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { FeaturesService } from '../features/features.service';
-import { CRASH_EVENTS_KEPT, CrashInput, CrashService } from './crash.service';
+import {
+  CRASH_EVENTS_KEPT,
+  CRASH_NEW_GROUPS_PER_HOUR,
+  CrashInput,
+  CrashService,
+} from './crash.service';
 import { CrashNotifier } from './crash-notifier';
 
 describe('CrashService', () => {
   const prisma = {
-    crashGroup: { upsert: jest.fn(), updateMany: jest.fn() },
+    crashGroup: {
+      upsert: jest.fn(),
+      updateMany: jest.fn(),
+      findUnique: jest.fn(),
+      deleteMany: jest.fn(),
+    },
     crashEvent: { create: jest.fn(), findMany: jest.fn(), deleteMany: jest.fn() },
   };
   const features = { features: { monetization: false, analytics: false, feedback: true } };
@@ -141,6 +151,62 @@ describe('CrashService', () => {
     await service.record(crash);
 
     expect(notifier.notify).not.toHaveBeenCalled();
+  });
+
+  it('keeps no email, token, query or username in what it stores', async () => {
+    await service.record({
+      ...crash,
+      message: 'No account for ada@example.com at https://naucto.net/u/ada?token=eyJa.eyJb.sig',
+      stack: 'Error\n    at load (https://naucto.net/u/ada/main.js?session=42:1:2)',
+      route: '/u/ada',
+    });
+
+    const create = (
+      prisma.crashGroup.upsert.mock.calls[0] as [{ create: Record<string, string> }]
+    )[0].create;
+    expect(create['message']).toBe('No account for <email> at https://naucto.net/u/:username');
+    expect(create['lastStack']).toBe(
+      'Error\n    at load (https://naucto.net/u/:username/main.js:1:2)',
+    );
+    expect(prisma.crashEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ route: '/u/:username' }),
+    });
+  });
+
+  it('opens a limited number of new groups an hour from browsers, and still counts known ones', async () => {
+    prisma.crashGroup.findUnique.mockResolvedValue(null);
+    for (let i = 0; i < CRASH_NEW_GROUPS_PER_HOUR; i++) {
+      await service.record({ ...crash, message: `boom ${String(i)}` });
+    }
+    expect(prisma.crashGroup.upsert).toHaveBeenCalledTimes(CRASH_NEW_GROUPS_PER_HOUR);
+
+    await service.record({ ...crash, message: 'one too many' });
+    expect(prisma.crashGroup.upsert).toHaveBeenCalledTimes(CRASH_NEW_GROUPS_PER_HOUR);
+
+    prisma.crashGroup.findUnique.mockResolvedValue({ id: 3 });
+    await service.record(crash);
+    await service.record({ ...crash, source: 'BACKEND' });
+    expect(prisma.crashGroup.upsert).toHaveBeenCalledTimes(CRASH_NEW_GROUPS_PER_HOUR + 2);
+  });
+
+  it('deletes closed groups after 90 quiet days, and lone open ones after 30', async () => {
+    prisma.crashGroup.deleteMany.mockResolvedValue({ count: 2 });
+    jest.spyOn(service['logger'], 'log').mockImplementation();
+    const now = new Date('2026-10-23T02:45:00.000Z');
+
+    await service.purgeStale(now);
+
+    expect(prisma.crashGroup.deleteMany).toHaveBeenCalledWith({
+      where: {
+        OR: [
+          {
+            status: { in: ['RESOLVED', 'IGNORED'] },
+            lastSeen: { lt: new Date('2026-07-25T02:45:00.000Z') },
+          },
+          { status: 'OPEN', count: 1, lastSeen: { lt: new Date('2026-09-23T02:45:00.000Z') } },
+        ],
+      },
+    });
   });
 
   it('never throws from recordSafely', async () => {
