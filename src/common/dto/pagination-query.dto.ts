@@ -31,6 +31,12 @@ export class PaginationQueryDto {
   limit?: number;
 }
 
+/** A page as a service takes it, apart from the query DTO that carries it in. */
+export interface PageRequest {
+  page?: number | undefined;
+  limit?: number | undefined;
+}
+
 export interface SkipTake {
   skip: number;
   take: number;
@@ -38,7 +44,7 @@ export interface SkipTake {
 
 /** The Prisma window for a page; `defaultLimit` is the route's own default page size. */
 export function toSkipTake(
-  query: PaginationQueryDto,
+  query: PageRequest,
   defaultLimit: number = DEFAULT_PAGE_SIZE,
 ): SkipTake {
   const take = query.limit ?? defaultLimit;
