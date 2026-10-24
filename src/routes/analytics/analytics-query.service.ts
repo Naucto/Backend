@@ -1,5 +1,10 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { AnalyticsGrain, AnalyticsLiveState, AnalyticsRetentionKind } from '@prisma/client';
+import {
+  AnalyticsAnonConsent,
+  AnalyticsGrain,
+  AnalyticsLiveState,
+  AnalyticsRetentionKind,
+} from '@prisma/client';
 
 import { PresenceService } from '../../presence/presence.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -202,6 +207,13 @@ export class AnalyticsQueryService {
       where: { minute },
       _sum: { beats: true },
     });
+    const answers = await this.prisma.analyticsAnonTally.groupBy({
+      by: ['consent'],
+      where: { minute },
+      _sum: { beats: true },
+    });
+    const answerOf = (consent: AnalyticsAnonConsent): number =>
+      answers.find((row) => row.consent === consent)?._sum.beats ?? 0;
     const accounts = this.presenceService.countsByKind();
     const browserOf = (state: AnalyticsLiveState): number =>
       browsers.find((row) => row.state === state)?._count._all ?? 0;
@@ -244,6 +256,11 @@ export class AnalyticsQueryService {
       note: 'Browsers and anonymous tabs are counted per minute they were seen, not at one instant; accounts are counted at one instant.',
       samples: samples.slice(-60).map((sample) => ({ ...sample, at: sample.at.toISOString() })),
       current,
+      anonymousByAnswer: {
+        declined: answerOf('DECLINED'),
+        unanswered: answerOf('UNANSWERED'),
+        unknown: answerOf('UNKNOWN'),
+      },
       gamesNow: games.map((game) => ({ ...game, name: names.get(game.releaseId) ?? null })),
     };
   }

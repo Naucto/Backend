@@ -1,18 +1,26 @@
 /**
  * Development seed: people, friendships, pending requests and shared game sessions, so the lists
- * and panels that stay hidden on an empty database have rows to draw.
+ * and panels that stay hidden on an empty database have rows to draw, and 80 days of usage
+ * analytics for the admin console (`seed-dev-analytics.ts`).
+ *
+ *   npm run seed:dev                         everything
+ *   npm run seed:dev -- --no-analytics       everything but the analytics
+ *   npm run seed:dev -- --clear-analytics    only removes the analytics it wrote
  *
  * Games are seeded separately, by `npm run seed:content` in the Frontend: their content is a Yjs
  * document only the engine can build.
  *
  * Safe to re-run: every row is matched on a key and updated in place, never duplicated.
  */
+import 'dotenv/config';
+
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
 import { getOptionalEnv } from '../src/config/env';
 import { databaseUrl } from '../src/prisma/database-url';
+import { clearAnalytics, seedAnalytics } from './seed-dev-analytics';
 
 const connectionString = databaseUrl();
 if (!connectionString) {
@@ -267,6 +275,10 @@ async function seedGameSessions(
 
 async function main(): Promise<void> {
   assertLocalDatabase(connectionString);
+  if (process.argv.includes('--clear-analytics')) {
+    console.log(await clearAnalytics(prisma));
+    return;
+  }
   const ids = await seedUsers();
   const alexis = ids.get('alexis');
   if (alexis === undefined) {
@@ -288,6 +300,9 @@ async function main(): Promise<void> {
       : `  ${String(sessions.total)} shared game sessions (${String(sessions.made)} new), ` +
           'so PLAYED WITH RECENTLY has rows',
   );
+  if (!process.argv.includes('--no-analytics')) {
+    console.log(`analytics: ${await seedAnalytics(prisma)}`);
+  }
   console.log('next: npm run seed:content in the Frontend, for games with playable content');
 }
 

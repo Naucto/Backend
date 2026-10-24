@@ -44,28 +44,27 @@ from `client/` (see `client/README.md`).
 
 ## Commands
 
-| Command                                                                             | Purpose                                                                                                                          |
-| ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run start:dev`                                                                 | Start Nest in watch mode on `localhost:3000`                                                                                     |
-| `npm run build`                                                                     | Compile with `nest build` (strict `tsc`)                                                                                         |
-| `npm run start:prod`                                                                | Run the compiled server (`node dist/main`)                                                                                       |
-| `npm run lint`                                                                      | ESLint over `src/`, `test/`, `prisma/`, `tool/` and the root config files — **note: runs with `--fix` (mutates files)**          |
-| `npm run lint:check`                                                                | ESLint, check-only (what CI runs)                                                                                                |
-| `npm run typecheck`                                                                 | `tsc --noEmit` over the same files as `lint:check` (`tsconfig.eslint.json`)                                                      |
-| `npm run format`                                                                    | Prettier-format `src/` and `test/`                                                                                               |
-| `npm run test`                                                                      | Unit tests (Jest, co-located `*.spec.ts`)                                                                                        |
-| `npm run test:cov`                                                                  | Unit tests with coverage                                                                                                         |
-| `npm run generate:swagger`                                                          | Boot the app and emit `swagger.json` from the Swagger decorators                                                                 |
-| `npm run generate:client`                                                           | Generate the typed API client sources into `client/src`                                                                          |
-| `npm run client:build`                                                              | Emit `swagger.json`, then generate + compile `@naucto/api-client` into `client/dist` (what the publish workflow runs)            |
-| `npx prisma migrate dev --name <desc>`                                              | Create + apply a dev migration from the schema                                                                                   |
-| `npx prisma generate`                                                               | Regenerate the Prisma client                                                                                                     |
-| `npm run seed:dev`                                                                  | Seed a local database with people, friendships, pending requests and shared game sessions (refuses non-local hosts)              |
-| `npm run seed:analytics`                                                            | Fill a local database with 60 days of synthetic analytics and finalize it, so the admin panel has data (refuses non-local hosts) |
-| `npm run analytics:acceptance`                                                      | Run the analytics acceptance scenarios against a scratch copy of the local database, over two connections; by hand, never in CI  |
-| `npm run repair:release-view-keys`                                                  | Delete the release view keys once derived from readers' addresses (one-off)                                                      |
-| `docker compose -f docker-compose.yml -f docker-compose.dev.yml up --watch backend` | Dev stack: Postgres, MinIO, and the API with hot reload                                                                          |
-| `./dev.sh`                                                                          | The line above with a `build` first — the shorthand, and the usual way in                                                        |
+| Command                                                                             | Purpose                                                                                                                                                                                                                           |
+| ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run start:dev`                                                                 | Start Nest in watch mode on `localhost:3000`                                                                                                                                                                                      |
+| `npm run build`                                                                     | Compile with `nest build` (strict `tsc`)                                                                                                                                                                                          |
+| `npm run start:prod`                                                                | Run the compiled server (`node dist/main`)                                                                                                                                                                                        |
+| `npm run lint`                                                                      | ESLint over `src/`, `test/`, `prisma/`, `tool/` and the root config files — **note: runs with `--fix` (mutates files)**                                                                                                           |
+| `npm run lint:check`                                                                | ESLint, check-only (what CI runs)                                                                                                                                                                                                 |
+| `npm run typecheck`                                                                 | `tsc --noEmit` over the same files as `lint:check` (`tsconfig.eslint.json`)                                                                                                                                                       |
+| `npm run format`                                                                    | Prettier-format `src/` and `test/`                                                                                                                                                                                                |
+| `npm run test`                                                                      | Unit tests (Jest, co-located `*.spec.ts`)                                                                                                                                                                                         |
+| `npm run test:cov`                                                                  | Unit tests with coverage                                                                                                                                                                                                          |
+| `npm run generate:swagger`                                                          | Boot the app and emit `swagger.json` from the Swagger decorators                                                                                                                                                                  |
+| `npm run generate:client`                                                           | Generate the typed API client sources into `client/src`                                                                                                                                                                           |
+| `npm run client:build`                                                              | Emit `swagger.json`, then generate + compile `@naucto/api-client` into `client/dist` (what the publish workflow runs)                                                                                                             |
+| `npx prisma migrate dev --name <desc>`                                              | Create + apply a dev migration from the schema                                                                                                                                                                                    |
+| `npx prisma generate`                                                               | Regenerate the Prisma client                                                                                                                                                                                                      |
+| `npm run seed:dev`                                                                  | Seed a local database with people, friendships, pending requests, shared game sessions and 80 days of coherent analytics up to now (`-- --no-analytics` skips them, `-- --clear-analytics` removes them). Refuses non-local hosts |
+| `npm run analytics:acceptance`                                                      | Run the analytics acceptance scenarios against a scratch copy of the local database, over two connections; by hand, never in CI                                                                                                   |
+| `npm run repair:release-view-keys`                                                  | Delete the release view keys once derived from readers' addresses (one-off)                                                                                                                                                       |
+| `docker compose -f docker-compose.yml -f docker-compose.dev.yml up --watch backend` | Dev stack: Postgres, MinIO, and the API with hot reload                                                                                                                                                                           |
+| `./dev.sh`                                                                          | The line above with a `build` first — the shorthand, and the usual way in                                                                                                                                                         |
 
 **The dev container and a host build share `dist/`.** The repo is bind-mounted into the container,
 which runs `nest start --watch` as root, so `dist/` on the host ends up root-owned and a subsequent
@@ -158,7 +157,9 @@ at the controller boundary (see `project.controller.ts` catching `S3ObjectNotFou
   when a period of it becomes final, and its version. Change a definition by bumping its version;
   values of different versions are never combined, and final periods are never recomputed.
 - Browsers that consented report under a visitor and a session cookie the frontend sets; the API
-  never reads them. Tabs that declined send identifier-free pings, tallied per minute. Ingest
+  never reads them. Tabs that declined send identifier-free pings, tallied per minute. A ping says
+  whether the tab refused analytics or has not answered yet (`AnalyticsAnonTally.consent`). One
+  that does not say, from an older client or a suspended account, is tallied as `UNKNOWN`. Ingest
   routes take JSON sent as text/plain without credentials and never read an account; linking a
   browser to an account is the one authenticated call.
 - Business facts (signups, projects, release transitions) are written in the transaction of the
@@ -169,6 +170,27 @@ at the controller boundary (see `project.controller.ts` catching `S3ObjectNotFou
   analytics must take them; erasure relies on it.
 - Every day is a UTC day. Raw data is kept 90 days and purged only once every period built from
   it is final and every linked account's history has it; rollups and account histories stay.
+- The timeline (`analytics-timeline.ts`, `analytics-timeline.readers.ts`,
+  `analytics-timeline.service.ts`) reads raw rows between two instants, in buckets of a minute to a
+  day, and never rollups. Its window is the raw retention and its values are never final. A bucket
+  before the raw window or after now has no value. A presence bucket without a sample has none
+  either, rather than a 0. Each timeline metric declares the filters it is split by (a game, a
+  source) and ignores the others, and the answer names what it ignored. Readers go through the Prisma
+  client and answer plain samples, which the service puts in buckets.
+- A source is the session's `referrer:<domain>`, `utmSource:<value>` or `utmCampaign:<value>`, with
+  `referrer:(none)` for a direct visit. Visitor metrics take the source of the visitor's first
+  session, and accounts the source of their linked visitor.
+- `activity` and `arrivals` show consenting browsers one by one under a journey code: an HMAC of the
+  visitor id under a key drawn at boot. It is the same in every answer while the backend runs and
+  never reveals the cookie. They name no account.
+- Markers (`AnalyticsMarker`, `admin/analytics/markers`) are moments admins draw on the charts,
+  such as a post going out. Each says who it speaks to (`EVERYONE`, `PLAYERS`, `CREATORS`) and
+  may name a published project: the game to play, or for creators the game to fork. They hold no
+  visitor or account data and are never purged.
+- `admin/analytics/releases` searches published games by name or id a few at a time, and names
+  projects by id. Nothing in the admin API hands out every game at once.
+- `projects_forked` reads forks from `Project.forkedFromId`, which every fork path records with
+  its `PROJECT_CREATED` fact. A fork deleted since is no longer counted.
 
 **Admin console** (`src/routes/admin/`), for the separate Admin-Panel app:
 

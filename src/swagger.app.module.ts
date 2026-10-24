@@ -26,9 +26,12 @@ import { AdminSessionService } from './routes/admin/admin-session.service';
 import { AdminAnalyticsController } from './routes/analytics/admin-analytics.controller';
 import { AnalyticsIngestController } from './routes/analytics/analytics-ingest.controller';
 import { AnalyticsIngestService } from './routes/analytics/analytics-ingest.service';
+import { AnalyticsMarkerController } from './routes/analytics/analytics-marker.controller';
+import { AnalyticsMarkerService } from './routes/analytics/analytics-marker.service';
 import { AnalyticsQueryService } from './routes/analytics/analytics-query.service';
 import { AnalyticsTallyService } from './routes/analytics/analytics-tally.service';
 import { ANALYTICS_THROTTLERS } from './routes/analytics/analytics-throttler.guard';
+import { AnalyticsTimelineService } from './routes/analytics/analytics-timeline.service';
 import { UserAnalyticsController } from './routes/analytics/user-analytics.controller';
 import { UserAnalyticsService } from './routes/analytics/user-analytics.service';
 import { FeaturesModule } from './routes/features/features.module';
@@ -84,6 +87,7 @@ const nullProvider = (token: InjectionToken): Provider => ({
     AdminFeaturedReleaseController,
     AnalyticsIngestController,
     AdminAnalyticsController,
+    AnalyticsMarkerController,
     UserAnalyticsController,
     AdminAuthController,
     AdminAccountController,
@@ -106,6 +110,8 @@ const nullProvider = (token: InjectionToken): Provider => ({
     nullProvider(AnalyticsIngestService),
     nullProvider(AnalyticsTallyService),
     nullProvider(AnalyticsQueryService),
+    nullProvider(AnalyticsTimelineService),
+    nullProvider(AnalyticsMarkerService),
     nullProvider(UserAnalyticsService),
     nullProvider(AdminSessionService),
     nullProvider(AdminAccountService),

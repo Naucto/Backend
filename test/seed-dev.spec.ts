@@ -1,3 +1,4 @@
+import { clearAnalytics, seedAnalytics } from '../prisma/seed-dev-analytics';
 import { normalizeFriendCode } from '../src/routes/user/friend-code.util';
 import { withEnv } from './env';
 
@@ -13,6 +14,10 @@ jest.mock('dotenv', () => ({ config: jest.fn() }));
 jest.mock('@prisma/adapter-pg', () => ({ PrismaPg: jest.fn() }));
 jest.mock('@prisma/client', () => ({ PrismaClient: jest.fn(() => mockPrisma) }));
 jest.mock('bcryptjs', () => ({ hash: jest.fn().mockResolvedValue('hashed') }));
+jest.mock('../prisma/seed-dev-analytics', () => ({
+  seedAnalytics: jest.fn().mockResolvedValue('seeded'),
+  clearAnalytics: jest.fn().mockResolvedValue('cleared'),
+}));
 
 /** Runs the script the way `npm run seed:dev` does, and resolves once it has let go of the database. */
 async function runSeed(): Promise<void> {
@@ -60,6 +65,32 @@ describe('seed:dev', () => {
 
     expect(codes).not.toHaveLength(0);
     expect(codes.map(normalizeFriendCode)).toEqual(codes);
+  });
+
+  it('seeds the analytics after the people, unless told not to', async () => {
+    await runSeed();
+    expect(seedAnalytics).toHaveBeenCalledWith(mockPrisma);
+
+    jest.mocked(seedAnalytics).mockClear();
+    process.argv.push('--no-analytics');
+    try {
+      await runSeed();
+    } finally {
+      process.argv.pop();
+    }
+    expect(seedAnalytics).not.toHaveBeenCalled();
+  });
+
+  it('only removes the analytics when asked to clear them', async () => {
+    process.argv.push('--clear-analytics');
+    try {
+      await runSeed();
+    } finally {
+      process.argv.pop();
+    }
+
+    expect(clearAnalytics).toHaveBeenCalledWith(mockPrisma);
+    expect(mockPrisma.user.upsert).not.toHaveBeenCalled();
   });
 
   it('refuses to write anything when NODE_ENV is production', async () => {

@@ -30,6 +30,14 @@ enum AnalyticsRollupState {
   UNAVAILABLE
 }
 
+// What an anonymous tab answered to analytics. UNKNOWN is a ping that did not say: those from before
+// the answer was sent, and a consenting tab pinging while its account is suspended.
+enum AnalyticsAnonConsent {
+  DECLINED
+  UNANSWERED
+  UNKNOWN
+}
+
 enum AnalyticsRetentionKind {
   VISITOR
   ACCOUNT
@@ -164,12 +172,13 @@ model AnalyticsAnonTally {
   state        AnalyticsLiveState
   signedIn     Boolean
   // 0 when the tab was not on a game.
-  releaseId    Int                @default(0)
-  beats        Int                @default(0)
-  playsStarted Int                @default(0)
-  playMs       BigInt             @default(0)
+  releaseId    Int                  @default(0)
+  consent      AnalyticsAnonConsent @default(UNKNOWN)
+  beats        Int                  @default(0)
+  playsStarted Int                  @default(0)
+  playMs       BigInt               @default(0)
 
-  @@id([minute, state, signedIn, releaseId])
+  @@id([minute, state, signedIn, releaseId, consent])
   @@index([minute])
 }
 
@@ -325,4 +334,30 @@ model AnalyticsUserDaily {
 
   @@id([userId, visitorId, day, releaseId])
   @@index([userId, day])
+}
+
+// Who a post speaks to: players of a game, people making games, or everyone.
+enum AnalyticsMarkerAudience {
+  EVERYONE
+  PLAYERS
+  CREATORS
+}
+
+// A moment an admin wants to read the charts against, such as a post or a video going out. Not
+// derived from any visitor or account.
+model AnalyticsMarker {
+  id        Int                     @id @default(autoincrement())
+  at        DateTime
+  label     String                  @db.VarChar(120)
+  // Where it went out, as `YouTube` or `Reddit`.
+  channel   String?                 @db.VarChar(40)
+  url       String?                 @db.VarChar(2048)
+  audience  AnalyticsMarkerAudience @default(EVERYONE)
+  // The published project it is about: the game to play, or for creators the game to fork. No
+  // foreign key, so it outlives the project.
+  releaseId Int?
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+
+  @@index([at])
 }
