@@ -1,12 +1,20 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AnalyticsGrain, AnalyticsRetentionKind } from '@prisma/client';
 
+import { METRIC_POPULATIONS } from '../analytics-metrics';
+
 export const POINT_STATUSES = ['final', 'provisional', 'unavailable'] as const;
 export type PointStatus = (typeof POINT_STATUSES)[number];
 
 export class AnalyticsMetricInfoDto {
   @ApiProperty() name!: string;
-  @ApiProperty({ enum: ['C', 'C_LINKED', 'A', 'C_AND_A', 'F', 'PRESENCE'] }) population!: string;
+  @ApiProperty({
+    enum: METRIC_POPULATIONS,
+    enumName: 'AnalyticsPopulation',
+    description:
+      'Whom it counts: consenting browsers, anonymous tabs, both, or what the server records for every account',
+  })
+  population!: string;
   @ApiProperty({ enum: ['additive', 'max', 'perGrain'] }) kind!: string;
   @ApiProperty({ enum: ['ACTIVITY', 'SESSION', 'FACT', 'MULTIPLAYER', 'PRESENCE', 'COHORT'] })
   finalization!: string;

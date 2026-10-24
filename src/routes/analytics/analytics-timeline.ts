@@ -44,140 +44,140 @@ export interface TimelineMetricDefinition {
 
 export const TIMELINE_METRICS = {
   visitors_new: {
-    population: 'C',
+    population: 'CONSENTED',
     combine: 'sum',
     filters: ['source'],
     definition:
       'Consenting browsers seen for the first time. A source narrows them to the source of their first session.',
   },
   sessions: {
-    population: 'C',
+    population: 'CONSENTED',
     combine: 'sum',
     filters: ['source'],
     definition: 'Sessions of consenting browsers, at the instant they started.',
   },
   pageviews: {
-    population: 'C',
+    population: 'CONSENTED',
     combine: 'sum',
     filters: ['source'],
     definition:
       'Page views of consenting browsers. A source narrows them to the source of their session.',
   },
   plays_consented: {
-    population: 'C',
+    population: 'CONSENTED',
     combine: 'sum',
     filters: ['release', 'source'],
     definition:
       'Plays started by consenting browsers, at the instant Play was pressed. Reopened plays are not counted again.',
   },
   plays_anonymous: {
-    population: 'A',
+    population: 'ANONYMOUS',
     combine: 'sum',
     filters: ['release'],
     definition:
       'Plays started in tabs that declined analytics or never answered, signed in or not. Identifier-free: one person restarting counts each time.',
   },
   plays_declined: {
-    population: 'A',
+    population: 'ANONYMOUS',
     combine: 'sum',
     filters: ['release'],
     definition: 'Plays started in tabs that refused analytics.',
   },
   plays_unanswered: {
-    population: 'A',
+    population: 'ANONYMOUS',
     combine: 'sum',
     filters: ['release'],
     definition: 'Plays started in tabs that have not answered the analytics question yet.',
   },
   plays_anonymous_signed_in: {
-    population: 'A',
+    population: 'ANONYMOUS',
     combine: 'sum',
     filters: ['release'],
     definition:
       'Plays started in signed-in tabs that declined analytics or never answered. The account is never known.',
   },
   players: {
-    population: 'C',
+    population: 'CONSENTED',
     combine: 'distinct',
     filters: ['release', 'source'],
     definition:
       'Distinct consenting browsers that started a play. A browser playing in two buckets counts in both, and once over the window.',
   },
   players_new: {
-    population: 'C',
+    population: 'CONSENTED',
     combine: 'sum',
     filters: ['release', 'source'],
     definition:
       'Consenting browsers starting their first play kept in the raw window, or their first play of the game when one is chosen. A source narrows them to the source of their first session.',
   },
   signups: {
-    population: 'F',
+    population: 'SERVER',
     combine: 'sum',
     filters: ['source'],
     definition:
       'Accounts created. A source narrows them to accounts linked to a consenting browser whose first session came from it.',
   },
   signups_unlinked: {
-    population: 'F',
+    population: 'SERVER',
     combine: 'sum',
     filters: [],
     definition:
       'Accounts created that no consenting browser is linked to: they declined analytics, never answered, or have not been linked yet.',
   },
   projects_created: {
-    population: 'F',
+    population: 'SERVER',
     combine: 'sum',
     filters: ['source'],
     definition:
       'Projects created. A source narrows them to creators whose linked browser came from it.',
   },
   projects_forked: {
-    population: 'F',
+    population: 'SERVER',
     combine: 'sum',
     filters: ['release', 'source'],
     definition:
       'Projects created as a fork of a published game, of the chosen game when one is chosen. A fork deleted since is not counted.',
   },
   releases_published: {
-    population: 'F',
+    population: 'SERVER',
     combine: 'sum',
     filters: ['release', 'source'],
     definition: 'Projects going from unpublished to published.',
   },
   releases_updated: {
-    population: 'F',
+    population: 'SERVER',
     combine: 'sum',
     filters: ['release'],
     definition: 'Changes to a release that was already published.',
   },
   mp_sessions: {
-    population: 'F',
+    population: 'SERVER',
     combine: 'sum',
     filters: ['release'],
     definition: 'Multiplayer rooms reaching two connected seats, editor tests excluded.',
   },
   mp_participants: {
-    population: 'F',
+    population: 'SERVER',
     combine: 'sum',
     filters: ['release'],
     definition: 'Seats connecting to a multiplayer room for the first time, editor tests excluded.',
   },
   active_browsers: {
-    population: 'C',
+    population: 'CONSENTED',
     combine: 'max',
     filters: [],
     definition: 'Highest number of consenting browsers active in one minute of the bucket.',
     sampled: true,
   },
   browsers_playing: {
-    population: 'C',
+    population: 'CONSENTED',
     combine: 'max',
     filters: [],
     definition: 'Highest number of consenting browsers playing in one minute of the bucket.',
     sampled: true,
   },
   anon_tabs: {
-    population: 'A',
+    population: 'ANONYMOUS',
     combine: 'max',
     filters: [],
     definition:
@@ -185,7 +185,7 @@ export const TIMELINE_METRICS = {
     sampled: true,
   },
   anon_tabs_playing: {
-    population: 'A',
+    population: 'ANONYMOUS',
     combine: 'max',
     filters: [],
     definition:
@@ -193,21 +193,21 @@ export const TIMELINE_METRICS = {
     sampled: true,
   },
   anon_tabs_declined: {
-    population: 'A',
+    population: 'ANONYMOUS',
     combine: 'max',
     filters: [],
     definition:
       'Highest number of anonymous pings in one minute of the bucket from tabs that refused analytics.',
   },
   anon_tabs_unanswered: {
-    population: 'A',
+    population: 'ANONYMOUS',
     combine: 'max',
     filters: [],
     definition:
       'Highest number of anonymous pings in one minute of the bucket from tabs that have not answered yet.',
   },
   accounts_online: {
-    population: 'PRESENCE',
+    population: 'SERVER',
     combine: 'max',
     filters: [],
     definition: 'Highest number of accounts holding an open app socket at a sample of the bucket.',

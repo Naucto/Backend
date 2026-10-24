@@ -1,10 +1,17 @@
 import { ApiProperty } from '@nestjs/swagger';
 
+import { METRIC_POPULATIONS } from '../analytics-metrics';
 import { TIMELINE_BUCKET_NAMES, TimelineBucket } from '../analytics-timeline';
 
 export class AnalyticsTimelineSeriesDto {
   @ApiProperty() metric!: string;
-  @ApiProperty({ enum: ['C', 'C_LINKED', 'A', 'C_AND_A', 'F', 'PRESENCE'] }) population!: string;
+  @ApiProperty({
+    enum: METRIC_POPULATIONS,
+    enumName: 'AnalyticsPopulation',
+    description:
+      'Whom it counts: consenting browsers, anonymous tabs, both, or what the server records for every account',
+  })
+  population!: string;
   @ApiProperty({
     enum: ['sum', 'distinct', 'max'],
     description: 'How the buckets make up the total: added, counted once, or the highest',
