@@ -1,12 +1,27 @@
-import { Body, Controller, Get, HttpStatus, Post, Put, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseIntPipe,
+  Post,
+  Put,
+  Req,
+  UploadedFile,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 
 import { RequiresAuth } from '../../auth/access/access.decorators';
 import { RequestWithUser } from '../../auth/auth.types';
+import { CreateBugReportDto } from './dto/bug.dto';
 import { CreatedReportDto } from './dto/created-report.dto';
 import { FeedbackPromptDto, UpdateFeedbackPromptDto } from './dto/prompt.dto';
 import { CreateRatingDto } from './dto/rating.dto';
+import { SCREENSHOT_FILE, ScreenshotUpload } from './report-screenshot';
 import { ReportsService } from './reports.service';
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -53,5 +68,48 @@ export class ReportsController {
       improve: dto.improve,
       releaseId: dto.releaseId,
     });
+  }
+
+  @Post('bugs')
+  @Throttle({ identity: { limit: 10, ttl: 24 * HOUR_MS } })
+  @ApiOperation({ summary: 'Report a bug. Its screenshot, if any, follows on its own route' })
+  @ApiResponse({ status: HttpStatus.CREATED, type: CreatedReportDto })
+  @ApiResponse({ status: HttpStatus.TOO_MANY_REQUESTS, description: 'Too many reports' })
+  createBugReport(
+    @Req() req: RequestWithUser,
+    @Body() dto: CreateBugReportDto,
+  ): Promise<CreatedReportDto> {
+    return this.reports.createBugReport(
+      req.user.id,
+      {
+        category: dto.category,
+        title: dto.title,
+        description: dto.description,
+        route: dto.route,
+        role: dto.role,
+        releaseId: dto.releaseId,
+        projectId: dto.projectId,
+        ratingId: dto.ratingId,
+        appRelease: dto.appRelease,
+        context: dto.context,
+      },
+      req.get('user-agent'),
+    );
+  }
+
+  @Put('bugs/:id/screenshot')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Throttle({ identity: { limit: 10, ttl: 24 * HOUR_MS } })
+  @ScreenshotUpload()
+  @ApiOperation({ summary: 'Attach a screenshot to a bug report sent within the hour' })
+  @ApiResponse({ status: HttpStatus.NO_CONTENT, description: 'Attached' })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'Not a bug report of this account' })
+  @ApiResponse({ status: HttpStatus.CONFLICT, description: 'Already has one, or too late' })
+  attachScreenshot(
+    @Req() req: RequestWithUser,
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFile(SCREENSHOT_FILE) screenshot: Express.Multer.File,
+  ): Promise<void> {
+    return this.reports.attachScreenshot(req.user.id, id, screenshot);
   }
 }

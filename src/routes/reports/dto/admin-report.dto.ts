@@ -1,5 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { RatingOrigin, RatingReason, ReportKind, ReportRole, ReportStatus } from '@prisma/client';
+import {
+  BugCategory,
+  RatingOrigin,
+  RatingReason,
+  ReportKind,
+  ReportRole,
+  ReportStatus,
+} from '@prisma/client';
 import { IsEnum, IsOptional, IsString, MaxLength, ValidateIf } from 'class-validator';
 
 import { AccountSummaryDto } from '../../admin/dto/admin-account.dto';
@@ -57,6 +64,15 @@ export class AdminReportDto {
   @ApiPropertyOptional({ type: ReportReleaseDto, nullable: true })
   release!: ReportReleaseDto | null;
 
+  @ApiPropertyOptional({ type: String, nullable: true, description: 'The build of the web app' })
+  appRelease!: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true, description: 'A bug report summary' })
+  title!: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true, description: 'A bug report description' })
+  message!: string | null;
+
   @ApiPropertyOptional({ type: Number, nullable: true, minimum: RATING_MIN, maximum: RATING_MAX })
   score!: number | null;
 
@@ -71,6 +87,18 @@ export class AdminReportDto {
 
   @ApiPropertyOptional({ enum: RatingOrigin, enumName: 'RatingOrigin', nullable: true })
   origin!: RatingOrigin | null;
+
+  @ApiProperty({ type: [Number], description: 'Bug reports opened from this rating' })
+  followUpIds!: number[];
+
+  @ApiPropertyOptional({ enum: BugCategory, enumName: 'BugCategory', nullable: true })
+  category!: BugCategory | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true, description: 'The rating a bug followed' })
+  ratingId!: number | null;
+
+  @ApiProperty()
+  hasScreenshot!: boolean;
 }
 
 export class AdminReportListDto {
@@ -87,9 +115,53 @@ export class AdminReportListDto {
   limit!: number;
 }
 
+export class LinkedRatingDto {
+  @ApiProperty()
+  id!: number;
+
+  @ApiProperty()
+  score!: number;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  liked!: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  improve!: string | null;
+}
+
+export class ScreenshotInfoDto {
+  @ApiProperty({ example: 'image/webp' })
+  mime!: string;
+
+  @ApiProperty()
+  bytes!: number;
+}
+
 export class AdminReportDetailDto extends AdminReportDto {
   @ApiPropertyOptional({ type: String, nullable: true })
   adminNote!: string | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true })
+  projectId!: number | null;
+
+  @ApiPropertyOptional({
+    type: 'object',
+    additionalProperties: true,
+    nullable: true,
+    description: 'What the browser attached: viewport, language, browser family, errors, console',
+  })
+  context!: Record<string, unknown> | null;
+
+  @ApiPropertyOptional({ type: LinkedRatingDto, nullable: true })
+  rating!: LinkedRatingDto | null;
+
+  @ApiPropertyOptional({ type: ScreenshotInfoDto, nullable: true })
+  screenshot!: ScreenshotInfoDto | null;
+}
+
+export class ReportCountDto {
+  @ApiProperty()
+  count!: number;
 }
 
 export class UpdateReportDto {

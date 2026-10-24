@@ -1,5 +1,5 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import { ReportKind, ReportRole, ReportStatus } from '@prisma/client';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { BugCategory, ReportKind, ReportRole, ReportStatus } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import { IsBoolean, IsEnum, IsIn, IsInt, IsOptional, Matches, Max, Min } from 'class-validator';
 
@@ -53,6 +53,11 @@ export class AdminReportQueryDto extends PaginationQueryDto {
   @IsBoolean()
   withComments?: boolean;
 
+  @ApiPropertyOptional({ enum: BugCategory, enumName: 'BugCategory' })
+  @IsOptional()
+  @IsEnum(BugCategory)
+  category?: BugCategory;
+
   @ApiPropertyOptional({ description: 'First day, UTC, as YYYY-MM-DD' })
   @IsOptional()
   @Matches(DAY_PATTERN)
@@ -62,4 +67,15 @@ export class AdminReportQueryDto extends PaginationQueryDto {
   @IsOptional()
   @Matches(DAY_PATTERN)
   to?: string;
+}
+
+export class ReportCountQueryDto {
+  @ApiProperty({ enum: ReportKind, enumName: 'ReportKind' })
+  @IsEnum(ReportKind)
+  kind!: ReportKind;
+
+  @ApiPropertyOptional({ enum: ReportStatus, enumName: 'ReportStatus' })
+  @IsOptional()
+  @IsEnum(ReportStatus)
+  status?: ReportStatus;
 }

@@ -1,9 +1,12 @@
-import { Injectable } from '@nestjs/common';
-import { RatingOrigin, RatingReason, ReportRole } from '@prisma/client';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BugCategory, Prisma, RatingOrigin, RatingReason, ReportRole } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { summarizeUserAgent } from '../analytics/request-context';
+import { S3Service } from '../s3/s3.service';
 import { CreatedReportDto } from './dto/created-report.dto';
 import { FeedbackPromptDto, PromptAction } from './dto/prompt.dto';
+import { SCREENSHOT_WINDOW_MS, screenshotKey } from './report-screenshot';
 
 /** How long "not now" keeps the rating prompt away. */
 export const PROMPT_SNOOZE_MS = 14 * 24 * 60 * 60 * 1000;
@@ -18,13 +21,36 @@ export interface NewRating {
   releaseId?: number | undefined;
 }
 
+export interface NewBugReport {
+  category: BugCategory;
+  title: string;
+  description: string;
+  route: string;
+  role?: ReportRole | undefined;
+  releaseId?: number | undefined;
+  projectId?: number | undefined;
+  ratingId?: number | undefined;
+  appRelease?: string | undefined;
+  context?: BugContext | undefined;
+}
+
+export interface BugContext {
+  viewport?: string | undefined;
+  language?: string | undefined;
+  engineError?: string | undefined;
+  console?: string[] | undefined;
+}
+
 const blankToNull = (value: string | undefined): string | null =>
   value === undefined || value === '' ? null : value;
 
-/** What signed-in players and creators send: the rating prompt's state and their ratings. */
+/** What signed-in players and creators send: the rating prompt's state, ratings and bug reports. */
 @Injectable()
 export class ReportsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly s3Service: S3Service,
+  ) {}
 
   async promptState(userId: number, now: Date = new Date()): Promise<FeedbackPromptDto> {
     const prompt = await this.prisma.feedbackPrompt.findUnique({
@@ -100,6 +126,65 @@ export class ReportsService {
         data: { status: 'ANSWERED', snoozedUntil: null },
       });
       return created;
+    });
+  }
+
+  async createBugReport(
+    userId: number,
+    bug: NewBugReport,
+    userAgent: string | undefined,
+  ): Promise<CreatedReportDto> {
+    const rating =
+      bug.ratingId === undefined
+        ? null
+        : await this.prisma.report.findFirst({
+            where: { id: bug.ratingId, userId, kind: 'RATING' },
+            select: { id: true },
+          });
+    const { device, browser, os } = summarizeUserAgent(userAgent);
+    const context: Prisma.InputJsonObject = { ...bug.context, device, browser, os };
+
+    return this.prisma.report.create({
+      data: {
+        kind: 'BUG',
+        userId,
+        role: bug.role ?? null,
+        category: bug.category,
+        title: bug.title,
+        message: bug.description,
+        route: bug.route,
+        releaseId: bug.releaseId ?? null,
+        projectId: bug.projectId ?? null,
+        ratingId: rating?.id ?? null,
+        appRelease: bug.appRelease ?? null,
+        context,
+      },
+      select: { id: true },
+    });
+  }
+
+  /** Attaches the screenshot of a bug report its author just sent. */
+  async attachScreenshot(
+    userId: number,
+    reportId: number,
+    file: Express.Multer.File,
+    now: Date = new Date(),
+  ): Promise<void> {
+    const report = await this.prisma.report.findFirst({
+      where: { id: reportId, userId, kind: 'BUG' },
+      select: { createdAt: true, screenshotKey: true },
+    });
+    if (!report) {
+      throw new NotFoundException('Bug report not found');
+    }
+    if (report.screenshotKey || now.getTime() - report.createdAt.getTime() > SCREENSHOT_WINDOW_MS) {
+      throw new ConflictException('This report takes no more screenshots');
+    }
+    const keyName = screenshotKey(reportId, file.mimetype);
+    await this.s3Service.uploadFile({ file, keyName, cacheControl: 'private, no-store' });
+    await this.prisma.report.update({
+      where: { id: reportId },
+      data: { screenshotKey: keyName, screenshotMime: file.mimetype, screenshotBytes: file.size },
     });
   }
 }

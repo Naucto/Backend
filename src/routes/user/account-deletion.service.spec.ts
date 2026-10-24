@@ -28,6 +28,7 @@ describe('AccountDeletionService', () => {
     friendRequest: { deleteMany: jest.fn() },
     notification: { deleteMany: jest.fn() },
     feedbackPrompt: { deleteMany: jest.fn() },
+    report: { findMany: jest.fn(), updateMany: jest.fn() },
   };
   const projectService = { remove: jest.fn() };
   const analyticsErasure = { eraseWithin: jest.fn() };
@@ -42,6 +43,7 @@ describe('AccountDeletionService', () => {
     );
     prisma.user.findUnique.mockResolvedValue({ id: 7, password: null, deletedAt: null });
     prisma.project.findMany.mockResolvedValue([]);
+    prisma.report.findMany.mockResolvedValue([]);
     s3Service.deleteFile.mockResolvedValue(undefined);
 
     const module = await Test.createTestingModule({
@@ -172,6 +174,24 @@ describe('AccountDeletionService', () => {
 
     expect(s3Service.deleteFile).toHaveBeenCalledWith({ key: 'users/7/profile' });
     expect(s3Service.deleteFile).toHaveBeenCalledWith({ key: 'users/7/background' });
+  });
+
+  it('deletes report screenshots, then clears the keys of the files that went', async () => {
+    prisma.report.findMany.mockResolvedValue([
+      { id: 4, screenshotKey: 'reports/4/screenshot.png' },
+      { id: 5, screenshotKey: 'reports/5/screenshot.webp' },
+    ]);
+    s3Service.deleteFile.mockImplementation(({ key }: { key: string }) =>
+      key.includes('/4/') ? Promise.reject(new Error('denied')) : Promise.resolve(),
+    );
+
+    await service.deleteAccount(7, false, { by: 'self' });
+
+    expect(s3Service.deleteFile).toHaveBeenCalledWith({ key: 'reports/4/screenshot.png' });
+    expect(prisma.report.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: [5] } },
+      data: { screenshotKey: null, screenshotMime: null, screenshotBytes: null },
+    });
   });
 
   it('has decided the fate of every relation the User model holds', () => {

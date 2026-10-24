@@ -1,8 +1,9 @@
-// What players and creators tell us about the platform. Every rating is one report, read from the
-// admin console only.
+// What players and creators tell us about the platform. Every rating and every bug report is one
+// report, read from the admin console only.
 
 enum ReportKind {
   RATING
+  BUG
 }
 
 enum ReportStatus {
@@ -35,6 +36,17 @@ enum RatingReason {
   OTHER
 }
 
+enum BugCategory {
+  GAMEPLAY
+  EDITOR
+  GRAPHICS
+  SOUND
+  NETPLAY
+  ACCOUNT
+  PERFORMANCE
+  OTHER
+}
+
 enum FeedbackPromptStatus {
   ANSWERED
   DECLINED
@@ -42,18 +54,24 @@ enum FeedbackPromptStatus {
 }
 
 model Report {
-  id        Int          @id @default(autoincrement())
-  kind      ReportKind
-  status    ReportStatus @default(NEW)
-  user      User?        @relation(fields: [userId], references: [id])
-  userId    Int?
-  role      ReportRole?
-  route     String?
-  // The release the person had just played.
-  releaseId Int?
-  adminNote String?
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  id         Int          @id @default(autoincrement())
+  kind       ReportKind
+  status     ReportStatus @default(NEW)
+  user       User?        @relation(fields: [userId], references: [id])
+  userId     Int?
+  role       ReportRole?
+  // A bug report's summary.
+  title      String?
+  // A bug report's description.
+  message    String?
+  route      String?
+  // The release the person had just played, or the one the page is about.
+  releaseId  Int?
+  projectId  Int?
+  appRelease String?
+  adminNote  String?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
 
   // A rating: 1 to 10, with what went wrong under 5 and two optional comments.
   score   Int?
@@ -61,6 +79,18 @@ model Report {
   liked   String?
   improve String?
   origin  RatingOrigin?
+
+  // A bug report, with what the browser attached: viewport, language, engine error, console.
+  category        BugCategory?
+  context         Json?
+  // The rating it followed, for a report opened from a low score.
+  rating          Report?      @relation("FollowUp", fields: [ratingId], references: [id], onDelete: SetNull)
+  ratingId        Int?
+  followUps       Report[]     @relation("FollowUp")
+  // Private object key, served to admins through the API and never public-read.
+  screenshotKey   String?
+  screenshotMime  String?
+  screenshotBytes Int?
 
   @@index([kind, createdAt])
   @@index([kind, status, createdAt])
