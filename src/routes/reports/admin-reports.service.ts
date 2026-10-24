@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import {
   AnalyticsGrain,
   BugCategory,
+  CrashSource,
   Prisma,
   ReportKind,
   ReportRole,
@@ -29,7 +30,7 @@ import {
   ReportAccountDto,
   ReportReleaseDto,
 } from './dto/admin-report.dto';
-import { ReportView } from './dto/admin-report-query.dto';
+import { ReportSort, ReportView } from './dto/admin-report-query.dto';
 import { RATING_MAX } from './dto/rating.dto';
 import { RatingAverageDto, RatingSummaryDto } from './dto/rating-summary.dto';
 
@@ -51,9 +52,16 @@ export interface ReportFilter {
   maxScore?: number | undefined;
   withComments?: boolean | undefined;
   category?: BugCategory | undefined;
+  source?: CrashSource | undefined;
   from?: string | undefined;
   to?: string | undefined;
 }
+
+const ORDERS: Record<ReportSort, Prisma.ReportOrderByWithRelationInput[]> = {
+  created: [{ createdAt: 'desc' }, { id: 'desc' }],
+  lastSeen: [{ lastSeen: { sort: 'desc', nulls: 'last' } }, { id: 'desc' }],
+  count: [{ count: 'desc' }, { lastSeen: { sort: 'desc', nulls: 'last' } }],
+};
 
 export interface ReportUpdate {
   status?: ReportStatus | undefined;
@@ -79,6 +87,12 @@ function dayRange(from: string | undefined, to: string | undefined): Prisma.Date
   };
 }
 
+function jsonObject(value: Prisma.JsonValue): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
 function averageOf(scores: number[]): RatingAverageDto {
   if (scores.length === 0) {
     return { count: 0, average: null };
@@ -100,14 +114,18 @@ export class AdminReportsService {
     private readonly s3Service: S3Service,
   ) {}
 
-  async list(filter: ReportFilter, page: PageRequest): Promise<AdminReportListDto> {
+  async list(
+    filter: ReportFilter,
+    sort: ReportSort,
+    page: PageRequest,
+  ): Promise<AdminReportListDto> {
     const { skip, take } = toSkipTake(page, LIST_PAGE_SIZE);
     const where = this.where(filter);
     const [total, rows] = await this.prisma.$transaction([
       this.prisma.report.count({ where }),
       this.prisma.report.findMany({
         where,
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        orderBy: ORDERS[sort],
         skip,
         take,
         include: REPORT_INCLUDE,
@@ -132,6 +150,19 @@ export class AdminReportsService {
       include: {
         ...REPORT_INCLUDE,
         rating: { select: { id: true, score: true, liked: true, improve: true } },
+        occurrences: {
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          select: {
+            id: true,
+            createdAt: true,
+            route: true,
+            appRelease: true,
+            device: true,
+            browser: true,
+            os: true,
+            extra: true,
+          },
+        },
       },
     });
     if (!row) {
@@ -142,16 +173,18 @@ export class AdminReportsService {
       ...this.summary(row, releases),
       adminNote: row.adminNote,
       projectId: row.projectId,
-      context:
-        typeof row.context === 'object' && row.context !== null && !Array.isArray(row.context)
-          ? (row.context as Record<string, unknown>)
-          : null,
+      context: jsonObject(row.context),
       rating:
         row.rating && row.rating.score !== null ? { ...row.rating, score: row.rating.score } : null,
       screenshot:
         row.screenshotKey && row.screenshotMime
           ? { mime: row.screenshotMime, bytes: row.screenshotBytes ?? 0 }
           : null,
+      stack: row.stack,
+      occurrences: row.occurrences.map((occurrence) => ({
+        ...occurrence,
+        extra: jsonObject(occurrence.extra),
+      })),
     };
   }
 
@@ -219,6 +252,7 @@ export class AdminReportsService {
       ...(filter.role ? { role: filter.role } : {}),
       ...(filter.maxScore ? { score: { lte: filter.maxScore } } : {}),
       ...(filter.category ? { category: filter.category } : {}),
+      ...(filter.source ? { source: filter.source } : {}),
       ...(createdAt ? { createdAt } : {}),
       ...(filter.withComments
         ? { OR: [{ liked: { not: null } }, { improve: { not: null } }] }
@@ -249,6 +283,10 @@ export class AdminReportsService {
       category: row.category,
       ratingId: row.ratingId,
       hasScreenshot: row.screenshotKey !== null,
+      source: row.source,
+      count: row.count,
+      lastSeen: row.lastSeen,
+      regressedAt: row.regressedAt,
     };
   }
 

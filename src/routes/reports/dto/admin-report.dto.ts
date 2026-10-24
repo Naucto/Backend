@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   BugCategory,
+  CrashSource,
   RatingOrigin,
   RatingReason,
   ReportKind,
@@ -99,6 +100,22 @@ export class AdminReportDto {
 
   @ApiProperty()
   hasScreenshot!: boolean;
+
+  @ApiPropertyOptional({ enum: CrashSource, enumName: 'CrashSource', nullable: true })
+  source!: CrashSource | null;
+
+  @ApiProperty({ description: 'How many times a crash happened, 1 for any other report' })
+  count!: number;
+
+  @ApiPropertyOptional({ type: Date, nullable: true, description: 'When a crash last happened' })
+  lastSeen!: Date | null;
+
+  @ApiPropertyOptional({
+    type: Date,
+    nullable: true,
+    description: 'When a resolved crash was last reported again',
+  })
+  regressedAt!: Date | null;
 }
 
 export class AdminReportListDto {
@@ -137,6 +154,32 @@ export class ScreenshotInfoDto {
   bytes!: number;
 }
 
+export class ReportOccurrenceDto {
+  @ApiProperty()
+  id!: number;
+
+  @ApiProperty()
+  createdAt!: Date;
+
+  @ApiProperty()
+  route!: string;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  appRelease!: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  device!: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  browser!: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  os!: string | null;
+
+  @ApiPropertyOptional({ type: 'object', additionalProperties: true, nullable: true })
+  extra!: Record<string, unknown> | null;
+}
+
 export class AdminReportDetailDto extends AdminReportDto {
   @ApiPropertyOptional({ type: String, nullable: true })
   adminNote!: string | null;
@@ -157,6 +200,16 @@ export class AdminReportDetailDto extends AdminReportDto {
 
   @ApiPropertyOptional({ type: ScreenshotInfoDto, nullable: true })
   screenshot!: ScreenshotInfoDto | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'The latest stack of a crash, mapped back to the sources when possible',
+  })
+  stack!: string | null;
+
+  @ApiProperty({ type: [ReportOccurrenceDto], description: 'The latest occurrences, newest first' })
+  occurrences!: ReportOccurrenceDto[];
 }
 
 export class ReportCountDto {

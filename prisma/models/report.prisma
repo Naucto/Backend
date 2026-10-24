@@ -1,9 +1,10 @@
-// What players and creators tell us about the platform. Every rating and every bug report is one
-// report, read from the admin console only.
+// What players and creators tell us about the platform, and what breaks while they use it. Every
+// rating, every bug report and every kind of crash is one report, read from the admin console only.
 
 enum ReportKind {
   RATING
   BUG
+  CRASH
 }
 
 enum ReportStatus {
@@ -47,6 +48,12 @@ enum BugCategory {
   OTHER
 }
 
+enum CrashSource {
+  WEB
+  ENGINE
+  BACKEND
+}
+
 enum FeedbackPromptStatus {
   ANSWERED
   DECLINED
@@ -60,9 +67,9 @@ model Report {
   user       User?        @relation(fields: [userId], references: [id])
   userId     Int?
   role       ReportRole?
-  // A bug report's summary.
+  // A bug report's summary, or a crash's error name.
   title      String?
-  // A bug report's description.
+  // A bug report's description, or a crash's message.
   message    String?
   route      String?
   // The release the person had just played, or the one the page is about.
@@ -92,9 +99,40 @@ model Report {
   screenshotMime  String?
   screenshotBytes Int?
 
+  // A crash, anonymous. Every occurrence with the same normalised message lands on one report and
+  // bumps its count.
+  source      CrashSource?
+  groupKey    String?
+  // The latest stack, mapped back to the sources when the web app published its source maps.
+  stack       String?
+  count       Int                @default(1)
+  lastSeen    DateTime?
+  // Set when a resolved crash is reported again.
+  regressedAt DateTime?
+  occurrences ReportOccurrence[]
+
+  @@unique([kind, groupKey])
   @@index([kind, createdAt])
   @@index([kind, status, createdAt])
+  @@index([kind, lastSeen])
   @@index([userId])
+}
+
+// The latest occurrences of a crash, pruned to a few per report as new ones arrive.
+model ReportOccurrence {
+  id         Int      @id @default(autoincrement())
+  report     Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  reportId   Int
+  createdAt  DateTime @default(now())
+  route      String
+  stack      String
+  appRelease String?
+  device     String?
+  browser    String?
+  os         String?
+  extra      Json?
+
+  @@index([reportId, createdAt])
 }
 
 // Whether the rating prompt may still ask an account. No row means it has never been shown.
