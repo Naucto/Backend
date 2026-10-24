@@ -9,6 +9,11 @@ const MAPS_CACHED = 24;
 /** A map that could not be read is asked for again after this long, in case it was deployed late. */
 const MISSING_RETRY_MS = 10 * 60 * 1000;
 const FRAMES_RESOLVED = 30;
+const STACK_MAX_LENGTH = 8_000;
+const LINES_READ = 200;
+const TOKENS_READ_PER_LINE = 64;
+/** A bundle the production build writes at the root of the web app, as `main-B45ANGGH.js`. */
+const BUNDLE_NAME = /^[A-Za-z0-9_-]{1,100}[.]m?js$/;
 
 interface CachedMap {
   map: TraceMap | null;
@@ -37,6 +42,21 @@ export function locationOf(token: string): Location | null {
   return { url, line: lineNumber, column: columnNumber };
 }
 
+/**
+ * The bundle a frame points at, when it is one the web app serves from its own origin. Only its
+ * name is kept, so the map is fetched from an address the backend builds itself.
+ */
+export function bundleOf(url: string, origin: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  const name = parsed.pathname.slice(1);
+  return parsed.origin === origin && BUNDLE_NAME.test(name) ? name : null;
+}
+
 /** A source path of a map without the bundler's prefixes, as a reader of the repository knows it. */
 function sourcePath(source: string): string {
   return source.replace(/^webpack:\/\/\/?/, '').replace(/^(?:\.\.?\/)+/, '');
@@ -54,40 +74,35 @@ export class StackResolver {
   private readonly maps = new Map<string, CachedMap>();
 
   async resolve(stack: string, now = Date.now()): Promise<string> {
+    const lines = stack.slice(0, STACK_MAX_LENGTH).split('\n');
+    const lineCount = Math.min(lines.length, LINES_READ);
     let resolved = 0;
-    const lines: string[] = [];
-    for (const line of stack.split('\n')) {
-      if (resolved >= FRAMES_RESOLVED) {
-        lines.push(line);
-        continue;
-      }
-      const tokens = line.split(/([\s()@]+)/);
-      for (let i = 0; i < tokens.length; i++) {
-        const location = locationOf(tokens[i] ?? '');
-        if (!location || !this.isOurs(location.url)) {
+    for (let i = 0; i < lineCount && resolved < FRAMES_RESOLVED; i++) {
+      const tokens = (lines[i] ?? '').split(/([\s()@]+)/);
+      const tokenCount = Math.min(tokens.length, TOKENS_READ_PER_LINE);
+      let changed = false;
+      for (let j = 0; j < tokenCount; j++) {
+        const location = locationOf(tokens[j] ?? '');
+        const bundle = location ? bundleOf(location.url, this.origin) : null;
+        if (!location || !bundle) {
           continue;
         }
-        const original = await this.original(location, now);
+        const original = await this.original(bundle, location, now);
         if (original) {
-          tokens[i] = original;
+          tokens[j] = original;
+          changed = true;
           resolved++;
         }
       }
-      lines.push(tokens.join(''));
+      if (changed) {
+        lines[i] = tokens.join('');
+      }
     }
     return lines.join('\n');
   }
 
-  private isOurs(url: string): boolean {
-    try {
-      return new URL(url).origin === this.origin;
-    } catch {
-      return false;
-    }
-  }
-
-  private async original(location: Location, now: number): Promise<string | null> {
-    const map = await this.mapOf(location.url, now);
+  private async original(bundle: string, location: Location, now: number): Promise<string | null> {
+    const map = await this.mapOf(bundle, now);
     if (!map) {
       return null;
     }
@@ -101,14 +116,14 @@ export class StackResolver {
     return `${sourcePath(position.source)}:${String(position.line)}:${String(position.column + 1)}`;
   }
 
-  private async mapOf(url: string, now: number): Promise<TraceMap | null> {
-    const cached = this.maps.get(url);
+  private async mapOf(bundle: string, now: number): Promise<TraceMap | null> {
+    const cached = this.maps.get(bundle);
     if (cached && (cached.map || now - cached.at < MISSING_RETRY_MS)) {
       return cached.map;
     }
-    const map = await this.fetchMap(`${url}.map`);
-    this.maps.delete(url);
-    this.maps.set(url, { map, at: now });
+    const map = await this.fetchMap(new URL(`/${bundle}.map`, this.origin));
+    this.maps.delete(bundle);
+    this.maps.set(bundle, { map, at: now });
     for (const oldest of this.maps.keys()) {
       if (this.maps.size <= MAPS_CACHED) {
         break;
@@ -118,7 +133,7 @@ export class StackResolver {
     return map;
   }
 
-  private async fetchMap(url: string): Promise<TraceMap | null> {
+  private async fetchMap(url: URL): Promise<TraceMap | null> {
     try {
       const response = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
       const length = Number(response.headers.get('content-length') ?? 0);
@@ -129,7 +144,7 @@ export class StackResolver {
       return text.length > MAP_MAX_BYTES ? null : new TraceMap(text);
     } catch (error) {
       this.logger.warn(
-        `Could not read the source map ${url}: ${error instanceof Error ? error.message : String(error)}`,
+        `Could not read the source map ${url.href}: ${error instanceof Error ? error.message : String(error)}`,
       );
       return null;
     }

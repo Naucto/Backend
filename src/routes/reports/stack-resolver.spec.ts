@@ -1,4 +1,4 @@
-import { locationOf, StackResolver } from './stack-resolver';
+import { bundleOf, locationOf, StackResolver } from './stack-resolver';
 
 // Generated line 1, column 11 (0-based 10) maps to src/app/player.ts line 12, column 5.
 const MAP = JSON.stringify({
@@ -17,9 +17,9 @@ describe('StackResolver', () => {
     process.env = { ...env, FRONTEND_URL: 'https://naucto.test' };
     fetchMock
       .mockReset()
-      .mockImplementation((url: string) =>
+      .mockImplementation((url: URL) =>
         Promise.resolve(
-          url === 'https://naucto.test/chunk-AB12.js.map'
+          url.href === 'https://naucto.test/chunk-AB12.js.map'
             ? { ok: true, headers: new Headers(), text: () => Promise.resolve(MAP) }
             : { ok: false, headers: new Headers(), text: () => Promise.resolve('') },
         ),
@@ -77,5 +77,24 @@ describe('StackResolver', () => {
     expect(locationOf('https://naucto.test/a.css:3:44')).toBeNull();
     expect(locationOf('https://naucto.test/a.js')).toBeNull();
     expect(locationOf(':'.repeat(5000))).toBeNull();
+  });
+
+  it('only takes a bundle at the root of the web app, by its name alone', () => {
+    const origin = 'https://naucto.test';
+    expect(bundleOf('https://naucto.test/main-B45ANGGH.js', origin)).toBe('main-B45ANGGH.js');
+    expect(bundleOf('https://naucto.test/a/b.js', origin)).toBeNull();
+    expect(bundleOf('https://naucto.test/%2e%2e%2fadmin.js', origin)).toBeNull();
+    expect(bundleOf('https://naucto.test.evil.test/main.js', origin)).toBeNull();
+    expect(bundleOf('https://user@naucto.test:8443/main.js', origin)).toBeNull();
+    expect(bundleOf('not a url', origin)).toBeNull();
+  });
+
+  it('reads a bounded part of a stack, however long it comes', async () => {
+    const frame = '    at x (https://naucto.test/chunk-AB12.js:1:11)';
+    const stack = Array.from({ length: 500 }, () => frame).join('\n');
+
+    await resolver.resolve(stack);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
