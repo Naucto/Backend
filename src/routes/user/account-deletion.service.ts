@@ -43,6 +43,9 @@ export const USER_RELATION_FATES: Record<UserRelation, 'deleted' | 'unlinked' | 
     analyticsVisitors: 'deleted',
     analyticsDays: 'deleted',
     analyticsProjectionWork: 'deleted',
+    feedbackPrompt: 'deleted',
+    // A report stays with the platform once its author is anonymised.
+    reports: 'kept',
   };
 
 /**
@@ -135,6 +138,7 @@ export class AccountDeletionService {
         where: { OR: [{ fromId: userId }, { toId: userId }] },
       });
       await tx.notification.deleteMany({ where: { userId } });
+      await tx.feedbackPrompt.deleteMany({ where: { userId } });
       await tx.gameSession.updateMany({
         where: { hostId: userId, endedAt: null },
         data: { endedAt: now },
