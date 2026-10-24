@@ -4,15 +4,9 @@
  * visitors from their channel, sample games published along the way, accounts created and linked
  * to their browsers, projects, multiplayer rooms, and tabs that declined analytics or never
  * answered. Minute presence is computed from the same visits, so every chart agrees with the
- * others. Every value comes from a seeded generator. Re-running it replaces what it wrote, and
- * `--clear` only removes it. Either way it then finalizes every due period, as the server would.
- *
- *   npm run seed:analytics
- *   npm run seed:analytics -- --clear
+ * others. Every value comes from a seeded generator. Re-running it replaces what it wrote. Either
+ * way it then finalizes every due period, as the server would. Run by `seed:dev`.
  */
-import 'dotenv/config';
-
-import { PrismaPg } from '@prisma/adapter-pg';
 import {
   AnalyticsAnonConsent,
   AnalyticsFactType,
@@ -21,10 +15,8 @@ import {
   PrismaClient,
 } from '@prisma/client';
 
-import { databaseUrl } from '../src/prisma/database-url';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AnalyticsFinalizeService } from '../src/routes/analytics/analytics-finalize.service';
-import { assertLocalDatabase } from './local-database';
 
 const DAYS = 80;
 const DAY_MS = 86_400_000;
@@ -32,18 +24,14 @@ const HOUR_MS = 3_600_000;
 const MINUTE_MS = 60_000;
 /** Every synthetic visitor, session, play and room id starts with this. */
 const SEED_PREFIX = '5eed';
+/** The lowest and highest ids under the seed prefix, to find every row it wrote. */
+const SEED_IDS = {
+  gte: `${SEED_PREFIX}0000-0000-0000-0000-000000000000`,
+  lte: `${SEED_PREFIX}ffff-ffff-ffff-ffff-ffffffffffff`,
+};
 /** Every synthetic account has an address on this domain. */
 const SEED_DOMAIN = 'analytics-seed.example.test';
 const BATCH = 1_000;
-
-const connectionString = databaseUrl();
-if (!connectionString) {
-  throw new ReferenceError(
-    'Set DATABASE_URL, or POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB in .env',
-  );
-}
-assertLocalDatabase(connectionString, 'seed:analytics');
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
 
 /** mulberry32: small, fast and seeded. */
 function generator(seed: number): () => number {
@@ -391,17 +379,17 @@ async function inBatches<T>(rows: T[], write: (batch: T[]) => Promise<unknown>):
  * Anonymous tallies and presence samples hold no seed mark, so every one before now goes: a local
  * database then has nothing left of an earlier run, whatever window it covered.
  */
-async function clearPrevious(to: Date): Promise<void> {
+async function clearPrevious(prisma: PrismaClient, to: Date): Promise<void> {
   await prisma.analyticsMarker.deleteMany({
     where: { label: { in: POSTS.map((post) => post.label) } },
   });
-  await prisma.$executeRaw`DELETE FROM "AnalyticsVisitor" WHERE id::text LIKE ${`${SEED_PREFIX}%`}`;
-  await prisma.$executeRaw`DELETE FROM "AnalyticsAnonTally" WHERE "minute" < ${to}`;
-  await prisma.$executeRaw`DELETE FROM "ConcurrencySample" WHERE "at" < ${to}`;
-  await prisma.$executeRaw`DELETE FROM "AnalyticsFact" WHERE "dedupeKey" LIKE 'seed:%'`;
-  await prisma.$executeRaw`DELETE FROM "AnalyticsMpDay" WHERE "sessionId"::text LIKE ${`${SEED_PREFIX}%`}`;
-  await prisma.$executeRaw`DELETE FROM "AnalyticsMpSeat" WHERE "sessionId"::text LIKE ${`${SEED_PREFIX}%`}`;
-  await prisma.$executeRaw`DELETE FROM "AnalyticsMpSession" WHERE id::text LIKE ${`${SEED_PREFIX}%`}`;
+  await prisma.analyticsVisitor.deleteMany({ where: { id: SEED_IDS } });
+  await prisma.analyticsAnonTally.deleteMany({ where: { minute: { lt: to } } });
+  await prisma.concurrencySample.deleteMany({ where: { at: { lt: to } } });
+  await prisma.analyticsFact.deleteMany({ where: { dedupeKey: { startsWith: 'seed:' } } });
+  await prisma.analyticsMpDay.deleteMany({ where: { sessionId: SEED_IDS } });
+  await prisma.analyticsMpSeat.deleteMany({ where: { sessionId: SEED_IDS } });
+  await prisma.analyticsMpSession.deleteMany({ where: { id: SEED_IDS } });
   const accounts = await prisma.user.findMany({
     where: { email: { endsWith: `@${SEED_DOMAIN}` } },
     select: { id: true },
@@ -417,11 +405,18 @@ async function clearPrevious(to: Date): Promise<void> {
   await prisma.analyticsCohort.deleteMany({});
 }
 
-async function finalize(): Promise<number> {
+async function finalize(prisma: PrismaClient): Promise<number> {
   return new AnalyticsFinalizeService(prisma as unknown as PrismaService).finalizeDue(new Date());
 }
 
-async function main(): Promise<void> {
+/** Removes what `seedAnalytics` wrote, and finalizes again from what is left. */
+export async function clearAnalytics(prisma: PrismaClient): Promise<string> {
+  await clearPrevious(prisma, new Date());
+  return `analytics cleared, ${String(await finalize(prisma))} periods finalized`;
+}
+
+/** Writes the synthetic analytics and answers what it wrote, in one line. */
+export async function seedAnalytics(prisma: PrismaClient): Promise<string> {
   const now = new Date(Math.floor((Date.now() - 2 * MINUTE_MS) / MINUTE_MS) * MINUTE_MS);
   const today = new Date(Math.floor(now.getTime() / DAY_MS) * DAY_MS);
   const from = new Date(today.getTime() - (DAYS - 1) * DAY_MS);
@@ -433,11 +428,7 @@ async function main(): Promise<void> {
   const postDay = (one: Post): number =>
     Math.floor((postAt(one).getTime() - from.getTime()) / DAY_MS);
 
-  await clearPrevious(now);
-  if (process.argv.includes('--clear')) {
-    console.log(`seed:analytics: cleared; ${String(await finalize())} periods finalized`);
-    return;
-  }
+  await clearPrevious(prisma, now);
 
   // Accounts are created up front so facts and links can name them. The creator owns the sample
   // games, and the others are handed out as visitors sign up.
@@ -1089,18 +1080,11 @@ async function main(): Promise<void> {
     });
   }
 
-  const finalized = await finalize();
-  console.log(
-    `seed:analytics: ${String(visitors.length)} visitors, ${String(sessions.length)} sessions, ` +
-      `${String(plays.length)} plays, ${String(tallies.size)} anonymous tallies, ` +
-      `${String(accounts.length)} accounts, ${String(roomRows.length)} rooms and ` +
-      `${String(games.length)} games over ${String(DAYS)} days; ${String(finalized)} periods finalized`,
+  const finalized = await finalize(prisma);
+  return (
+    `${String(visitors.length)} visitors, ${String(sessions.length)} sessions, ` +
+    `${String(plays.length)} plays, ${String(tallies.size)} anonymous tallies, ` +
+    `${String(accounts.length)} accounts, ${String(roomRows.length)} rooms and ` +
+    `${String(games.length)} games over ${String(DAYS)} days, ${String(finalized)} periods finalized`
   );
 }
-
-main()
-  .catch((error: unknown) => {
-    console.error(error);
-    process.exitCode = 1;
-  })
-  .finally(() => void prisma.$disconnect());
