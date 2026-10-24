@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { AnalyticsAnonConsent } from '@prisma/client';
+import { AnalyticsAnonConsent, AnalyticsFactType } from '@prisma/client';
 import { createHmac, randomBytes } from 'crypto';
 
 import { PrismaService } from '../../prisma/prisma.service';
@@ -11,7 +11,6 @@ import {
   MAX_TIMELINE_BUCKETS,
   NO_SOURCE_VALUE,
   parseSource,
-  SOURCE_KINDS,
   TIMELINE_METRIC_NAMES,
   TIMELINE_METRICS,
   TimelineFilter,
@@ -20,11 +19,13 @@ import {
   windowOf,
 } from './analytics-timeline';
 import {
-  fromSource,
-  SlotValue,
-  TIMELINE_QUERIES,
+  cameFrom,
+  firstSessions,
+  linkedVisitors,
+  Sample,
+  TIMELINE_READERS,
   TimelineFilters,
-} from './analytics-timeline.queries';
+} from './analytics-timeline.readers';
 import {
   AnalyticsActivityQueryDto,
   AnalyticsArrivalsQueryDto,
@@ -68,6 +69,19 @@ interface ActivityRow {
   consent: AnalyticsAnonConsent | null;
 }
 
+const ACTIVITY_DEFAULTS = {
+  visitorId: null,
+  releaseId: null,
+  referrer: null,
+  utmSource: null,
+  utmCampaign: null,
+  country: null,
+  device: null,
+  count: 1,
+  signedIn: null,
+  consent: null,
+} as const;
+
 interface ArrivalRow {
   visitorId: string;
   firstSeenAt: Date;
@@ -80,11 +94,42 @@ interface ArrivalRow {
   sessions: number;
   plays: number;
   firstPlayAt: Date | null;
-  releases: number[] | null;
+  releases: number[];
   linked: boolean;
   signedUpAt: Date | null;
   projectCreatedAt: Date | null;
   publishedAt: Date | null;
+}
+
+/** Each sample's value put in its bucket, combined the way the metric combines. */
+export function bucketValues(
+  samples: readonly Sample[],
+  starts: readonly Date[],
+  bucketMs: number,
+  combine: 'sum' | 'distinct' | 'max',
+): Map<number, number> {
+  const first = starts[0]?.getTime() ?? 0;
+  const sums = new Map<number, number>();
+  const people = new Map<number, Set<string>>();
+  for (const sample of samples) {
+    const index = Math.floor((sample.at.getTime() - first) / bucketMs);
+    if (index < 0 || index >= starts.length) {
+      continue;
+    }
+    if (combine === 'distinct') {
+      const seen = people.get(index) ?? new Set<string>();
+      seen.add(sample.who ?? '');
+      people.set(index, seen);
+    } else if (combine === 'max') {
+      sums.set(index, Math.max(sums.get(index) ?? Number.NEGATIVE_INFINITY, sample.value));
+    } else {
+      sums.set(index, (sums.get(index) ?? 0) + sample.value);
+    }
+  }
+  if (combine === 'distinct') {
+    return new Map([...people.entries()].map(([index, seen]) => [index, seen.size]));
+  }
+  return sums;
 }
 
 /** The source a session's columns stand for, preferring the campaign over its referrer. */
@@ -137,20 +182,18 @@ export class AnalyticsTimelineService {
     const series = await Promise.all(
       metrics.map(async (metric): Promise<AnalyticsTimelineSeriesDto> => {
         const definition = TIMELINE_METRICS[metric];
-        const applied = this.applied(metric, filters);
-        const rows = await TIMELINE_QUERIES[metric](
+        const samples = await TIMELINE_READERS[metric](
           this.prisma,
-          { from: window.from, to: window.to, slotMs: window.bucketMs },
-          applied,
+          { from: window.from, to: window.to },
+          this.applied(metric, filters),
         );
-        const bySlot = new Map(rows.map((row) => [row.slot, row.value]));
+        const byBucket = bucketValues(samples, starts, window.bucketMs, definition.combine);
         const sampled = 'sampled' in definition;
-        const values = starts.map((start) => {
+        const values = starts.map((start, index) => {
           if (start.getTime() + window.bucketMs <= rawFrom.getTime() || start > now) {
             return null;
           }
-          const value = bySlot.get(start.getTime() / window.bucketMs);
-          return value ?? (sampled ? null : 0);
+          return byBucket.get(index) ?? (sampled ? null : 0);
         });
         return {
           metric,
@@ -161,7 +204,7 @@ export class AnalyticsTimelineService {
             (filter) => !(definition.filters as readonly TimelineFilter[]).includes(filter),
           ),
           values,
-          total: await this.totalOf(metric, values, window, rawFrom, now, applied),
+          total: this.totalOf(metric, values, samples, rawFrom, now),
         };
       }),
     );
@@ -179,44 +222,70 @@ export class AnalyticsTimelineService {
 
   async sources(query: AnalyticsInstantRangeQueryDto): Promise<AnalyticsSourcesDto> {
     const { from, to } = this.instants(query);
-    const rows = await this.prisma.$queryRaw<
-      { kind: string; value: string | null; sessions: number; visitorsNew: number }[]
-    >`
-      WITH ranked AS (
-        SELECT s.*, row_number() OVER (PARTITION BY s."visitorId" ORDER BY s."startedAt") AS nth
-        FROM "AnalyticsSession" s
-        WHERE s."startedAt" >= ${from} AND s."startedAt" < ${to}
-      ),
-      firsts AS (
-        SELECT r.* FROM ranked r JOIN "AnalyticsVisitor" v ON v.id = r."visitorId"
-        WHERE r.nth = 1 AND v."firstSeenAt" >= ${from} AND v."firstSeenAt" < ${to}
-      ),
-      counted AS (
-        SELECT 'referrer' AS kind, "referrerDomain" AS value, count(*)::int AS sessions,
-               (SELECT count(*) FROM firsts f WHERE f."referrerDomain" IS NOT DISTINCT FROM r."referrerDomain")::int AS "visitorsNew"
-        FROM ranked r GROUP BY "referrerDomain"
-        UNION ALL
-        SELECT 'utmSource', "utmSource", count(*)::int,
-               (SELECT count(*) FROM firsts f WHERE f."utmSource" = r."utmSource")::int
-        FROM ranked r WHERE "utmSource" IS NOT NULL GROUP BY "utmSource"
-        UNION ALL
-        SELECT 'utmCampaign', "utmCampaign", count(*)::int,
-               (SELECT count(*) FROM firsts f WHERE f."utmCampaign" = r."utmCampaign")::int
-        FROM ranked r WHERE "utmCampaign" IS NOT NULL GROUP BY "utmCampaign"
-      )
-      SELECT * FROM (
-        SELECT *, row_number() OVER (PARTITION BY kind ORDER BY sessions DESC) AS rank FROM counted
-      ) ranked_sources WHERE rank <= ${SOURCES_PER_KIND}
-      ORDER BY sessions DESC`;
+    const startedAt = { gte: from, lt: to };
+    const [referrers, utmSources, utmCampaigns, newcomers] = await Promise.all([
+      this.prisma.analyticsSession.groupBy({
+        by: ['referrerDomain'],
+        where: { startedAt },
+        _count: { _all: true },
+        orderBy: { _count: { id: 'desc' } },
+        take: SOURCES_PER_KIND,
+      }),
+      this.prisma.analyticsSession.groupBy({
+        by: ['utmSource'],
+        where: { startedAt, utmSource: { not: null } },
+        _count: { _all: true },
+        orderBy: { _count: { id: 'desc' } },
+        take: SOURCES_PER_KIND,
+      }),
+      this.prisma.analyticsSession.groupBy({
+        by: ['utmCampaign'],
+        where: { startedAt, utmCampaign: { not: null } },
+        _count: { _all: true },
+        orderBy: { _count: { id: 'desc' } },
+        take: SOURCES_PER_KIND,
+      }),
+      this.prisma.analyticsVisitor.findMany({
+        where: { firstSeenAt: startedAt },
+        select: { id: true },
+      }),
+    ]);
+    const firsts = [
+      ...(
+        await firstSessions(
+          this.prisma,
+          newcomers.map((visitor) => visitor.id),
+        )
+      ).values(),
+    ];
+    const rows = [
+      ...referrers.map((row) => ({
+        kind: 'referrer' as const,
+        value: row.referrerDomain,
+        count: row._count._all,
+      })),
+      ...utmSources.map((row) => ({
+        kind: 'utmSource' as const,
+        value: row.utmSource,
+        count: row._count._all,
+      })),
+      ...utmCampaigns.map((row) => ({
+        kind: 'utmCampaign' as const,
+        value: row.utmCampaign,
+        count: row._count._all,
+      })),
+    ];
     return {
       sources: rows
-        .filter((row) => (SOURCE_KINDS as readonly string[]).includes(row.kind))
+        .sort((a, b) => b.count - a.count)
         .map((row) => ({
           source: `${row.kind}:${row.value ?? NO_SOURCE_VALUE}`,
           kind: row.kind,
           value: row.value,
-          sessions: row.sessions,
-          visitorsNew: row.visitorsNew,
+          sessions: row.count,
+          visitorsNew: firsts.filter((first) =>
+            cameFrom(first, { kind: row.kind, value: row.value }),
+          ).length,
         })),
     };
   }
@@ -224,48 +293,135 @@ export class AnalyticsTimelineService {
   async activity(query: AnalyticsActivityQueryDto): Promise<AnalyticsActivityDto> {
     const { from, to } = this.instants(query);
     const limit = query.limit ?? DEFAULT_LIMIT;
-    const rows = await this.prisma.$queryRaw<ActivityRow[]>`
-      WITH linked AS (
-        SELECT DISTINCT ON ("userId") "userId", id FROM "AnalyticsVisitor"
-        WHERE "userId" IS NOT NULL ORDER BY "userId", "firstSeenAt"
+    const within = { gte: from, lt: to };
+    const [visitors, plays, facts, rooms, anonymous] = await Promise.all([
+      this.prisma.analyticsVisitor.findMany({
+        where: { firstSeenAt: within },
+        orderBy: { firstSeenAt: 'desc' },
+        take: limit + 1,
+        select: { id: true, firstSeenAt: true },
+      }),
+      this.prisma.analyticsPlay.findMany({
+        where: { startedAt: within },
+        orderBy: { startedAt: 'asc' },
+        select: { startedAt: true, releaseId: true, session: { select: { visitorId: true } } },
+      }),
+      this.prisma.analyticsFact.findMany({
+        where: { at: within, type: { not: 'RELEASE_UPDATED' } },
+        orderBy: { at: 'desc' },
+        take: limit + 1,
+        select: { at: true, type: true, actorUserId: true, projectId: true },
+      }),
+      this.prisma.analyticsMpSession.findMany({
+        where: { editorTest: false, reachedMultiAt: within },
+        orderBy: { reachedMultiAt: 'desc' },
+        take: limit + 1,
+        select: { reachedMultiAt: true, projectId: true, peakConnected: true },
+      }),
+      this.prisma.analyticsAnonTally.groupBy({
+        by: ['minute', 'releaseId', 'signedIn', 'consent'],
+        where: { minute: within, playsStarted: { gt: 0 }, releaseId: { not: 0 } },
+        _sum: { playsStarted: true },
+        orderBy: { minute: 'desc' },
+        take: limit + 1,
+      }),
+    ]);
+
+    const firstOfVisitor = new Map<string, { at: Date; releaseId: number }>();
+    for (const play of plays) {
+      if (!firstOfVisitor.has(play.session.visitorId)) {
+        firstOfVisitor.set(play.session.visitorId, {
+          at: play.startedAt,
+          releaseId: play.releaseId,
+        });
+      }
+    }
+    const playedBefore = new Set(
+      (
+        await this.prisma.analyticsPlay.findMany({
+          where: {
+            startedAt: { lt: from },
+            session: { visitorId: { in: [...firstOfVisitor.keys()] } },
+          },
+          distinct: ['sessionId'],
+          select: { session: { select: { visitorId: true } } },
+        })
+      ).map((play) => play.session.visitorId),
+    );
+    const firstSessionOf = await firstSessions(
+      this.prisma,
+      visitors.map((visitor) => visitor.id),
+    );
+    const linked = new Map<number, string>();
+    for (const visitor of await linkedVisitors(
+      this.prisma,
+      facts.flatMap((one) => (one.actorUserId === null ? [] : [one.actorUserId])),
+    )) {
+      if (!linked.has(visitor.userId)) {
+        linked.set(visitor.userId, visitor.id);
+      }
+    }
+
+    const rows: ActivityRow[] = [
+      ...visitors.map((visitor): ActivityRow => {
+        const first = firstSessionOf.get(visitor.id);
+        return {
+          ...ACTIVITY_DEFAULTS,
+          at: visitor.firstSeenAt,
+          kind: 'FIRST_VISIT',
+          visitorId: visitor.id,
+          referrer: first?.referrerDomain ?? null,
+          utmSource: first?.utmSource ?? null,
+          utmCampaign: first?.utmCampaign ?? null,
+          country: first?.country ?? null,
+          device: first?.device ?? null,
+        };
+      }),
+      ...[...firstOfVisitor.entries()]
+        .filter(([visitorId]) => !playedBefore.has(visitorId))
+        .map(
+          ([visitorId, play]): ActivityRow => ({
+            ...ACTIVITY_DEFAULTS,
+            at: play.at,
+            kind: 'FIRST_PLAY',
+            visitorId,
+            releaseId: play.releaseId,
+          }),
+        ),
+      ...facts.map(
+        (one): ActivityRow => ({
+          ...ACTIVITY_DEFAULTS,
+          at: one.at,
+          kind: one.type as Exclude<AnalyticsFactType, 'RELEASE_UPDATED'>,
+          visitorId: one.actorUserId === null ? null : (linked.get(one.actorUserId) ?? null),
+          releaseId: one.projectId,
+        }),
       ),
-      events AS (
-        SELECT v."firstSeenAt" AS at, 'FIRST_VISIT' AS kind, v.id AS "visitorId", NULL::int AS "releaseId",
-               fs."referrerDomain" AS referrer, fs."utmSource", fs."utmCampaign", fs.country, fs.device,
-               1 AS count, NULL::boolean AS "signedIn", NULL::"AnalyticsAnonConsent" AS consent
-        FROM "AnalyticsVisitor" v
-        LEFT JOIN LATERAL (
-          SELECT * FROM "AnalyticsSession" s WHERE s."visitorId" = v.id ORDER BY s."startedAt" LIMIT 1
-        ) fs ON TRUE
-        WHERE v."firstSeenAt" >= ${from} AND v."firstSeenAt" < ${to}
-        UNION ALL
-        SELECT firsts.at, 'FIRST_PLAY', firsts."visitorId", firsts."releaseId",
-               NULL, NULL, NULL, NULL, NULL, 1, NULL, NULL
-        FROM (
-          SELECT DISTINCT ON (s."visitorId") s."visitorId", p."startedAt" AS at, p."releaseId"
-          FROM "AnalyticsPlay" p JOIN "AnalyticsSession" s ON s.id = p."sessionId"
-          ORDER BY s."visitorId", p."startedAt"
-        ) firsts
-        WHERE firsts.at >= ${from} AND firsts.at < ${to}
-        UNION ALL
-        SELECT f."at", f."type"::text, linked.id, f."projectId", NULL, NULL, NULL, NULL, NULL, 1, NULL,
-               NULL
-        FROM "AnalyticsFact" f LEFT JOIN linked ON linked."userId" = f."actorUserId"
-        WHERE f."type" <> 'RELEASE_UPDATED' AND f."at" >= ${from} AND f."at" < ${to}
-        UNION ALL
-        SELECT m."reachedMultiAt", 'MP_SESSION', NULL, m."projectId", NULL, NULL, NULL, NULL, NULL,
-               m."peakConnected", NULL, NULL
-        FROM "AnalyticsMpSession" m
-        WHERE NOT m."editorTest" AND m."reachedMultiAt" >= ${from} AND m."reachedMultiAt" < ${to}
-        UNION ALL
-        SELECT t."minute", 'ANONYMOUS_PLAYS', NULL, t."releaseId", NULL, NULL, NULL, NULL, NULL,
-               sum(t."playsStarted")::int, t."signedIn", t."consent"
-        FROM "AnalyticsAnonTally" t
-        WHERE t."playsStarted" > 0 AND t."releaseId" <> 0
-          AND t."minute" >= ${from} AND t."minute" < ${to}
-        GROUP BY t."minute", t."releaseId", t."signedIn", t."consent"
-      )
-      SELECT * FROM events ORDER BY at DESC, kind LIMIT ${limit + 1}`;
+      ...rooms.flatMap((room): ActivityRow[] =>
+        room.reachedMultiAt
+          ? [
+              {
+                ...ACTIVITY_DEFAULTS,
+                at: room.reachedMultiAt,
+                kind: 'MP_SESSION',
+                releaseId: room.projectId,
+                count: room.peakConnected,
+              },
+            ]
+          : [],
+      ),
+      ...anonymous.map(
+        (row): ActivityRow => ({
+          ...ACTIVITY_DEFAULTS,
+          at: row.minute,
+          kind: 'ANONYMOUS_PLAYS',
+          releaseId: row.releaseId,
+          count: row._sum.playsStarted ?? 0,
+          signedIn: row.signedIn,
+          consent: row.consent,
+        }),
+      ),
+    ].sort((a, b) => b.at.getTime() - a.at.getTime() || a.kind.localeCompare(b.kind));
     const kept = rows.slice(0, limit);
     const names = await this.namesOf(kept.map((row) => row.releaseId));
     return {
@@ -292,63 +448,110 @@ export class AnalyticsTimelineService {
     const { from, to } = this.instants(query);
     const limit = query.limit ?? DEFAULT_LIMIT;
     const source = query.source === undefined ? undefined : this.sourceOf(query.source);
-    const rows = await this.prisma.$queryRaw<ArrivalRow[]>`
-      WITH population AS (
-        SELECT v.id, v."firstSeenAt", v."lastSeenAt", v."userId", fs."referrerDomain", fs."utmSource",
-               fs."utmCampaign", fs.country, fs.device
-        FROM "AnalyticsVisitor" v
-        LEFT JOIN LATERAL (
-          SELECT * FROM "AnalyticsSession" s WHERE s."visitorId" = v.id ORDER BY s."startedAt" LIMIT 1
-        ) fs ON TRUE
-        WHERE v."firstSeenAt" >= ${from} AND v."firstSeenAt" < ${to} AND ${fromSource('fs', source)}
-      )
-      SELECT pop.id AS "visitorId", pop."firstSeenAt", pop."lastSeenAt",
-             pop."referrerDomain" AS referrer, pop."utmSource", pop."utmCampaign", pop.country, pop.device,
-             (SELECT count(*) FROM "AnalyticsSession" s WHERE s."visitorId" = pop.id)::int AS sessions,
-             COALESCE(played.plays, 0)::int AS plays, played."firstPlayAt", played.releases,
-             pop."userId" IS NOT NULL AS linked,
-             (SELECT min(f."at") FROM "AnalyticsFact" f
-               WHERE f."type" = 'SIGNUP' AND f."actorUserId" = pop."userId") AS "signedUpAt",
-             (SELECT min(f."at") FROM "AnalyticsFact" f
-               WHERE f."type" = 'PROJECT_CREATED' AND f."actorUserId" = pop."userId"
-                 AND f."at" >= pop."firstSeenAt") AS "projectCreatedAt",
-             (SELECT min(f."at") FROM "AnalyticsFact" f
-               WHERE f."type" = 'RELEASE_PUBLISHED' AND f."actorUserId" = pop."userId"
-                 AND f."at" >= pop."firstSeenAt") AS "publishedAt"
-      FROM population pop
-      LEFT JOIN LATERAL (
-        SELECT count(*) FILTER (WHERE NOT p."continued") AS plays, min(p."startedAt") AS "firstPlayAt",
-               array_agg(p."releaseId" ORDER BY p."startedAt") FILTER (WHERE NOT p."continued") AS releases
-        FROM "AnalyticsPlay" p JOIN "AnalyticsSession" s ON s.id = p."sessionId"
-        WHERE s."visitorId" = pop.id
-      ) played ON TRUE
-      ORDER BY pop."firstSeenAt" DESC`;
+    const within = { gte: from, lt: to };
 
-    const [anonymous] = await this.prisma.$queryRaw<
-      [
-        {
-          all: number;
-          declined: number;
-          unanswered: number;
-          signedIn: number;
-          unlinkedSignups: number;
-        },
-      ]
-    >`
-      SELECT COALESCE(sum("playsStarted"), 0)::int AS "all",
-             COALESCE(sum("playsStarted") FILTER (WHERE "consent" = 'DECLINED'), 0)::int AS declined,
-             COALESCE(sum("playsStarted") FILTER (WHERE "consent" = 'UNANSWERED'), 0)::int AS unanswered,
-             COALESCE(sum("playsStarted") FILTER (WHERE "signedIn"), 0)::int AS "signedIn",
-             (SELECT count(*) FROM "AnalyticsFact" f
-               WHERE f."type" = 'SIGNUP' AND f."at" >= ${from} AND f."at" < ${to}
-                 AND NOT EXISTS (SELECT 1 FROM "AnalyticsVisitor" v WHERE v."userId" = f."actorUserId")
-             )::int AS "unlinkedSignups"
-      FROM "AnalyticsAnonTally"
-      WHERE "releaseId" <> 0 AND "minute" >= ${from} AND "minute" < ${to}`;
-    const anonymousByGame = await this.prisma.$queryRaw<{ releaseId: number; plays: number }[]>`
-      SELECT "releaseId", sum("playsStarted")::int AS plays FROM "AnalyticsAnonTally"
-      WHERE "releaseId" <> 0 AND "playsStarted" > 0 AND "minute" >= ${from} AND "minute" < ${to}
-      GROUP BY "releaseId"`;
+    const population = await this.prisma.analyticsVisitor.findMany({
+      where: { firstSeenAt: within },
+      orderBy: { firstSeenAt: 'desc' },
+      select: { id: true, firstSeenAt: true, lastSeenAt: true, userId: true },
+    });
+    const firstSessionOf = await firstSessions(
+      this.prisma,
+      population.map((visitor) => visitor.id),
+    );
+    const arrived = population.filter((visitor) => {
+      const first = firstSessionOf.get(visitor.id);
+      return !source || (first !== undefined && cameFrom(first, source));
+    });
+    const ids = arrived.map((visitor) => visitor.id);
+    const accounts = arrived.flatMap((visitor) =>
+      visitor.userId === null ? [] : [visitor.userId],
+    );
+
+    const [sessionCounts, plays, facts, anonymousByAnswer, anonymousByGame, unlinked] =
+      await Promise.all([
+        this.prisma.analyticsSession.groupBy({
+          by: ['visitorId'],
+          where: { visitorId: { in: ids } },
+          _count: { _all: true },
+        }),
+        this.prisma.analyticsPlay.findMany({
+          where: { session: { visitorId: { in: ids } } },
+          orderBy: { startedAt: 'asc' },
+          select: {
+            startedAt: true,
+            releaseId: true,
+            continued: true,
+            session: { select: { visitorId: true } },
+          },
+        }),
+        this.prisma.analyticsFact.findMany({
+          where: {
+            actorUserId: { in: accounts },
+            type: { in: ['SIGNUP', 'PROJECT_CREATED', 'RELEASE_PUBLISHED'] },
+          },
+          orderBy: { at: 'asc' },
+          select: { at: true, type: true, actorUserId: true },
+        }),
+        this.prisma.analyticsAnonTally.groupBy({
+          by: ['consent', 'signedIn'],
+          where: { minute: within, releaseId: { not: 0 } },
+          _sum: { playsStarted: true },
+        }),
+        this.prisma.analyticsAnonTally.groupBy({
+          by: ['releaseId'],
+          where: { minute: within, releaseId: { not: 0 }, playsStarted: { gt: 0 } },
+          _sum: { playsStarted: true },
+        }),
+        TIMELINE_READERS.signups_unlinked(this.prisma, { from, to }, {}),
+      ]);
+
+    const sessionsOf = new Map(sessionCounts.map((row) => [row.visitorId, row._count._all]));
+    const playsOf = new Map<string, typeof plays>();
+    for (const play of plays) {
+      playsOf.set(play.session.visitorId, [...(playsOf.get(play.session.visitorId) ?? []), play]);
+    }
+    const factsOf = new Map<number, typeof facts>();
+    for (const one of facts) {
+      if (one.actorUserId !== null) {
+        factsOf.set(one.actorUserId, [...(factsOf.get(one.actorUserId) ?? []), one]);
+      }
+    }
+    const rows: ArrivalRow[] = arrived.map((visitor) => {
+      const first = firstSessionOf.get(visitor.id);
+      const played = playsOf.get(visitor.id) ?? [];
+      const counted = played.filter((play) => !play.continued);
+      const own = visitor.userId === null ? [] : (factsOf.get(visitor.userId) ?? []);
+      const firstOf = (type: AnalyticsFactType, since: Date | null): Date | null =>
+        own.find((one) => one.type === type && (since === null || one.at >= since))?.at ?? null;
+      return {
+        visitorId: visitor.id,
+        firstSeenAt: visitor.firstSeenAt,
+        lastSeenAt: visitor.lastSeenAt,
+        referrer: first?.referrerDomain ?? null,
+        utmSource: first?.utmSource ?? null,
+        utmCampaign: first?.utmCampaign ?? null,
+        country: first?.country ?? null,
+        device: first?.device ?? null,
+        sessions: sessionsOf.get(visitor.id) ?? 0,
+        plays: counted.length,
+        firstPlayAt: played[0]?.startedAt ?? null,
+        releases: counted.map((play) => play.releaseId),
+        linked: visitor.userId !== null,
+        signedUpAt: firstOf('SIGNUP', null),
+        projectCreatedAt: firstOf('PROJECT_CREATED', visitor.firstSeenAt),
+        publishedAt: firstOf('RELEASE_PUBLISHED', visitor.firstSeenAt),
+      };
+    });
+    const playsWhere = (keep: (row: (typeof anonymousByAnswer)[number]) => boolean): number =>
+      anonymousByAnswer.filter(keep).reduce((sum, row) => sum + (row._sum.playsStarted ?? 0), 0);
+    const anonymous = {
+      all: playsWhere(() => true),
+      declined: playsWhere((row) => row.consent === 'DECLINED'),
+      unanswered: playsWhere((row) => row.consent === 'UNANSWERED'),
+      signedIn: playsWhere((row) => row.signedIn),
+      unlinkedSignups: unlinked.length,
+    };
 
     const isNew = (row: ArrivalRow): boolean =>
       row.signedUpAt !== null && row.signedUpAt >= row.firstSeenAt;
@@ -361,7 +564,7 @@ export class AnalyticsTimelineService {
       return game;
     };
     for (const row of rows) {
-      const releases = row.releases ?? [];
+      const releases = row.releases;
       for (const releaseId of new Set(releases)) {
         gameOf(releaseId).players += 1;
       }
@@ -370,7 +573,7 @@ export class AnalyticsTimelineService {
       }
     }
     for (const row of anonymousByGame) {
-      gameOf(row.releaseId).anonymousPlays = row.plays;
+      gameOf(row.releaseId).anonymousPlays = row._sum.playsStarted ?? 0;
     }
     const topGames = [...games.entries()]
       .sort((a, b) => b[1].plays + b[1].anonymousPlays - (a[1].plays + a[1].anonymousPlays))
@@ -378,7 +581,7 @@ export class AnalyticsTimelineService {
     const listed = rows.slice(0, limit);
     const names = await this.namesOf([
       ...topGames.map(([releaseId]) => releaseId),
-      ...listed.flatMap((row) => row.releases ?? []),
+      ...listed.flatMap((row) => row.releases),
     ]);
 
     return {
@@ -412,7 +615,7 @@ export class AnalyticsTimelineService {
         sessions: row.sessions,
         plays: row.plays,
         firstPlayAt: row.firstPlayAt?.toISOString() ?? null,
-        games: this.mostPlayed(row.releases ?? [], names),
+        games: this.mostPlayed(row.releases, names),
         account: row.linked ? (isNew(row) ? 'NEW' : 'EXISTING') : null,
         signedUpAt: isNew(row) ? (row.signedUpAt?.toISOString() ?? null) : null,
         projectCreatedAt: row.projectCreatedAt?.toISOString() ?? null,
@@ -476,14 +679,13 @@ export class AnalyticsTimelineService {
     return createHmac('sha256', this.journeyKey).update(visitorId).digest('hex').slice(0, 6);
   }
 
-  private async totalOf(
+  private totalOf(
     metric: TimelineMetric,
     values: (number | null)[],
-    window: { from: Date; to: Date },
+    samples: readonly Sample[],
     rawFrom: Date,
     now: Date,
-    filters: TimelineFilters,
-  ): Promise<number | null> {
+  ): number | null {
     const known = values.filter((value): value is number => value !== null);
     if (known.length === 0) {
       return null;
@@ -493,16 +695,12 @@ export class AnalyticsTimelineService {
         return known.reduce((sum, value) => sum + value, 0);
       case 'max':
         return Math.max(...known);
-      case 'distinct': {
-        const from = new Date(Math.max(window.from.getTime(), rawFrom.getTime()));
-        const to = new Date(Math.min(window.to.getTime(), now.getTime()));
-        const rows: SlotValue[] = await TIMELINE_QUERIES[metric](
-          this.prisma,
-          { from, to, slotMs: null },
-          filters,
-        );
-        return rows[0]?.value ?? 0;
-      }
+      case 'distinct':
+        return new Set(
+          samples
+            .filter((sample) => sample.at >= rawFrom && sample.at <= now)
+            .map((sample) => sample.who ?? ''),
+        ).size;
     }
   }
 

@@ -1,43 +1,57 @@
 import { BadRequestException } from '@nestjs/common';
 
 import { PrismaService } from '../../prisma/prisma.service';
-import * as queries from './analytics-timeline.queries';
-import { AnalyticsTimelineService, sourceOf } from './analytics-timeline.service';
+import * as readers from './analytics-timeline.readers';
+import { AnalyticsTimelineService, bucketValues, sourceOf } from './analytics-timeline.service';
 
-jest.mock('./analytics-timeline.queries', () => {
-  const actual = jest.requireActual<typeof queries>('./analytics-timeline.queries');
-  const mockedQueries = Object.fromEntries(
-    Object.keys(actual.TIMELINE_QUERIES).map((metric) => [metric, jest.fn()]),
+jest.mock('./analytics-timeline.readers', () => {
+  const actual = jest.requireActual<typeof readers>('./analytics-timeline.readers');
+  const mockedReaders = Object.fromEntries(
+    Object.keys(actual.TIMELINE_READERS).map((metric) => [metric, jest.fn()]),
   );
-  return { ...actual, TIMELINE_QUERIES: mockedQueries };
+  return {
+    ...actual,
+    TIMELINE_READERS: mockedReaders,
+    firstSessions: jest.fn(),
+    linkedVisitors: jest.fn(),
+  };
 });
-const mocked = queries.TIMELINE_QUERIES as unknown as Record<string, jest.Mock>;
+const mocked = readers.TIMELINE_READERS as unknown as Record<string, jest.Mock>;
+const mockedFirstSessions = jest.mocked(readers.firstSessions);
 
 const NOW = new Date('2026-10-21T12:30:00Z');
-const HOUR = 3_600_000;
-const slot = (iso: string, bucketMs = HOUR): number => Date.parse(iso) / bucketMs;
+const sample = (iso: string, value = 1, who?: string): readers.Sample => ({
+  at: new Date(iso),
+  value,
+  ...(who === undefined ? {} : { who }),
+});
 
 describe('AnalyticsTimelineService', () => {
   const prisma = {
-    $queryRaw: jest.fn(),
     project: { findMany: jest.fn() },
+    analyticsVisitor: { findMany: jest.fn() },
+    analyticsSession: { groupBy: jest.fn() },
+    analyticsPlay: { findMany: jest.fn() },
+    analyticsFact: { findMany: jest.fn() },
+    analyticsAnonTally: { groupBy: jest.fn() },
   };
   let service: AnalyticsTimelineService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    for (const query of Object.values(mocked)) {
-      query.mockResolvedValue([]);
+    for (const reader of Object.values(mocked)) {
+      reader.mockResolvedValue([]);
     }
     prisma.project.findMany.mockResolvedValue([]);
+    mockedFirstSessions.mockResolvedValue(new Map());
     service = new AnalyticsTimelineService(prisma as unknown as PrismaService);
   });
 
   describe('a timeline', () => {
     it('answers every bucket, a count without rows as 0 and the future as no value', async () => {
       mocked['plays_consented']?.mockResolvedValue([
-        { slot: slot('2026-10-21T10:00:00Z'), value: 4 },
-        { slot: slot('2026-10-21T12:00:00Z'), value: 1 },
+        ...Array.from({ length: 4 }, () => sample('2026-10-21T10:20:00Z')),
+        sample('2026-10-21T12:59:59Z'),
       ]);
 
       const timeline = await service.timeline(
@@ -65,7 +79,8 @@ describe('AnalyticsTimelineService', () => {
 
     it('counts a bucket of anonymous tabs by answer without pings as 0, not as no sample', async () => {
       mocked['anon_tabs_declined']?.mockResolvedValue([
-        { slot: slot('2026-10-21T10:00:00Z'), value: 3 },
+        sample('2026-10-21T10:01:00Z', 2),
+        sample('2026-10-21T10:02:00Z', 3),
       ]);
 
       const timeline = await service.timeline(
@@ -83,8 +98,8 @@ describe('AnalyticsTimelineService', () => {
 
     it('leaves a presence bucket without a sample empty and takes the highest as its total', async () => {
       mocked['anon_tabs']?.mockResolvedValue([
-        { slot: slot('2026-10-21T10:00:00Z'), value: 3 },
-        { slot: slot('2026-10-21T12:00:00Z'), value: 7 },
+        sample('2026-10-21T10:00:00Z', 3),
+        sample('2026-10-21T12:00:00Z', 7),
       ]);
 
       const timeline = await service.timeline(
@@ -101,14 +116,13 @@ describe('AnalyticsTimelineService', () => {
     });
 
     it('counts a distinct total over the whole window, not as the sum of its buckets', async () => {
-      mocked['players']?.mockImplementation((_prisma: unknown, range: queries.TimelineRange) =>
-        range.slotMs === null
-          ? [{ slot: 0, value: 3 }]
-          : [
-              { slot: slot('2026-10-21T10:00:00Z'), value: 2 },
-              { slot: slot('2026-10-21T11:00:00Z'), value: 2 },
-            ],
-      );
+      mocked['players']?.mockResolvedValue([
+        sample('2026-10-21T10:05:00Z', 1, 'a'),
+        sample('2026-10-21T10:15:00Z', 1, 'a'),
+        sample('2026-10-21T10:30:00Z', 1, 'b'),
+        sample('2026-10-21T11:05:00Z', 1, 'b'),
+        sample('2026-10-21T11:40:00Z', 1, 'c'),
+      ]);
 
       const timeline = await service.timeline(
         {
@@ -120,7 +134,7 @@ describe('AnalyticsTimelineService', () => {
         NOW,
       );
 
-      expect(timeline.series[0]?.total).toBe(3);
+      expect(timeline.series[0]).toMatchObject({ values: [2, 2], total: 3 });
     });
 
     it('gives a metric only the filters it is split by, and says which it ignored', async () => {
@@ -242,46 +256,84 @@ describe('AnalyticsTimelineService', () => {
     );
   });
 
+  it('puts each sample in its bucket, combined as its metric combines', () => {
+    const starts = [new Date('2026-10-21T10:00:00Z'), new Date('2026-10-21T11:00:00Z')];
+    const samples = [
+      sample('2026-10-21T10:10:00Z', 2, 'a'),
+      sample('2026-10-21T10:50:00Z', 5, 'a'),
+      sample('2026-10-21T11:00:00Z', 1, 'b'),
+      sample('2026-10-21T12:00:00Z', 9, 'c'),
+    ];
+
+    expect([...bucketValues(samples, starts, 3_600_000, 'sum')]).toEqual([
+      [0, 7],
+      [1, 1],
+    ]);
+    expect([...bucketValues(samples, starts, 3_600_000, 'max')]).toEqual([
+      [0, 5],
+      [1, 1],
+    ]);
+    expect([...bucketValues(samples, starts, 3_600_000, 'distinct')]).toEqual([
+      [0, 1],
+      [1, 1],
+    ]);
+  });
+
   describe('arrivals', () => {
     it('tells new accounts from existing ones and adds anonymous plays to the games', async () => {
       const firstSeenAt = new Date('2026-10-21T10:00:00Z');
-      const visitor = {
-        firstSeenAt,
-        lastSeenAt: firstSeenAt,
-        referrer: 'youtube.com',
+      const newcomer = '6a1f4ad2-2a8f-4c43-9b37-3cdb1c0c9b9e';
+      const returning = '7b2f4ad2-2a8f-4c43-9b37-3cdb1c0c9b9e';
+      prisma.analyticsVisitor.findMany.mockResolvedValue([
+        { id: newcomer, firstSeenAt, lastSeenAt: firstSeenAt, userId: 1 },
+        { id: returning, firstSeenAt, lastSeenAt: firstSeenAt, userId: 2 },
+      ]);
+      const first = {
+        referrerDomain: 'youtube.com',
         utmSource: null,
         utmCampaign: null,
         country: 'FR',
         device: 'desktop',
-        sessions: 1,
-        projectCreatedAt: null,
-        publishedAt: null,
       };
-      prisma.$queryRaw
+      mockedFirstSessions.mockResolvedValue(
+        new Map([
+          [newcomer, { ...first, visitorId: newcomer }],
+          [returning, { ...first, visitorId: returning }],
+        ]),
+      );
+      prisma.analyticsSession.groupBy.mockResolvedValue([
+        { visitorId: newcomer, _count: { _all: 1 } },
+        { visitorId: returning, _count: { _all: 1 } },
+      ]);
+      prisma.analyticsPlay.findMany.mockResolvedValue([
+        {
+          startedAt: new Date('2026-10-21T10:05:00Z'),
+          releaseId: 9,
+          continued: false,
+          session: { visitorId: newcomer },
+        },
+        {
+          startedAt: new Date('2026-10-21T10:15:00Z'),
+          releaseId: 9,
+          continued: false,
+          session: { visitorId: newcomer },
+        },
+      ]);
+      prisma.analyticsFact.findMany.mockResolvedValue([
+        { at: new Date('2025-01-01T00:00:00Z'), type: 'SIGNUP', actorUserId: 2 },
+        { at: new Date('2026-10-21T10:20:00Z'), type: 'SIGNUP', actorUserId: 1 },
+      ]);
+      prisma.analyticsAnonTally.groupBy
         .mockResolvedValueOnce([
-          {
-            ...visitor,
-            visitorId: '6a1f4ad2-2a8f-4c43-9b37-3cdb1c0c9b9e',
-            plays: 2,
-            firstPlayAt: new Date('2026-10-21T10:05:00Z'),
-            releases: [9, 9],
-            linked: true,
-            signedUpAt: new Date('2026-10-21T10:20:00Z'),
-          },
-          {
-            ...visitor,
-            visitorId: '7b2f4ad2-2a8f-4c43-9b37-3cdb1c0c9b9e',
-            plays: 0,
-            firstPlayAt: null,
-            releases: null,
-            linked: true,
-            signedUpAt: new Date('2025-01-01T00:00:00Z'),
-          },
+          { consent: 'DECLINED', signedIn: false, _sum: { playsStarted: 3 } },
+          { consent: 'DECLINED', signedIn: true, _sum: { playsStarted: 1 } },
+          { consent: 'UNANSWERED', signedIn: false, _sum: { playsStarted: 2 } },
         ])
-        .mockResolvedValueOnce([
-          { all: 6, declined: 4, unanswered: 2, signedIn: 1, unlinkedSignups: 2 },
-        ])
-        .mockResolvedValueOnce([{ releaseId: 9, plays: 5 }]);
+        .mockResolvedValueOnce([{ releaseId: 9, _sum: { playsStarted: 5 } }]);
+      mocked['signups_unlinked']?.mockResolvedValue([
+        sample('2026-10-21T10:30:00Z'),
+        sample('2026-10-21T11:30:00Z'),
+      ]);
       prisma.project.findMany.mockResolvedValue([{ id: 9, name: 'draft', publishedName: 'Orbs' }]);
 
       const arrivals = await service.arrivals({
@@ -305,6 +357,36 @@ describe('AnalyticsTimelineService', () => {
       ]);
       expect(arrivals.visitors.map((row) => row.account)).toEqual(['NEW', 'EXISTING']);
       expect(arrivals.visitors[1]?.signedUpAt).toBeNull();
+    });
+
+    it('keeps only the newcomers whose first session came from the source', async () => {
+      const firstSeenAt = new Date('2026-10-21T10:00:00Z');
+      prisma.analyticsVisitor.findMany.mockResolvedValue([
+        { id: 'a', firstSeenAt, lastSeenAt: firstSeenAt, userId: null },
+        { id: 'b', firstSeenAt, lastSeenAt: firstSeenAt, userId: null },
+      ]);
+      const first = { utmSource: null, utmCampaign: null, country: null, device: 'desktop' };
+      mockedFirstSessions.mockResolvedValue(
+        new Map([
+          ['a', { ...first, visitorId: 'a', referrerDomain: 'YouTube.com' }],
+          ['b', { ...first, visitorId: 'b', referrerDomain: null }],
+        ]),
+      );
+      prisma.analyticsSession.groupBy.mockResolvedValue([]);
+      prisma.analyticsPlay.findMany.mockResolvedValue([]);
+      prisma.analyticsFact.findMany.mockResolvedValue([]);
+      prisma.analyticsAnonTally.groupBy.mockResolvedValue([]);
+
+      const arrivals = await service.arrivals({
+        from: '2026-10-21T09:00:00Z',
+        to: '2026-10-21T12:00:00Z',
+        source: 'referrer:youtube.com',
+      });
+
+      expect(arrivals.summary.arrived).toBe(1);
+      expect(prisma.analyticsSession.groupBy).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { visitorId: { in: ['a'] } } }),
+      );
     });
   });
 });
