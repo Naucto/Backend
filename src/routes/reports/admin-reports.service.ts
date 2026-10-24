@@ -1,5 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { AnalyticsGrain, Prisma, ReportKind, ReportRole, ReportStatus } from '@prisma/client';
+import {
+  AnalyticsGrain,
+  BugCategory,
+  Prisma,
+  ReportKind,
+  ReportRole,
+  ReportStatus,
+} from '@prisma/client';
 
 import { PageRequest, toSkipTake } from '../../common/dto/pagination-query.dto';
 import { getOptionalEnv } from '../../config/env';
@@ -12,6 +19,9 @@ import {
 import { periodOf } from '../analytics/analytics-periods';
 import { DAY_MS } from '../analytics/analytics-time';
 import { hubName } from '../project/hub-fields';
+import { S3ObjectNotFoundException } from '../s3/s3.error';
+import { DownloadedFile } from '../s3/s3.interface';
+import { S3Service } from '../s3/s3.service';
 import {
   AdminReportDetailDto,
   AdminReportDto,
@@ -40,6 +50,7 @@ export interface ReportFilter {
   role?: ReportRole | undefined;
   maxScore?: number | undefined;
   withComments?: boolean | undefined;
+  category?: BugCategory | undefined;
   from?: string | undefined;
   to?: string | undefined;
 }
@@ -49,7 +60,10 @@ export interface ReportUpdate {
   adminNote?: string | null | undefined;
 }
 
-const REPORT_INCLUDE = { user: { select: ADMIN_ACCOUNT_SELECT } } as const;
+const REPORT_INCLUDE = {
+  user: { select: ADMIN_ACCOUNT_SELECT },
+  followUps: { select: { id: true }, orderBy: { id: 'asc' } },
+} as const;
 type ReportRow = Prisma.ReportGetPayload<{ include: typeof REPORT_INCLUDE }>;
 
 const dayStart = (day: string): Date => new Date(`${day}T00:00:00.000Z`);
@@ -81,7 +95,10 @@ export class AdminReportsService {
     '',
   );
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly s3Service: S3Service,
+  ) {}
 
   async list(filter: ReportFilter, page: PageRequest): Promise<AdminReportListDto> {
     const { skip, take } = toSkipTake(page, LIST_PAGE_SIZE);
@@ -105,13 +122,55 @@ export class AdminReportsService {
     };
   }
 
+  async count(kind: ReportKind, status: ReportStatus | undefined): Promise<number> {
+    return this.prisma.report.count({ where: { kind, ...(status ? { status } : {}) } });
+  }
+
   async detail(id: number): Promise<AdminReportDetailDto> {
-    const row = await this.prisma.report.findUnique({ where: { id }, include: REPORT_INCLUDE });
+    const row = await this.prisma.report.findUnique({
+      where: { id },
+      include: {
+        ...REPORT_INCLUDE,
+        rating: { select: { id: true, score: true, liked: true, improve: true } },
+      },
+    });
     if (!row) {
       throw new NotFoundException('Report not found');
     }
     const releases = await this.releases([row.releaseId]);
-    return { ...this.summary(row, releases), adminNote: row.adminNote };
+    return {
+      ...this.summary(row, releases),
+      adminNote: row.adminNote,
+      projectId: row.projectId,
+      context:
+        typeof row.context === 'object' && row.context !== null && !Array.isArray(row.context)
+          ? (row.context as Record<string, unknown>)
+          : null,
+      rating:
+        row.rating && row.rating.score !== null ? { ...row.rating, score: row.rating.score } : null,
+      screenshot:
+        row.screenshotKey && row.screenshotMime
+          ? { mime: row.screenshotMime, bytes: row.screenshotBytes ?? 0 }
+          : null,
+    };
+  }
+
+  async screenshot(id: number): Promise<DownloadedFile> {
+    const row = await this.prisma.report.findUnique({
+      where: { id },
+      select: { screenshotKey: true },
+    });
+    if (!row?.screenshotKey) {
+      throw new NotFoundException('No screenshot');
+    }
+    try {
+      return await this.s3Service.downloadFile({ key: row.screenshotKey });
+    } catch (error) {
+      if (error instanceof S3ObjectNotFoundException) {
+        throw new NotFoundException('No screenshot');
+      }
+      throw error;
+    }
   }
 
   async update(id: number, update: ReportUpdate): Promise<AdminReportDetailDto> {
@@ -159,6 +218,7 @@ export class AdminReportsService {
       ...(statuses ? { status: { in: statuses } } : {}),
       ...(filter.role ? { role: filter.role } : {}),
       ...(filter.maxScore ? { score: { lte: filter.maxScore } } : {}),
+      ...(filter.category ? { category: filter.category } : {}),
       ...(createdAt ? { createdAt } : {}),
       ...(filter.withComments
         ? { OR: [{ liked: { not: null } }, { improve: { not: null } }] }
@@ -177,11 +237,18 @@ export class AdminReportsService {
       role: row.role,
       route: row.route,
       release: row.releaseId ? (releases.get(row.releaseId) ?? null) : null,
+      appRelease: row.appRelease,
+      title: row.title,
+      message: row.message,
       score: row.score,
       reasons: row.reasons,
       liked: row.liked,
       improve: row.improve,
       origin: row.origin,
+      followUpIds: row.followUps.map((report) => report.id),
+      category: row.category,
+      ratingId: row.ratingId,
+      hasScreenshot: row.screenshotKey !== null,
     };
   }
 

@@ -2,6 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 
 import { USER } from '../../auth/access/roles';
 import { PrismaService } from '../../prisma/prisma.service';
+import { S3Service } from '../s3/s3.service';
 import { AdminReportsService } from './admin-reports.service';
 
 describe('AdminReportsService', () => {
@@ -35,6 +36,17 @@ describe('AdminReportsService', () => {
     improve: 'Loading',
     origin: 'PROMPT',
     adminNote: null,
+    appRelease: null,
+    title: null,
+    message: null,
+    category: null,
+    ratingId: null,
+    projectId: null,
+    context: null,
+    screenshotKey: null,
+    screenshotMime: null,
+    screenshotBytes: null,
+    followUps: [{ id: 31 }],
   };
   let service: AdminReportsService;
 
@@ -43,7 +55,10 @@ describe('AdminReportsService', () => {
     prisma.project.findMany.mockResolvedValue([
       { id: 42, name: 'cave', publishedName: 'Cave Diver' },
     ]);
-    service = new AdminReportsService(prisma as unknown as PrismaService);
+    service = new AdminReportsService(
+      prisma as unknown as PrismaService,
+      {} as unknown as S3Service,
+    );
   });
 
   it('filters by kind, view, role, low scores, comments and days', async () => {
@@ -80,6 +95,7 @@ describe('AdminReportsService', () => {
       id: 5,
       score: 3,
       release: { id: 42, name: 'Cave Diver' },
+      followUpIds: [31],
       account: { username: 'kay', profileUrl: 'http://localhost:3001/u/kay', deleted: false },
     });
   });
@@ -134,5 +150,43 @@ describe('AdminReportsService', () => {
         { start: '2026-10-02', count: 2, average: 9.5 },
       ],
     });
+  });
+
+  it('reads a bug report with its context, screenshot and the rating it followed', async () => {
+    prisma.report.findUnique.mockResolvedValue({
+      ...rating,
+      kind: 'BUG',
+      score: null,
+      reasons: [],
+      followUps: [],
+      title: 'No music',
+      message: 'The song never starts.',
+      category: 'SOUND',
+      ratingId: 5,
+      context: { viewport: '1280x720' },
+      screenshotKey: 'reports/31/screenshot.webp',
+      screenshotMime: 'image/webp',
+      screenshotBytes: 2048,
+      rating: { id: 5, score: 3, liked: null, improve: 'Loading' },
+    });
+
+    const detail = await service.detail(31);
+
+    expect(detail).toMatchObject({
+      kind: 'BUG',
+      title: 'No music',
+      category: 'SOUND',
+      hasScreenshot: true,
+      context: { viewport: '1280x720' },
+      rating: { id: 5, score: 3 },
+      screenshot: { mime: 'image/webp', bytes: 2048 },
+    });
+  });
+
+  it('counts the reports of a kind in a status', async () => {
+    prisma.report.count.mockResolvedValue(2);
+
+    await expect(service.count('BUG', 'NEW')).resolves.toBe(2);
+    expect(prisma.report.count).toHaveBeenCalledWith({ where: { kind: 'BUG', status: 'NEW' } });
   });
 });

@@ -188,6 +188,14 @@ at the controller boundary (see `project.controller.ts` catching `S3ObjectNotFou
   an account, and the person says in the form whether they mostly play or mostly create (`role`).
 - The rating prompt asks an account once. An answer or a refusal ends it, and "not now" snoozes it
   14 days. `FeedbackPrompt` holds that state, and no row means never shown.
+- A bug report needs an account and arrives as JSON, with a context the page listed to the person
+  first (viewport, language, engine error, console). Its screenshot follows on
+  `PUT /reports/bugs/:id/screenshot`, from the same account within the hour: PNG, JPEG or WebP,
+  2 MB, checked by type and content. It is stored under `reports/<id>/` and **never made
+  public-read**. The admin console streams it through `GET /admin/reports/:id/screenshot`. The dev
+  bucket is anonymously readable as a whole, so this only holds in a deployed bucket.
+- Deleting an account deletes its screenshots, then clears the key of each file that went. A key
+  left on a report of a deleted account is a screenshot still to remove.
 
 ## Conventions (not all enforced by tooling — follow these)
 
