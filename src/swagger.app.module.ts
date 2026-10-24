@@ -47,6 +47,10 @@ import { ProjectCommentService } from './routes/project-comment/project-comment.
 import { AdminFeaturedReleaseController } from './routes/recommendations/admin-featured-release.controller';
 import { FeaturedReleaseController } from './routes/recommendations/featured-release.controller';
 import { RecommendationsService } from './routes/recommendations/recommendations.service';
+import { AdminReportsController } from './routes/reports/admin-reports.controller';
+import { AdminReportsService } from './routes/reports/admin-reports.service';
+import { ReportsController } from './routes/reports/reports.controller';
+import { ReportsService } from './routes/reports/reports.service';
 import { EdgeService } from './routes/s3/edge.service';
 import { S3Service } from './routes/s3/s3.service';
 import { UserModule } from './routes/user/user.module';
@@ -87,6 +91,8 @@ const nullProvider = (token: InjectionToken): Provider => ({
     UserAnalyticsController,
     AdminAuthController,
     AdminAccountController,
+    ReportsController,
+    AdminReportsController,
   ],
   providers: [
     { provide: APP_GUARD, useClass: AccessGuard },
@@ -109,6 +115,8 @@ const nullProvider = (token: InjectionToken): Provider => ({
     nullProvider(UserAnalyticsService),
     nullProvider(AdminSessionService),
     nullProvider(AdminAccountService),
+    nullProvider(ReportsService),
+    nullProvider(AdminReportsService),
   ],
 })
 export class SwaggerAppModule {}

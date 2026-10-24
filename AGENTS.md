@@ -179,6 +179,16 @@ at the controller boundary (see `project.controller.ts` catching `S3ObjectNotFou
   backend runs as one instance.
 - An admin cannot change their own role, and the last admin cannot be demoted.
 
+**Reports** (`src/routes/reports/`):
+
+- Ratings, bug reports and crashes are all one `Report` row, told apart by `kind`. The fields of the
+  other kinds stay null, and every kind shares the status, the note of the team and the admin
+  routes under `/admin/reports`.
+- A rating is 1 to 10 with optional "liked" and "improve" comments, plus reasons under 5. It needs
+  an account, and the person says in the form whether they mostly play or mostly create (`role`).
+- The rating prompt asks an account once. An answer or a refusal ends it, and "not now" snoozes it
+  14 days. `FeedbackPrompt` holds that state, and no row means never shown.
+
 ## Conventions (not all enforced by tooling — follow these)
 
 These complement the lint/TS rules (which you should read from the config files, not restate).
