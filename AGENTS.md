@@ -196,6 +196,30 @@ at the controller boundary (see `project.controller.ts` catching `S3ObjectNotFou
   bucket is anonymously readable as a whole, so this only holds in a deployed bucket.
 - Deleting an account deletes its screenshots, then clears the key of each file that went. A key
   left on a report of a deleted account is a screenshot still to remove.
+- A crash names no one: `POST /reports/crash` takes text/plain JSON like the analytics ingest,
+  never reads an account, and keeps only the families of the user agent. Before anything is stored,
+  `crash-scrub.ts` takes out emails, tokens, URL queries and the username of a profile path. The
+  rest of a message is kept as sent because a fix needs it, so treat crash text as possibly
+  personal anyway.
+- One report per crash: occurrences with the same error name and normalised message
+  (`crash-group.ts`) land on one row and bump its count, with the latest 20 kept as
+  `ReportOccurrence`. The stack plays no part, so a crash keeps its report across deploys. A
+  resolved crash that comes back is set to NEW again as a regression.
+- `StackResolver` maps a stack of the web app back to its sources through the hidden source maps
+  the production build publishes next to each bundle. It only fetches from the origin of
+  `FRONTEND_URL`, so a public report cannot make the backend fetch anything else, and a stack it
+  cannot map is kept as it came.
+- Browser reports open at most 100 new crashes an hour (counted in memory, one instance), so
+  varying a message cannot flood the table. Known crashes and backend crashes always count. A daily
+  job deletes resolved and ignored crashes after 90 days without an occurrence, and new ones seen
+  only once after 30.
+- `CrashCaptureFilter` (global `APP_FILTER`) records every request that fails with a 500 or an
+  unknown error, named by its route pattern, then answers as Nest would. A scoped filter that
+  swallows errors (`MultiplayerExceptionFilter`) records them itself.
+- `DiscordService` (`src/discord/`) posts to any webhook, mentions no one, keeps under Discord's
+  rate limit and never throws. `CrashNotifier` uses it to post a crash to
+  `DISCORD_CRASH_WEBHOOK_URL` when it is new, comes back after being resolved, or reaches 10, 100,
+  1000 or 10000 occurrences.
 
 ## Conventions (not all enforced by tooling — follow these)
 

@@ -47,6 +47,12 @@ describe('AdminReportsService', () => {
     screenshotMime: null,
     screenshotBytes: null,
     followUps: [{ id: 31 }],
+    source: null,
+    count: 1,
+    lastSeen: null,
+    regressedAt: null,
+    stack: null,
+    occurrences: [],
   };
   let service: AdminReportsService;
 
@@ -75,6 +81,7 @@ describe('AdminReportsService', () => {
         from: '2026-10-01',
         to: '2026-10-20',
       },
+      'created',
       { page: 1 },
     );
 
@@ -104,7 +111,7 @@ describe('AdminReportsService', () => {
     prisma.report.count.mockResolvedValue(0);
     prisma.report.findMany.mockResolvedValue([]);
 
-    await service.list({ view: 'OPEN', status: 'RESOLVED' }, {});
+    await service.list({ view: 'OPEN', status: 'RESOLVED' }, 'created', {});
 
     expect(prisma.report.count).toHaveBeenCalledWith({ where: { status: { in: ['RESOLVED'] } } });
   });
@@ -188,5 +195,62 @@ describe('AdminReportsService', () => {
 
     await expect(service.count('BUG', 'NEW')).resolves.toBe(2);
     expect(prisma.report.count).toHaveBeenCalledWith({ where: { kind: 'BUG', status: 'NEW' } });
+  });
+
+  it('sorts crashes by when they were last seen, or by how often', async () => {
+    prisma.report.count.mockResolvedValue(0);
+    prisma.report.findMany.mockResolvedValue([]);
+
+    await service.list({ kind: 'CRASH', source: 'ENGINE' }, 'count', { page: 2, limit: 10 });
+
+    expect(prisma.report.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { kind: 'CRASH', source: 'ENGINE' },
+        orderBy: [{ count: 'desc' }, { lastSeen: { sort: 'desc', nulls: 'last' } }],
+        skip: 10,
+        take: 10,
+      }),
+    );
+  });
+
+  it('reads a crash with its stack and latest occurrences', async () => {
+    prisma.report.findUnique.mockResolvedValue({
+      ...rating,
+      kind: 'CRASH',
+      user: null,
+      score: null,
+      reasons: [],
+      followUps: [],
+      rating: null,
+      title: 'TypeError',
+      message: 'x is undefined',
+      source: 'WEB',
+      count: 37,
+      lastSeen: new Date('2026-10-24T09:00:00.000Z'),
+      stack: 'TypeError: x\n    at update (src/app/player.ts:12:5)',
+      occurrences: [
+        {
+          id: 900,
+          createdAt: new Date('2026-10-24T09:00:00.000Z'),
+          route: '/play/:id',
+          appRelease: '0.1.0+8f78127',
+          device: 'desktop',
+          browser: 'Firefox',
+          os: 'Linux',
+          extra: ['not', 'an', 'object'],
+        },
+      ],
+    });
+
+    const detail = await service.detail(4);
+
+    expect(detail).toMatchObject({
+      kind: 'CRASH',
+      account: null,
+      source: 'WEB',
+      count: 37,
+      stack: expect.stringContaining('src/app/player.ts:12:5'),
+      occurrences: [{ id: 900, route: '/play/:id', extra: null }],
+    });
   });
 });

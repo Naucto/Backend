@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { BugCategory, ReportKind, ReportRole, ReportStatus } from '@prisma/client';
+import { BugCategory, CrashSource, ReportKind, ReportRole, ReportStatus } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import { IsBoolean, IsEnum, IsIn, IsInt, IsOptional, Matches, Max, Min } from 'class-validator';
 
@@ -10,6 +10,9 @@ import { queryBoolean } from './report-transforms';
 
 export const REPORT_VIEWS = ['NEW', 'OPEN', 'CLOSED', 'ALL'] as const;
 export type ReportView = (typeof REPORT_VIEWS)[number];
+
+export const REPORT_SORTS = ['created', 'lastSeen', 'count'] as const;
+export type ReportSort = (typeof REPORT_SORTS)[number];
 
 export class AdminReportQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({ enum: ReportKind, enumName: 'ReportKind' })
@@ -57,6 +60,20 @@ export class AdminReportQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsEnum(BugCategory)
   category?: BugCategory;
+
+  @ApiPropertyOptional({ enum: CrashSource, enumName: 'CrashSource' })
+  @IsOptional()
+  @IsEnum(CrashSource)
+  source?: CrashSource;
+
+  @ApiPropertyOptional({
+    enum: REPORT_SORTS,
+    default: 'created',
+    description: 'Newest first, crashes last seen first, or crashes seen most first',
+  })
+  @IsOptional()
+  @IsIn(REPORT_SORTS)
+  sort?: ReportSort;
 
   @ApiPropertyOptional({ description: 'First day, UTC, as YYYY-MM-DD' })
   @IsOptional()

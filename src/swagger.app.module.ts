@@ -49,6 +49,8 @@ import { FeaturedReleaseController } from './routes/recommendations/featured-rel
 import { RecommendationsService } from './routes/recommendations/recommendations.service';
 import { AdminReportsController } from './routes/reports/admin-reports.controller';
 import { AdminReportsService } from './routes/reports/admin-reports.service';
+import { CrashService } from './routes/reports/crash.service';
+import { CrashIngestController } from './routes/reports/crash-ingest.controller';
 import { ReportsController } from './routes/reports/reports.controller';
 import { ReportsService } from './routes/reports/reports.service';
 import { EdgeService } from './routes/s3/edge.service';
@@ -92,6 +94,7 @@ const nullProvider = (token: InjectionToken): Provider => ({
     AdminAuthController,
     AdminAccountController,
     ReportsController,
+    CrashIngestController,
     AdminReportsController,
   ],
   providers: [
@@ -117,6 +120,7 @@ const nullProvider = (token: InjectionToken): Provider => ({
     nullProvider(AdminAccountService),
     nullProvider(ReportsService),
     nullProvider(AdminReportsService),
+    nullProvider(CrashService),
   ],
 })
 export class SwaggerAppModule {}

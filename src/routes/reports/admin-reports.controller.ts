@@ -47,9 +47,11 @@ export class AdminReportsController {
         maxScore: query.maxScore,
         withComments: query.withComments,
         category: query.category,
+        source: query.source,
         from: query.from,
         to: query.to,
       },
+      query.sort ?? 'created',
       { page: query.page, limit: query.limit },
     );
   }
