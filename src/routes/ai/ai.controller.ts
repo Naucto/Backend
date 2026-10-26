@@ -1,4 +1,4 @@
-import { BadRequestException, Body, ConflictException, Controller, Delete, Get, Headers, HttpCode, Param, ParseIntPipe, Post, Req, UseGuards } from "@nestjs/common";
+import { BadRequestException, GoneException, Body, ConflictException, Controller, Delete, Get, Headers, HttpCode, Param, ParseIntPipe, Post, Req, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { Request } from "express";
 import { JwtAuthGuard } from "@auth/guards/jwt-auth.guard";
@@ -167,10 +167,12 @@ export class AiMcpController {
   }
 
   @Post("proposals")
-  @ApiResponse({ status: 201, type: AiProposalResponseDto })
-  @ApiOperation({ summary: "Stage a proposal; cannot approve or apply" })
+  @ApiResponse({ status: 410, description: "Use the AI working-save API" })
+  @ApiOperation({ summary: "Retired: proposals were replaced by AI working saves", deprecated: true })
   async propose(@Body() dto: AiProposalDto, @Headers("authorization") auth?: string, @Headers("x-naucto-project") project?: string): Promise<AiProposal> {
-    return this.service.propose(await this.service.connection(auth, project), dto);
+    await this.service.connection(auth, project);
+    void dto;
+    throw new GoneException("AI proposals were replaced by /ai/mcp/workspace; edit the isolated AI save instead");
   }
 
   @Post("jobs")

@@ -21,6 +21,10 @@ export async function recordSavedAiProvenance(prisma: PrismaService, projectId: 
       where: { projectId, id: { in: ids }, status: "APPLIED" }
     });
     const categories = new Set<string>();
+    // New working-copy reviews are human-prepared records too. Persist provenance on normal
+    // save, even if the editor closes before it calls the workspace confirmation endpoint.
+    const reviews = await tx.aiSaveReview.findMany({ where: { projectId, id: { in: ids }, status: { in: ["PREPARED", "CONFIRMED"] } } });
+    for (const review of reviews) for (const category of review.categories) categories.add(category);
     for (const proposal of proposals) {
       if (!Array.isArray(proposal.operations)) continue;
       for (const operation of proposal.operations) {

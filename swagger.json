@@ -650,6 +650,7 @@
         ]
       },
       "post": {
+        "deprecated": true,
         "operationId": "AiMcpController_propose",
         "parameters": [
           {
@@ -680,18 +681,11 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AiProposalResponseDto"
-                }
-              }
-            }
+          "410": {
+            "description": "Use the AI working-save API"
           }
         },
-        "summary": "Stage a proposal; cannot approve or apply",
+        "summary": "Retired: proposals were replaced by AI working saves",
         "tags": [
           "AI MCP"
         ]
@@ -1008,6 +1002,453 @@
         "summary": "Service only: record a failure without provider details",
         "tags": [
           "AI MCP"
+        ]
+      }
+    },
+    "/ai/projects/{projectId}/workspace": {
+      "get": {
+        "operationId": "AiWorkspaceController_read",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceSaveResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Read the isolated AI save; never writes the user project",
+        "tags": [
+          "AI working save"
+        ]
+      }
+    },
+    "/ai/projects/{projectId}/workspace/preview": {
+      "post": {
+        "operationId": "AiWorkspaceController_preview",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspacePreviewDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceComparisonDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Diff the AI working save against this editor snapshot; no changes are applied",
+        "tags": [
+          "AI working save"
+        ]
+      }
+    },
+    "/ai/projects/{projectId}/workspace/review": {
+      "post": {
+        "operationId": "AiWorkspaceController_review",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceReviewDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceReviewResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Human only: prepare accepted/rejected units. Apply and save the returned snapshot normally, then confirm.",
+        "tags": [
+          "AI working save"
+        ]
+      }
+    },
+    "/ai/projects/{projectId}/workspace/reviews/{reviewId}": {
+      "get": {
+        "operationId": "AiWorkspaceController_readReview",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "reviewId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceStoredReviewDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Human only: recover an immutable review result after an interrupted response",
+        "tags": [
+          "AI working save"
+        ]
+      }
+    },
+    "/ai/projects/{projectId}/workspace/reviews/{reviewId}/confirm": {
+      "post": {
+        "operationId": "AiWorkspaceController_confirm",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "reviewId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceConfirmedDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Human only: reset the AI base/draft after the reviewed snapshot is actually saved",
+        "tags": [
+          "AI working save"
+        ]
+      }
+    },
+    "/ai/projects/{projectId}/workspace/reviews/{reviewId}/cancel": {
+      "post": {
+        "operationId": "AiWorkspaceController_cancel",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "reviewId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Human only: abandon an unsaved review and unlock the unchanged AI draft. Discard its returned snapshot.",
+        "tags": [
+          "AI working save"
+        ]
+      }
+    },
+    "/ai/mcp/workspace": {
+      "get": {
+        "operationId": "AiWorkspaceMcpController_read",
+        "parameters": [
+          {
+            "name": "source",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "base",
+                "latest"
+              ]
+            }
+          },
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-naucto-project",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceSaveResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Read draft, common base or latest user save. Authenticated with an account assistant key.",
+        "tags": [
+          "AI MCP working save"
+        ]
+      },
+      "post": {
+        "operationId": "AiWorkspaceMcpController_save",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-naucto-project",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceSaveDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceSaveResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Edit the AI save only. CAS revision required. Cannot accept or publish changes.",
+        "tags": [
+          "AI MCP working save"
+        ]
+      }
+    },
+    "/ai/mcp/workspace/compare": {
+      "get": {
+        "operationId": "AiWorkspaceMcpController_compare",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-naucto-project",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceComparisonDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Three-way differences between base, AI save and latest saved user project",
+        "tags": [
+          "AI MCP working save"
+        ]
+      }
+    },
+    "/ai/mcp/workspace/merge": {
+      "post": {
+        "operationId": "AiWorkspaceMcpController_merge",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-naucto-project",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceMergeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceMergeResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Merge the latest user save into the AI save; conflicts require explicit draft/latest resolutions",
+        "tags": [
+          "AI MCP working save"
         ]
       }
     },
@@ -6076,6 +6517,344 @@
         },
         "required": [
           "error"
+        ]
+      },
+      "WorkspaceSaveResponseDto": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "number"
+          },
+          "pendingReviewId": {
+            "type": "string",
+            "nullable": true
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "base",
+              "latest"
+            ]
+          },
+          "hash": {
+            "type": "string"
+          },
+          "snapshot": {
+            "type": "string",
+            "description": "Native Yjs state encoded as base64, including audio samples."
+          },
+          "content": {
+            "type": "object"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "revision",
+          "pendingReviewId",
+          "source",
+          "hash",
+          "snapshot",
+          "content",
+          "updatedAt"
+        ]
+      },
+      "WorkspacePreviewDto": {
+        "type": "object",
+        "properties": {
+          "snapshot": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "number",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "snapshot",
+          "revision"
+        ]
+      },
+      "WorkspaceDifferenceDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "code:<file id>, graphics, sound, network or metadata"
+          },
+          "baseHash": {
+            "type": "string",
+            "nullable": true
+          },
+          "draftHash": {
+            "type": "string",
+            "nullable": true
+          },
+          "latestHash": {
+            "type": "string",
+            "nullable": true
+          },
+          "draftChanged": {
+            "type": "boolean"
+          },
+          "latestChanged": {
+            "type": "boolean"
+          },
+          "conflict": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "baseHash",
+          "draftHash",
+          "latestHash",
+          "draftChanged",
+          "latestChanged",
+          "conflict"
+        ]
+      },
+      "WorkspaceComparisonDto": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "number"
+          },
+          "pendingReviewId": {
+            "type": "string",
+            "nullable": true
+          },
+          "latestHash": {
+            "type": "string"
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceDifferenceDto"
+            }
+          }
+        },
+        "required": [
+          "revision",
+          "pendingReviewId",
+          "latestHash",
+          "changes"
+        ]
+      },
+      "WorkspaceReviewDto": {
+        "type": "object",
+        "properties": {
+          "snapshot": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "number",
+            "minimum": 1
+          },
+          "currentHash": {
+            "type": "string",
+            "description": "Hash of the exact editor snapshot previously previewed."
+          },
+          "accepted": {
+            "description": "Merge-unit ids to accept, from preview.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rejected": {
+            "description": "Merge-unit ids to discard. Other AI changes remain pending.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "resolutions": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "snapshot",
+          "revision",
+          "currentHash",
+          "accepted",
+          "rejected"
+        ]
+      },
+      "WorkspaceReviewResponseDto": {
+        "type": "object",
+        "properties": {
+          "reviewId": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "number"
+          },
+          "snapshot": {
+            "type": "string",
+            "description": "Apply this state locally and persist it using normal project save."
+          },
+          "requiresSaveConfirmation": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "reviewId",
+          "revision",
+          "snapshot",
+          "requiresSaveConfirmation"
+        ]
+      },
+      "WorkspaceStoredReviewDto": {
+        "type": "object",
+        "properties": {
+          "reviewId": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "number"
+          },
+          "snapshot": {
+            "type": "string",
+            "description": "Apply this state locally and persist it using normal project save."
+          },
+          "requiresSaveConfirmation": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PREPARED",
+              "CONFIRMED",
+              "CANCELLED"
+            ]
+          }
+        },
+        "required": [
+          "reviewId",
+          "revision",
+          "snapshot",
+          "requiresSaveConfirmation",
+          "status"
+        ]
+      },
+      "WorkspaceConfirmedDto": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "number"
+          },
+          "pendingReviewId": {
+            "type": "string",
+            "nullable": true
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "base",
+              "latest"
+            ]
+          },
+          "hash": {
+            "type": "string"
+          },
+          "snapshot": {
+            "type": "string",
+            "description": "Native Yjs state encoded as base64, including audio samples."
+          },
+          "content": {
+            "type": "object"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "confirmed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "revision",
+          "pendingReviewId",
+          "source",
+          "hash",
+          "snapshot",
+          "content",
+          "updatedAt",
+          "confirmed"
+        ]
+      },
+      "WorkspaceSaveDto": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "number",
+            "minimum": 1
+          },
+          "snapshot": {
+            "type": "string",
+            "description": "Full Yjs state, base64. Exactly one of snapshot/operations is required."
+          },
+          "operations": {
+            "description": "Native editing commands applied immediately to the AI save only.",
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "revision"
+        ]
+      },
+      "WorkspaceMergeDto": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "number",
+            "minimum": 1
+          },
+          "latestHash": {
+            "type": "string",
+            "description": "Hash returned by compare; prevents resolving against a newer user save."
+          },
+          "resolutions": {
+            "type": "object",
+            "description": "Conflicting unit id to draft/latest. Absent conflicts are reported without writing."
+          }
+        },
+        "required": [
+          "revision",
+          "latestHash"
+        ]
+      },
+      "WorkspaceMergeResponseDto": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "number"
+          },
+          "merged": {
+            "type": "boolean"
+          },
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceDifferenceDto"
+            }
+          },
+          "save": {
+            "$ref": "#/components/schemas/WorkspaceSaveResponseDto"
+          }
+        },
+        "required": [
+          "revision",
+          "merged",
+          "conflicts"
         ]
       },
       "ForkedFromDto": {

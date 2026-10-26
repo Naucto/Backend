@@ -51,6 +51,8 @@ import { AuthModule } from "@auth/auth.module";
 import { AiController, AiKeysController, AiMcpController } from "src/routes/ai/ai.controller";
 import { AiService } from "src/routes/ai/ai.service";
 import { AiApplyService } from "src/routes/ai/ai-apply.service";
+import { AiWorkspaceController, AiWorkspaceMcpController } from "src/routes/ai/ai-workspace.controller";
+import { AiWorkspaceService } from "src/routes/ai/ai-workspace.service";
 import { AiJobsService } from "src/routes/ai/ai-jobs.service";
 
 const nullProvider = (token: InjectionToken): Provider => ({
@@ -83,6 +85,8 @@ const nullProvider = (token: InjectionToken): Provider => ({
     AiController,
     AiKeysController,
     AiMcpController,
+    AiWorkspaceController,
+    AiWorkspaceMcpController,
     ProjectController,
     MultiplayerController,
     ProjectCommentController,
@@ -98,6 +102,7 @@ const nullProvider = (token: InjectionToken): Provider => ({
     nullProvider(AiService),
     nullProvider(AiApplyService),
     nullProvider(AiJobsService),
+    nullProvider(AiWorkspaceService),
     nullProvider(PrismaService),
     nullProvider(ProjectService),
     nullProvider(S3Client),

@@ -116,3 +116,9 @@ This project is licensed under the **GNU General Public License v3.0 (GPLv3)**.
 is installed from `vendor/` (see `vendor/README.md`) and copied into Docker before `npm ci`.
 No frontend checkout or private npm registry token is needed. The Backend remains responsible
 for authorization and proposal validation/application; only document reading is delegated here.
+
+## AI working saves
+
+The MCP now edits an isolated native save instead of creating proposals. See
+[the working-save API contract](docs/ai-working-save.md) for merge units, concurrency and the
+prepare/save/confirm human review protocol. The current frontend is intentionally unchanged.

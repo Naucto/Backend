@@ -18,6 +18,8 @@ model Project {
   tags         String[]          @default([])
   aiCategories String[]          @default([])
   publishedAiCategories String[]  @default([])
+  aiWorkspace AiWorkspace?
+  aiSaveReviews AiSaveReview[]
   aiProposals AiProposal[]
   aiJobs AiJob[]
   aiDeclarations AiDeclaration[]

@@ -73,3 +73,30 @@ model AiDeclaration {
 
   @@index([projectId, createdAt])
 }
+
+// One durable, isolated AI working copy per project. CAS revisions protect concurrent clients.
+model AiWorkspace {
+  projectId Int @id
+  revision Int @default(1)
+  baseSnapshot String @db.Text
+  snapshot String @db.Text
+  pendingReviewId String?
+  updatedAt DateTime @updatedAt
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// Human review is prepared against the editor's document, then confirmed only after ordinary save.
+model AiSaveReview {
+  id String @id @default(uuid())
+  projectId Int
+  userId Int
+  workspaceRevision Int
+  resultSnapshot String @db.Text
+  nextBaseSnapshot String @db.Text
+  nextDraftSnapshot String @db.Text
+  categories String[]
+  status String @default("PREPARED")
+  createdAt DateTime @default(now())
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  @@index([projectId, createdAt])
+}
