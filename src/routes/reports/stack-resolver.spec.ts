@@ -97,4 +97,40 @@ describe('StackResolver', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  const madeUp = (from: number, count: number): string =>
+    Array.from(
+      { length: count },
+      (_, i) => `    at x (https://naucto.test/b${String(from + i)}.js:1:1)`,
+    ).join('\n');
+  const realFrame = '    at e.update (https://naucto.test/chunk-AB12.js:1:11)';
+
+  it('tries a handful of bundles a stack, however many it names', async () => {
+    await resolver.resolve(madeUp(0, 250));
+
+    expect(fetchMock).toHaveBeenCalledTimes(8);
+  });
+
+  it('fetches a bounded number of maps a minute across every report', async () => {
+    for (let i = 0; i < 5; i++) {
+      await resolver.resolve(madeUp(i * 8, 8), 1000);
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(20);
+
+    await resolver.resolve(madeUp(100, 1), 1000 + 60_000);
+    expect(fetchMock).toHaveBeenCalledTimes(21);
+  });
+
+  it('keeps a real map however many missing ones are asked for', async () => {
+    await resolver.resolve(realFrame, 0);
+    for (let i = 0; i < 40; i++) {
+      await resolver.resolve(madeUp(i * 8, 8), (i + 1) * 60_000);
+    }
+    fetchMock.mockClear();
+
+    await expect(resolver.resolve(realFrame, 50 * 60_000)).resolves.toContain(
+      'src/app/player.ts:12:5',
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

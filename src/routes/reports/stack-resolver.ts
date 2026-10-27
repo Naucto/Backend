@@ -8,17 +8,18 @@ const MAP_MAX_BYTES = 30 * 1024 * 1024;
 const MAPS_CACHED = 24;
 /** A map that could not be read is asked for again after this long, in case it was deployed late. */
 const MISSING_RETRY_MS = 10 * 60 * 1000;
+const MISSING_REMEMBERED = 256;
+/** A real stack spans a handful of the build's bundles. Past that, a report names made-up ones. */
+const BUNDLES_PER_STACK = 8;
+/** Maps fetched a minute across every report, so made-up names cannot keep the backend fetching. */
+const FETCHES_PER_MINUTE = 20;
+const MINUTE_MS = 60_000;
 const FRAMES_RESOLVED = 30;
 const STACK_MAX_LENGTH = 8_000;
 const LINES_READ = 200;
 const TOKENS_READ_PER_LINE = 64;
 /** A bundle the production build writes at the root of the web app, as `main-B45ANGGH.js`. */
 const BUNDLE_NAME = /^[A-Za-z0-9_-]{1,100}[.]m?js$/;
-
-interface CachedMap {
-  map: TraceMap | null;
-  at: number;
-}
 
 interface Location {
   url: string;
@@ -71,11 +72,16 @@ function sourcePath(source: string): string {
 export class StackResolver {
   private readonly logger = new Logger(StackResolver.name);
   private readonly origin = new URL(getOptionalEnv('FRONTEND_URL', 'http://localhost:3001')).origin;
-  private readonly maps = new Map<string, CachedMap>();
+  /** Maps read, by bundle, the least recently used first. */
+  private readonly maps = new Map<string, TraceMap>();
+  /** When each bundle without a map was last asked for, the oldest first. */
+  private readonly missing = new Map<string, number>();
+  private fetchedAt: number[] = [];
 
   async resolve(stack: string, now = Date.now()): Promise<string> {
     const lines = stack.slice(0, STACK_MAX_LENGTH).split('\n');
     const lineCount = Math.min(lines.length, LINES_READ);
+    const bundles = new Set<string>();
     let resolved = 0;
     for (let i = 0; i < lineCount && resolved < FRAMES_RESOLVED; i++) {
       const tokens = (lines[i] ?? '').split(/([\s()@]+)/);
@@ -87,6 +93,10 @@ export class StackResolver {
         if (!location || !bundle) {
           continue;
         }
+        if (!bundles.has(bundle) && bundles.size >= BUNDLES_PER_STACK) {
+          continue;
+        }
+        bundles.add(bundle);
         const original = await this.original(bundle, location, now);
         if (original) {
           tokens[j] = original;
@@ -118,19 +128,40 @@ export class StackResolver {
 
   private async mapOf(bundle: string, now: number): Promise<TraceMap | null> {
     const cached = this.maps.get(bundle);
-    if (cached && (cached.map || now - cached.at < MISSING_RETRY_MS)) {
-      return cached.map;
+    if (cached) {
+      this.remember(this.maps, bundle, cached, MAPS_CACHED);
+      return cached;
     }
+    const missedAt = this.missing.get(bundle);
+    if (missedAt !== undefined && now - missedAt < MISSING_RETRY_MS) {
+      return null;
+    }
+    this.fetchedAt = this.fetchedAt.filter((at) => now - at < MINUTE_MS);
+    if (this.fetchedAt.length >= FETCHES_PER_MINUTE) {
+      return null;
+    }
+    this.fetchedAt.push(now);
+
     const map = await this.fetchMap(new URL(`/${bundle}.map`, this.origin));
-    this.maps.delete(bundle);
-    this.maps.set(bundle, { map, at: now });
-    for (const oldest of this.maps.keys()) {
-      if (this.maps.size <= MAPS_CACHED) {
-        break;
-      }
-      this.maps.delete(oldest);
+    if (map) {
+      this.missing.delete(bundle);
+      this.remember(this.maps, bundle, map, MAPS_CACHED);
+    } else {
+      this.remember(this.missing, bundle, now, MISSING_REMEMBERED);
     }
     return map;
+  }
+
+  /** Puts an entry last, and drops the oldest past the limit. */
+  private remember<T>(entries: Map<string, T>, key: string, value: T, limit: number): void {
+    entries.delete(key);
+    entries.set(key, value);
+    for (const oldest of entries.keys()) {
+      if (entries.size <= limit) {
+        break;
+      }
+      entries.delete(oldest);
+    }
   }
 
   private async fetchMap(url: URL): Promise<TraceMap | null> {

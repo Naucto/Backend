@@ -201,14 +201,17 @@ at the controller boundary (see `project.controller.ts` catching `S3ObjectNotFou
   `crash-scrub.ts` takes out emails, tokens, URL queries and the username of a profile path. The
   rest of a message is kept as sent because a fix needs it, so treat crash text as possibly
   personal anyway.
-- One report per crash: occurrences with the same error name and normalised message
+- One report per crash: occurrences with the same source, error name and normalised message
   (`crash-group.ts`) land on one row and bump its count, with the latest 20 kept as
-  `ReportOccurrence`. The stack plays no part, so a crash keeps its report across deploys. A
+  `ReportOccurrence`. The source keeps a public browser report out of a backend crash that reads
+  the same. The stack plays no part, so a crash keeps its report across deploys. A
   resolved crash that comes back is set to NEW again as a regression.
 - `StackResolver` maps a stack of the web app back to its sources through the hidden source maps
   the production build publishes next to each bundle. It only fetches from the origin of
   `FRONTEND_URL`, so a public report cannot make the backend fetch anything else, and a stack it
-  cannot map is kept as it came.
+  cannot map is kept as it came. A stack may name at most 8 bundles, at most 20 maps are fetched a
+  minute, and a missing map is remembered apart from the real ones, so made-up names in public
+  reports cannot keep the backend fetching or push the real maps out of the cache.
 - Browser reports open at most 100 new crashes an hour (counted in memory, one instance), so
   varying a message cannot flood the table. Known crashes and backend crashes always count. A daily
   job deletes resolved and ignored crashes after 90 days without an occurrence, and new ones seen
