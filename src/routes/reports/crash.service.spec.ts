@@ -59,7 +59,7 @@ describe('CrashService', () => {
     expect(prisma.report.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          kind_groupKey: { kind: 'CRASH', groupKey: 'TypeError: x is undefined at <n>' },
+          kind_groupKey: { kind: 'CRASH', groupKey: 'WEB:TypeError: x is undefined at <n>' },
         },
         update: expect.objectContaining({ count: { increment: 1 } }),
       }),

@@ -78,7 +78,7 @@ export class CrashService {
     const name = input.name.slice(0, CRASH_NAME_MAX_LENGTH) || 'Error';
     const message = scrubMessage(input.message).slice(0, CRASH_MESSAGE_MAX_LENGTH);
     const route = scrubRoute(input.route);
-    const groupKey = crashGroupKey(name, message);
+    const groupKey = crashGroupKey(input.source, name, message);
     const now = new Date();
 
     if (input.source !== 'BACKEND' && !(await this.mayOpen(groupKey, now.getTime()))) {

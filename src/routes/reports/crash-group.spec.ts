@@ -8,18 +8,30 @@ describe('crash groups', () => {
   });
 
   it('gives one crash the same key whatever its ids', () => {
-    expect(crashGroupKey('TypeError', 'Release 1 broke')).toBe(
-      crashGroupKey('TypeError', 'Release 2  broke'),
+    expect(crashGroupKey('WEB', 'TypeError', 'Release 1 broke')).toBe(
+      crashGroupKey('WEB', 'TypeError', 'Release 2  broke'),
     );
-    expect(crashGroupKey('TypeError', 'Release 1 broke')).toBe('TypeError: Release <n> broke');
+    expect(crashGroupKey('WEB', 'TypeError', 'Release 1 broke')).toBe(
+      'WEB:TypeError: Release <n> broke',
+    );
+  });
+
+  it('keeps a browser crash apart from a backend crash that reads the same', () => {
+    expect(crashGroupKey('WEB', 'TypeError', 'boom')).not.toBe(
+      crashGroupKey('BACKEND', 'TypeError', 'boom'),
+    );
   });
 
   it('tells crashes of different names or messages apart', () => {
-    expect(crashGroupKey('TypeError', 'boom')).not.toBe(crashGroupKey('RangeError', 'boom'));
-    expect(crashGroupKey('TypeError', 'boom')).not.toBe(crashGroupKey('TypeError', 'bang'));
+    expect(crashGroupKey('WEB', 'TypeError', 'boom')).not.toBe(
+      crashGroupKey('WEB', 'RangeError', 'boom'),
+    );
+    expect(crashGroupKey('WEB', 'TypeError', 'boom')).not.toBe(
+      crashGroupKey('WEB', 'TypeError', 'bang'),
+    );
   });
 
   it('stays short enough to index', () => {
-    expect(crashGroupKey('Error', 'x'.repeat(1000)).length).toBeLessThanOrEqual(300);
+    expect(crashGroupKey('WEB', 'Error', 'x'.repeat(1000)).length).toBeLessThanOrEqual(300);
   });
 });
