@@ -179,6 +179,51 @@ at the controller boundary (see `project.controller.ts` catching `S3ObjectNotFou
   backend runs as one instance.
 - An admin cannot change their own role, and the last admin cannot be demoted.
 
+**Reports** (`src/routes/reports/`):
+
+- Ratings, bug reports and crashes are all one `Report` row, told apart by `kind`. The fields of the
+  other kinds stay null, and every kind shares the status, the note of the team and the admin
+  routes under `/admin/reports`.
+- A rating is 1 to 10 with optional "liked" and "improve" comments, plus reasons under 5. It needs
+  an account, and the person says in the form whether they mostly play or mostly create (`role`).
+- The rating prompt asks an account once. An answer or a refusal ends it, and "not now" snoozes it
+  14 days. `FeedbackPrompt` holds that state, and no row means never shown.
+- A bug report needs an account and arrives as JSON, with a context the page listed to the person
+  first (viewport, language, engine error, console). Its screenshot follows on
+  `PUT /reports/bugs/:id/screenshot`, from the same account within the hour: PNG, JPEG or WebP,
+  2 MB, checked by type and content. It is stored under `reports/<id>/` and **never made
+  public-read**. The admin console streams it through `GET /admin/reports/:id/screenshot`. The dev
+  bucket is anonymously readable as a whole, so this only holds in a deployed bucket.
+- Deleting an account deletes its screenshots, then clears the key of each file that went. A key
+  left on a report of a deleted account is a screenshot still to remove.
+- A crash names no one: `POST /reports/crash` takes text/plain JSON like the analytics ingest,
+  never reads an account, and keeps only the families of the user agent. Before anything is stored,
+  `crash-scrub.ts` takes out emails, tokens, URL queries and the username of a profile path. The
+  rest of a message is kept as sent because a fix needs it, so treat crash text as possibly
+  personal anyway.
+- One report per crash: occurrences with the same source, error name and normalised message
+  (`crash-group.ts`) land on one row and bump its count, with the latest 20 kept as
+  `ReportOccurrence`. The source keeps a public browser report out of a backend crash that reads
+  the same. The stack plays no part, so a crash keeps its report across deploys. A
+  resolved crash that comes back is set to NEW again as a regression.
+- `StackResolver` maps a stack of the web app back to its sources through the hidden source maps
+  the production build publishes next to each bundle. It only fetches from the origin of
+  `FRONTEND_URL`, so a public report cannot make the backend fetch anything else, and a stack it
+  cannot map is kept as it came. A stack may name at most 8 bundles, at most 20 maps are fetched a
+  minute, and a missing map is remembered apart from the real ones, so made-up names in public
+  reports cannot keep the backend fetching or push the real maps out of the cache.
+- Browser reports open at most 100 new crashes an hour (counted in memory, one instance), so
+  varying a message cannot flood the table. Known crashes and backend crashes always count. A daily
+  job deletes resolved and ignored crashes after 90 days without an occurrence, and new ones seen
+  only once after 30.
+- `CrashCaptureFilter` (global `APP_FILTER`) records every request that fails with a 500 or an
+  unknown error, named by its route pattern, then answers as Nest would. A scoped filter that
+  swallows errors (`MultiplayerExceptionFilter`) records them itself.
+- `DiscordService` (`src/discord/`) posts to any webhook, mentions no one, keeps under Discord's
+  rate limit and never throws. `CrashNotifier` uses it to post a crash to
+  `DISCORD_CRASH_WEBHOOK_URL` when it is new, comes back after being resolved, or reaches 10, 100,
+  1000 or 10000 occurrences.
+
 ## Conventions (not all enforced by tooling — follow these)
 
 These complement the lint/TS rules (which you should read from the config files, not restate).
