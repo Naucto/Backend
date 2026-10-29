@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { Prisma } from '@prisma/client';
+import { EmailTokenPurpose, Prisma, User } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { createHash } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
@@ -9,10 +9,14 @@ import { conflictViolation } from '../common/validation/violation.exception';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from '../routes/user/dto/create-user.dto';
 import { UserService } from '../routes/user/user.service';
+import { AccountMailService } from './account-mail.service';
+import { emailNotVerified, invalidEmailToken } from './auth.error';
 import { JwtPayload } from './auth.types';
 import { authLifetimes, timespanToMs } from './auth.utils';
 import { AuthResponseDto } from './dto/auth-response.dto';
+import { RegisterResponseDto } from './dto/email-flows.dto';
 import { UserDto } from './dto/user.dto';
+import { EmailTokenService } from './email-token.service';
 import { HANDLE_FORBIDDEN_RUN, HANDLE_MAX, HANDLE_MIN } from './handle-policy';
 import { GithubAuthService } from './providers/github-auth.service';
 import { GoogleAuthService, GoogleCredential } from './providers/google-auth.service';
@@ -53,6 +57,8 @@ export class AuthService {
     githubAuthService: GithubAuthService,
     microsoftAuthService: MicrosoftAuthService,
     private readonly prisma: PrismaService,
+    private readonly emailTokens: EmailTokenService,
+    private readonly accountMail: AccountMailService,
   ) {
     this.oauthProviders = {
       google: googleAuthService,
@@ -103,6 +109,10 @@ export class AuthService {
   }
 
   async validateUser(email: string, password: string): Promise<UserDto> {
+    return this.checkPassword(email, password);
+  }
+
+  private async checkPassword(email: string, password: string): Promise<User> {
     const user = await this.userService.findByEmail(email);
     if (!user) {
       throw new UnauthorizedException('Invalid email or password');
@@ -120,12 +130,18 @@ export class AuthService {
   }
 
   async login(email: string, password: string): Promise<AuthResponseDto> {
-    const user = await this.validateUser(email, password);
+    const user = await this.checkPassword(email, password);
+    // Only once the password is right, so the answer tells nobody else whether the address is
+    // confirmed.
+    if (user.emailVerifiedAt === null) {
+      throw emailNotVerified();
+    }
 
     return this.replaceSessions(user);
   }
 
-  async register(createUserDto: CreateUserDto): Promise<AuthResponseDto> {
+  /** Creates the account unconfirmed and mails the link that confirms it; nobody is signed in. */
+  async register(createUserDto: CreateUserDto): Promise<RegisterResponseDto> {
     const [existingByEmail, existingByUsername] = await Promise.all([
       this.userService.findAll({ where: { email: createUserDto.email } }),
       this.userService.findAll({ where: { username: createUserDto.username } }),
@@ -140,8 +156,9 @@ export class AuthService {
     }
 
     const newUser = await this.userService.create(createUserDto);
+    await this.accountMail.sendVerification(newUser);
 
-    return this.generateTokens(newUser);
+    return { email: newUser.email };
   }
 
   /** Signs in whoever the provider vouches for, creating their account on first sign-in. */
@@ -170,6 +187,11 @@ export class AuthService {
       }
 
       user = await this.userService.createOAuthUser(email, safeUsername);
+    } else if (user.emailVerifiedAt === null) {
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: { emailVerifiedAt: new Date() },
+      });
     }
 
     return this.generateTokens(user);
@@ -246,6 +268,88 @@ export class AuthService {
 
     return this.prisma.$transaction(async (tx) => {
       await this.userService.updatePassword(userId, newPassword, tx);
+      await tx.refreshToken.deleteMany({ where: { userId: user.id } });
+
+      return this.generateTokens(user, tx);
+    });
+  }
+
+  /** Confirms the address the token was mailed to and signs its account in. */
+  async verifyEmail(token: string): Promise<AuthResponseDto> {
+    return this.prisma.$transaction(async (tx) => {
+      const userId = await this.emailTokens.consume(token, EmailTokenPurpose.VERIFY_EMAIL, tx);
+      if (userId === null) {
+        throw invalidEmailToken();
+      }
+
+      const user = await tx.user.update({
+        where: { id: userId },
+        data: { emailVerifiedAt: new Date() },
+        select: { id: true, email: true, deletedAt: true },
+      });
+      if (user.deletedAt) {
+        throw invalidEmailToken();
+      }
+
+      return this.generateTokens(user, tx);
+    });
+  }
+
+  /**
+   * Mails a new confirmation link to an unconfirmed account. Answers the same whether or not the
+   * address has one, so the route cannot be used to find out who is registered.
+   */
+  async resendVerification(email: string): Promise<void> {
+    const user = await this.userService.findByEmail(email);
+    if (!user || user.deletedAt || user.emailVerifiedAt !== null) {
+      return;
+    }
+    if (await this.emailTokens.isCoolingDown(user.id, EmailTokenPurpose.VERIFY_EMAIL)) {
+      return;
+    }
+
+    await this.accountMail.sendVerification(user);
+  }
+
+  /** Mails a password reset link; answers the same whether or not the address has an account. */
+  async requestPasswordReset(email: string): Promise<void> {
+    const user = await this.userService.findByEmail(email);
+    if (!user || user.deletedAt) {
+      return;
+    }
+    if (await this.emailTokens.isCoolingDown(user.id, EmailTokenPurpose.RESET_PASSWORD)) {
+      return;
+    }
+
+    await this.accountMail.sendPasswordReset(user);
+  }
+
+  /**
+   * Sets the password the token allows, ending every session opened under the old one. Following
+   * the link also proves the address, so an unconfirmed account comes out confirmed.
+   */
+  async resetPassword(token: string, newPassword: string): Promise<AuthResponseDto> {
+    return this.prisma.$transaction(async (tx) => {
+      const userId = await this.emailTokens.consume(token, EmailTokenPurpose.RESET_PASSWORD, tx);
+      if (userId === null) {
+        throw invalidEmailToken();
+      }
+
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+        select: { id: true, email: true, deletedAt: true, emailVerifiedAt: true },
+      });
+      if (!user || user.deletedAt) {
+        throw invalidEmailToken();
+      }
+
+      await this.userService.updatePassword(user.id, newPassword, tx);
+      if (user.emailVerifiedAt === null) {
+        await tx.user.update({ where: { id: user.id }, data: { emailVerifiedAt: new Date() } });
+        await tx.emailToken.deleteMany({
+          where: { userId: user.id, purpose: EmailTokenPurpose.VERIFY_EMAIL },
+        });
+      }
       await tx.refreshToken.deleteMany({ where: { userId: user.id } });
 
       return this.generateTokens(user, tx);

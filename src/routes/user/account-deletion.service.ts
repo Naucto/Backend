@@ -29,6 +29,7 @@ export const USER_RELATION_FATES: Record<UserRelation, 'deleted' | 'unlinked' | 
     sentRequests: 'deleted',
     receivedRequests: 'deleted',
     refreshTokens: 'deleted',
+    emailTokens: 'deleted',
     notifications: 'deleted',
     hostingSession: 'deleted',
     // Unpublished projects go, published ones only when the user asks.
@@ -128,6 +129,7 @@ export class AccountDeletionService {
     await this.prisma.$transaction(async (tx) => {
       await this.analyticsErasure.eraseWithin(tx, userId);
       await tx.refreshToken.deleteMany({ where: { userId } });
+      await tx.emailToken.deleteMany({ where: { userId } });
       await tx.friendship.deleteMany({
         where: { OR: [{ userAId: userId }, { userBId: userId }] },
       });

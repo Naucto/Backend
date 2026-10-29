@@ -80,6 +80,13 @@ const ENV = {
 
   GEOIP_DB_PATH: text,
 
+  SMTP_HOST: text,
+  SMTP_PORT: integer,
+  SMTP_SECURE: flag,
+  SMTP_USER: text,
+  SMTP_PASSWORD: text,
+  MAIL_FROM: text,
+
   ENABLE_SWAGGER: flag,
 } satisfies Record<string, Parser<unknown>>;
 

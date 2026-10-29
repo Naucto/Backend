@@ -84,34 +84,18 @@ describe('AuthController', () => {
     expect(result).toEqual({ access_token: 'token123' });
   });
 
-  it('should call authService.register and return access_token', async () => {
+  it('should register and set no cookie, since nobody is signed in yet', async () => {
     const createUserDto = {
       email: 'newuser@example.com',
       username: 'newuser',
       password: 'password123',
     };
-    const expectedResult = {
-      access_token: 'token456',
-      refresh_token: 'refresh456',
-    };
+    (authService.register as jest.Mock).mockResolvedValue({ email: 'newuser@example.com' });
 
-    (authService.register as jest.Mock).mockResolvedValue(expectedResult);
-
-    const mockRes: Partial<Response> = { cookie: jest.fn() };
-    const result = await controller.register(createUserDto, mockRes as Response);
+    const result = await controller.register(createUserDto);
 
     expect(authService.register).toHaveBeenCalledWith(createUserDto);
-    const [cookieName, cookieValue, cookieOptions] = (mockRes.cookie as jest.Mock).mock.calls[0];
-    expect(cookieName).toBe('refresh_token');
-    expect(cookieValue).not.toBe('refresh456');
-    expect(decryptRefreshToken(cookieValue)).toBe('refresh456');
-    expect(cookieOptions).toEqual(
-      expect.objectContaining({
-        httpOnly: true,
-        sameSite: 'lax',
-      }),
-    );
-    expect(result).toEqual({ access_token: 'token456' });
+    expect(result).toEqual({ email: 'newuser@example.com' });
   });
 
   it('should refresh access token using refresh_token cookie', async () => {

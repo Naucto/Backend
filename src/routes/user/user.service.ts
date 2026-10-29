@@ -56,7 +56,12 @@ export class UserService {
   async getMe(userId: number): Promise<MeDto> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { friendCode: true, sessionJoinPolicy: true, password: true },
+      select: {
+        friendCode: true,
+        sessionJoinPolicy: true,
+        password: true,
+        emailNotifications: true,
+      },
     });
 
     if (!user) {
@@ -70,14 +75,25 @@ export class UserService {
       friendCode,
       sessionJoinPolicy: user.sessionJoinPolicy,
       hasPassword: user.password !== null,
+      emailNotifications: user.emailNotifications,
     };
   }
 
-  async updateMe(userId: number, data: { sessionJoinPolicy?: SessionJoinPolicy }): Promise<MeDto> {
-    if (data.sessionJoinPolicy !== undefined) {
+  async updateMe(
+    userId: number,
+    data: { sessionJoinPolicy?: SessionJoinPolicy; emailNotifications?: boolean },
+  ): Promise<MeDto> {
+    if (data.sessionJoinPolicy !== undefined || data.emailNotifications !== undefined) {
       await this.prisma.user.update({
         where: { id: userId },
-        data: { sessionJoinPolicy: data.sessionJoinPolicy },
+        data: {
+          ...(data.sessionJoinPolicy !== undefined
+            ? { sessionJoinPolicy: data.sessionJoinPolicy }
+            : {}),
+          ...(data.emailNotifications !== undefined
+            ? { emailNotifications: data.emailNotifications }
+            : {}),
+        },
         select: { id: true },
       });
     }
@@ -246,6 +262,7 @@ export class UserService {
           username: createUserDto.username,
           nickname: createUserDto.nickname ?? null,
           password: hashedPassword,
+          emailVerifiedAt: null,
         },
       });
       await this.recordSignup(tx, user.id);

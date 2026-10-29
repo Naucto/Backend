@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Prisma, User } from '@prisma/client';
@@ -8,7 +13,9 @@ import { withEnv } from '../../test/env';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserService } from '../routes/user/user.service';
 import { USER } from './access/roles';
+import { AccountMailService } from './account-mail.service';
 import { AuthService } from './auth.service';
+import { EmailTokenService } from './email-token.service';
 import { HANDLE_MAX, HANDLE_MIN, HANDLE_PATTERN } from './handle-policy';
 import { GithubAuthService } from './providers/github-auth.service';
 import { GoogleAuthService } from './providers/google-auth.service';
@@ -30,18 +37,26 @@ const userRow = (overrides: Partial<User> = {}): User => ({
   colour: null,
   sessionJoinPolicy: 'ANYONE',
   deletedAt: null,
+  emailVerifiedAt: new Date(),
+  emailNotifications: true,
   role: USER,
   ...overrides,
 });
 
 type RefreshTokenMock = Record<'create' | 'deleteMany' | 'findUnique' | 'delete', jest.Mock>;
 
+interface TxMock {
+  refreshToken: RefreshTokenMock;
+  user: { findUnique: jest.Mock; update: jest.Mock };
+  emailToken: { deleteMany: jest.Mock };
+}
+
 interface PrismaMock {
   /** The client a `$transaction` callback receives, kept apart so a test can tell the two. */
-  tx: { refreshToken: RefreshTokenMock };
+  tx: TxMock;
   $transaction: jest.Mock;
   refreshToken: RefreshTokenMock;
-  user: { findUnique: jest.Mock };
+  user: { findUnique: jest.Mock; update: jest.Mock };
 }
 
 function makeRefreshTokenMock(overrides: Partial<RefreshTokenMock> = {}): RefreshTokenMock {
@@ -60,13 +75,17 @@ function makeRefreshTokenMock(overrides: Partial<RefreshTokenMock> = {}): Refres
 }
 
 function makePrisma(refreshTokenOverrides: Partial<RefreshTokenMock> = {}): PrismaMock {
-  const tx = { refreshToken: makeRefreshTokenMock() };
+  const tx: TxMock = {
+    refreshToken: makeRefreshTokenMock(),
+    user: { findUnique: jest.fn(), update: jest.fn() },
+    emailToken: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+  };
 
   return {
     tx,
-    $transaction: jest.fn((work: (client: typeof tx) => unknown) => work(tx)),
+    $transaction: jest.fn((work: (client: TxMock) => unknown) => work(tx)),
     refreshToken: makeRefreshTokenMock(refreshTokenOverrides),
-    user: { findUnique: jest.fn() },
+    user: { findUnique: jest.fn(), update: jest.fn() },
   };
 }
 
@@ -88,7 +107,19 @@ describe('AuthService', () => {
     verify: jest.fn().mockReturnValue({ sub: 1, email: 'test@test.com' }),
   };
 
-  const prismaService = makePrisma();
+  const emailTokens: jest.Mocked<Pick<EmailTokenService, 'consume' | 'isCoolingDown'>> = {
+    consume: jest.fn(),
+    isCoolingDown: jest.fn(),
+  };
+
+  const accountMail: jest.Mocked<
+    Pick<AccountMailService, 'sendVerification' | 'sendPasswordReset'>
+  > = {
+    sendVerification: jest.fn(),
+    sendPasswordReset: jest.fn(),
+  };
+
+  let prismaService = makePrisma();
 
   async function buildModule(
     prisma = prismaService,
@@ -103,6 +134,8 @@ describe('AuthService', () => {
         { provide: GithubAuthService, useValue: providers.github ?? {} },
         { provide: MicrosoftAuthService, useValue: providers.microsoft ?? {} },
         { provide: PrismaService, useValue: prisma },
+        { provide: EmailTokenService, useValue: emailTokens },
+        { provide: AccountMailService, useValue: accountMail },
       ],
     }).compile();
     return module.get<AuthService>(AuthService);
@@ -110,6 +143,7 @@ describe('AuthService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    prismaService = makePrisma();
     withEnv({ JWT_EXPIRES_IN: '1h', JWT_REFRESH_EXPIRES_IN: '7d' });
     (jwtService.sign as jest.Mock).mockReturnValue('token123');
     (jwtService.verify as jest.Mock).mockReturnValue({
@@ -162,7 +196,7 @@ describe('AuthService', () => {
   describe('login', () => {
     it('should return access token if credentials are valid', async () => {
       const mockUser = userRow();
-      jest.spyOn(authService, 'validateUser').mockResolvedValue(mockUser);
+      userService.findByEmail.mockResolvedValue(mockUser);
 
       const result = await authService.login('test@example.com', 'password');
       expect(result).toEqual({
@@ -177,7 +211,7 @@ describe('AuthService', () => {
 
     it("should replace the user's sessions with the new one inside a single transaction", async () => {
       const mockUser = userRow({ id: 3 });
-      jest.spyOn(authService, 'validateUser').mockResolvedValue(mockUser);
+      userService.findByEmail.mockResolvedValue(mockUser);
 
       await authService.login('test@example.com', 'password');
 
@@ -188,6 +222,24 @@ describe('AuthService', () => {
         create.mock.invocationCallOrder[0] ?? 0,
       );
       expect(prismaService.refreshToken.create).not.toHaveBeenCalled();
+    });
+
+    it('should refuse an account whose address is not confirmed, once the password is right', async () => {
+      userService.findByEmail.mockResolvedValue(userRow({ emailVerifiedAt: null }));
+
+      await expect(authService.login('test@example.com', 'password')).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(prismaService.tx.refreshToken.create).not.toHaveBeenCalled();
+    });
+
+    it('should answer a wrong password the same way whether or not the address is confirmed', async () => {
+      userService.findByEmail.mockResolvedValue(userRow({ emailVerifiedAt: null }));
+      (bcrypt.compare as jest.Mock).mockResolvedValueOnce(false);
+
+      await expect(authService.login('test@example.com', 'wrong')).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
   });
 
@@ -273,11 +325,10 @@ describe('AuthService', () => {
       );
     });
 
-    it('should create user and return access token', async () => {
+    it('should create the user, mail the confirmation link and sign nobody in', async () => {
       userService.findAll.mockResolvedValue([]);
-      userService.create.mockResolvedValue(
-        userRow({ email: 'new@example.com', username: 'newUser' }),
-      );
+      const created = userRow({ email: 'new@example.com', username: 'newUser' });
+      userService.create.mockResolvedValue(created);
 
       const result = await authService.register({
         email: 'new@example.com',
@@ -286,10 +337,9 @@ describe('AuthService', () => {
       });
 
       expect(userService.create).toHaveBeenCalled();
-      expect(result).toEqual({
-        access_token: 'token123',
-        refresh_token: 'token123',
-      });
+      expect(accountMail.sendVerification).toHaveBeenCalledWith(created);
+      expect(result).toEqual({ email: 'new@example.com' });
+      expect(jwtService.sign).not.toHaveBeenCalled();
     });
   });
 
@@ -313,10 +363,24 @@ describe('AuthService', () => {
       });
 
       expect(userService.createOAuthUser).not.toHaveBeenCalled();
+      expect(prismaService.user.update).not.toHaveBeenCalled();
       expect(jwtService.sign).toHaveBeenCalledWith(
         { sub: 4, email: 'ada@example.com' },
         expect.any(Object),
       );
+    });
+
+    it('should confirm an unconfirmed address the provider vouches for', async () => {
+      const unconfirmed = userRow({ id: 4, email: 'ada@example.com', emailVerifiedAt: null });
+      userService.findByEmail.mockResolvedValue(unconfirmed);
+      prismaService.user.update.mockResolvedValue({ ...unconfirmed, emailVerifiedAt: new Date() });
+
+      await signInWithGoogle('ada@example.com', 'Ada Lovelace');
+
+      expect(prismaService.user.update).toHaveBeenCalledWith({
+        where: { id: 4 },
+        data: { emailVerifiedAt: expect.any(Date) },
+      });
     });
 
     it("should create the account under the provider's name when that handle is free", async () => {
@@ -537,6 +601,154 @@ describe('AuthService', () => {
       expect(deleteMany).toHaveBeenCalledWith({ where: { userId: 1 } });
       expect(create).toHaveBeenCalledWith({ data: expect.objectContaining({ userId: 1 }) });
       expect(prismaService.refreshToken.deleteMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('verifyEmail', () => {
+    it('should confirm the address and sign its account in', async () => {
+      emailTokens.consume.mockResolvedValue(7);
+      prismaService.tx.user.update.mockResolvedValue({
+        id: 7,
+        email: 'ada@example.com',
+        deletedAt: null,
+      });
+
+      await expect(authService.verifyEmail('token')).resolves.toEqual({
+        access_token: 'token123',
+        refresh_token: 'token123',
+      });
+
+      expect(emailTokens.consume).toHaveBeenCalledWith('token', 'VERIFY_EMAIL', prismaService.tx);
+      expect(prismaService.tx.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 7 },
+          data: { emailVerifiedAt: expect.any(Date) },
+        }),
+      );
+    });
+
+    it('should refuse a token that is unknown, spent or expired', async () => {
+      emailTokens.consume.mockResolvedValue(null);
+
+      await expect(authService.verifyEmail('token')).rejects.toThrow(BadRequestException);
+      expect(prismaService.tx.user.update).not.toHaveBeenCalled();
+    });
+
+    it('should refuse the link of an account deleted since', async () => {
+      emailTokens.consume.mockResolvedValue(7);
+      prismaService.tx.user.update.mockResolvedValue({
+        id: 7,
+        email: 'x',
+        deletedAt: new Date(),
+      });
+
+      await expect(authService.verifyEmail('token')).rejects.toThrow(BadRequestException);
+      expect(prismaService.tx.refreshToken.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('resendVerification', () => {
+    it('should mail a new link to an unconfirmed account', async () => {
+      const unconfirmed = userRow({ emailVerifiedAt: null });
+      userService.findByEmail.mockResolvedValue(unconfirmed);
+      emailTokens.isCoolingDown.mockResolvedValue(false);
+
+      await authService.resendVerification('test@example.com');
+
+      expect(accountMail.sendVerification).toHaveBeenCalledWith(unconfirmed);
+    });
+
+    it.each([
+      ['an unknown address', undefined],
+      ['a confirmed account', userRow()],
+      ['a deleted account', userRow({ emailVerifiedAt: null, deletedAt: new Date() })],
+    ])('should send nothing, and say nothing, for %s', async (_label, user) => {
+      userService.findByEmail.mockResolvedValue(user);
+      emailTokens.isCoolingDown.mockResolvedValue(false);
+
+      await expect(authService.resendVerification('test@example.com')).resolves.toBeUndefined();
+      expect(accountMail.sendVerification).not.toHaveBeenCalled();
+    });
+
+    it('should send nothing while the last link is too recent', async () => {
+      userService.findByEmail.mockResolvedValue(userRow({ emailVerifiedAt: null }));
+      emailTokens.isCoolingDown.mockResolvedValue(true);
+
+      await authService.resendVerification('test@example.com');
+
+      expect(accountMail.sendVerification).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('requestPasswordReset', () => {
+    it('should mail a reset link to an existing account', async () => {
+      const user = userRow();
+      userService.findByEmail.mockResolvedValue(user);
+      emailTokens.isCoolingDown.mockResolvedValue(false);
+
+      await authService.requestPasswordReset('test@example.com');
+
+      expect(accountMail.sendPasswordReset).toHaveBeenCalledWith(user);
+    });
+
+    it('should send nothing, and say nothing, for an unknown address', async () => {
+      userService.findByEmail.mockResolvedValue(undefined);
+
+      await expect(authService.requestPasswordReset('nobody@example.com')).resolves.toBeUndefined();
+      expect(accountMail.sendPasswordReset).not.toHaveBeenCalled();
+    });
+
+    it('should send nothing while the last link is too recent', async () => {
+      userService.findByEmail.mockResolvedValue(userRow());
+      emailTokens.isCoolingDown.mockResolvedValue(true);
+
+      await authService.requestPasswordReset('test@example.com');
+
+      expect(accountMail.sendPasswordReset).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('resetPassword', () => {
+    it('should set the password, end every session and sign the caller in', async () => {
+      emailTokens.consume.mockResolvedValue(1);
+      prismaService.tx.user.findUnique.mockResolvedValue(userRow());
+
+      await expect(authService.resetPassword('token', 'new-password-1')).resolves.toEqual({
+        access_token: 'token123',
+        refresh_token: 'token123',
+      });
+
+      expect(emailTokens.consume).toHaveBeenCalledWith('token', 'RESET_PASSWORD', prismaService.tx);
+      expect(userService.updatePassword).toHaveBeenCalledWith(
+        1,
+        'new-password-1',
+        prismaService.tx,
+      );
+      expect(prismaService.tx.refreshToken.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 1 },
+      });
+      expect(prismaService.tx.user.update).not.toHaveBeenCalled();
+    });
+
+    it('should confirm the address of an unconfirmed account, which the link proves', async () => {
+      emailTokens.consume.mockResolvedValue(1);
+      prismaService.tx.user.findUnique.mockResolvedValue(userRow({ emailVerifiedAt: null }));
+
+      await authService.resetPassword('token', 'new-password-1');
+
+      expect(prismaService.tx.user.update).toHaveBeenCalledWith({
+        where: { id: 1 },
+        data: { emailVerifiedAt: expect.any(Date) },
+      });
+    });
+
+    it('should refuse a token that is unknown, spent or expired', async () => {
+      emailTokens.consume.mockResolvedValue(null);
+
+      await expect(authService.resetPassword('token', 'new-password-1')).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(userService.updatePassword).not.toHaveBeenCalled();
     });
   });
 });

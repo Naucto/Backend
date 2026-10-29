@@ -31,7 +31,7 @@ const styleRules = {
 
 export default defineConfig([
   {
-    ignores: ['dist/**', 'client/**', 'coverage/**'],
+    ignores: ['dist/**', 'client/**', 'coverage/**', 'src/i18n/i18n.generated.ts'],
   },
   {
     files: ['**/*.ts'],

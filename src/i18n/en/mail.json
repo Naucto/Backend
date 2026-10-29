@@ -1,0 +1,36 @@
+{
+  "greeting": "Hi {name},",
+  "layout": {
+    "backupLink": "Backup link",
+    "privacy": "Privacy",
+    "automated": "Automated email about your NAUCTO account. Replies to this address are not read."
+  },
+  "verifyEmail": {
+    "subject": "Confirm your email address",
+    "preheader": "One last step: confirm your email to save, publish and play with friends.",
+    "tag": "Welcome",
+    "eyebrow": "Verification",
+    "heading": "Confirm your email address",
+    "intro": "Hi {name}, thanks for signing up. Confirm your email address to save, publish and play with friends.",
+    "action": "Confirm my email",
+    "expiry": "This link works once and expires in {hours} hours.",
+    "ignore": "If you didn’t create an account, you can ignore this email."
+  },
+  "resetPassword": {
+    "subject": "Reset your password",
+    "preheader": "Choose a new password for your Naucto account.",
+    "tag": "Security",
+    "eyebrow": "Password reset",
+    "heading": "Reset your password",
+    "intro": "Hi {name}, someone asked to reset the password of your account. Choose a new one with the button below.",
+    "action": "Choose a new password",
+    "expiry": "This link works once and expires in {minutes} minutes. Every device signed in to your account is signed out when the password changes.",
+    "ignore": "If you didn’t ask for this, you can ignore this email: your password stays as it is."
+  },
+  "notification": {
+    "tag": "Notification",
+    "eyebrow": "Activity",
+    "action": "Open Naucto",
+    "settings": "You can stop these emails in Settings → Account."
+  }
+}

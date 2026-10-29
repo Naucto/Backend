@@ -79,6 +79,11 @@ the _browser_ straight from `EDGE_ENDPOINT` — point that at a bucket the brows
 bucket named by `S3_BUCKET_NAME` and makes it anonymously readable; set the five `S3_*` values and
 `EDGE_ENDPOINT` as `.env.example` shows and a published game plays on localhost.
 
+The dev stack also runs **Mailpit** (inbox at `http://localhost:8025`, SMTP on `:1025`):
+`docker-compose.dev.yml` points the backend at it whatever `.env` says, so every mail a dev stack
+sends lands there and none reaches a real address. Production sends through OVH (`SMTP_*` in
+`.env.example`).
+
 `config/webrtc.json` is gitignored and **required**: no WebRTC offer can be built without it.
 Create it with `cp config/webrtc.example.json config/webrtc.json`.
 
@@ -169,6 +174,28 @@ at the controller boundary (see `project.controller.ts` catching `S3ObjectNotFou
   analytics must take them; erasure relies on it.
 - Every day is a UTC day. Raw data is kept 90 days and purged only once every period built from
   it is final and every linked account's history has it; rollups and account histories stay.
+
+**Mail** (`src/mail/`): `MailService` sends through Nodemailer to the SMTP server of `SMTP_*`, and
+is disabled with a warning when `SMTP_HOST` is unset. `MailRenderer` writes each mail: a template is
+a function of a translator returning subject, HTML and text, all inside the shared frame of
+`templates/layout.ts`. Every sentence lives in `src/i18n/<locale>/mail.json`, read by `nestjs-i18n`
+(no request resolvers: a mail names its language). After editing a file there, run
+`npm run generate:i18n` to regenerate the key types (`src/i18n/i18n.generated.ts`, committed) and
+`npm run check:i18n` to check every language holds the same keys. A language is one folder plus its
+code in `MAIL_LOCALES` (only `en` today — accounts do not store a language yet); a key it lacks
+falls back to English, and a key English lacks throws. Escape anything a user wrote: `renderLayout`
+does it for paragraphs. Mail is sent after the operation it reports, never inside its transaction,
+and its failure is logged, not raised. The logo is `<FRONTEND_URL>/img/email-logo.png`, so the
+deployed frontend has to serve it.
+
+- **Confirmation:** a password signup is created with `emailVerifiedAt` null and mailed a link to
+  `/verify-email?token=…`; `POST /auth/login` answers 403 `EMAIL_NOT_VERIFIED` until it is followed.
+  Accounts a sign-in provider vouches for, and those that predate this, are confirmed.
+- **Links** are single-use `EmailToken` rows holding only the SHA-256 of the token (24 h to confirm,
+  1 h to reset a password), one live per account and purpose, at most one mailed a minute.
+  `forgot-password` and `resend-verification` answer 204 whatever the address.
+- **Notifications** (`NotificationsService.createNotification`) are also mailed to a confirmed
+  address unless the account turned `emailNotifications` off.
 
 **Admin console** (`src/routes/admin/`), for the separate Admin-Panel app:
 

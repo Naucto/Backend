@@ -24,6 +24,7 @@ describe('AccountDeletionService', () => {
     gameSession: { deleteMany: jest.fn(), updateMany: jest.fn() },
     workSession: { deleteMany: jest.fn() },
     refreshToken: { deleteMany: jest.fn() },
+    emailToken: { deleteMany: jest.fn() },
     friendship: { deleteMany: jest.fn() },
     friendRequest: { deleteMany: jest.fn() },
     notification: { deleteMany: jest.fn() },
@@ -125,6 +126,7 @@ describe('AccountDeletionService', () => {
     await service.deleteAccount(7, false, { by: 'self' });
 
     expect(prisma.refreshToken.deleteMany).toHaveBeenCalledWith({ where: { userId: 7 } });
+    expect(prisma.emailToken.deleteMany).toHaveBeenCalledWith({ where: { userId: 7 } });
     expect(prisma.friendship.deleteMany).toHaveBeenCalledWith({
       where: { OR: [{ userAId: 7 }, { userBId: 7 }] },
     });

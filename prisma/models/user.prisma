@@ -25,6 +25,12 @@ model User {
   colour    PersonalColour?
   password  String?
   createdAt DateTime @default(now())
+  // Null while a password signup has not followed the link mailed to it. Defaults to the time of
+  // creation so the accounts that predate verification, and those a sign-in provider vouches for,
+  // count as verified.
+  emailVerifiedAt DateTime? @default(now())
+  // Whether in-app notifications are also mailed.
+  emailNotifications Boolean @default(true)
 
   // Crockford base32 code a person shares to be added as a friend; null until first read, which
   // generates it.
@@ -54,6 +60,7 @@ model User {
   hostingGameSessions GameSession[] @relation("UserHostedGameSessions")
 
   refreshTokens RefreshToken[]
+  emailTokens   EmailToken[]
   notifications Notification[]
   featuredReleases FeaturedRelease[] @relation("FeaturedReleaseCurator")
 

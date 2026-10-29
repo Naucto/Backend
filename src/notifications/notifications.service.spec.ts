@@ -1,7 +1,11 @@
 import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
+import { I18nModule } from 'nestjs-i18n';
 
+import { MailService } from '../mail/mail.service';
+import { MAIL_I18N_OPTIONS } from '../mail/mail-i18n';
+import { MailRenderer } from '../mail/mail-renderer.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { WebRTCService } from '../webrtc/webrtc.service';
 import { NotificationsService } from './notifications.service';
@@ -30,6 +34,7 @@ describe('NotificationsService', () => {
     };
   };
   let webrtcService: { buildOffer: jest.Mock };
+  let mail: { enabled: boolean; send: jest.Mock };
 
   const notificationRecord = {
     id: 7,
@@ -66,9 +71,14 @@ describe('NotificationsService', () => {
       buildOffer: jest.fn(),
     };
 
+    // Disabled unless a test turns it on, so the cases about storage never look a recipient up.
+    mail = { enabled: false, send: jest.fn().mockResolvedValue(undefined) };
+
     const module: TestingModule = await Test.createTestingModule({
+      imports: [I18nModule.forRoot(MAIL_I18N_OPTIONS)],
       providers: [
         NotificationsService,
+        MailRenderer,
         {
           provide: PrismaService,
           useValue: prisma,
@@ -81,8 +91,13 @@ describe('NotificationsService', () => {
           provide: JwtService,
           useValue: {},
         },
+        {
+          provide: MailService,
+          useValue: mail,
+        },
       ],
     }).compile();
+    await module.init();
 
     service = module.get<NotificationsService>(NotificationsService);
   });
@@ -284,6 +299,80 @@ describe('NotificationsService', () => {
       data: {
         read: true,
       },
+    });
+  });
+
+  describe('mailing a notification', () => {
+    const recipient = {
+      email: 'ada@example.com',
+      username: 'ada',
+      nickname: 'Ada',
+      emailNotifications: true,
+      emailVerifiedAt: new Date('2026-01-01T00:00:00Z'),
+      deletedAt: null,
+    };
+
+    const notify = async (): Promise<void> => {
+      prisma.notification.create.mockResolvedValue(notificationRecord);
+      prisma.notification.findMany.mockResolvedValue([]);
+      await service.createNotification({
+        userId: 42,
+        title: 'Build complete',
+        message: 'Your build is ready.',
+        type: 'INFO',
+      });
+      // The mail goes out after the call answers.
+      await new Promise((resolve) => setImmediate(resolve));
+    };
+
+    beforeEach(() => {
+      mail.enabled = true;
+    });
+
+    it('should mail the notification to a confirmed address that wants it', async () => {
+      prisma.user.findUnique.mockResolvedValue(recipient);
+
+      await notify();
+
+      expect(mail.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: 'ada@example.com',
+          subject: 'Build complete',
+          text: expect.stringContaining('Your build is ready.'),
+        }),
+      );
+    });
+
+    it.each([
+      ['who turned these mails off', { emailNotifications: false }],
+      ['whose address is not confirmed', { emailVerifiedAt: null }],
+      ['who deleted the account', { deletedAt: new Date() }],
+    ])('should mail nobody %s', async (_case, override) => {
+      prisma.user.findUnique.mockResolvedValue({ ...recipient, ...override });
+
+      await notify();
+
+      expect(mail.send).not.toHaveBeenCalled();
+    });
+
+    it('should still deliver the notification when its mail fails', async () => {
+      const warned = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      prisma.user.findUnique.mockResolvedValue(recipient);
+      mail.send.mockRejectedValueOnce(new Error('smtp down'));
+
+      await notify();
+
+      expect(mockNotificationServer.sendToUser).toHaveBeenCalled();
+      expect(warned).toHaveBeenCalledWith(expect.stringContaining('smtp down'));
+      warned.mockRestore();
+    });
+
+    it('should not look the recipient up when mail is disabled', async () => {
+      mail.enabled = false;
+
+      await notify();
+
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
     });
   });
 });

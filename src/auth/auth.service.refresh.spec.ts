@@ -5,7 +5,9 @@ import { Test } from '@nestjs/testing';
 import { withEnv } from '../../test/env';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserService } from '../routes/user/user.service';
+import { AccountMailService } from './account-mail.service';
 import { AuthService } from './auth.service';
+import { EmailTokenService } from './email-token.service';
 import { GithubAuthService } from './providers/github-auth.service';
 import { GoogleAuthService } from './providers/google-auth.service';
 import { MicrosoftAuthService } from './providers/microsoft-auth.service';
@@ -93,6 +95,8 @@ describe('AuthService refresh tokens, against a store that behaves like the tabl
           useValue: new JwtService({ secret: 'a-secret-only-this-spec-knows' }),
         },
         { provide: PrismaService, useValue: store },
+        { provide: EmailTokenService, useValue: {} },
+        { provide: AccountMailService, useValue: {} },
         { provide: UserService, useValue: { findByEmail: async () => USER } },
         {
           provide: GoogleAuthService,

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { AnalyticsLiveState, Prisma } from '@prisma/client';
 
-import { getOptionalEnv } from '../../config/env';
+import { frontendUrl } from '../../config/frontend';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FeaturesService } from '../features/features.service';
 import { AnalyticsTallyService } from './analytics-tally.service';
@@ -75,7 +75,7 @@ const rotationFor = (check: SessionCheck): AnalyticsRotationDto => ({
  */
 @Injectable()
 export class AnalyticsIngestService {
-  private readonly frontendUrl = getOptionalEnv('FRONTEND_URL', 'http://localhost:3001');
+  private readonly frontendUrl = frontendUrl();
 
   constructor(
     private readonly prisma: PrismaService,

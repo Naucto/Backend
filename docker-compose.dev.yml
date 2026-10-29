@@ -49,6 +49,17 @@ services:
     networks:
       - naucto-dev
 
+  # Catches every mail the backend sends, whatever the address, and shows it at
+  # http://localhost:8025; nothing ever leaves the machine.
+  mailpit:
+    image: axllent/mailpit:v1.27
+    restart: unless-stopped
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+    networks:
+      - naucto-dev
+
   backend:
     build:
       target: dev
@@ -59,6 +70,8 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
+      mailpit:
+        condition: service_started
     networks:
       - naucto-dev
     volumes:
@@ -66,6 +79,12 @@ services:
       - /app/node_modules
     environment:
       NODE_ENV: development
+      # Mailpit rather than the SMTP server .env may name, so a dev stack never mails a real address.
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_SECURE: "false"
+      SMTP_USER: ""
+      SMTP_PASSWORD: ""
     develop:
       watch:
         - action: sync

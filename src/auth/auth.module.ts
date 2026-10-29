@@ -3,10 +3,13 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 
 import { getEnv, getOptionalEnv } from '../config/env';
+import { MailModule } from '../mail/mail.module';
 import { UserModule } from '../routes/user/user.module';
+import { AccountMailService } from './account-mail.service';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { authLifetimes } from './auth.utils';
+import { EmailTokenService } from './email-token.service';
 import { GithubAuthService } from './providers/github-auth.service';
 import { GoogleAuthService } from './providers/google-auth.service';
 import { MicrosoftAuthService } from './providers/microsoft-auth.service';
@@ -15,6 +18,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 @Module({
   imports: [
     UserModule,
+    MailModule,
     PassportModule.register({}),
     JwtModule.registerAsync({
       useFactory: () => {
@@ -46,7 +50,15 @@ import { JwtStrategy } from './strategies/jwt.strategy';
       },
     }),
   ],
-  providers: [AuthService, GoogleAuthService, GithubAuthService, MicrosoftAuthService, JwtStrategy],
+  providers: [
+    AuthService,
+    EmailTokenService,
+    AccountMailService,
+    GoogleAuthService,
+    GithubAuthService,
+    MicrosoftAuthService,
+    JwtStrategy,
+  ],
   exports: [JwtModule, AuthService],
   controllers: [AuthController],
 })

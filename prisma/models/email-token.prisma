@@ -1,0 +1,19 @@
+enum EmailTokenPurpose {
+  VERIFY_EMAIL
+  RESET_PASSWORD
+}
+
+// A single-use link mailed to an account. Only the SHA-256 digest of the token is stored, so a
+// read of this table hands out no working link.
+model EmailToken {
+  id        Int               @id @default(autoincrement())
+  userId    Int
+  purpose   EmailTokenPurpose
+  tokenHash String            @unique
+  createdAt DateTime          @default(now())
+  expiresAt DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+}

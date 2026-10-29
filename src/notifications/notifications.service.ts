@@ -2,6 +2,10 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { JwtService } from '@nestjs/jwt';
 import { Prisma } from '@prisma/client';
 
+import { frontendLink } from '../config/frontend';
+import { MailService } from '../mail/mail.service';
+import { DEFAULT_MAIL_LOCALE } from '../mail/mail.types';
+import { MailRenderer } from '../mail/mail-renderer.service';
 import { PresenceServerMessage } from '../presence/dto/presence-message.dto';
 import { PresenceSocketHandler } from '../presence/presence.types';
 import { PrismaService } from '../prisma/prisma.service';
@@ -27,6 +31,8 @@ export class NotificationsService {
     private readonly prisma: PrismaService,
     private readonly webrtcService: WebRTCService,
     jwtService: JwtService,
+    private readonly mail: MailService,
+    private readonly mailRenderer: MailRenderer,
   ) {
     this.notificationServer = new NotificationWebRTCServer(
       this.webrtcService,
@@ -117,7 +123,49 @@ export class NotificationsService {
 
     const payload = this.toPayload(created);
     this.notificationServer.sendToUser(input.userId, payload);
+    this.mailInBackground(input);
     return payload;
+  }
+
+  /** The notification is already stored and delivered in-app; its mail never holds that up. */
+  private mailInBackground(input: CreateNotificationInput): void {
+    this.mailNotification(input).catch((error: unknown) => {
+      this.logger.warn(
+        `Could not mail notification to user ${input.userId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    });
+  }
+
+  private async mailNotification(input: CreateNotificationInput): Promise<void> {
+    if (!this.mail.enabled) {
+      return;
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: input.userId },
+      select: {
+        email: true,
+        username: true,
+        nickname: true,
+        emailNotifications: true,
+        emailVerifiedAt: true,
+        deletedAt: true,
+      },
+    });
+    // Only to an address its owner has confirmed and still wants these at.
+    if (!user || user.deletedAt || user.emailVerifiedAt === null || !user.emailNotifications) {
+      return;
+    }
+
+    const rendered = this.mailRenderer.notification(DEFAULT_MAIL_LOCALE, {
+      name: user.nickname ?? user.username,
+      title: input.title,
+      message: input.message,
+      url: frontendLink('/'),
+    });
+    await this.mail.send({ to: user.email, ...rendered });
   }
 
   async markAsRead(userId: number, notificationIdRaw: string): Promise<NotificationPayload> {

@@ -24,6 +24,12 @@ import { RequestWithUser } from './auth.types';
 import { REFRESH_COOKIE_NAME, refreshCookieOptions } from './auth.utils';
 import { AccessTokenResponseDto, AuthResponseDto } from './dto/auth-response.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import {
+  EmailAddressDto,
+  RegisterResponseDto,
+  ResetPasswordDto,
+  VerifyEmailDto,
+} from './dto/email-flows.dto';
 import { GithubLoginDto, GoogleCodeDto, LoginDto, MicrosoftLoginDto } from './dto/login.dto';
 import { PasswordPolicyDto } from './dto/password-policy.dto';
 import { PASSWORD_POLICY } from './password-policy';
@@ -58,6 +64,10 @@ export class AuthController {
   })
   @ApiResponse({ status: 400, description: 'Bad request' })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
+  @ApiResponse({
+    status: 403,
+    description: 'Email address not confirmed',
+  })
   async login(
     @Body() loginDto: LoginDto,
     @Res({ passthrough: true }) res: Response,
@@ -82,12 +92,15 @@ export class AuthController {
 
   @Public()
   @Post('register')
-  @ApiOperation({ summary: 'Register a new user and return an access token' })
+  @ApiOperation({
+    summary: 'Register a new user and mail them the link that confirms their address',
+    description: 'Nobody is signed in: the account signs in once the mailed link is followed.',
+  })
   @ApiBody({ type: CreateUserDto })
   @ApiResponse({
     status: 201,
-    description: 'User registered successfully',
-    type: AccessTokenResponseDto,
+    description: 'User registered, confirmation link mailed',
+    type: RegisterResponseDto,
   })
   @ApiResponse({ status: 400, description: 'Bad request', type: ValidationErrorResponseDto })
   @ApiResponse({
@@ -95,11 +108,82 @@ export class AuthController {
     description: 'Email or username already in use',
     type: ConflictErrorResponseDto,
   })
-  async register(
-    @Body() createUserDto: CreateUserDto,
+  async register(@Body() createUserDto: CreateUserDto): Promise<RegisterResponseDto> {
+    return this.authService.register(createUserDto);
+  }
+
+  @Public()
+  @Post('verify-email')
+  @ApiOperation({
+    summary: 'Confirm an email address from the mailed link and sign its account in',
+  })
+  @ApiBody({ type: VerifyEmailDto })
+  @ApiResponse({
+    status: 201,
+    description: 'Address confirmed, signed in',
+    type: AccessTokenResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Link invalid, already used or expired (code INVALID_EMAIL_TOKEN)',
+  })
+  async verifyEmail(
+    @Body() dto: VerifyEmailDto,
     @Res({ passthrough: true }) res: Response,
   ): Promise<AccessTokenResponseDto> {
-    return this.issue(res, await this.authService.register(createUserDto));
+    return this.issue(res, await this.authService.verifyEmail(dto.token));
+  }
+
+  @Public()
+  @Post('resend-verification')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Mail a new confirmation link to an unconfirmed account',
+    description:
+      'Answers 204 whether or not the address has an account, and sends at most one a minute.',
+  })
+  @ApiBody({ type: EmailAddressDto })
+  @ApiResponse({ status: 204, description: 'Sent if the address has an unconfirmed account' })
+  async resendVerification(@Body() dto: EmailAddressDto): Promise<void> {
+    await this.authService.resendVerification(dto.email);
+  }
+
+  @Public()
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Mail a password reset link',
+    description:
+      'Answers 204 whether or not the address has an account, and sends at most one a minute.',
+  })
+  @ApiBody({ type: EmailAddressDto })
+  @ApiResponse({ status: 204, description: 'Sent if the address has an account' })
+  async forgotPassword(@Body() dto: EmailAddressDto): Promise<void> {
+    await this.authService.requestPasswordReset(dto.email);
+  }
+
+  @Public()
+  @Post('reset-password')
+  @ApiOperation({
+    summary: 'Set a new password from the mailed link, ending every other session',
+  })
+  @ApiBody({ type: ResetPasswordDto })
+  @ApiResponse({
+    status: 201,
+    description: 'Password changed, signed in',
+    type: AccessTokenResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Password rejected, or link invalid, already used or expired (code INVALID_EMAIL_TOKEN)',
+    type: ValidationErrorResponseDto,
+  })
+  async resetPassword(
+    @Body() dto: ResetPasswordDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AccessTokenResponseDto> {
+    return this.issue(res, await this.authService.resetPassword(dto.token, dto.newPassword));
   }
 
   @Public()

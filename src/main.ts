@@ -12,6 +12,7 @@ import express, { NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module';
 import { ViolationValidationPipe } from './common/pipes/violation-validation.pipe';
 import { getOptionalEnv } from './config/env';
+import { frontendUrl } from './config/frontend';
 import { useTextJsonParser } from './routes/analytics/analytics-ingest-paths';
 import { setupSwagger } from './swagger';
 
@@ -35,7 +36,6 @@ if (isProduction) {
   setupGracefulShutdown({ app });
 
   const logger = new Logger('HTTP');
-  const frontendUrl = getOptionalEnv('FRONTEND_URL', 'http://localhost:3001');
 
   app.use(cookieParser());
   // Browsers report usage as JSON sent as text/plain, which needs no preflight, so a report sent
@@ -52,7 +52,7 @@ if (isProduction) {
   );
 
   app.enableCors({
-    origin: isProduction ? frontendUrl : true,
+    origin: isProduction ? frontendUrl() : true,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
