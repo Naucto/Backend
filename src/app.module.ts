@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
 
 import { AccessGuard } from './auth/access/access.guard';
@@ -26,6 +27,7 @@ import { WebRTCModule } from './webrtc/webrtc.module';
 @Module({
   imports: [
     gracefulShutdownModule(),
+    EventEmitterModule.forRoot(),
     ScheduleModule.forRoot(),
     PrismaModule,
     AuthModule,

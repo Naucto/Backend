@@ -1,11 +1,19 @@
 import { Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 
 import { USER } from '../../auth/access/roles';
+import {
+  ACTIVITY_CHANGED,
+  ActivityChangedEvent,
+  FRIENDSHIP_CHANGED,
+  FriendshipChangedEvent,
+} from '../../common/domain-events';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AnalyticsErasureService } from '../analytics/analytics-erasure.service';
+import { friendIdOf } from '../friends/friend-id-of';
 import { ProjectService } from '../project/project.service';
 import { S3Service } from '../s3/s3.service';
 import { PROFILE_ASSETS, ProfileAssetService } from './profile-asset.service';
@@ -70,6 +78,7 @@ export class AccountDeletionService {
     private readonly projectService: ProjectService,
     private readonly profileAssetService: ProfileAssetService,
     private readonly analyticsErasure: AnalyticsErasureService,
+    private readonly eventEmitter: EventEmitter2,
     private readonly s3Service: S3Service,
   ) {}
 
@@ -132,9 +141,13 @@ export class AccountDeletionService {
 
     // One commit with the analytics erasure, under its account lock: a business fact written
     // concurrently either lands before and is unlinked here, or waits and sees the account deleted.
-    await this.prisma.$transaction(async (tx) => {
+    const { friendIds, builderIds } = await this.prisma.$transaction(async (tx) => {
       await this.analyticsErasure.eraseWithin(tx, userId);
       await tx.refreshToken.deleteMany({ where: { userId } });
+      const friendships = await tx.friendship.findMany({
+        where: { OR: [{ userAId: userId }, { userBId: userId }] },
+        select: { userAId: true, userBId: true },
+      });
       await tx.friendship.deleteMany({
         where: { OR: [{ userAId: userId }, { userBId: userId }] },
       });
@@ -148,6 +161,10 @@ export class AccountDeletionService {
         data: { endedAt: now },
       });
       // Collaborators recreate a work session on their next join.
+      const workSessions = await tx.workSession.findMany({
+        where: { hostId: userId },
+        select: { users: { select: { id: true } } },
+      });
       await tx.workSession.deleteMany({ where: { hostId: userId } });
       await tx.user.update({
         where: { id: userId },
@@ -166,7 +183,19 @@ export class AccountDeletionService {
         },
         select: { id: true },
       });
+
+      return {
+        friendIds: friendships.map((friendship) => friendIdOf(friendship, userId)),
+        builderIds: workSessions.flatMap((session) => session.users.map((user) => user.id)),
+      };
     });
+
+    for (const friendId of friendIds) {
+      this.eventEmitter.emit(FRIENDSHIP_CHANGED, new FriendshipChangedEvent(userId, friendId));
+    }
+    for (const builderId of builderIds) {
+      this.eventEmitter.emit(ACTIVITY_CHANGED, new ActivityChangedEvent(builderId));
+    }
   }
 
   private async removeProfileAssets(userId: number): Promise<void> {

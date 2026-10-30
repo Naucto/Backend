@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { Test, TestingModule } from '@nestjs/testing';
 
 import { withEnv } from '../../test/env';
@@ -8,7 +9,7 @@ import { AuthModule } from './auth.module';
 
 /** The global guard is built in the root module's injector, from what the root module imports. */
 @Module({
-  imports: [AuthModule, UserModule],
+  imports: [EventEmitterModule.forRoot(), AuthModule, UserModule],
   providers: [AccessGuard],
 })
 class GuardConsumerModule {}

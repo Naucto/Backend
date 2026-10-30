@@ -1,7 +1,9 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Test } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
 
+import { FRIENDSHIP_CHANGED, FriendshipChangedEvent } from '../../common/domain-events';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UserService } from '../user/user.service';
@@ -32,6 +34,7 @@ describe('FriendsService', () => {
   const $transaction = jest.fn();
   const userService = { findIdByFriendCode: jest.fn() };
   const notificationsService = { notifyBestEffort: jest.fn() };
+  const eventEmitter = { emit: jest.fn() };
 
   beforeEach(async () => {
     jest.resetAllMocks();
@@ -50,6 +53,7 @@ describe('FriendsService', () => {
         },
         { provide: UserService, useValue: userService },
         { provide: NotificationsService, useValue: notificationsService },
+        { provide: EventEmitter2, useValue: eventEmitter },
       ],
     }).compile();
 
@@ -257,6 +261,10 @@ describe('FriendsService', () => {
       expect(notificationsService.notifyBestEffort).toHaveBeenCalledWith(
         expect.objectContaining({ userId: 5, kind: 'FRIEND_ACCEPTED' }),
       );
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        FRIENDSHIP_CHANGED,
+        new FriendshipChangedEvent(1, 5),
+      );
     });
 
     it('accept answers not found when the request went away after it was read', async () => {
@@ -290,9 +298,14 @@ describe('FriendsService', () => {
       expect(friendship.deleteMany).toHaveBeenCalledWith({
         where: { userAId: 2, userBId: 7 },
       });
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        FRIENDSHIP_CHANGED,
+        new FriendshipChangedEvent(7, 2),
+      );
 
       friendship.deleteMany.mockResolvedValueOnce({ count: 0 });
       await expect(service.remove(7, 2)).rejects.toBeInstanceOf(NotFoundException);
+      expect(eventEmitter.emit).toHaveBeenCalledTimes(1);
     });
   });
 

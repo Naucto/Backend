@@ -31,7 +31,7 @@ export type PresenceState = {
 // Contract the notifications websocket server uses to drive presence without
 // depending on the presence module (which depends on notifications).
 export interface PresenceSocketHandler {
-  onSocketOpen(userId: number): Promise<PresenceState[]>;
-  onSocketClose(userId: number): Promise<void>;
-  onSet(userId: number, input: PresenceSetInput): Promise<void>;
+  onSocketOpen(userId: number, connectionId: number): Promise<PresenceState[]>;
+  onSocketClose(userId: number, connectionId: number): Promise<void>;
+  onSet(userId: number, connectionId: number, input: PresenceSetInput): Promise<void>;
 }

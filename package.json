@@ -37,6 +37,7 @@
         "@jridgewell/trace-mapping": "^0.3.31",
         "@nestjs/common": "^11.1.12",
         "@nestjs/core": "^11.1.12",
+        "@nestjs/event-emitter": "^3.1.0",
         "@nestjs/jwt": "^11.0.2",
         "@nestjs/passport": "^11.0.5",
         "@nestjs/platform-express": "^11.1.12",

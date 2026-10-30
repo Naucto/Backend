@@ -1,9 +1,16 @@
 import { NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Test } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
 import { USER } from '../../auth/access/roles';
+import {
+  ACTIVITY_CHANGED,
+  ActivityChangedEvent,
+  FRIENDSHIP_CHANGED,
+  FriendshipChangedEvent,
+} from '../../common/domain-events';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AnalyticsErasureService } from '../analytics/analytics-erasure.service';
 import { ProjectService } from '../project/project.service';
@@ -22,9 +29,9 @@ describe('AccountDeletionService', () => {
     user: { findUnique: jest.fn(), update: jest.fn() },
     project: { findMany: jest.fn() },
     gameSession: { deleteMany: jest.fn(), updateMany: jest.fn() },
-    workSession: { deleteMany: jest.fn() },
+    workSession: { deleteMany: jest.fn(), findMany: jest.fn() },
     refreshToken: { deleteMany: jest.fn() },
-    friendship: { deleteMany: jest.fn() },
+    friendship: { deleteMany: jest.fn(), findMany: jest.fn() },
     friendRequest: { deleteMany: jest.fn() },
     notification: { deleteMany: jest.fn() },
     feedbackPrompt: { deleteMany: jest.fn() },
@@ -33,6 +40,7 @@ describe('AccountDeletionService', () => {
   const projectService = { remove: jest.fn() };
   const analyticsErasure = { eraseWithin: jest.fn() };
   const s3Service = { deleteFile: jest.fn() };
+  const eventEmitter = { emit: jest.fn() };
 
   beforeEach(async () => {
     jest.resetAllMocks();
@@ -43,6 +51,8 @@ describe('AccountDeletionService', () => {
     );
     prisma.user.findUnique.mockResolvedValue({ id: 7, password: null, deletedAt: null });
     prisma.project.findMany.mockResolvedValue([]);
+    prisma.friendship.findMany.mockResolvedValue([]);
+    prisma.workSession.findMany.mockResolvedValue([]);
     prisma.report.findMany.mockResolvedValue([]);
     s3Service.deleteFile.mockResolvedValue(undefined);
 
@@ -55,6 +65,7 @@ describe('AccountDeletionService', () => {
         ProfileAssetService,
         { provide: S3Service, useValue: s3Service },
         { provide: EdgeService, useValue: {} },
+        { provide: EventEmitter2, useValue: eventEmitter },
       ],
     }).compile();
 
@@ -156,6 +167,23 @@ describe('AccountDeletionService', () => {
         }),
       }),
     );
+  });
+
+  it('takes the account off its former friends and its collaborators off its work sessions', async () => {
+    prisma.friendship.findMany.mockResolvedValue([
+      { userAId: 3, userBId: 7 },
+      { userAId: 7, userBId: 9 },
+    ]);
+    prisma.workSession.findMany.mockResolvedValue([{ users: [{ id: 7 }, { id: 4 }] }]);
+
+    await service.deleteAccount(7, false, { by: 'self' });
+
+    expect(eventEmitter.emit.mock.calls).toEqual([
+      [FRIENDSHIP_CHANGED, new FriendshipChangedEvent(7, 3)],
+      [FRIENDSHIP_CHANGED, new FriendshipChangedEvent(7, 9)],
+      [ACTIVITY_CHANGED, new ActivityChangedEvent(7)],
+      [ACTIVITY_CHANGED, new ActivityChangedEvent(4)],
+    ]);
   });
 
   it('erases analytics in the transaction that marks the account deleted, before marking it', async () => {
