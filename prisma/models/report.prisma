@@ -1,0 +1,145 @@
+// What players and creators tell us about the platform, and what breaks while they use it. Every
+// rating, every bug report and every kind of crash is one report, read from the admin console only.
+
+enum ReportKind {
+  RATING
+  BUG
+  CRASH
+}
+
+enum ReportStatus {
+  NEW
+  TRIAGED
+  IN_PROGRESS
+  RESOLVED
+  IGNORED
+}
+
+// What the person mostly does on Naucto, as they said in the form.
+enum ReportRole {
+  PLAYER
+  CREATOR
+}
+
+enum RatingOrigin {
+  // Asked by the prompt shown after a play or an editing session.
+  PROMPT
+  // Opened by the person from the footer or the account menu.
+  MANUAL
+}
+
+enum RatingReason {
+  BUGS
+  PERFORMANCE
+  HARD_TO_USE
+  MISSING_FEATURE
+  CONTENT
+  OTHER
+}
+
+enum BugCategory {
+  GAMEPLAY
+  EDITOR
+  GRAPHICS
+  SOUND
+  NETPLAY
+  ACCOUNT
+  PERFORMANCE
+  OTHER
+}
+
+enum CrashSource {
+  WEB
+  ENGINE
+  BACKEND
+}
+
+enum FeedbackPromptStatus {
+  ANSWERED
+  DECLINED
+  SNOOZED
+}
+
+model Report {
+  id         Int          @id @default(autoincrement())
+  kind       ReportKind
+  status     ReportStatus @default(NEW)
+  user       User?        @relation(fields: [userId], references: [id])
+  userId     Int?
+  role       ReportRole?
+  // A bug report's summary, or a crash's error name.
+  title      String?
+  // A bug report's description, or a crash's message.
+  message    String?
+  route      String?
+  // The release the person had just played, or the one the page is about.
+  releaseId  Int?
+  projectId  Int?
+  appRelease String?
+  adminNote  String?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  // A rating: 1 to 10, with what went wrong under 5 and two optional comments.
+  score   Int?
+  reasons RatingReason[] @default([])
+  liked   String?
+  improve String?
+  origin  RatingOrigin?
+
+  // A bug report, with what the browser attached: viewport, language, engine error, console.
+  category        BugCategory?
+  context         Json?
+  // The rating it followed, for a report opened from a low score.
+  rating          Report?      @relation("FollowUp", fields: [ratingId], references: [id], onDelete: SetNull)
+  ratingId        Int?
+  followUps       Report[]     @relation("FollowUp")
+  // Private object key, served to admins through the API and never public-read.
+  screenshotKey   String?
+  screenshotMime  String?
+  screenshotBytes Int?
+
+  // A crash, anonymous. Every occurrence with the same normalised message lands on one report and
+  // bumps its count.
+  source      CrashSource?
+  groupKey    String?
+  // The latest stack, mapped back to the sources when the web app published its source maps.
+  stack       String?
+  count       Int                @default(1)
+  lastSeen    DateTime?
+  // Set when a resolved crash is reported again.
+  regressedAt DateTime?
+  occurrences ReportOccurrence[]
+
+  @@unique([kind, groupKey])
+  @@index([kind, createdAt])
+  @@index([kind, status, createdAt])
+  @@index([kind, lastSeen])
+  @@index([userId])
+}
+
+// The latest occurrences of a crash, pruned to a few per report as new ones arrive.
+model ReportOccurrence {
+  id         Int      @id @default(autoincrement())
+  report     Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  reportId   Int
+  createdAt  DateTime @default(now())
+  route      String
+  stack      String
+  appRelease String?
+  device     String?
+  browser    String?
+  os         String?
+  extra      Json?
+
+  @@index([reportId, createdAt])
+}
+
+// Whether the rating prompt may still ask an account. No row means it has never been shown.
+model FeedbackPrompt {
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       Int                  @id
+  status       FeedbackPromptStatus
+  snoozedUntil DateTime?
+  updatedAt    DateTime             @updatedAt
+}

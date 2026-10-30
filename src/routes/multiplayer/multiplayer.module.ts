@@ -6,6 +6,7 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { WebRTCModule } from '../../webrtc/webrtc.module';
 import { FriendsModule } from '../friends/friends.module';
 import { ProjectModule } from '../project/project.module';
+import { ReportsModule } from '../reports/reports.module';
 import { MultiplayerController } from './multiplayer.controller';
 import { MultiplayerService } from './multiplayer.service';
 import { MultiplayerAccountingService } from './multiplayer-accounting.service';
@@ -18,6 +19,7 @@ import { MultiplayerAccountingService } from './multiplayer-accounting.service';
     AuthModule,
     FriendsModule,
     NotificationsModule,
+    ReportsModule,
   ],
   controllers: [MultiplayerController],
   providers: [MultiplayerService, MultiplayerAccountingService],
