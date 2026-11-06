@@ -226,30 +226,27 @@ describe('HubService', () => {
   });
 
   describe('registerReleaseView', () => {
-    const VISITOR = '11111111-1111-4111-8111-111111111111';
     const updatedAt = new Date('2026-01-01T00:00:00Z');
     const NOW = new Date('2026-10-08T12:00:00Z');
+    const DAY = new Date('2026-10-08T00:00:00Z');
 
     beforeEach(() => {
       prismaMock.project.findFirst.mockResolvedValue({ id: 1, viewCount: 10, updatedAt });
       txMock.project.update.mockResolvedValue({ viewCount: 11 });
-      txMock.analyticsVisitorTombstone.findUnique.mockResolvedValue(null);
-      txMock.analyticsVisitor.findUnique.mockResolvedValue({ userId: null });
       txMock.releaseView.count.mockResolvedValue(0);
       txMock.releaseView.createMany.mockResolvedValue({ count: 1 });
     });
 
     const viewAs = (
-      visitorId: string | null,
+      userId: number | null,
       address = '203.0.113.9',
-    ): Promise<{ viewCount: number }> =>
-      service.registerReleaseView(1, { visitorId, address }, NOW);
+    ): Promise<{ viewCount: number }> => service.registerReleaseView(1, { userId, address }, NOW);
 
-    it("counts a consenting browser's first view of the day, and a first viewer twice over", async () => {
-      await expect(viewAs(VISITOR)).resolves.toEqual({ viewCount: 11 });
+    it("counts a signed-in reader's first view of the day by account, and a first viewer twice over", async () => {
+      await expect(viewAs(7)).resolves.toEqual({ viewCount: 11 });
 
       expect(txMock.releaseView.createMany).toHaveBeenCalledWith({
-        data: [{ projectId: 1, viewerKey: `v:${VISITOR}`, day: new Date('2026-10-08T00:00:00Z') }],
+        data: [{ projectId: 1, viewerKey: 'u:7', day: DAY }],
         skipDuplicates: true,
       });
       expect(txMock.project.update).toHaveBeenCalledWith(
@@ -259,33 +256,22 @@ describe('HubService', () => {
       );
     });
 
-    it('keys a browser linked to an account by the account, so its devices count once', async () => {
-      txMock.analyticsVisitor.findUnique.mockResolvedValue({ userId: 7 });
+    it('keys a reader who is not signed in by a code of the address, never the address itself', async () => {
+      await viewAs(null);
 
-      await viewAs(VISITOR);
-
-      expect(txMock.releaseView.createMany).toHaveBeenCalledWith(
-        expect.objectContaining({ data: [expect.objectContaining({ viewerKey: 'u:7' })] }),
-      );
+      const [call] = txMock.releaseView.createMany.mock.calls as [
+        [{ data: { viewerKey: string }[] }],
+      ];
+      const key = call[0].data[0]?.viewerKey ?? '';
+      expect(key).toMatch(/^addr:/);
+      expect(key).not.toContain('203.0.113.9');
     });
 
-    it("reads the visitor under its shared identity lock, so an erasure can't be undone", async () => {
-      await viewAs(VISITOR);
-
-      const [lock] = txMock.$executeRaw.mock.calls;
-      expect((lock?.[0] as TemplateStringsArray).join('?')).toContain(
-        'pg_advisory_xact_lock_shared(',
-      );
-      expect(txMock.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
-        txMock.releaseView.createMany.mock.invocationCallOrder[0] ?? 0,
-      );
-    });
-
-    it('moves nothing on a second view the same day', async () => {
+    it('moves nothing when the flag of the day is already there', async () => {
       txMock.releaseView.count.mockResolvedValue(1);
       txMock.releaseView.createMany.mockResolvedValue({ count: 0 });
 
-      await expect(viewAs(VISITOR)).resolves.toEqual({ viewCount: 10 });
+      await expect(viewAs(null)).resolves.toEqual({ viewCount: 10 });
 
       expect(txMock.project.update).not.toHaveBeenCalled();
     });
@@ -293,49 +279,24 @@ describe('HubService', () => {
     it("counts a returning viewer's view without counting them as new", async () => {
       txMock.releaseView.count.mockResolvedValue(1);
 
-      await viewAs(VISITOR);
+      await viewAs(null);
 
       expect(txMock.project.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: { viewCount: { increment: 1 }, updatedAt } }),
       );
     });
 
-    it('counts a view without a viewer, keeping no row and no key at all', async () => {
-      await expect(viewAs(null)).resolves.toEqual({ viewCount: 11 });
+    it('counts nothing when there is neither an account nor an address', async () => {
+      await expect(viewAs(null, '')).resolves.toEqual({ viewCount: 10 });
 
       expect(txMock.releaseView.createMany).not.toHaveBeenCalled();
-      expect(txMock.analyticsVisitor.findUnique).not.toHaveBeenCalled();
-      expect(txMock.project.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { viewCount: { increment: 1 }, updatedAt } }),
-      );
-    });
-
-    it('treats an erased visitor as a view without a viewer', async () => {
-      txMock.analyticsVisitorTombstone.findUnique.mockResolvedValue({ id: VISITOR });
-
-      await viewAs(VISITOR);
-
-      expect(txMock.releaseView.createMany).not.toHaveBeenCalled();
-      expect(txMock.project.update).toHaveBeenCalled();
-    });
-
-    it('lets a whole class count from one address, then stops counting it', async () => {
-      for (let i = 0; i < 30; i++) {
-        await viewAs(null, '198.51.100.1');
-      }
-      txMock.project.update.mockClear();
-
-      await expect(viewAs(null, '198.51.100.1')).resolves.toEqual({ viewCount: 10 });
       expect(txMock.project.update).not.toHaveBeenCalled();
-
-      await viewAs(null, '198.51.100.2');
-      expect(txMock.project.update).toHaveBeenCalledTimes(1);
     });
 
     it('counts nothing for a project the hub does not carry', async () => {
       prismaMock.project.findFirst.mockResolvedValue(null);
 
-      await expect(viewAs(VISITOR)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(viewAs(7)).rejects.toBeInstanceOf(NotFoundException);
       expect(txMock.releaseView.createMany).not.toHaveBeenCalled();
     });
   });

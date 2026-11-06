@@ -153,7 +153,7 @@ describe('AnalyticsPurgeService', () => {
     );
   });
 
-  it('forgets tombstones and anonymous view keys no cookie can still match', async () => {
+  it('forgets tombstones, view keys no cookie can still match, and old address flags', async () => {
     await service.expireKeys(NOW);
 
     const before = new Date(NOW.getTime() - VISITOR_COOKIE_MS);
@@ -162,6 +162,12 @@ describe('AnalyticsPurgeService', () => {
     });
     expect(prisma.releaseView.deleteMany).toHaveBeenCalledWith({
       where: { viewerKey: { startsWith: 'v:' }, createdAt: { lt: before } },
+    });
+    expect(prisma.releaseView.deleteMany).toHaveBeenCalledWith({
+      where: {
+        viewerKey: { startsWith: 'addr:' },
+        createdAt: { lt: new Date('2026-07-10T02:30:00Z') },
+      },
     });
   });
 });

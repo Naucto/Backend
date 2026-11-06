@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { ADDRESS_VIEW_KEY_PREFIX, ADDRESS_VIEW_RETENTION_DAYS } from '../project/viewer-key';
 import { metricsOf } from './analytics-finalize.service';
 import { METRICS } from './analytics-metrics';
 import { GRAINS, periodOf, ROLLUP_CLASSES } from './analytics-periods';
@@ -175,12 +176,21 @@ export class AnalyticsPurgeService {
     }
   }
 
-  /** Forgets tombstones and anonymous view keys no cookie can still match. */
+  /**
+   * Forgets tombstones and visitor view keys no cookie can still match, and address view flags past
+   * their retention.
+   */
   async expireKeys(now: Date): Promise<void> {
     const before = new Date(now.getTime() - VISITOR_COOKIE_MS);
     await this.prisma.analyticsVisitorTombstone.deleteMany({ where: { erasedAt: { lt: before } } });
     await this.prisma.releaseView.deleteMany({
       where: { viewerKey: { startsWith: 'v:' }, createdAt: { lt: before } },
+    });
+    await this.prisma.releaseView.deleteMany({
+      where: {
+        viewerKey: { startsWith: ADDRESS_VIEW_KEY_PREFIX },
+        createdAt: { lt: new Date(now.getTime() - ADDRESS_VIEW_RETENTION_DAYS * DAY_MS) },
+      },
     });
   }
 

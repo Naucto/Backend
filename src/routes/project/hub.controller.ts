@@ -274,8 +274,8 @@ export class HubController {
     return this.hubService.getLikeStatus(id, req.user.id);
   }
 
-  // Never reads the account: a play is tied to a viewer only through the visitor of a browser that
-  // consented. Takes JSON sent as text/plain, like the analytics routes.
+  // Public, so a bearer is optional: a signed-in reader counts by account, anyone else by address.
+  // Takes JSON sent as text/plain as well, which older pages still send.
   @Public()
   @Post('releases/:id/view')
   @ApiOperation({
@@ -291,11 +291,11 @@ export class HubController {
   @HttpCode(HttpStatus.OK)
   async registerReleaseView(
     @ProjectId() id: number,
-    @Body() dto: RegisterViewDto,
-    @Req() req: Request,
+    @Body() _dto: RegisterViewDto,
+    @Req() req: Request & { user?: { id: number } | null },
   ): Promise<ViewResponseDto> {
     return this.hubService.registerReleaseView(id, {
-      visitorId: dto.visitorId ?? null,
+      userId: req.user?.id ?? null,
       address: req.ip ?? '',
     });
   }
