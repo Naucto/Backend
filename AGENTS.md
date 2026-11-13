@@ -171,6 +171,11 @@ at the controller boundary (see `project.controller.ts` catching `S3ObjectNotFou
   analytics must take them; erasure relies on it.
 - Every day is a UTC day. Raw data is kept 90 days and purged only once every period built from
   it is final and every linked account's history has it; rollups and account histories stay.
+- A breakdown and the games ranking span any range of days, not one calendar period. A count or a
+  peak is combined from its days, final or computed. A distinct count such as `players` is computed
+  once over the range from raw data, since its days cannot be added, and has no value for a range
+  reaching before the raw window. Days whose values are gone are left out and counted in
+  `missingDays`.
 - The timeline (`analytics-timeline.ts`, `analytics-timeline.readers.ts`,
   `analytics-timeline.service.ts`) reads raw rows between two instants, in buckets of a minute to a
   day, and never rollups. Its window is the raw retention and its values are never final. A bucket

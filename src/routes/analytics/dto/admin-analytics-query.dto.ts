@@ -57,7 +57,7 @@ export class AnalyticsPeriodQueryDto {
   day!: string;
 }
 
-export class AnalyticsBreakdownQueryDto extends AnalyticsPeriodQueryDto {
+export class AnalyticsBreakdownQueryDto extends AnalyticsRangeQueryDto {
   @ApiProperty({ enum: METRIC_NAMES, enumName: 'AnalyticsMetric' })
   @IsIn(METRIC_NAMES)
   metric!: MetricName;
@@ -77,7 +77,7 @@ export class AnalyticsRetentionQueryDto extends AnalyticsRangeQueryDto {
 export const GAME_SORTS = ['plays', 'playtime_ms', 'players', 'mp_sessions'] as const;
 export type GameSort = (typeof GAME_SORTS)[number];
 
-export class AnalyticsGamesQueryDto extends AnalyticsPeriodQueryDto {
+export class AnalyticsGamesQueryDto extends AnalyticsRangeQueryDto {
   @ApiPropertyOptional({ enum: GAME_SORTS, default: 'plays' })
   @IsOptional()
   @IsIn(GAME_SORTS)

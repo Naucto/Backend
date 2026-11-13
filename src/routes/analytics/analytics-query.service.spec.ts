@@ -14,8 +14,8 @@ const DAY = periodOf('DAY', '2026-10-02');
 
 describe('AnalyticsQueryService', () => {
   const prisma = {
-    analyticsRollupStatus: { findUnique: jest.fn() },
-    analyticsRollup: { findUnique: jest.fn(), findMany: jest.fn() },
+    analyticsRollupStatus: { findUnique: jest.fn(), findMany: jest.fn() },
+    analyticsRollup: { findUnique: jest.fn(), groupBy: jest.fn() },
     analyticsCohort: { findMany: jest.fn() },
     project: { findMany: jest.fn() },
   };
@@ -25,7 +25,8 @@ describe('AnalyticsQueryService', () => {
     jest.clearAllMocks();
     prisma.analyticsRollupStatus.findUnique.mockResolvedValue(null);
     prisma.analyticsRollup.findUnique.mockResolvedValue(null);
-    prisma.analyticsRollup.findMany.mockResolvedValue([]);
+    prisma.analyticsRollupStatus.findMany.mockResolvedValue([]);
+    prisma.analyticsRollup.groupBy.mockResolvedValue([]);
     prisma.project.findMany.mockResolvedValue([]);
     mocked.activityMetrics.mockResolvedValue([{ metric: 'visitors', dimension: '', value: 7 }]);
     mocked.samplerCoverage.mockResolvedValue(0.9);
@@ -131,7 +132,7 @@ describe('AnalyticsQueryService', () => {
     it('refuses a breakdown by a dimension the metric is not split by', async () => {
       await expect(
         service.breakdown(
-          { metric: 'visitors', dimension: 'country', grain: 'DAY', day: '2026-10-02' },
+          { metric: 'visitors', dimension: 'country', from: '2026-10-02', to: '2026-10-02' },
           NOW,
         ),
       ).rejects.toBeInstanceOf(BadRequestException);
@@ -158,13 +159,101 @@ describe('AnalyticsQueryService', () => {
     ]);
 
     const breakdown = await service.breakdown(
-      { metric: 'sessions', dimension: 'referrer', grain: 'DAY', day: '2026-10-07' },
+      { metric: 'sessions', dimension: 'referrer', from: '2026-10-07', to: '2026-10-07' },
       NOW,
     );
 
     expect(breakdown.status).toBe('provisional');
     expect(breakdown.truncated).toBe(true);
     expect(breakdown.values).toHaveLength(101);
+  });
+
+  describe('a range of days', () => {
+    const finalOn = (...days: string[]): void => {
+      prisma.analyticsRollupStatus.findMany.mockResolvedValue(
+        days.map((day) => ({ periodStart: new Date(`${day}T00:00:00Z`), status: 'FINAL' })),
+      );
+    };
+
+    it('adds the final days of a count to the days computed from raw data', async () => {
+      finalOn('2026-10-05', '2026-10-06');
+      prisma.analyticsRollup.groupBy.mockResolvedValue([
+        { dimension: 'country:FR', _sum: { value: 5 }, _max: { value: 3 } },
+        { dimension: 'country:CA', _sum: { value: 2 }, _max: { value: 2 } },
+      ]);
+      mocked.sessionMetrics.mockResolvedValue([
+        { metric: 'sessions', dimension: 'country:CA', value: 4 },
+        { metric: 'sessions', dimension: 'device:desktop', value: 4 },
+      ]);
+
+      const breakdown = await service.breakdown(
+        { metric: 'sessions', dimension: 'country', from: '2026-10-05', to: '2026-10-07' },
+        NOW,
+      );
+
+      expect(breakdown).toMatchObject({
+        from: '2026-10-05',
+        to: '2026-10-07',
+        status: 'provisional',
+        missingDays: 0,
+        values: [
+          { key: 'CA', value: 6 },
+          { key: 'FR', value: 5 },
+        ],
+      });
+      expect(mocked.sessionMetrics).toHaveBeenCalledTimes(1);
+      expect(mocked.sessionMetrics).toHaveBeenCalledWith(prisma, {
+        start: '2026-10-07',
+        end: '2026-10-08',
+      });
+    });
+
+    it('leaves out the days whose values are gone, and says how many', async () => {
+      finalOn('2026-05-02');
+      prisma.analyticsRollup.groupBy.mockResolvedValue([
+        { dimension: 'country:FR', _sum: { value: 5 }, _max: { value: 5 } },
+      ]);
+
+      const breakdown = await service.breakdown(
+        { metric: 'sessions', dimension: 'country', from: '2026-05-01', to: '2026-05-03' },
+        NOW,
+      );
+
+      expect(breakdown).toMatchObject({ status: 'final', missingDays: 2 });
+      expect(breakdown.values).toEqual([{ key: 'FR', value: 5 }]);
+      expect(mocked.sessionMetrics).not.toHaveBeenCalled();
+    });
+
+    it('counts distinct players once over the range, never as a sum of its days', async () => {
+      finalOn('2026-10-05', '2026-10-06');
+      mocked.activityMetrics.mockResolvedValue([
+        { metric: 'players', dimension: 'release:9', value: 3 },
+      ]);
+
+      const games = await service.games({ from: '2026-10-05', to: '2026-10-06' }, NOW);
+
+      expect(games.items).toEqual([
+        { releaseId: 9, name: null, plays: 0, playtimeMs: 0, players: 3, mpSessions: 0 },
+      ]);
+      expect(mocked.activityMetrics).toHaveBeenCalledTimes(1);
+      expect(mocked.activityMetrics).toHaveBeenCalledWith(prisma, {
+        start: '2026-10-05',
+        end: '2026-10-07',
+      });
+    });
+
+    it('has no player count for a range reaching before the raw window', async () => {
+      finalOn('2026-05-01');
+      prisma.analyticsRollup.groupBy.mockResolvedValue([
+        { dimension: 'release:9', _sum: { value: 12 }, _max: { value: 12 } },
+      ]);
+
+      const games = await service.games({ from: '2026-05-01', to: '2026-05-01' }, NOW);
+
+      expect(games.status).toBe('final');
+      expect(games.items[0]).toMatchObject({ releaseId: 9, plays: 12, players: null });
+      expect(mocked.activityMetrics).not.toHaveBeenCalled();
+    });
   });
 
   it('marks a cohort not mature yet with no retention, never zero', async () => {

@@ -68,7 +68,7 @@ export class AdminAnalyticsController {
   }
 
   @Get('breakdown')
-  @ApiOperation({ summary: 'A metric split by one dimension over one period' })
+  @ApiOperation({ summary: 'A metric split by one dimension over a range of days' })
   @ApiResponse({ status: 200, type: AnalyticsBreakdownDto })
   breakdown(@Query() query: AnalyticsBreakdownQueryDto): Promise<AnalyticsBreakdownDto> {
     return this.analytics.breakdown(query);
@@ -112,7 +112,10 @@ export class AdminAnalyticsController {
   }
 
   @Get('games')
-  @ApiOperation({ summary: 'Games ranked by plays, playtime, players or multiplayer sessions' })
+  @ApiOperation({
+    summary:
+      'Games ranked by plays, playtime, players or multiplayer sessions over a range of days',
+  })
   @ApiResponse({ status: 200, type: AnalyticsGamesDto })
   games(@Query() query: AnalyticsGamesQueryDto): Promise<AnalyticsGamesDto> {
     return this.analytics.games(query);
