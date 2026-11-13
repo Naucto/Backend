@@ -35,6 +35,7 @@ import { ProjectService } from './project.service';
 import { ProjectContentController } from './project-content.controller';
 import { ProjectContentService } from './project-content.service';
 import { projectIdOf } from './project-id.decorator';
+import { ViewSaltService } from './view-salt.service';
 
 const SIGNED_IN_USER = 7;
 const OWN_PROJECT = 12;
@@ -102,6 +103,7 @@ describe('project controllers', () => {
         ProjectService,
         ProjectContentService,
         HubService,
+        ViewSaltService,
         { provide: PrismaService, useValue: prisma },
         { provide: S3Service, useValue: s3 },
         { provide: EdgeService, useValue: edge },

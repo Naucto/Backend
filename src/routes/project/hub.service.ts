@@ -6,7 +6,6 @@ import { isUniqueViolation, PrismaService } from '../../prisma/prisma.service';
 import { PROJECT_NAME_MAX_LENGTH } from './dto/project-field-limits';
 import { hubFields } from './hub-fields';
 import { keepEditTime } from './keep-edit-time';
-import { KeylessViewLimiter } from './keyless-view-limiter';
 import { ProjectService } from './project.service';
 import { ProjectContentService } from './project-content.service';
 import {
@@ -20,6 +19,7 @@ import {
   withCounts,
 } from './project-select';
 import { normalizeTags } from './project-tags';
+import { ViewSaltService } from './view-salt.service';
 import { viewerKeyOf } from './viewer-key';
 
 export const RELEASE_WINDOWS = ['all', '365d', '30d', '7d'] as const;
@@ -57,12 +57,11 @@ const RELEASE_WINDOW_DAYS: Record<Exclude<ReleaseWindow, 'all'>, number> = {
 export class HubService {
   private readonly logger = new Logger(HubService.name);
 
-  private readonly keylessViews = new KeylessViewLimiter();
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly projectService: ProjectService,
     private readonly contentService: ProjectContentService,
+    private readonly viewSalt: ViewSaltService,
   ) {}
 
   /** The row of a project on the hub narrowed to `select`, or a 404 for a draft as for a gap. */
@@ -361,17 +360,14 @@ export class HubService {
   }
 
   /**
-   * One view per reader per UTC day. The unique row is what decides; the counter follows it, so a
-   * reload, or a loop of requests, moves nothing.
-   */
-  /**
-   * Counts a play of a published game. A consenting browser counts once a day, by its account
-   * when it is linked to one and by its visitor otherwise; a browser that declined counts every
-   * play, keyed by nothing, within the limits of its address.
+   * Counts a play of a published game once per viewer per UTC day: the signed-in account, or the
+   * network address of a reader who is not signed in, whatever they answered about analytics. The
+   * day's flag row decides, and the counter follows it, so a reload or a loop of requests moves
+   * nothing. An address is coded under the day's salt, so it is a new player again the next day.
    */
   async registerReleaseView(
     projectId: number,
-    viewer: { visitorId: string | null; address: string },
+    viewer: { userId: number | null; address: string },
     now = new Date(),
   ): Promise<{ viewCount: number }> {
     const project = await this.requirePublished(projectId, {
@@ -380,17 +376,9 @@ export class HubService {
     });
 
     return this.prisma.$transaction(async (tx) => {
-      const viewerKey = viewer.visitorId ? await viewerKeyOf(tx, viewer.visitorId) : null;
-
+      const viewerKey = await viewerKeyOf(tx, viewer, this.viewSalt.saltOf(now));
       if (viewerKey === null) {
-        if (!this.keylessViews.admit(viewer.address, projectId, now.getTime())) {
-          return { viewCount: project.viewCount };
-        }
-        return tx.project.update({
-          where: { id: projectId },
-          data: { viewCount: { increment: 1 }, ...keepEditTime(project) },
-          select: { viewCount: true },
-        });
+        return { viewCount: project.viewCount };
       }
 
       const day = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));

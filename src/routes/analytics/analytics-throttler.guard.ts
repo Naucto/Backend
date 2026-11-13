@@ -10,18 +10,13 @@ import {
   ThrottlerStorage,
 } from '@nestjs/throttler';
 
+import { RequestWithOptionalUser } from '../../auth/auth.types';
 import { AnalyticsTallyService } from './analytics-tally.service';
 
 const MINUTE_MS = 60_000;
 
-interface ThrottledRequest {
-  ip?: string;
-  user?: { id: number } | null;
-  body?: unknown;
-}
-
 /** The account for a signed-in call, else the browser's visitor id, else the address. */
-function identityOf(req: ThrottledRequest): string {
+function identityOf(req: RequestWithOptionalUser): string {
   if (req.user) {
     return `u:${String(req.user.id)}`;
   }
@@ -45,13 +40,13 @@ export const ANALYTICS_THROTTLERS: ThrottlerOptions[] = [
     name: 'identity',
     ttl: MINUTE_MS,
     limit: 120,
-    getTracker: (req): string => identityOf(req as ThrottledRequest),
+    getTracker: (req): string => identityOf(req as RequestWithOptionalUser),
   },
   {
     name: 'ip',
     ttl: MINUTE_MS,
     limit: 6_000,
-    getTracker: (req): string => `ip:${(req as ThrottledRequest).ip ?? ''}`,
+    getTracker: (req): string => `ip:${(req as RequestWithOptionalUser).ip ?? ''}`,
   },
 ];
 

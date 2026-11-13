@@ -18,10 +18,9 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { Request } from 'express';
 
 import { Public, RequiresAuth } from '../../auth/access/access.decorators';
-import { UserDto } from '../../auth/dto/user.dto';
+import { RequestWithOptionalUser, RequestWithUser } from '../../auth/auth.types';
 import { ImageUrlResponseDto } from './dto/image-url-response.dto';
 import { LikeResponseDto } from './dto/like-response.dto';
 import {
@@ -37,10 +36,6 @@ import type { PublishedProjectFilters, ReleaseSort, ReleaseWindow } from './hub.
 import { HubService, RELEASE_SORTS, RELEASE_WINDOWS } from './hub.service';
 import { ProjectId } from './project-id.decorator';
 import { parseOptionalInt, parseTags } from './project-query';
-
-interface RequestWithUser extends Request {
-  user: UserDto;
-}
 
 /**
  * A suggestion list shows a handful of tags; a catalogue is a different screen. Not the number of
@@ -274,8 +269,8 @@ export class HubController {
     return this.hubService.getLikeStatus(id, req.user.id);
   }
 
-  // Never reads the account: a play is tied to a viewer only through the visitor of a browser that
-  // consented. Takes JSON sent as text/plain, like the analytics routes.
+  // Public, so a bearer is optional: a signed-in reader counts by account, anyone else by address.
+  // Takes JSON sent as text/plain as well, which older pages still send.
   @Public()
   @Post('releases/:id/view')
   @ApiOperation({
@@ -291,11 +286,11 @@ export class HubController {
   @HttpCode(HttpStatus.OK)
   async registerReleaseView(
     @ProjectId() id: number,
-    @Body() dto: RegisterViewDto,
-    @Req() req: Request,
+    @Body() _dto: RegisterViewDto,
+    @Req() req: RequestWithOptionalUser,
   ): Promise<ViewResponseDto> {
     return this.hubService.registerReleaseView(id, {
-      visitorId: dto.visitorId ?? null,
+      userId: req.user?.id ?? null,
       address: req.ip ?? '',
     });
   }

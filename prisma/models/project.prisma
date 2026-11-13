@@ -85,7 +85,7 @@ model Like {
 }
 
 // One row per viewer per UTC day on a release; viewCount moves only when a row lands, so a
-// reload is not a view. viewerKey is the user's id, or a keyed hash of the address when anonymous.
+// reload is not a view. viewerKey is the user's id, or a hash of the address under that day's salt when anonymous.
 model ReleaseView {
   id        Int      @id @default(autoincrement())
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)

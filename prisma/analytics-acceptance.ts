@@ -37,10 +37,15 @@ import { AnalyticsTallyService } from '../src/routes/analytics/analytics-tally.s
 import { AnalyticsPlayReportDto } from '../src/routes/analytics/dto/analytics-ingest.dto';
 import { AnalyticsRotationDto } from '../src/routes/analytics/dto/analytics-ingest-response.dto';
 import { GeoIpService } from '../src/routes/analytics/geo-ip.service';
-import { lockPurgeGate, lockVisitors } from '../src/routes/analytics/identity-locks';
+import {
+  lockAccount,
+  lockPurgeGate,
+  lockVisitors,
+} from '../src/routes/analytics/identity-locks';
 import { PublishedReleasesService } from '../src/routes/analytics/published-releases.service';
 import { FeaturesService } from '../src/routes/features/features.service';
 import { MultiplayerAccountingService } from '../src/routes/multiplayer/multiplayer-accounting.service';
+import { viewerKeyOf } from '../src/routes/project/viewer-key';
 import { assertLocalDatabase } from './local-database';
 
 const SCRATCH = 'naucto_analytics_acceptance';
@@ -569,7 +574,7 @@ async function main(): Promise<void> {
         const now = at('2026-09-07T12:00:00Z');
         await a.ingest.link(account, visitor, now);
         const held = holdOpen(one, async (tx) => {
-          await lockVisitors(tx, [visitor], 'shared');
+          await lockAccount(tx, account, 'shared');
           await tx.releaseView.create({
             data: {
               projectId: game,
@@ -585,6 +590,38 @@ async function main(): Promise<void> {
         await held.done;
         await erasing;
         expectEqual('no view key left', await one.releaseView.count(), 0);
+      },
+    ],
+    [
+      '15b a release view landing after its account was deleted',
+      async () => {
+        const account = await user('leaver');
+        const game = await release(await user('owner15b'));
+        const viewer = { userId: account, address: '203.0.113.9' };
+        const salt = Buffer.from('acceptance-salt');
+        const keyOf = (): Promise<string | null> =>
+          one.$transaction((tx) => viewerKeyOf(tx, viewer, salt));
+        expectEqual('a live account has its key', await keyOf(), `u:${String(account)}`);
+
+        const deleting = holdOpen(two, async (tx) => {
+          await b.erasure.eraseWithin(tx, account);
+          await tx.user.update({ where: { id: account }, data: { deletedAt: new Date() } });
+        });
+        await deleting.ready;
+        const viewing = one.$transaction(async (tx) => {
+          const viewerKey = await viewerKeyOf(tx, viewer, salt);
+          if (viewerKey !== null) {
+            await tx.releaseView.create({
+              data: { projectId: game, viewerKey, day: at('2026-09-07T00:00:00Z') },
+            });
+          }
+          return viewerKey;
+        });
+        expectEqual('view blocked', await settlesWithin(viewing, 300), false);
+        deleting.release();
+        await deleting.done;
+        expectEqual('no key once the account is gone', await viewing, null);
+        expectEqual('no view key written', await one.releaseView.count(), 0);
       },
     ],
     [
@@ -910,7 +947,7 @@ async function main(): Promise<void> {
   console.log(
     `\n${String(checks.length - failed.length)}/${String(checks.length)} checks passed. ` +
       'Not here: cross-tab account switching (client logic, frontend specs), release transitions ' +
-      '(project-content specs), the keyless view limit (its spec).',
+      '(project-content specs).',
   );
   if (failed.length > 0) {
     process.exitCode = 1;

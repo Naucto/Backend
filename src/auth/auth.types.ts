@@ -11,6 +11,11 @@ export interface RequestWithUser extends Request {
   user: UserDto;
 }
 
+/** A request to a `@Public()` route: the account when a valid bearer came with it, else null. */
+export type RequestWithOptionalUser = Omit<Request, 'user'> & {
+  user?: { id: number } | null;
+};
+
 export interface OAuthUserPayload {
   email: string;
   name: string;
