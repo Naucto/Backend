@@ -109,6 +109,21 @@ describe('YjsWebRTCServer', () => {
     expect(internals.wss().topics.has('room')).toBe(false);
   });
 
+  it('counts the sockets subscribed to a topic, and none for a topic nobody holds', () => {
+    const first = connect();
+    const second = connect();
+    deliver(first, { type: 'subscribe', topics: ['room'] });
+    deliver(second, { type: 'subscribe', topics: ['room'] });
+
+    expect(server.subscriberCount('room')).toBe(2);
+    expect(server.subscriberCount('elsewhere')).toBe(0);
+
+    first.emit('close', 1000, Buffer.alloc(0));
+    second.emit('close', 1000, Buffer.alloc(0));
+
+    expect(server.subscriberCount('room')).toBe(0);
+  });
+
   it('takes a closing socket out of every topic and forgets those left empty', () => {
     const leaving = connect();
     const staying = connect();

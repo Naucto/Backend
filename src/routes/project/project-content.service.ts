@@ -7,9 +7,11 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AnalyticsFactType, Prisma, Project } from '@prisma/client';
 import { Readable } from 'stream';
 
+import { PROJECT_CHANGED, ProjectChangedEvent } from '../../common/domain-events';
 import { getOptionalEnv } from '../../config/env';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AnalyticsFactService, releaseFactKey } from '../analytics/analytics-fact.service';
@@ -122,6 +124,7 @@ export class ProjectContentService {
     private readonly edgeService: EdgeService,
     private readonly projectService: ProjectService,
     private readonly facts: AnalyticsFactService,
+    private readonly eventEmitter: EventEmitter2,
   ) {
     // The default keeps only the last few autosaves: a state worth keeping longer is one the
     // author names, and a named version is never pruned.
@@ -386,6 +389,7 @@ export class ProjectContentService {
         });
       }
     });
+    this.eventEmitter.emit(PROJECT_CHANGED, new ProjectChangedEvent(projectId));
   }
 
   async publish(projectId: number, actorUserId: number): Promise<void> {
@@ -418,6 +422,7 @@ export class ProjectContentService {
         });
       }
     });
+    this.eventEmitter.emit(PROJECT_CHANGED, new ProjectChangedEvent(projectId));
 
     await this.s3Service.deleteFile({ key: projectKeys.release(projectId) });
   }

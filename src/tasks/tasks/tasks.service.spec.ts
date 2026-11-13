@@ -1,12 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 
-import { PrismaService } from '../../prisma/prisma.service';
 import { ProjectContentService } from '../../routes/project/project-content.service';
-import { TasksService } from './tasks.service';
+import { WorkSessionService } from '../../routes/work-session/work-session.service';
+import { TasksService, WORK_SESSION_TIMEOUT_MS } from './tasks.service';
 
 describe('TasksService', () => {
   let service: TasksService;
 
+  const workSessions = { sweepAbandoned: jest.fn() };
   const contentServiceMock = {
     findProjectsWithoutContentSize: jest.fn(),
     recomputeContentSize: jest.fn(),
@@ -16,13 +17,7 @@ describe('TasksService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TasksService,
-        {
-          provide: PrismaService,
-          useValue: {
-            $connect: jest.fn(),
-            $disconnect: jest.fn(),
-          },
-        },
+        { provide: WorkSessionService, useValue: workSessions },
         {
           provide: ProjectContentService,
           useValue: contentServiceMock,
@@ -36,6 +31,16 @@ describe('TasksService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  it('sweeps the work sessions nobody saved into for the timeout', async () => {
+    const before = Date.now();
+
+    await service.cleanTimedOutWorkSessions();
+
+    const [olderThan] = workSessions.sweepAbandoned.mock.calls[0] as [Date];
+    expect(olderThan.getTime()).toBeGreaterThanOrEqual(before - WORK_SESSION_TIMEOUT_MS);
+    expect(olderThan.getTime()).toBeLessThanOrEqual(Date.now() - WORK_SESSION_TIMEOUT_MS);
   });
 
   describe('backfillProjectContentSizes', () => {

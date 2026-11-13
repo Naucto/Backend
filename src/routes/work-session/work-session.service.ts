@@ -1,7 +1,9 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { WorkSession } from '@prisma/client';
 
 import { UserDto } from '../../auth/dto/user.dto';
+import { ACTIVITY_CHANGED, ActivityChangedEvent } from '../../common/domain-events';
 import { isUniqueViolation, PrismaService } from '../../prisma/prisma.service';
 import { YjsWebRTCServer } from '../../webrtc/server/webrtc.server.yjs';
 import { WebRTCService } from '../../webrtc/webrtc.service';
@@ -16,6 +18,7 @@ export class WorkSessionService {
   constructor(
     private prismaService: PrismaService,
     private webrtcService: WebRTCService,
+    private eventEmitter: EventEmitter2,
   ) {
     this._collabServer = new YjsWebRTCServer(webrtcService, 'Collaboration');
   }
@@ -98,6 +101,8 @@ export class WorkSessionService {
     response.hostId = await this.electHost(workSession.id);
     response.webrtcOffer = this.webrtcService.buildOffer(this._collabServer);
 
+    this.eventEmitter.emit(ACTIVITY_CHANGED, new ActivityChangedEvent(user.id));
+
     return response;
   }
 
@@ -120,6 +125,32 @@ export class WorkSessionService {
       },
     });
     await this.electHost(workSession.id);
+
+    this.eventEmitter.emit(ACTIVITY_CHANGED, new ActivityChangedEvent(userId));
+  }
+
+  async sweepAbandoned(olderThan: Date): Promise<void> {
+    const where = { lastSaveAt: { lt: olderThan } };
+    const abandoned = (
+      await this.prismaService.workSession.findMany({
+        where,
+        select: { id: true, roomId: true, users: { select: { id: true } } },
+      })
+    ).filter((session) => this._collabServer.subscriberCount(session.roomId) === 0);
+
+    if (abandoned.length === 0) {
+      return;
+    }
+
+    await this.prismaService.workSession.deleteMany({
+      where: { ...where, id: { in: abandoned.map((session) => session.id) } },
+    });
+
+    for (const session of abandoned) {
+      for (const user of session.users) {
+        this.eventEmitter.emit(ACTIVITY_CHANGED, new ActivityChangedEvent(user.id));
+      }
+    }
   }
 
   async leave(projectId: number, user: UserDto): Promise<void> {

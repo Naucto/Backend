@@ -3,6 +3,7 @@ import { TestingModule } from '@nestjs/testing';
 
 import { withEnv } from '../../../test/env';
 import { draft, ProjectMocks, released } from '../../../test/project-mocks';
+import { PROJECT_CHANGED, ProjectChangedEvent } from '../../common/domain-events';
 import { ProjectService } from './project.service';
 import { COLLABORATOR_SELECT, CREATOR_SELECT } from './project-select';
 
@@ -10,8 +11,15 @@ describe('ProjectService', () => {
   let service: ProjectService;
 
   const mocks = new ProjectMocks();
-  const { prismaMock, txMock, factsMock, s3ServiceMock, notificationsMock, workSessionsMock } =
-    mocks;
+  const {
+    prismaMock,
+    txMock,
+    factsMock,
+    s3ServiceMock,
+    notificationsMock,
+    workSessionsMock,
+    eventEmitterMock,
+  } = mocks;
 
   beforeEach(async () => {
     withEnv({
@@ -170,6 +178,10 @@ describe('ProjectService', () => {
         where: { id: 1 },
         data: { ...updateDto, tags: ['Action'] },
       });
+      expect(eventEmitterMock.emit).toHaveBeenCalledWith(
+        PROJECT_CHANGED,
+        new ProjectChangedEvent(1),
+      );
     });
 
     it('should throw NotFoundException if project does not exist', async () => {
@@ -197,6 +209,10 @@ describe('ProjectService', () => {
         where: { id: 1 },
         data: { iconUrl: 'https://cdn.test/projects/1/image' },
       });
+      expect(eventEmitterMock.emit).toHaveBeenCalledWith(
+        PROJECT_CHANGED,
+        new ProjectChangedEvent(1),
+      );
     });
   });
 

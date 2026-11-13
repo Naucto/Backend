@@ -1,7 +1,9 @@
 import { NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
 
+import { ACTIVITY_CHANGED, ActivityChangedEvent } from '../../common/domain-events';
 import { PrismaService } from '../../prisma/prisma.service';
 import { YjsWebRTCServer } from '../../webrtc/server/webrtc.server.yjs';
 import { WebRTCService } from '../../webrtc/webrtc.service';
@@ -20,8 +22,11 @@ describe('WorkSessionService', () => {
       findFirst: jest.fn(),
       findUnique: jest.fn(),
       update: jest.fn(),
+      findMany: jest.fn(),
+      deleteMany: jest.fn(),
     },
   };
+  const eventEmitter = { emit: jest.fn() };
   const me = { id: 7 } as Parameters<WorkSessionService['join']>[1];
 
   beforeEach(async () => {
@@ -41,6 +46,7 @@ describe('WorkSessionService', () => {
             buildOffer: jest.fn(),
           },
         },
+        { provide: EventEmitter2, useValue: eventEmitter },
       ],
     }).compile();
 
@@ -80,6 +86,7 @@ describe('WorkSessionService', () => {
         roomId: 'room-uuid',
         hostId: 7,
       });
+      expect(eventEmitter.emit).toHaveBeenCalledWith(ACTIVITY_CHANGED, new ActivityChangedEvent(7));
       expect(prismaMock.workSession.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
           project: { connect: { id: 5 } },
@@ -227,6 +234,7 @@ describe('WorkSessionService', () => {
         where: { id: 1 },
         data: { host: { connect: { id: 3 } } },
       });
+      expect(eventEmitter.emit).toHaveBeenCalledWith(ACTIVITY_CHANGED, new ActivityChangedEvent(7));
     });
 
     it('keeps the recorded host over an empty room', async () => {
@@ -236,6 +244,47 @@ describe('WorkSessionService', () => {
       await service.leave(5, me);
 
       expect(prismaMock.workSession.update).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('sweepAbandoned', () => {
+    const olderThan = new Date('2026-10-22T12:00:00Z');
+    const collab = (): jest.Mocked<YjsWebRTCServer> => {
+      const { instances } = jest.mocked(YjsWebRTCServer).mock;
+      return instances[instances.length - 1] as jest.Mocked<YjsWebRTCServer>;
+    };
+
+    it('deletes only the stale sessions whose room is empty, and refreshes their members', async () => {
+      prismaMock.workSession.findMany.mockResolvedValueOnce([
+        { id: 1, roomId: 'empty', users: [{ id: 3 }, { id: 4 }] },
+        { id: 2, roomId: 'open', users: [{ id: 5 }] },
+      ]);
+      collab().subscriberCount.mockImplementation((roomId) => (roomId === 'open' ? 1 : 0));
+
+      await service.sweepAbandoned(olderThan);
+
+      expect(prismaMock.workSession.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { lastSaveAt: { lt: olderThan } } }),
+      );
+      expect(prismaMock.workSession.deleteMany).toHaveBeenCalledWith({
+        where: { lastSaveAt: { lt: olderThan }, id: { in: [1] } },
+      });
+      expect(eventEmitter.emit.mock.calls).toEqual([
+        [ACTIVITY_CHANGED, new ActivityChangedEvent(3)],
+        [ACTIVITY_CHANGED, new ActivityChangedEvent(4)],
+      ]);
+    });
+
+    it('deletes nothing when every stale session still has someone connected', async () => {
+      prismaMock.workSession.findMany.mockResolvedValueOnce([
+        { id: 2, roomId: 'open', users: [{ id: 5 }] },
+      ]);
+      collab().subscriberCount.mockReturnValue(1);
+
+      await service.sweepAbandoned(olderThan);
+
+      expect(prismaMock.workSession.deleteMany).not.toHaveBeenCalled();
+      expect(eventEmitter.emit).not.toHaveBeenCalled();
     });
   });
 });

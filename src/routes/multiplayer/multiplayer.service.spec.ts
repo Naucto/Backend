@@ -1,8 +1,10 @@
 import { Logger, NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { GameSessionVisibility, Prisma } from '@prisma/client';
 
+import { ACTIVITY_CHANGED, ActivityChangedEvent } from '../../common/domain-events';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SyncedGameTableWebRTCServer } from '../../webrtc/server/webrtc.server.synced-game-table';
@@ -88,12 +90,14 @@ describe('MultiplayerService', () => {
     findMany: jest.fn(),
     update: jest.fn(),
     updateMany: jest.fn(),
+    updateManyAndReturn: jest.fn(),
   };
   const $transaction = jest.fn();
 
   const user = { findUnique: jest.fn() };
   const project = { count: jest.fn() };
   const notificationsService = { createNotification: jest.fn() };
+  const eventEmitter = { emit: jest.fn() };
   const friendsService = { areFriends: jest.fn(), friendIdsOf: jest.fn() };
   const projectService = { findOne: jest.fn() };
   const webrtcService = { buildOffer: jest.fn() };
@@ -151,6 +155,7 @@ describe('MultiplayerService', () => {
         { provide: JwtService, useValue: jwtService },
         { provide: FriendsService, useValue: friendsService },
         { provide: NotificationsService, useValue: notificationsService },
+        { provide: EventEmitter2, useValue: eventEmitter },
         { provide: MultiplayerAccountingService, useValue: accounting },
       ],
     }).compile();
@@ -225,7 +230,7 @@ describe('MultiplayerService', () => {
     it("ends the host's previous session before creating a new one", async () => {
       projectService.findOne.mockResolvedValueOnce(makeProject());
       gameSession.findFirst.mockResolvedValueOnce(makeSession({ sessionId: 'old-uuid' }));
-      gameSession.updateMany.mockResolvedValueOnce({ count: 1 });
+      gameSession.updateManyAndReturn.mockResolvedValueOnce([{ hostId: 1 }]);
       gameSession.create.mockResolvedValueOnce(makeSession());
 
       await service.create(1, {
@@ -235,7 +240,7 @@ describe('MultiplayerService', () => {
         visibility: GameSessionVisibility.PUBLIC,
       });
 
-      expect(gameSession.updateMany).toHaveBeenCalledWith(
+      expect(gameSession.updateManyAndReturn).toHaveBeenCalledWith(
         expect.objectContaining({ where: { sessionId: 'old-uuid', endedAt: null } }),
       );
       expect(gameTable().server.closeRoom).toHaveBeenCalledWith('old-uuid');
@@ -257,6 +262,7 @@ describe('MultiplayerService', () => {
       expect(result.sessionUuid).toBe('session-uuid');
       expect(result.connectionTicket).toBe('signed.ticket');
       expect(jwtService.sign).toHaveBeenCalled();
+      expect(eventEmitter.emit).toHaveBeenCalledWith(ACTIVITY_CHANGED, new ActivityChangedEvent(1));
     });
 
     it.each([
@@ -494,6 +500,7 @@ describe('MultiplayerService', () => {
       await service.update('session-uuid', 1, { maxPlayers: 6 });
 
       expect(gameTable().server.resizeRoom).toHaveBeenCalledWith('session-uuid', 6);
+      expect(eventEmitter.emit).toHaveBeenCalledWith(ACTIVITY_CHANGED, new ActivityChangedEvent(1));
     });
 
     it('leaves the room alone when the seat count is not part of the update', async () => {
@@ -680,6 +687,7 @@ describe('MultiplayerService', () => {
           data: { otherUsers: { connect: { id: 2 } } },
         }),
       );
+      expect(eventEmitter.emit).toHaveBeenCalledWith(ACTIVITY_CHANGED, new ActivityChangedEvent(1));
     });
 
     it('connects nobody twice when a concurrent join got there first', async () => {
@@ -821,11 +829,11 @@ describe('MultiplayerService', () => {
 
     it('delete soft-ends the session and closes the room', async () => {
       gameSession.findFirst.mockResolvedValueOnce(makeSession({ hostId: 1 }));
-      gameSession.updateMany.mockResolvedValueOnce({ count: 1 });
+      gameSession.updateManyAndReturn.mockResolvedValueOnce([{ hostId: 1 }]);
 
       await service.delete('session-uuid', 1);
 
-      expect(gameSession.updateMany).toHaveBeenCalledWith(
+      expect(gameSession.updateManyAndReturn).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { sessionId: 'session-uuid', endedAt: null },
         }),
@@ -1236,21 +1244,30 @@ describe('MultiplayerService', () => {
 
   describe('endSession', () => {
     it('soft-ends an active session', async () => {
-      gameSession.updateMany.mockResolvedValueOnce({ count: 1 });
+      gameSession.updateManyAndReturn.mockResolvedValueOnce([{ hostId: 4 }]);
 
       await service.endSession('session-uuid');
 
-      expect(gameSession.updateMany).toHaveBeenCalledWith(
+      expect(gameSession.updateManyAndReturn).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { sessionId: 'session-uuid', endedAt: null },
         }),
       );
       expect(accounting.sessionEnded).toHaveBeenCalledWith('session-uuid');
+      expect(eventEmitter.emit).toHaveBeenCalledWith(ACTIVITY_CHANGED, new ActivityChangedEvent(4));
+    });
+
+    it('tells nobody about a session that had already ended', async () => {
+      gameSession.updateManyAndReturn.mockResolvedValueOnce([]);
+
+      await service.endSession('session-uuid');
+
+      expect(eventEmitter.emit).not.toHaveBeenCalled();
     });
 
     it('logs a failure instead of throwing it', async () => {
       const logged = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
-      gameSession.updateMany.mockRejectedValueOnce(new Error('database is gone'));
+      gameSession.updateManyAndReturn.mockRejectedValueOnce(new Error('database is gone'));
 
       await expect(service.endSession('session-uuid')).resolves.toBeUndefined();
       expect(logged).toHaveBeenCalledWith(expect.stringContaining('database is gone'));
@@ -1263,8 +1280,8 @@ describe('MultiplayerService', () => {
     it('soft-ends orphaned sessions left active past the max lifetime', async () => {
       jest.spyOn(service, 'connectedPlayerCount').mockReturnValue(0);
       gameSession.findMany.mockResolvedValueOnce([
-        { sessionId: 'stale-1' },
-        { sessionId: 'stale-2' },
+        { sessionId: 'stale-1', hostId: 1 },
+        { sessionId: 'stale-2', hostId: 2 },
       ]);
       gameSession.updateMany.mockResolvedValueOnce({ count: 2 });
 
@@ -1284,13 +1301,15 @@ describe('MultiplayerService', () => {
       expect(gameTable().server.closeRoom).toHaveBeenCalledWith('stale-2');
       expect(accounting.sessionEnded).toHaveBeenCalledWith('stale-1');
       expect(accounting.sessionEnded).toHaveBeenCalledWith('stale-2');
+      expect(eventEmitter.emit).toHaveBeenCalledWith(ACTIVITY_CHANGED, new ActivityChangedEvent(1));
+      expect(eventEmitter.emit).toHaveBeenCalledWith(ACTIVITY_CHANGED, new ActivityChangedEvent(2));
     });
 
     it('leaves a still-live long-running session untouched', async () => {
       jest
         .spyOn(service, 'connectedPlayerCount')
         .mockImplementation((sessionId) => (sessionId === 'live' ? 3 : 0));
-      gameSession.findMany.mockResolvedValueOnce([{ sessionId: 'live' }]);
+      gameSession.findMany.mockResolvedValueOnce([{ sessionId: 'live', hostId: 1 }]);
 
       await service.reapStaleSessions();
 
@@ -1301,10 +1320,10 @@ describe('MultiplayerService', () => {
 
   describe('game-table server', () => {
     it('ends the session when the server reports its host gone', () => {
-      gameSession.updateMany.mockResolvedValueOnce({ count: 1 });
+      gameSession.updateManyAndReturn.mockResolvedValueOnce([{ hostId: 1 }]);
       gameTable().onHostDisconnected('session-uuid');
 
-      expect(gameSession.updateMany).toHaveBeenCalledWith(
+      expect(gameSession.updateManyAndReturn).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { sessionId: 'session-uuid', endedAt: null },
         }),
@@ -1359,6 +1378,7 @@ describe('MultiplayerService', () => {
           data: { otherUsers: { disconnect: { id: 2 } } },
         }),
       );
+      expect(eventEmitter.emit).toHaveBeenCalledWith(ACTIVITY_CHANGED, new ActivityChangedEvent(1));
     });
   });
 });
