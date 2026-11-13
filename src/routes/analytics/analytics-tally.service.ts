@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnApplicationShutdown } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
-import { AnalyticsLiveState, Prisma } from '@prisma/client';
+import { AnalyticsAnonConsent, AnalyticsLiveState, Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { hostname } from 'os';
 
@@ -16,6 +16,7 @@ interface PingTally {
   minute: Date;
   state: AnalyticsLiveState;
   signedIn: boolean;
+  consent: AnalyticsAnonConsent;
   releaseId: number;
   beats: number;
   playsStarted: number;
@@ -28,6 +29,7 @@ export interface PingInput {
   kind: PingKind;
   state: AnalyticsLiveState;
   signedIn: boolean;
+  consent: AnalyticsAnonConsent;
   /** 0 when the tab is not on a published game. */
   releaseId: number;
   playMs: number;
@@ -49,13 +51,14 @@ export class AnalyticsTallyService implements OnApplicationShutdown {
 
   recordPing(ping: PingInput, at = new Date()): void {
     const minute = minuteStart(at);
-    const key = `${minute.toISOString()}|${ping.state}|${String(ping.signedIn)}|${String(ping.releaseId)}`;
+    const key = `${minute.toISOString()}|${ping.state}|${String(ping.signedIn)}|${String(ping.releaseId)}|${ping.consent}`;
     let tally = this.pings.get(key);
     if (!tally) {
       tally = {
         minute,
         state: ping.state,
         signedIn: ping.signedIn,
+        consent: ping.consent,
         releaseId: ping.releaseId,
         beats: 0,
         playsStarted: 0,
@@ -116,10 +119,10 @@ export class AnalyticsTallyService implements OnApplicationShutdown {
 
   private addPings(tally: PingTally): Prisma.PrismaPromise<number> {
     return this.prisma.$executeRaw`
-      INSERT INTO "AnalyticsAnonTally" ("minute", "state", "signedIn", "releaseId", "beats", "playsStarted", "playMs")
+      INSERT INTO "AnalyticsAnonTally" ("minute", "state", "signedIn", "releaseId", "consent", "beats", "playsStarted", "playMs")
       VALUES (${tally.minute}, ${tally.state}::"AnalyticsLiveState", ${tally.signedIn}, ${tally.releaseId},
-              ${tally.beats}, ${tally.playsStarted}, ${tally.playMs}::bigint)
-      ON CONFLICT ("minute", "state", "signedIn", "releaseId") DO UPDATE
+              ${tally.consent}::"AnalyticsAnonConsent", ${tally.beats}, ${tally.playsStarted}, ${tally.playMs}::bigint)
+      ON CONFLICT ("minute", "state", "signedIn", "releaseId", "consent") DO UPDATE
       SET "beats" = "AnalyticsAnonTally"."beats" + EXCLUDED."beats",
           "playsStarted" = "AnalyticsAnonTally"."playsStarted" + EXCLUDED."playsStarted",
           "playMs" = "AnalyticsAnonTally"."playMs" + EXCLUDED."playMs"`;

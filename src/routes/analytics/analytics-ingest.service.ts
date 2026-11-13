@@ -226,6 +226,7 @@ export class AnalyticsIngestService {
         kind: dto.kind,
         state: dto.state,
         signedIn: dto.signedIn,
+        consent: dto.consent ?? 'UNKNOWN',
         releaseId,
         // Running time only counts against a published game.
         playMs: releaseId === 0 ? 0 : (dto.playMs ?? 0),

@@ -1,12 +1,22 @@
 /**
- * Who a metric counts. Metrics never mix populations silently: a metric over `C_AND_A` says so.
- * - `C`: browsers that granted analytics consent, identified by their visitor cookie.
- * - `C_LINKED`: consenting browsers linked to an account.
- * - `A`: tabs that declined or never answered; they send identifier-free pings only.
- * - `F`: server-side business facts and multiplayer rooms, for every account.
- * - `PRESENCE`: accounts holding an open app socket, as `PresenceService` sees them.
+ * Whom a metric can count, so a reader knows whether people who refused analytics are in it.
+ * Metrics never mix them silently: a metric counting both says `CONSENTED_AND_ANONYMOUS`.
+ * - `CONSENTED`: browsers that accepted analytics, followed under their visitor cookie, and the
+ *   accounts those browsers are linked to.
+ * - `ANONYMOUS`: tabs that refused analytics or never answered. Their pings carry no identifier, so
+ *   they are counted but never followed or counted once each.
+ * - `CONSENTED_AND_ANONYMOUS`: both of the above.
+ * - `SERVER`: what the server records itself for every account, whatever its answer: sign-ups,
+ *   projects, releases, multiplayer rooms and open app sockets.
  */
-export type MetricPopulation = 'C' | 'C_LINKED' | 'A' | 'C_AND_A' | 'F' | 'PRESENCE';
+export const METRIC_POPULATIONS = [
+  'CONSENTED',
+  'ANONYMOUS',
+  'CONSENTED_AND_ANONYMOUS',
+  'SERVER',
+] as const;
+
+export type MetricPopulation = (typeof METRIC_POPULATIONS)[number];
 
 /**
  * How values combine across days.
@@ -82,7 +92,7 @@ const PRESENCE_DIMENSIONS = ['state', 'hour'] as const satisfies readonly Metric
 
 export const METRICS = {
   pageviews: {
-    population: 'C',
+    population: 'CONSENTED',
     kind: 'additive',
     finalization: 'ACTIVITY',
     version: 1,
@@ -91,7 +101,7 @@ export const METRICS = {
       'Finished navigations to a new path (query and fragment ignored), outside oauth/**, credited on the UTC day they occurred.',
   },
   sessions: {
-    population: 'C',
+    population: 'CONSENTED',
     kind: 'additive',
     finalization: 'SESSION',
     version: 1,
@@ -100,7 +110,7 @@ export const METRICS = {
       'Sessions started on the day. A session ends after 30 min without activity and lasts at most 12 h.',
   },
   sessions_bounced: {
-    population: 'C',
+    population: 'CONSENTED',
     kind: 'additive',
     finalization: 'SESSION',
     version: 1,
@@ -108,7 +118,7 @@ export const METRICS = {
     definition: 'Closed sessions started on the day with exactly one page view and no play.',
   },
   session_seconds_total: {
-    population: 'C',
+    population: 'CONSENTED',
     kind: 'additive',
     finalization: 'SESSION',
     version: 1,
@@ -117,7 +127,7 @@ export const METRICS = {
       'Sum of the durations of sessions started on the day, from first to last activity received.',
   },
   session_seconds_median: {
-    population: 'C',
+    population: 'CONSENTED',
     kind: 'perGrain',
     finalization: 'SESSION',
     version: 1,
@@ -125,7 +135,7 @@ export const METRICS = {
     definition: 'Median duration of the sessions started in the period.',
   },
   active_minutes: {
-    population: 'C',
+    population: 'CONSENTED',
     kind: 'additive',
     finalization: 'ACTIVITY',
     version: 1,
@@ -134,7 +144,7 @@ export const METRICS = {
       'UTC minutes in which a session sent a beat or a page view, each minute counted once per session however many tabs were open.',
   },
   build_minutes: {
-    population: 'C',
+    population: 'CONSENTED',
     kind: 'additive',
     finalization: 'ACTIVITY',
     version: 1,
@@ -142,7 +152,7 @@ export const METRICS = {
     definition: 'Active minutes in which the session was in the editor.',
   },
   plays: {
-    population: 'C_AND_A',
+    population: 'CONSENTED_AND_ANONYMOUS',
     kind: 'additive',
     finalization: 'ACTIVITY',
     version: 1,
@@ -151,7 +161,7 @@ export const METRICS = {
       'Presses of Play on a published game that started it running, a restart counting as a new play. Plays reopened after a consent, identity or session change are not counted again.',
   },
   playtime_ms: {
-    population: 'C_AND_A',
+    population: 'CONSENTED_AND_ANONYMOUS',
     kind: 'additive',
     finalization: 'ACTIVITY',
     version: 1,
@@ -160,7 +170,7 @@ export const METRICS = {
       'Time a published game ran in a visible tab, credited on the UTC day the server received each progress report.',
   },
   visitors: {
-    population: 'C',
+    population: 'CONSENTED',
     kind: 'perGrain',
     finalization: 'ACTIVITY',
     version: 1,
@@ -168,7 +178,7 @@ export const METRICS = {
     definition: 'Distinct consenting browsers with a page view or a beat in the period.',
   },
   visitors_new: {
-    population: 'C',
+    population: 'CONSENTED',
     kind: 'perGrain',
     finalization: 'ACTIVITY',
     version: 1,
@@ -176,7 +186,7 @@ export const METRICS = {
     definition: 'Visitors first seen in the period.',
   },
   visitors_returning: {
-    population: 'C',
+    population: 'CONSENTED',
     kind: 'perGrain',
     finalization: 'ACTIVITY',
     version: 1,
@@ -184,7 +194,7 @@ export const METRICS = {
     definition: 'Visitors first seen before the period.',
   },
   players: {
-    population: 'C',
+    population: 'CONSENTED',
     kind: 'perGrain',
     finalization: 'ACTIVITY',
     version: 1,
@@ -193,7 +203,7 @@ export const METRICS = {
       'Distinct consenting browsers with a play started or playtime credited in the period. Per-release values are never summed into the total.',
   },
   accounts_active: {
-    population: 'C_LINKED',
+    population: 'CONSENTED',
     kind: 'perGrain',
     finalization: 'ACTIVITY',
     version: 1,
@@ -202,7 +212,7 @@ export const METRICS = {
       'Distinct accounts with an active linked consenting browser in the period. Accounts that declined are not seen.',
   },
   builders_active: {
-    population: 'C_LINKED',
+    population: 'CONSENTED',
     kind: 'perGrain',
     finalization: 'ACTIVITY',
     version: 1,
@@ -210,7 +220,7 @@ export const METRICS = {
     definition: 'Distinct accounts with at least one build minute in the period.',
   },
   signups: {
-    population: 'F',
+    population: 'SERVER',
     kind: 'additive',
     finalization: 'FACT',
     version: 1,
@@ -218,7 +228,7 @@ export const METRICS = {
     definition: 'Accounts created on the day, by password or by OAuth.',
   },
   projects_created: {
-    population: 'F',
+    population: 'SERVER',
     kind: 'additive',
     finalization: 'FACT',
     version: 1,
@@ -226,7 +236,7 @@ export const METRICS = {
     definition: 'Projects created on the day. Later deletion does not change the count.',
   },
   releases_published: {
-    population: 'F',
+    population: 'SERVER',
     kind: 'additive',
     finalization: 'FACT',
     version: 1,
@@ -234,7 +244,7 @@ export const METRICS = {
     definition: 'Transitions of a project from unpublished to published.',
   },
   releases_updated: {
-    population: 'F',
+    population: 'SERVER',
     kind: 'additive',
     finalization: 'FACT',
     version: 1,
@@ -243,7 +253,7 @@ export const METRICS = {
       'Changes to the content or published metadata of a release that was already published. Republishing identical content is not counted.',
   },
   releases_unpublished: {
-    population: 'F',
+    population: 'SERVER',
     kind: 'additive',
     finalization: 'FACT',
     version: 1,
@@ -251,7 +261,7 @@ export const METRICS = {
     definition: 'Transitions of a project from published to unpublished.',
   },
   mp_rooms_created: {
-    population: 'F',
+    population: 'SERVER',
     kind: 'additive',
     finalization: 'MULTIPLAYER',
     version: 1,
@@ -259,7 +269,7 @@ export const METRICS = {
     definition: 'Multiplayer rooms created through the API, editor tests excluded.',
   },
   mp_rooms_connected: {
-    population: 'F',
+    population: 'SERVER',
     kind: 'additive',
     finalization: 'MULTIPLAYER',
     version: 1,
@@ -267,7 +277,7 @@ export const METRICS = {
     definition: 'Rooms whose first socket connected on the day, editor tests excluded.',
   },
   mp_sessions: {
-    population: 'F',
+    population: 'SERVER',
     kind: 'additive',
     finalization: 'MULTIPLAYER',
     version: 1,
@@ -276,7 +286,7 @@ export const METRICS = {
       'Rooms that first had two or more seats connected at once on the day, editor tests excluded.',
   },
   mp_participants: {
-    population: 'F',
+    population: 'SERVER',
     kind: 'additive',
     finalization: 'MULTIPLAYER',
     version: 1,
@@ -285,7 +295,7 @@ export const METRICS = {
       'Seats that connected to a room for the first time on the day, counted once per room. A seat reconnecting after a backend restart may count twice.',
   },
   mp_minutes: {
-    population: 'F',
+    population: 'SERVER',
     kind: 'additive',
     finalization: 'MULTIPLAYER',
     version: 1,
@@ -293,7 +303,7 @@ export const METRICS = {
     definition: 'Wall-clock minutes with two or more seats connected to a room.',
   },
   mp_player_minutes: {
-    population: 'F',
+    population: 'SERVER',
     kind: 'additive',
     finalization: 'MULTIPLAYER',
     version: 1,
@@ -301,7 +311,7 @@ export const METRICS = {
     definition: 'Sum of the connected time of every seat.',
   },
   active_browsers_peak: {
-    population: 'C',
+    population: 'CONSENTED',
     kind: 'max',
     finalization: 'PRESENCE',
     version: 1,
@@ -310,7 +320,7 @@ export const METRICS = {
       'Highest number of distinct consenting browsers with a beat in one UTC minute, each counted once in its highest state. Minute-active, not instantaneous.',
   },
   anon_tabs_peak: {
-    population: 'A',
+    population: 'ANONYMOUS',
     kind: 'max',
     finalization: 'PRESENCE',
     version: 1,
@@ -319,7 +329,7 @@ export const METRICS = {
       'Highest number of anonymous pings received in one UTC minute: an estimate of visible anonymous tabs, where one person with three tabs counts three times.',
   },
   accounts_peak: {
-    population: 'PRESENCE',
+    population: 'SERVER',
     kind: 'max',
     finalization: 'PRESENCE',
     version: 1,
@@ -328,7 +338,7 @@ export const METRICS = {
       'Highest number of accounts holding an open app socket at a sample, hidden tabs included. The only instantaneous series.',
   },
   presence_minutes_sampled: {
-    population: 'PRESENCE',
+    population: 'SERVER',
     kind: 'additive',
     finalization: 'PRESENCE',
     version: 1,
@@ -337,7 +347,7 @@ export const METRICS = {
       'Minutes for which a presence sample exists; the denominator of every presence mean.',
   },
   active_browser_minutes: {
-    population: 'C',
+    population: 'CONSENTED',
     kind: 'additive',
     finalization: 'PRESENCE',
     version: 1,
@@ -345,7 +355,7 @@ export const METRICS = {
     definition: 'Sum over sampled minutes of the minute-active browsers.',
   },
   anon_tab_minutes: {
-    population: 'A',
+    population: 'ANONYMOUS',
     kind: 'additive',
     finalization: 'PRESENCE',
     version: 1,

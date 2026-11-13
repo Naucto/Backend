@@ -1,5 +1,10 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { AnalyticsGrain, AnalyticsLiveState, AnalyticsRetentionKind } from '@prisma/client';
+import {
+  AnalyticsAnonConsent,
+  AnalyticsGrain,
+  AnalyticsLiveState,
+  AnalyticsRetentionKind,
+} from '@prisma/client';
 
 import { PresenceService } from '../../presence/presence.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -37,6 +42,7 @@ import {
   AnalyticsRangeQueryDto,
   AnalyticsRetentionQueryDto,
   AnalyticsSeriesQueryDto,
+  GameSort,
 } from './dto/admin-analytics-query.dto';
 import {
   AnalyticsBreakdownDto,
@@ -79,6 +85,28 @@ const COMPUTE: Record<RollupClass, typeof activityMetrics> = {
   MULTIPLAYER: multiplayerMetrics,
   PRESENCE: presenceMetrics,
 };
+
+const GAME_SORT_FIELDS = {
+  plays: 'plays',
+  playtime_ms: 'playtimeMs',
+  players: 'players',
+  mp_sessions: 'mpSessions',
+} as const satisfies Record<GameSort, string>;
+
+interface GameTotals {
+  plays: number;
+  playtimeMs: number;
+  players: number | null;
+  mpSessions: number;
+}
+
+interface RangeSplit {
+  status: AnalyticsPointDto['status'];
+  /** Days neither final nor computable any more, left out of the values. */
+  missingDays: number;
+  /** By dimension value, without the dimension's name. */
+  values: Map<string, number>;
+}
 
 interface Provisional {
   at: number;
@@ -153,21 +181,18 @@ export class AnalyticsQueryService {
     if (!(metric.dimensions as readonly string[]).includes(query.dimension)) {
       throw new BadRequestException(`${query.metric} is not split by ${query.dimension}`);
     }
-    const period = periodOf(query.grain, query.day);
-    const { status, values } = await this.valuesOf(query.metric, period, now);
-    const prefix = `${query.dimension}:`;
-    const split = values
-      .filter((value) => value.metric === query.metric && value.dimension.startsWith(prefix))
-      .map((value) => ({ key: value.dimension.slice(prefix.length), value: value.value }))
-      .sort((a, b) => b.value - a.value);
+    const split = await this.splitOver(query.metric, query.dimension, this.daysOf(query), now);
     return {
       metric: query.metric,
       dimension: query.dimension,
-      grain: query.grain,
-      periodStart: period.start,
-      status,
-      truncated: split.some((value) => value.key === OTHER_DIMENSION_VALUE),
-      values: status === 'unavailable' ? [] : split,
+      from: query.from,
+      to: query.to,
+      status: split.status,
+      missingDays: split.missingDays,
+      truncated: split.values.has(OTHER_DIMENSION_VALUE),
+      values: [...split.values]
+        .map(([key, value]) => ({ key, value }))
+        .sort((a, b) => b.value - a.value),
     };
   }
 
@@ -202,6 +227,13 @@ export class AnalyticsQueryService {
       where: { minute },
       _sum: { beats: true },
     });
+    const answers = await this.prisma.analyticsAnonTally.groupBy({
+      by: ['consent'],
+      where: { minute },
+      _sum: { beats: true },
+    });
+    const answerOf = (consent: AnalyticsAnonConsent): number =>
+      answers.find((row) => row.consent === consent)?._sum.beats ?? 0;
     const accounts = this.presenceService.countsByKind();
     const browserOf = (state: AnalyticsLiveState): number =>
       browsers.find((row) => row.state === state)?._count._all ?? 0;
@@ -244,6 +276,11 @@ export class AnalyticsQueryService {
       note: 'Browsers and anonymous tabs are counted per minute they were seen, not at one instant; accounts are counted at one instant.',
       samples: samples.slice(-60).map((sample) => ({ ...sample, at: sample.at.toISOString() })),
       current,
+      anonymousByAnswer: {
+        declined: answerOf('DECLINED'),
+        unanswered: answerOf('UNANSWERED'),
+        unknown: answerOf('UNKNOWN'),
+      },
       gamesNow: games.map((game) => ({ ...game, name: names.get(game.releaseId) ?? null })),
     };
   }
@@ -370,52 +407,54 @@ export class AnalyticsQueryService {
   }
 
   async games(query: AnalyticsGamesQueryDto, now = new Date()): Promise<AnalyticsGamesDto> {
-    const period = periodOf(query.grain, query.day);
+    const days = this.daysOf(query);
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const sort = query.sort ?? 'plays';
 
-    const activity = await this.valuesOf('plays', period, now);
-    const multiplayer = await this.valuesOf('mp_sessions', period, now);
+    const [plays, playtimeMs, players, mpSessions] = await Promise.all([
+      this.splitOver('plays', 'release', days, now),
+      this.splitOver('playtime_ms', 'release', days, now),
+      this.splitOver('players', 'release', days, now),
+      this.splitOver('mp_sessions', 'release', days, now),
+    ]);
     const status =
-      activity.status === 'unavailable' || multiplayer.status === 'unavailable'
+      plays.status === 'unavailable' || mpSessions.status === 'unavailable'
         ? 'unavailable'
-        : activity.status === 'provisional' || multiplayer.status === 'provisional'
+        : plays.status === 'provisional' || mpSessions.status === 'provisional'
           ? 'provisional'
           : 'final';
 
-    const games = new Map<
-      number,
-      { plays: number; playtimeMs: number; players: number; mpSessions: number }
-    >();
-    const field: Record<string, 'plays' | 'playtimeMs' | 'players' | 'mpSessions'> = {
-      plays: 'plays',
-      playtime_ms: 'playtimeMs',
-      players: 'players',
-      mp_sessions: 'mpSessions',
-    };
-    for (const value of [...activity.values, ...multiplayer.values]) {
-      const key = field[value.metric];
-      if (!key || !value.dimension.startsWith('release:')) {
-        continue;
+    const blank = (): GameTotals => ({
+      plays: 0,
+      playtimeMs: 0,
+      players: players.status === 'unavailable' ? null : 0,
+      mpSessions: 0,
+    });
+    const games = new Map<number, GameTotals>();
+    for (const [key, split] of Object.entries({ plays, playtimeMs, players, mpSessions })) {
+      for (const [release, value] of split.values) {
+        const releaseId = Number(release);
+        if (!Number.isInteger(releaseId)) {
+          continue;
+        }
+        const game = games.get(releaseId) ?? blank();
+        game[key as keyof GameTotals] = value;
+        games.set(releaseId, game);
       }
-      const releaseId = Number(value.dimension.slice('release:'.length));
-      if (!Number.isInteger(releaseId)) {
-        continue;
-      }
-      const game = games.get(releaseId) ?? { plays: 0, playtimeMs: 0, players: 0, mpSessions: 0 };
-      game[key] = value.value;
-      games.set(releaseId, game);
     }
 
-    const sortField = field[sort] ?? 'plays';
-    const ranked = [...games.entries()].sort((a, b) => b[1][sortField] - a[1][sortField]);
+    const sortField = GAME_SORT_FIELDS[sort];
+    const ranked = [...games.entries()].sort(
+      (a, b) => (b[1][sortField] ?? 0) - (a[1][sortField] ?? 0),
+    );
     const slice = ranked.slice((page - 1) * limit, page * limit);
     const names = await this.namesOf(slice.map(([releaseId]) => releaseId));
     return {
-      grain: query.grain,
-      periodStart: period.start,
+      from: query.from,
+      to: query.to,
       status,
+      missingDays: Math.max(plays.missingDays, mpSessions.missingDays),
       items: slice.map(([releaseId, game]) => ({
         releaseId,
         name: names.get(releaseId) ?? null,
@@ -527,51 +566,113 @@ export class AnalyticsQueryService {
     };
   }
 
-  /** Every stored or computed value of a metric's class for one period. */
-  private async valuesOf(
+  /**
+   * One dimension of a metric over whole days, by dimension value. Counts and peaks are combined
+   * from their days, final or computed. A distinct count or a median cannot be, so it is computed
+   * over the range from raw data, and is unavailable once the range reaches before the raw window.
+   */
+  private async splitOver(
     metric: MetricName,
-    period: Period,
+    dimension: string,
+    days: Period[],
     now: Date,
-  ): Promise<{ status: AnalyticsPointDto['status']; values: MetricValue[] }> {
-    const point = await this.pointOf(metric, '', period, now);
+  ): Promise<RangeSplit> {
+    const { kind, version } = METRICS[metric];
     const rollupClass = METRICS[metric].finalization as RollupClass;
-    if (point.status === 'unavailable') {
-      return { status: 'unavailable', values: [] };
+    const prefix = `${dimension}:`;
+    const values = new Map<string, number>();
+    const take = (key: string, value: number): void => {
+      const held = values.get(key);
+      values.set(
+        key,
+        held === undefined ? value : kind === 'max' ? Math.max(held, value) : held + value,
+      );
+    };
+    const takeComputed = (computed: MetricValue[]): void => {
+      for (const value of computed) {
+        if (value.metric === metric && value.dimension.startsWith(prefix)) {
+          take(value.dimension.slice(prefix.length), value.value);
+        }
+      }
+    };
+    const first = days[0];
+    const last = days[days.length - 1];
+    if (!first || !last) {
+      return { status: 'unavailable', missingDays: 0, values };
     }
-    if (point.status === 'provisional') {
-      return {
-        status: 'provisional',
-        values: (await this.provisional(rollupClass, period, now)).values,
-      };
+
+    if (kind === 'perGrain') {
+      if (this.beyondRawData(first, now)) {
+        return { status: 'unavailable', missingDays: days.length, values };
+      }
+      const whole = await this.provisional(rollupClass, { start: first.start, end: last.end }, now);
+      takeComputed(whole.values);
+      return { status: 'provisional', missingDays: 0, values };
     }
-    const rows = await this.prisma.analyticsRollup.findMany({
+
+    const states = await this.prisma.analyticsRollupStatus.findMany({
       where: {
-        grain: period.grain,
-        periodStart: dayDate(period.start),
-        OR: metricsOf(rollupClass).map((name) => ({
-          metric: name,
-          version: METRICS[name].version,
-        })),
+        metric,
+        version,
+        grain: 'DAY',
+        periodStart: { gte: dayDate(first.start), lte: dayDate(last.start) },
       },
-      select: { metric: true, dimension: true, value: true },
+      select: { periodStart: true, status: true },
     });
+    const stateOf = new Map(states.map((row) => [toDay(row.periodStart), row.status]));
+    const finalDays = days.filter((day) => stateOf.get(day.start) === 'FINAL');
+    const openDays = days.filter((day) => !stateOf.has(day.start) && !this.beyondRawData(day, now));
+
+    if (finalDays.length > 0) {
+      const rows = await this.prisma.analyticsRollup.groupBy({
+        by: ['dimension'],
+        where: {
+          metric,
+          version,
+          grain: 'DAY',
+          periodStart: { in: finalDays.map((day) => dayDate(day.start)) },
+          dimension: { startsWith: prefix },
+        },
+        _sum: { value: true },
+        _max: { value: true },
+      });
+      for (const row of rows) {
+        const value = kind === 'max' ? row._max.value : row._sum.value;
+        if (value !== null) {
+          take(row.dimension.slice(prefix.length), value);
+        }
+      }
+    }
+    const computed = await Promise.all(
+      openDays.map((day) => this.provisional(rollupClass, day, now)),
+    );
+    for (const day of computed) {
+      takeComputed(day.values);
+    }
+
     return {
-      status: 'final',
-      values: rows.map((row) => ({ ...row, metric: row.metric as MetricName })),
+      status:
+        finalDays.length + openDays.length === 0
+          ? 'unavailable'
+          : openDays.length > 0
+            ? 'provisional'
+            : 'final',
+      missingDays: days.length - finalDays.length - openDays.length,
+      values,
     };
   }
 
   private async provisional(
     rollupClass: RollupClass,
-    period: Period,
+    { start, end }: DayRange,
     now: Date,
   ): Promise<Provisional> {
-    const key = `${rollupClass}|${period.grain}|${period.start}`;
+    const range: DayRange = { start, end };
+    const key = `${rollupClass}|${start}|${end}`;
     const cached = this.provisionalCache.get(key);
     if (cached && now.getTime() - cached.at < PROVISIONAL_TTL_MS) {
       return cached;
     }
-    const range: DayRange = { start: period.start, end: period.end };
     const computed: Provisional = {
       at: now.getTime(),
       values: truncateDimensions(await COMPUTE[rollupClass](this.prisma, range)),
@@ -608,6 +709,15 @@ export class AnalyticsQueryService {
       period = periodOf(grain, period.end);
     }
     return periods;
+  }
+
+  private daysOf(query: AnalyticsRangeQueryDto): Period[] {
+    this.assertRange(query);
+    const days = this.periodsBetween('DAY', query.from, query.to);
+    if (days.length > MAX_POINTS) {
+      throw new BadRequestException(`At most ${String(MAX_POINTS)} days per range`);
+    }
+    return days;
   }
 
   private assertRange(query: AnalyticsRangeQueryDto): void {

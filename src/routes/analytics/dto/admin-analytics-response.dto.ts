@@ -1,12 +1,20 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AnalyticsGrain, AnalyticsRetentionKind } from '@prisma/client';
 
+import { METRIC_POPULATIONS } from '../analytics-metrics';
+
 export const POINT_STATUSES = ['final', 'provisional', 'unavailable'] as const;
 export type PointStatus = (typeof POINT_STATUSES)[number];
 
 export class AnalyticsMetricInfoDto {
   @ApiProperty() name!: string;
-  @ApiProperty({ enum: ['C', 'C_LINKED', 'A', 'C_AND_A', 'F', 'PRESENCE'] }) population!: string;
+  @ApiProperty({
+    enum: METRIC_POPULATIONS,
+    enumName: 'AnalyticsPopulation',
+    description:
+      'Whom it counts: consenting browsers, anonymous tabs, both, or what the server records for every account',
+  })
+  population!: string;
   @ApiProperty({ enum: ['additive', 'max', 'perGrain'] }) kind!: string;
   @ApiProperty({ enum: ['ACTIVITY', 'SESSION', 'FACT', 'MULTIPLAYER', 'PRESENCE', 'COHORT'] })
   finalization!: string;
@@ -65,9 +73,11 @@ export class AnalyticsBreakdownValueDto {
 export class AnalyticsBreakdownDto {
   @ApiProperty() metric!: string;
   @ApiProperty() dimension!: string;
-  @ApiProperty({ enum: AnalyticsGrain, enumName: 'AnalyticsGrain' }) grain!: AnalyticsGrain;
-  @ApiProperty() periodStart!: string;
+  @ApiProperty({ description: 'First day, YYYY-MM-DD' }) from!: string;
+  @ApiProperty({ description: 'Last day, YYYY-MM-DD, included' }) to!: string;
   @ApiProperty({ enum: POINT_STATUSES }) status!: PointStatus;
+  @ApiProperty({ description: 'Days of the range whose values are not kept, left out of the sum' })
+  missingDays!: number;
   @ApiProperty({ description: 'Whether the rarest values were folded into (other)' })
   truncated!: boolean;
   @ApiProperty({ type: [AnalyticsBreakdownValueDto] }) values!: AnalyticsBreakdownValueDto[];
@@ -109,6 +119,12 @@ export class AnalyticsGameNowDto {
   @ApiProperty({ description: 'Anonymous pings from it in the last minute' }) anonTabs!: number;
 }
 
+export class AnalyticsAnonAnswersDto {
+  @ApiProperty({ description: 'Pings from tabs that refused analytics' }) declined!: number;
+  @ApiProperty({ description: 'Pings from tabs that have not answered yet' }) unanswered!: number;
+  @ApiProperty({ description: 'Pings that did not say' }) unknown!: number;
+}
+
 export class AnalyticsLiveDto {
   @ApiProperty({ description: 'Minute-active, not instantaneous; accounts are instantaneous' })
   note!: string;
@@ -119,6 +135,11 @@ export class AnalyticsLiveDto {
     description: 'The current minute so far, provisional',
   })
   current!: AnalyticsPresenceSampleDto;
+  @ApiProperty({
+    type: AnalyticsAnonAnswersDto,
+    description: 'The anonymous tabs of the current minute, by what they answered',
+  })
+  anonymousByAnswer!: AnalyticsAnonAnswersDto;
   @ApiProperty({ type: [AnalyticsGameNowDto] }) gamesNow!: AnalyticsGameNowDto[];
 }
 
@@ -170,14 +191,22 @@ export class AnalyticsGameDto {
   name!: string | null;
   @ApiProperty() plays!: number;
   @ApiProperty() playtimeMs!: number;
-  @ApiProperty() players!: number;
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'Null over a range reaching before the raw window: distinct players cannot be added',
+  })
+  players!: number | null;
   @ApiProperty() mpSessions!: number;
 }
 
 export class AnalyticsGamesDto {
-  @ApiProperty({ enum: AnalyticsGrain, enumName: 'AnalyticsGrain' }) grain!: AnalyticsGrain;
-  @ApiProperty() periodStart!: string;
+  @ApiProperty({ description: 'First day, YYYY-MM-DD' }) from!: string;
+  @ApiProperty({ description: 'Last day, YYYY-MM-DD, included' }) to!: string;
   @ApiProperty({ enum: POINT_STATUSES }) status!: PointStatus;
+  @ApiProperty({ description: 'Days of the range whose values are not kept, left out of the sums' })
+  missingDays!: number;
   @ApiProperty({ type: [AnalyticsGameDto] }) items!: AnalyticsGameDto[];
   @ApiProperty() total!: number;
   @ApiProperty() page!: number;

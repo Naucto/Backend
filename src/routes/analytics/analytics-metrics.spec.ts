@@ -37,14 +37,14 @@ describe('analytics metric registry', () => {
 
   it('never computes a distinct count or median over business facts, which are additive', () => {
     const perGrainOverFacts = definitions.filter(
-      ([, metric]) => metric.kind === 'perGrain' && metric.population === 'F',
+      ([, metric]) => metric.kind === 'perGrain' && metric.population === 'SERVER',
     );
 
     expect(perGrainOverFacts).toEqual([]);
   });
 
   it('never counts distinct anonymous tabs, which carry no identifier', () => {
-    const anonymousPopulations: MetricPopulation[] = ['A', 'C_AND_A'];
+    const anonymousPopulations: MetricPopulation[] = ['ANONYMOUS', 'CONSENTED_AND_ANONYMOUS'];
     const distinctOverAnonymous = definitions.filter(
       ([, metric]) =>
         metric.kind === 'perGrain' && anonymousPopulations.includes(metric.population),
@@ -54,9 +54,8 @@ describe('analytics metric registry', () => {
   });
 
   it.each<[MetricPopulation, FinalizationClass[]]>([
-    ['F', ['FACT', 'MULTIPLAYER']],
-    ['PRESENCE', ['PRESENCE']],
-    ['A', ['PRESENCE']],
+    ['SERVER', ['FACT', 'MULTIPLAYER', 'PRESENCE']],
+    ['ANONYMOUS', ['PRESENCE']],
   ])('finalizes %s metrics only in %j', (population, classes) => {
     const strays = definitions.filter(
       ([, metric]) => metric.population === population && !classes.includes(metric.finalization),

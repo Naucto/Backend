@@ -40,6 +40,9 @@ export type PlayEndReason = (typeof PLAY_END_REASONS)[number];
 export const PING_KINDS = ['BEAT', 'PLAY_START', 'FLUSH'] as const;
 export type PingKind = (typeof PING_KINDS)[number];
 
+export const PING_CONSENTS = ['DECLINED', 'UNANSWERED'] as const;
+export type PingConsent = (typeof PING_CONSENTS)[number];
+
 /** Where a consenting visit came from, sent with the first batch of a session. */
 export class AnalyticsContextDto {
   @ApiPropertyOptional({ description: 'document.referrer of the landing page', maxLength: 2048 })
@@ -203,6 +206,14 @@ export class AnalyticsPingDto {
   @ApiProperty({ description: 'Whether the tab is signed in; never which account' })
   @IsBoolean()
   signedIn!: boolean;
+
+  @ApiPropertyOptional({
+    enum: PING_CONSENTS,
+    description: 'Whether the tab refused analytics or has not answered yet, absent when neither',
+  })
+  @IsOptional()
+  @IsIn(PING_CONSENTS)
+  consent?: PingConsent;
 
   @ApiPropertyOptional()
   @IsOptional()
