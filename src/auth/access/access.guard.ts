@@ -4,6 +4,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { isObservable, lastValueFrom } from 'rxjs';
 
 import { UserService } from '../../routes/user/user.service';
+import { RequestWithOptionalUser } from '../auth.types';
 import { Access, ACCESS_KEY } from './access.decorators';
 import { ADMIN, holdsRole } from './roles';
 
@@ -35,7 +36,7 @@ export class AccessGuard extends AuthGuard('jwt') {
         context.getHandler(),
         context.getClass(),
       ]) ?? DEFAULT_ACCESS;
-    const request = context.switchToHttp().getRequest<{ user?: { id: number } | null }>();
+    const request = context.switchToHttp().getRequest<RequestWithOptionalUser>();
 
     if (access.kind === 'public') {
       try {

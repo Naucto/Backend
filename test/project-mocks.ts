@@ -12,6 +12,7 @@ import { HubService } from '../src/routes/project/hub.service';
 import { ProjectService } from '../src/routes/project/project.service';
 import { ProjectContentService } from '../src/routes/project/project-content.service';
 import { COLLABORATOR_SELECT, CREATOR_SELECT } from '../src/routes/project/project-select';
+import { ViewSaltService } from '../src/routes/project/view-salt.service';
 import { EdgeService } from '../src/routes/s3/edge.service';
 import { S3Service } from '../src/routes/s3/s3.service';
 import { WorkSessionService } from '../src/routes/work-session/work-session.service';
@@ -114,10 +115,7 @@ export class ProjectMocks {
       count: jest.fn(),
       createMany: jest.fn(),
     },
-    analyticsVisitor: {
-      findUnique: jest.fn(),
-    },
-    analyticsVisitorTombstone: {
+    user: {
       findUnique: jest.fn(),
     },
   };
@@ -221,6 +219,7 @@ export class ProjectMocks {
         ProjectService,
         ProjectContentService,
         HubService,
+        ViewSaltService,
         { provide: PrismaService, useValue: this.prismaMock },
         { provide: S3Service, useValue: this.s3ServiceMock },
         { provide: EdgeService, useValue: this.edgeMock },

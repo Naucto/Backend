@@ -19,6 +19,7 @@ import {
   withCounts,
 } from './project-select';
 import { normalizeTags } from './project-tags';
+import { ViewSaltService } from './view-salt.service';
 import { viewerKeyOf } from './viewer-key';
 
 export const RELEASE_WINDOWS = ['all', '365d', '30d', '7d'] as const;
@@ -60,6 +61,7 @@ export class HubService {
     private readonly prisma: PrismaService,
     private readonly projectService: ProjectService,
     private readonly contentService: ProjectContentService,
+    private readonly viewSalt: ViewSaltService,
   ) {}
 
   /** The row of a project on the hub narrowed to `select`, or a 404 for a draft as for a gap. */
@@ -361,7 +363,7 @@ export class HubService {
    * Counts a play of a published game once per viewer per UTC day: the signed-in account, or the
    * network address of a reader who is not signed in, whatever they answered about analytics. The
    * day's flag row decides, and the counter follows it, so a reload or a loop of requests moves
-   * nothing.
+   * nothing. An address is coded under the day's salt, so it is a new player again the next day.
    */
   async registerReleaseView(
     projectId: number,
@@ -374,7 +376,7 @@ export class HubService {
     });
 
     return this.prisma.$transaction(async (tx) => {
-      const viewerKey = await viewerKeyOf(tx, viewer);
+      const viewerKey = await viewerKeyOf(tx, viewer, this.viewSalt.saltOf(now));
       if (viewerKey === null) {
         return { viewCount: project.viewCount };
       }

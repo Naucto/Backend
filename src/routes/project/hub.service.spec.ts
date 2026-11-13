@@ -235,6 +235,7 @@ describe('HubService', () => {
       txMock.project.update.mockResolvedValue({ viewCount: 11 });
       txMock.releaseView.count.mockResolvedValue(0);
       txMock.releaseView.createMany.mockResolvedValue({ count: 1 });
+      txMock.user.findUnique.mockResolvedValue({ deletedAt: null });
     });
 
     const viewAs = (
@@ -284,6 +285,29 @@ describe('HubService', () => {
       expect(txMock.project.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: { viewCount: { increment: 1 }, updatedAt } }),
       );
+    });
+
+    it('gives an address another code on another day', async () => {
+      await viewAs(null);
+      await service.registerReleaseView(
+        1,
+        { userId: null, address: '203.0.113.9' },
+        new Date('2026-10-09T12:00:00Z'),
+      );
+
+      const keys = (
+        txMock.releaseView.createMany.mock.calls as [{ data: { viewerKey: string }[] }][]
+      ).map(([call]) => call.data[0]?.viewerKey);
+      expect(keys[0]).not.toBe(keys[1]);
+    });
+
+    it('counts nothing for an account deleted since it signed in', async () => {
+      txMock.user.findUnique.mockResolvedValue({ deletedAt: new Date('2026-10-08T11:59:00Z') });
+
+      await expect(viewAs(7)).resolves.toEqual({ viewCount: 10 });
+
+      expect(txMock.releaseView.createMany).not.toHaveBeenCalled();
+      expect(txMock.project.update).not.toHaveBeenCalled();
     });
 
     it('counts nothing when there is neither an account nor an address', async () => {

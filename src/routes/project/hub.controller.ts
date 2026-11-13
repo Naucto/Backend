@@ -18,10 +18,9 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { Request } from 'express';
 
 import { Public, RequiresAuth } from '../../auth/access/access.decorators';
-import { UserDto } from '../../auth/dto/user.dto';
+import { RequestWithOptionalUser, RequestWithUser } from '../../auth/auth.types';
 import { ImageUrlResponseDto } from './dto/image-url-response.dto';
 import { LikeResponseDto } from './dto/like-response.dto';
 import {
@@ -37,10 +36,6 @@ import type { PublishedProjectFilters, ReleaseSort, ReleaseWindow } from './hub.
 import { HubService, RELEASE_SORTS, RELEASE_WINDOWS } from './hub.service';
 import { ProjectId } from './project-id.decorator';
 import { parseOptionalInt, parseTags } from './project-query';
-
-interface RequestWithUser extends Request {
-  user: UserDto;
-}
 
 /**
  * A suggestion list shows a handful of tags; a catalogue is a different screen. Not the number of
@@ -292,7 +287,7 @@ export class HubController {
   async registerReleaseView(
     @ProjectId() id: number,
     @Body() _dto: RegisterViewDto,
-    @Req() req: Request & { user?: { id: number } | null },
+    @Req() req: RequestWithOptionalUser,
   ): Promise<ViewResponseDto> {
     return this.hubService.registerReleaseView(id, {
       userId: req.user?.id ?? null,

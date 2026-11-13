@@ -9,6 +9,7 @@ import { ProjectController } from './project.controller';
 import { ProjectService } from './project.service';
 import { ProjectContentController } from './project-content.controller';
 import { ProjectContentService } from './project-content.service';
+import { ViewSaltService } from './view-salt.service';
 
 @Module({
   imports: [PrismaModule, S3Module, AnalyticsCoreModule],
@@ -18,7 +19,7 @@ import { ProjectContentService } from './project-content.service';
   // literal route is declared above the first `:id` one; a literal route registered below would be
   // caught by `:id` and answer 400 for a non-numeric id.
   controllers: [HubController, ProjectContentController, ProjectController],
-  providers: [ProjectService, ProjectContentService, HubService],
+  providers: [ProjectService, ProjectContentService, HubService, ViewSaltService],
   exports: [ProjectService, ProjectContentService, HubService],
 })
 export class ProjectModule {}
