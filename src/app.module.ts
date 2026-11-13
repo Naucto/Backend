@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
 
 import { AccessGuard } from './auth/access/access.guard';
@@ -16,6 +17,7 @@ import { MultiplayerModule } from './routes/multiplayer/multiplayer.module';
 import { ProjectModule } from './routes/project/project.module';
 import { ProjectCommentModule } from './routes/project-comment/project-comment.module';
 import { RecommendationsModule } from './routes/recommendations/recommendations.module';
+import { ReportsModule } from './routes/reports/reports.module';
 import { S3Module } from './routes/s3/s3.module';
 import { UserModule } from './routes/user/user.module';
 import { WorkSessionModule } from './routes/work-session/work-session.module';
@@ -25,6 +27,7 @@ import { WebRTCModule } from './webrtc/webrtc.module';
 @Module({
   imports: [
     gracefulShutdownModule(),
+    EventEmitterModule.forRoot(),
     ScheduleModule.forRoot(),
     PrismaModule,
     AuthModule,
@@ -43,6 +46,7 @@ import { WebRTCModule } from './webrtc/webrtc.module';
     FeaturesModule,
     AnalyticsModule,
     AdminModule,
+    ReportsModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: AccessGuard }],
 })

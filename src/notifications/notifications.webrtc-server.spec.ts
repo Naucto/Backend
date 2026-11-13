@@ -271,11 +271,11 @@ describe('NotificationWebRTCServer', () => {
       server.setPresenceHandler(presence);
 
       const socket = await authenticate('token-of-7');
-      expect(presence.onSocketOpen).toHaveBeenCalledWith(7);
+      expect(presence.onSocketOpen).toHaveBeenCalledWith(7, expect.any(Number));
       expect(presence.onSocketClose).not.toHaveBeenCalled();
 
       disconnect(socket);
-      expect(presence.onSocketClose).toHaveBeenCalledWith(7);
+      expect(presence.onSocketClose).toHaveBeenCalledWith(7, expect.any(Number));
     });
   });
 
@@ -303,7 +303,7 @@ describe('NotificationWebRTCServer', () => {
 
       receive(socket, { type: 'presence:set', kind: 'PLAYING', releaseId: 42 });
 
-      expect(presence.onSet).toHaveBeenCalledWith(7, {
+      expect(presence.onSet).toHaveBeenCalledWith(7, expect.any(Number), {
         kind: 'PLAYING',
         releaseId: 42,
         projectId: null,

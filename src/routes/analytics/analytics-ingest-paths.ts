@@ -1,7 +1,11 @@
 import express, { NextFunction, Request, RequestHandler, Response } from 'express';
 
 /** The routes that accept a JSON body sent as text/plain. */
-export const ANALYTICS_INGEST_PATHS = ['/analytics', '/projects/releases/:id/view'];
+export const ANALYTICS_INGEST_PATHS = [
+  '/analytics',
+  '/projects/releases/:id/view',
+  '/reports/crash',
+];
 
 const parseTextJson = express.json({ type: 'text/plain', limit: '32kb' });
 

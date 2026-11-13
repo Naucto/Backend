@@ -4,8 +4,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 
+import { FRIENDSHIP_CHANGED, FriendshipChangedEvent } from '../../common/domain-events';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { isUniqueViolation, PrismaService } from '../../prisma/prisma.service';
 import { UserService } from '../user/user.service';
@@ -17,6 +19,7 @@ import {
   UserSummaryDto,
 } from './dto/friend.dto';
 import { SendFriendRequestDto } from './dto/send-friend-request.dto';
+import { friendIdOf } from './friend-id-of';
 
 const USER_SUMMARY_SELECT = {
   id: true,
@@ -38,6 +41,7 @@ export class FriendsService {
     private readonly prisma: PrismaService,
     private readonly userService: UserService,
     private readonly notificationsService: NotificationsService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async areFriends(userId: number, otherId: number): Promise<boolean> {
@@ -59,9 +63,7 @@ export class FriendsService {
       select: { userAId: true, userBId: true },
     });
 
-    return friendships.map((friendship) =>
-      friendship.userAId === userId ? friendship.userBId : friendship.userAId,
-    );
+    return friendships.map((friendship) => friendIdOf(friendship, userId));
   }
 
   async friendshipStatus(userId: number, otherId: number): Promise<FriendshipStatus> {
@@ -121,6 +123,8 @@ export class FriendsService {
     if (result.count === 0) {
       throw new NotFoundException('Friendship not found');
     }
+
+    this.eventEmitter.emit(FRIENDSHIP_CHANGED, new FriendshipChangedEvent(userId, friendUserId));
   }
 
   /** How many friends the user shares with each of `otherIds`, keyed by that id. */
@@ -291,6 +295,8 @@ export class FriendsService {
         skipDuplicates: true,
       });
     });
+
+    this.eventEmitter.emit(FRIENDSHIP_CHANGED, new FriendshipChangedEvent(userId, request.fromId));
 
     await this.notify(request.fromId, {
       title: 'Friend request accepted',
