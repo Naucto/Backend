@@ -1,0 +1,65 @@
+import { ModerationReason, ModerationTargetType } from '@prisma/client';
+
+import { withEnv } from '../../../test/env';
+import { DiscordService } from '../../discord/discord.service';
+import { FlagNotifier } from './flag-notifier';
+
+const NOTICE = {
+  targetType: ModerationTargetType.COMMENT,
+  targetId: 31,
+  reason: ModerationReason.HARASSMENT,
+};
+
+describe('FlagNotifier', () => {
+  const discord = { send: jest.fn() };
+  const notifier = (): FlagNotifier => new FlagNotifier(discord as unknown as DiscordService);
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('stays silent when no webhook is set', async () => {
+    withEnv({});
+
+    await notifier().caseOpened(NOTICE);
+
+    expect(discord.send).not.toHaveBeenCalled();
+  });
+
+  it('posts to the webhook, linking the case in the admin console', async () => {
+    withEnv({
+      DISCORD_MODERATION_WEBHOOK_URL: 'https://discord.test/hook',
+      ADMIN_PANEL_URL: 'https://admin.naucto.test/',
+    });
+
+    await notifier().caseOpened(NOTICE);
+
+    expect(discord.send).toHaveBeenCalledWith(
+      'https://discord.test/hook',
+      expect.objectContaining({
+        embeds: [
+          expect.objectContaining({
+            title: 'A comment was reported',
+            url: 'https://admin.naucto.test/moderation/cases/COMMENT/31',
+          }),
+        ],
+      }),
+    );
+  });
+
+  // A notice is built from a kind, a reason and an id, so nothing a person wrote can reach it. This
+  // pins the shape: a field added to the notice has to be argued for here.
+  it('carries a kind of target, a reason and an id, and nothing else', () => {
+    withEnv({});
+
+    const [embed] = notifier().message(NOTICE).embeds ?? [];
+
+    expect(embed).toEqual({
+      title: 'A comment was reported',
+      color: expect.any(Number),
+      fields: [{ name: 'Reason', value: 'Harassment', inline: true }],
+      footer: { text: 'COMMENT #31' },
+      timestamp: expect.any(String),
+    });
+  });
+});
