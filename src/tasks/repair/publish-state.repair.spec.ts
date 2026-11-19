@@ -15,10 +15,15 @@ describe('PublishStateRepair', () => {
   };
   const s3Mock = {
     fileExists: jest.fn(),
+    deleteFile: jest.fn(),
+  };
+  /** The rows on the hub, then the rows moderation withholds, as `run` asks for them. */
+  const rows = (onHub: { id: number }[], withheld: { id: number }[] = []): void => {
+    prismaMock.project.findMany.mockResolvedValueOnce(onHub).mockResolvedValueOnce(withheld);
   };
 
   beforeEach(async () => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PublishStateRepair,
@@ -31,7 +36,7 @@ describe('PublishStateRepair', () => {
   });
 
   it('resets a row whose release blob is gone, and leaves a whole one alone', async () => {
-    prismaMock.project.findMany.mockResolvedValue([{ id: 2 }, { id: 39 }]);
+    rows([{ id: 2 }, { id: 39 }]);
     s3Mock.fileExists.mockImplementation((key: string) => Promise.resolve(key === 'release/2'));
     prismaMock.project.updateMany.mockResolvedValue({ count: 1 });
 
@@ -45,11 +50,35 @@ describe('PublishStateRepair', () => {
   });
 
   it('finds nothing to do on a second run', async () => {
-    prismaMock.project.findMany.mockResolvedValue([{ id: 2 }]);
+    rows([{ id: 2 }]);
     s3Mock.fileExists.mockResolvedValue(true);
 
     await expect(repair.run()).resolves.toEqual([]);
 
     expect(prismaMock.project.updateMany).not.toHaveBeenCalled();
+  });
+
+  // Its release is out of public reach on purpose: reading that as a lost blob would unpublish it.
+  it('never counts a withheld game among the rows that lost their release', async () => {
+    rows([], [{ id: 7 }]);
+    s3Mock.fileExists.mockResolvedValue(false);
+
+    await expect(repair.run()).resolves.toEqual([]);
+
+    expect(prismaMock.project.findMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ where: { publishedAt: { not: null }, hiddenAt: null } }),
+    );
+    expect(prismaMock.project.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('removes what is still served of a withheld game', async () => {
+    rows([], [{ id: 7 }]);
+    s3Mock.fileExists.mockImplementation((key: string) => Promise.resolve(key === 'release/7'));
+    jest.spyOn(repair['logger'], 'warn').mockImplementation();
+
+    await repair.run();
+
+    expect(s3Mock.deleteFile.mock.calls).toEqual([[{ key: 'release/7' }]]);
   });
 });

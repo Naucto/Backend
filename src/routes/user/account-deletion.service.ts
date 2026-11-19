@@ -124,7 +124,9 @@ export class AccountDeletionService {
     const projects = await this.prisma.project.findMany({
       where: {
         userId,
-        ...(removePublished ? {} : { publishedAt: null }),
+        // A withheld game goes with the drafts: kept, it would stay hidden with nobody to answer
+        // for it.
+        ...(removePublished ? {} : { OR: [{ publishedAt: null }, { hiddenAt: { not: null } }] }),
       },
       select: { id: true },
     });

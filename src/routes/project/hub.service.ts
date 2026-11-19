@@ -7,6 +7,7 @@ import { PROJECT_NAME_MAX_LENGTH } from './dto/project-field-limits';
 import { hubFields } from './hub-fields';
 import { keepEditTime } from './keep-edit-time';
 import { KeylessViewLimiter } from './keyless-view-limiter';
+import { ProjectHiddenException } from './project.error';
 import { ProjectService } from './project.service';
 import { ProjectContentService } from './project-content.service';
 import {
@@ -14,6 +15,7 @@ import {
   PaginatedProjectsResult,
   ProjectEx,
   PUBLISHED,
+  RELEASED,
   ReleaseProject,
   WITH_PEOPLE,
   WITH_PEOPLE_AND_COUNTS,
@@ -73,7 +75,12 @@ export class HubService {
     const project = await this.prisma.project.findFirst({ where: { id, ...PUBLISHED }, select });
 
     if (!project) {
-      throw new NotFoundException(`Published project with ID ${id} not found`);
+      const withheld = await this.prisma.project.count({
+        where: { id, ...RELEASED, hiddenAt: { not: null } },
+      });
+      throw withheld > 0
+        ? new ProjectHiddenException()
+        : new NotFoundException(`Published project with ID ${id} not found`);
     }
 
     return project as Prisma.ProjectGetPayload<{ select: S }>;
@@ -317,7 +324,7 @@ export class HubService {
           END
         ) AS tag
         FROM "Project"
-        WHERE "publishedAt" IS NOT NULL
+        WHERE "publishedAt" IS NOT NULL AND "hiddenAt" IS NULL
       ) tags
       WHERE tag ILIKE ${`%${fragment}%`}
       GROUP BY tag
@@ -491,6 +498,7 @@ export class HubService {
   async fork(sourceProjectId: number, userId: number): Promise<ProjectEx> {
     const sourceProject = await this.projectService.requireProject(sourceProjectId, {
       publishedAt: true,
+      hiddenAt: true,
       name: true,
       shortDesc: true,
       longDesc: true,
@@ -503,6 +511,9 @@ export class HubService {
 
     if (!sourceProject.publishedAt) {
       throw new BadRequestException('Only published projects can be forked');
+    }
+    if (sourceProject.hiddenAt) {
+      throw new ProjectHiddenException();
     }
 
     const user = await this.prisma.user.findUnique({

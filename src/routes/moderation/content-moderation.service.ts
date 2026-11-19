@@ -1,10 +1,14 @@
-import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
+import { HttpStatus, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { FlagStatus, ModerationActionType, ModerationTargetType, Prisma } from '@prisma/client';
 
 import { CodedException } from '../../common/coded.exception';
+import { PROJECT_CHANGED, ProjectChangedEvent } from '../../common/domain-events';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { ModerationActionDto } from './dto/moderation-action.dto';
+import { MultiplayerService } from '../multiplayer/multiplayer.service';
+import { ProjectContentService } from '../project/project-content.service';
+import { ModerationActionDto, TargetContentDto } from './dto/moderation-action.dto';
 import { ContentDecisionDto, ModerationNoteDto } from './dto/moderation-decision.dto';
 import { resolveOpenFlags } from './flag-resolution';
 import { MODERATION_ERROR, notAvailableYet } from './moderation.error';
@@ -22,29 +26,154 @@ const COMMENT_SELECT = {
 
 type CommentRow = Prisma.CommentGetPayload<{ select: typeof COMMENT_SELECT }>;
 
+const PROJECT_SELECT = {
+  id: true,
+  userId: true,
+  name: true,
+  shortDesc: true,
+  longDesc: true,
+  publishedName: true,
+  publishedShortDesc: true,
+  publishedLongDesc: true,
+  hiddenAt: true,
+} satisfies Prisma.ProjectSelect;
+
+type ProjectRow = Prisma.ProjectGetPayload<{ select: typeof PROJECT_SELECT }>;
+
+/** A game as its page reads: what was released when there is a release, else the draft. */
+function projectContent(project: ProjectRow): TargetContentDto {
+  const body = [
+    project.publishedShortDesc || project.shortDesc,
+    project.publishedLongDesc || project.longDesc,
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join('\n\n');
+  return { title: project.publishedName || project.name, body: body || null };
+}
+
 /** What staff decide about a game or a comment. */
 @Injectable()
 export class ContentModerationService {
+  private readonly logger = new Logger(ContentModerationService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly log: ModerationLogService,
     private readonly notifications: NotificationsService,
+    private readonly content: ProjectContentService,
+    private readonly multiplayer: MultiplayerService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
-  hideProject(
-    _staff: StaffActor,
-    _projectId: number,
-    _input: ContentDecisionDto,
+  async hideProject(
+    staff: StaffActor,
+    projectId: number,
+    input: ContentDecisionDto,
   ): Promise<ModerationActionDto> {
-    return notAvailableYet();
+    const project = await this.project(staff, projectId);
+    if (project.hiddenAt) {
+      throw this.alreadyHidden();
+    }
+
+    await this.content.copyToWithheld(project.id);
+
+    const row = await this.prisma.$transaction(async (tx) => {
+      // The condition settles two staff members hiding the same game at once.
+      const { count } = await tx.project.updateMany({
+        where: { id: project.id, hiddenAt: null },
+        data: { hiddenAt: new Date(), iconUrl: null },
+      });
+      if (count === 0) {
+        throw this.alreadyHidden();
+      }
+      const recorded = await this.log.record(tx, {
+        action: ModerationActionType.PROJECT_HIDDEN,
+        actorId: staff.id,
+        targetType: ModerationTargetType.PROJECT,
+        targetId: project.id,
+        subjectUserId: project.userId,
+        reason: input.reason,
+        publicMessage: input.publicMessage,
+        internalNote: input.internalNote,
+        snapshot: projectContent(project),
+      });
+      if (input.resolveFlags !== false) {
+        await resolveOpenFlags(tx, {
+          targetType: ModerationTargetType.PROJECT,
+          targetId: project.id,
+          status: FlagStatus.ACTIONED,
+          resolvedById: staff.id,
+          resolutionId: recorded.id,
+        });
+      }
+      return recorded;
+    });
+
+    // The game is hidden from here on, whatever happens below: every route refuses it by its row.
+    await this.afterCommit(`unserve game ${String(project.id)}`, async () => {
+      await this.content.removeServedCopies(project.id);
+      await this.multiplayer.endSessionsOfProject(project.id);
+    });
+    this.eventEmitter.emit(PROJECT_CHANGED, new ProjectChangedEvent(project.id));
+    await this.notify(
+      row,
+      'Your game was hidden',
+      input.publicMessage || 'A moderator took one of your games off the hub.',
+    );
+    return toActionDto(row, staff);
   }
 
-  restoreProject(
-    _staff: StaffActor,
-    _projectId: number,
-    _input: ModerationNoteDto,
+  async restoreProject(
+    staff: StaffActor,
+    projectId: number,
+    input: ModerationNoteDto,
   ): Promise<ModerationActionDto> {
-    return notAvailableYet();
+    const project = await this.project(staff, projectId);
+    if (!project.hiddenAt) {
+      throw this.notHidden();
+    }
+
+    const { coverUrl } = await this.content.copyFromWithheld(project.id);
+
+    let row: ActionRow;
+    try {
+      row = await this.prisma.$transaction(async (tx) => {
+        const { count } = await tx.project.updateMany({
+          where: { id: project.id, hiddenAt: { not: null } },
+          data: { hiddenAt: null, ...(coverUrl ? { iconUrl: coverUrl } : {}) },
+        });
+        if (count === 0) {
+          throw this.notHidden();
+        }
+        return this.log.record(tx, {
+          action: ModerationActionType.PROJECT_RESTORED,
+          actorId: staff.id,
+          targetType: ModerationTargetType.PROJECT,
+          targetId: project.id,
+          subjectUserId: project.userId,
+          publicMessage: input.publicMessage,
+          internalNote: input.internalNote,
+          snapshot: projectContent(project),
+        });
+      });
+    } catch (error) {
+      // Still hidden: what was just put back where the edge serves it comes away again.
+      await this.afterCommit(`unserve game ${String(project.id)} again`, () =>
+        this.content.removeServedCopies(project.id),
+      );
+      throw error;
+    }
+
+    await this.afterCommit(`drop the withheld copies of game ${String(project.id)}`, () =>
+      this.content.removeWithheldCopies(project.id),
+    );
+    this.eventEmitter.emit(PROJECT_CHANGED, new ProjectChangedEvent(project.id));
+    await this.notify(
+      row,
+      'Your game is back',
+      input.publicMessage || 'A moderator put one of your games back on the hub.',
+    );
+    return toActionDto(row, staff);
   }
 
   removeProject(
@@ -151,6 +280,55 @@ export class ContentModerationService {
     _input: ContentDecisionDto,
   ): Promise<ModerationActionDto> {
     return notAvailableYet();
+  }
+
+  /** The game a decision bears on. Staff never decide about a game they created. */
+  private async project(staff: StaffActor, projectId: number): Promise<ProjectRow> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: PROJECT_SELECT,
+    });
+    if (!project) {
+      throw new NotFoundException('Game not found');
+    }
+    if (project.userId === staff.id) {
+      throw new CodedException(
+        HttpStatus.FORBIDDEN,
+        MODERATION_ERROR.OWN_CASE,
+        'You cannot moderate your own content',
+      );
+    }
+    return project;
+  }
+
+  private alreadyHidden(): CodedException {
+    return new CodedException(
+      HttpStatus.CONFLICT,
+      MODERATION_ERROR.ALREADY_HIDDEN,
+      'This game is already hidden',
+    );
+  }
+
+  private notHidden(): CodedException {
+    return new CodedException(
+      HttpStatus.CONFLICT,
+      MODERATION_ERROR.NOT_HIDDEN,
+      'This game is not hidden',
+    );
+  }
+
+  /**
+   * Work that follows a decision already written. Its failure is logged for the repair task to
+   * finish and never reported as a failure of the decision.
+   */
+  private async afterCommit(what: string, work: () => Promise<void>): Promise<void> {
+    try {
+      await work();
+    } catch (error) {
+      this.logger.error(
+        `Could not ${what}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   /** The comment a decision bears on. Staff never decide about what they wrote themselves. */

@@ -22,12 +22,13 @@ import { WorkSessionService } from '../work-session/work-session.service';
 import { AddCollaboratorDto, RemoveCollaboratorDto } from './dto/collaborator-project.dto';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
+import { ProjectHiddenException } from './project.error';
 import { projectKeys } from './project-keys';
 import {
   DEFAULT_LIMIT,
   PaginatedProjectsResult,
   ProjectEx,
-  PUBLISHED,
+  RELEASED,
   WITH_PEOPLE,
 } from './project-select';
 import { normalizeTags } from './project-tags';
@@ -94,7 +95,7 @@ export class ProjectService {
     const normalizedTags = normalizeTags(filters.tags);
 
     if (filters.status === 'published') {
-      andClauses.push(PUBLISHED);
+      andClauses.push(RELEASED);
     } else if (filters.status === 'drafts') {
       andClauses.push({ publishedAt: null });
     }
@@ -250,7 +251,11 @@ export class ProjectService {
   }
 
   async uploadImage(id: number, file: Express.Multer.File, uploaderId: number): Promise<void> {
-    await this.findOne(id);
+    const project = await this.findOne(id);
+    // A cover is public the moment it is stored, which is what withholding a game takes away.
+    if (project.hiddenAt) {
+      throw new ProjectHiddenException();
+    }
     await this.storeCover(id, file, {
       uploadedBy: uploaderId.toString(),
       projectId: id.toString(),

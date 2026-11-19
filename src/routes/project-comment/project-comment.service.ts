@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { pageWindow } from '../../common/page-window';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ProjectHiddenException } from '../project/project.error';
 import { CommentResponseDto, PaginatedCommentsResponseDto } from './dto/comment-response.dto';
 import {
   CommentNestedReplyException,
@@ -94,11 +95,14 @@ export class ProjectCommentService {
   ): Promise<PaginatedCommentsResponseDto> {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      select: { publishedAt: true },
+      select: { publishedAt: true, hiddenAt: true },
     });
 
     if (!project?.publishedAt) {
       throw new CommentProjectNotFoundException(projectId);
+    }
+    if (project.hiddenAt) {
+      throw new ProjectHiddenException();
     }
 
     const pagination = pageWindow(page, limit, DEFAULT_COMMENTS_LIMIT);
@@ -141,7 +145,7 @@ export class ProjectCommentService {
   ): Promise<CommentResponseDto> {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      select: { publishedAt: true },
+      select: { publishedAt: true, hiddenAt: true },
     });
 
     if (!project) {
@@ -150,6 +154,9 @@ export class ProjectCommentService {
 
     if (!project.publishedAt) {
       throw new CommentProjectNotPublishedException(projectId);
+    }
+    if (project.hiddenAt) {
+      throw new ProjectHiddenException();
     }
 
     const comment = await this.prisma.comment.create({
@@ -180,7 +187,7 @@ export class ProjectCommentService {
         projectId: true,
         deleted: true,
         hiddenAt: true,
-        project: { select: { publishedAt: true } },
+        project: { select: { publishedAt: true, hiddenAt: true } },
       },
     });
 
@@ -194,6 +201,9 @@ export class ProjectCommentService {
 
     if (!parentComment.project.publishedAt) {
       throw new CommentProjectNotPublishedException(projectId);
+    }
+    if (parentComment.project.hiddenAt) {
+      throw new ProjectHiddenException();
     }
 
     if (parentComment.parentId !== null) {
