@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
-import { RequiresRole } from '../../auth/access/access.decorators';
+import { RequiresStaffSession } from '../../auth/access/access.decorators';
 import { ADMIN } from '../../auth/access/roles';
 import { AnalyticsMarkerService } from './analytics-marker.service';
 import {
@@ -26,7 +26,7 @@ import {
 
 @ApiTags('admin')
 @Controller('admin/analytics/markers')
-@RequiresRole(ADMIN)
+@RequiresStaffSession(ADMIN)
 export class AnalyticsMarkerController {
   constructor(private readonly markers: AnalyticsMarkerService) {}
 

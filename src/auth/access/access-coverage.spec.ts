@@ -61,13 +61,14 @@ describe('route access', () => {
     expect(namesOf(routes.filter((route) => route.access === undefined))).toEqual([]);
   });
 
-  it('asks a staff session of every moderation route of the admin console', () => {
-    const moderation = routes.filter((route) =>
-      route.controllerPath.startsWith('admin/moderation'),
+  // `admin/auth` is how a staff session is opened, so it cannot ask for one.
+  it('asks a staff session of every route of the admin console but its sign-in', () => {
+    const adminRoutes = routes.filter(
+      (route) => route.controllerPath.startsWith('admin/') && route.controllerPath !== 'admin/auth',
     );
 
-    expect(moderation).not.toEqual([]);
-    expect(namesOf(moderation.filter((route) => route.access?.kind !== 'staff'))).toEqual([]);
+    expect(adminRoutes).not.toEqual([]);
+    expect(namesOf(adminRoutes.filter((route) => route.access?.kind !== 'staff'))).toEqual([]);
   });
 
   // The web app only ever holds the token of a site sign-in, which a staff route refuses.

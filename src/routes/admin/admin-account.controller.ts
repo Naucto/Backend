@@ -11,8 +11,8 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
-import { RequiresRole } from '../../auth/access/access.decorators';
-import { ADMIN } from '../../auth/access/roles';
+import { RequiresStaffSession } from '../../auth/access/access.decorators';
+import { ADMIN, MODERATOR } from '../../auth/access/roles';
 import { RequestWithUser } from '../../auth/auth.types';
 import { AdminAccountService } from './admin-account.service';
 import {
@@ -25,12 +25,13 @@ import {
 
 @ApiTags('admin')
 @Controller('admin/accounts')
-@RequiresRole(ADMIN)
+@RequiresStaffSession(ADMIN)
 export class AdminAccountController {
   constructor(private readonly accounts: AdminAccountService) {}
 
   @Get('me')
-  @ApiOperation({ summary: 'The signed-in admin' })
+  @RequiresStaffSession(MODERATOR)
+  @ApiOperation({ summary: 'The signed-in staff member' })
   @ApiResponse({ status: HttpStatus.OK, type: AccountSummaryDto })
   me(@Req() req: RequestWithUser): Promise<AccountSummaryDto> {
     return this.accounts.me(req.user.id);
