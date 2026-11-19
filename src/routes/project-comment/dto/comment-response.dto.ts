@@ -1,5 +1,8 @@
 import { ApiProperty } from '@nestjs/swagger';
 
+export const COMMENT_REMOVALS = ['USER', 'MODERATION'] as const;
+export type CommentRemoval = (typeof COMMENT_REMOVALS)[number];
+
 export class CommentAuthorDto {
   @ApiProperty({ example: 1 })
   id!: number;
@@ -34,6 +37,14 @@ export class CommentResponseDto {
 
   @ApiProperty({ example: false, required: false })
   deleted?: boolean;
+
+  @ApiProperty({
+    enum: COMMENT_REMOVALS,
+    enumName: 'CommentRemoval',
+    required: false,
+    description: 'Who removed a deleted comment: its author or the game creator, or moderation',
+  })
+  removedBy?: CommentRemoval;
 
   @ApiProperty({
     type: () => [CommentResponseDto],

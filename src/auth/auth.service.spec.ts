@@ -30,6 +30,8 @@ const userRow = (overrides: Partial<User> = {}): User => ({
   colour: null,
   sessionJoinPolicy: 'ANYONE',
   deletedAt: null,
+  suspendedAt: null,
+  suspendedUntil: null,
   role: USER,
   ...overrides,
 });

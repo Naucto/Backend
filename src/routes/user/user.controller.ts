@@ -33,6 +33,7 @@ import { Response } from 'express';
 
 import { RequiresAuth, RequiresRole } from '../../auth/access/access.decorators';
 import { ADMIN } from '../../auth/access/roles';
+import { currentSuspension } from '../../auth/access/suspension';
 import { RequestWithUser } from '../../auth/auth.types';
 import { REFRESH_COOKIE_NAME, refreshCookieOptions } from '../../auth/auth.utils';
 import { AccountDeletionService } from './account-deletion.service';
@@ -109,6 +110,7 @@ export class UserController {
       role,
       createdAt,
       ...imageUrls,
+      suspension: currentSuspension(req.user),
     };
   }
 

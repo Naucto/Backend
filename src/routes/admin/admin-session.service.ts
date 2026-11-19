@@ -3,7 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 
 import { ADMIN, holdsRole, parseRole } from '../../auth/access/roles';
 import { AuthService } from '../../auth/auth.service';
-import { JwtPayload } from '../../auth/auth.types';
+import { JwtPayload, STAFF_SCOPE } from '../../auth/auth.types';
 import { getEnv } from '../../config/env';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AttemptLimiter } from './attempt-limiter';
@@ -90,7 +90,7 @@ export class AdminSessionService {
   }
 
   private async issue(account: AdminAccountRow): Promise<IssuedSession> {
-    const payload: JwtPayload = { sub: account.id, email: account.email };
+    const payload: JwtPayload = { sub: account.id, email: account.email, scope: STAFF_SCOPE };
     return {
       session: {
         accessToken: await this.jwt.signAsync(payload, { expiresIn: ADMIN_ACCESS_LIFETIME_S }),

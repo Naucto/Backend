@@ -12,6 +12,7 @@ enum NotificationKind {
   FEATURED
   COLLABORATOR_ADDED
   COLLABORATOR_REMOVED
+  MODERATION
 }
 
 model Notification {

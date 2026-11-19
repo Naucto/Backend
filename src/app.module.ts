@@ -13,6 +13,7 @@ import { AdminModule } from './routes/admin/admin.module';
 import { AnalyticsModule } from './routes/analytics/analytics.module';
 import { FeaturesModule } from './routes/features/features.module';
 import { FriendsModule } from './routes/friends/friends.module';
+import { ModerationModule } from './routes/moderation/moderation.module';
 import { MultiplayerModule } from './routes/multiplayer/multiplayer.module';
 import { ProjectModule } from './routes/project/project.module';
 import { ProjectCommentModule } from './routes/project-comment/project-comment.module';
@@ -47,6 +48,7 @@ import { WebRTCModule } from './webrtc/webrtc.module';
     AnalyticsModule,
     AdminModule,
     ReportsModule,
+    ModerationModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: AccessGuard }],
 })

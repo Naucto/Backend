@@ -5,7 +5,7 @@ import { ExtractJwt, Strategy, StrategyOptions } from 'passport-jwt';
 
 import { getEnv } from '../../config/env';
 import { UserService } from '../../routes/user/user.service';
-import { JwtPayload } from '../auth.types';
+import { JwtPayload, STAFF_SCOPE, TokenInfo } from '../auth.types';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -18,8 +18,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super(options);
   }
 
-  /** What this returns becomes the request's user, which a handler may answer with as it stands. */
-  async validate(payload: JwtPayload): Promise<Omit<User, 'password'>> {
+  /**
+   * The account becomes the request's user, which a handler may answer with as it stands. Passport
+   * hands the second element to the guard apart from it, so nothing about the token reaches a
+   * response.
+   */
+  async validate(payload: JwtPayload): Promise<[Omit<User, 'password'>, TokenInfo]> {
     const { password: _password, ...account } = await this.userService
       .findOne(payload.sub)
       .catch((error: unknown) => {
@@ -36,6 +40,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Account deleted');
     }
 
-    return account;
+    return [account, { staff: payload.scope === STAFF_SCOPE }];
   }
 }

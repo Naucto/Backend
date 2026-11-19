@@ -38,6 +38,21 @@ import { UserAnalyticsService } from './routes/analytics/user-analytics.service'
 import { FeaturesModule } from './routes/features/features.module';
 import { FriendsController, UserFriendshipController } from './routes/friends/friends.controller';
 import { FriendsService } from './routes/friends/friends.service';
+import { AccountModerationService } from './routes/moderation/account-moderation.service';
+import { AdminCaseController } from './routes/moderation/admin-case.controller';
+import { AdminModerationAccountController } from './routes/moderation/admin-moderation-account.controller';
+import { AdminModerationCommentController } from './routes/moderation/admin-moderation-comment.controller';
+import { AdminModerationLogController } from './routes/moderation/admin-moderation-log.controller';
+import { AdminModerationProjectController } from './routes/moderation/admin-moderation-project.controller';
+import { CaseService } from './routes/moderation/case.service';
+import { ContentModerationService } from './routes/moderation/content-moderation.service';
+import { FlagsService } from './routes/moderation/flags.service';
+import { ModerationController } from './routes/moderation/moderation.controller';
+import { ModerationDirectoryService } from './routes/moderation/moderation-directory.service';
+import { ModerationLogService } from './routes/moderation/moderation-log.service';
+import { StaffPreviewController } from './routes/moderation/staff-preview.controller';
+import { StaffPreviewService } from './routes/moderation/staff-preview.service';
+import { StandingService } from './routes/moderation/standing.service';
 import { MultiplayerController } from './routes/multiplayer/multiplayer.controller';
 import { MultiplayerService } from './routes/multiplayer/multiplayer.service';
 import { HubController } from './routes/project/hub.controller';
@@ -102,6 +117,13 @@ const nullProvider = (token: InjectionToken): Provider => ({
     ReportsController,
     CrashIngestController,
     AdminReportsController,
+    ModerationController,
+    StaffPreviewController,
+    AdminCaseController,
+    AdminModerationAccountController,
+    AdminModerationProjectController,
+    AdminModerationCommentController,
+    AdminModerationLogController,
   ],
   providers: [
     { provide: APP_GUARD, useClass: AccessGuard },
@@ -129,6 +151,14 @@ const nullProvider = (token: InjectionToken): Provider => ({
     nullProvider(ReportsService),
     nullProvider(AdminReportsService),
     nullProvider(CrashService),
+    nullProvider(FlagsService),
+    nullProvider(StandingService),
+    nullProvider(StaffPreviewService),
+    nullProvider(CaseService),
+    nullProvider(AccountModerationService),
+    nullProvider(ContentModerationService),
+    nullProvider(ModerationDirectoryService),
+    nullProvider(ModerationLogService),
   ],
 })
 export class SwaggerAppModule {}

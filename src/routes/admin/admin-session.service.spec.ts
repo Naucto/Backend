@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { withEnv } from '../../../test/env';
 import { ADMIN, USER } from '../../auth/access/roles';
 import { AuthService } from '../../auth/auth.service';
+import { JwtPayload, STAFF_SCOPE } from '../../auth/auth.types';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AdminAccountRow, AdminSessionService } from './admin-session.service';
 
@@ -55,6 +56,14 @@ describe('AdminSessionService', () => {
     expect(jwt.verify<{ sub: number }>(session.accessToken).sub).toBe(1);
     expect(session.account).toMatchObject({ id: 1, role: ADMIN });
     expect(sessionToken).toBeDefined();
+  });
+
+  it('scopes every access token it issues to staff, at sign-in and at renewal', async () => {
+    const { session, sessionToken } = await service.login('ada@example.com', 'pw', '1.1.1.1');
+    const renewed = await service.refresh(sessionToken!);
+
+    expect(jwt.verify<JwtPayload>(session.accessToken).scope).toBe(STAFF_SCOPE);
+    expect(jwt.verify<JwtPayload>(renewed.session.accessToken).scope).toBe(STAFF_SCOPE);
   });
 
   it('refuses an account that is not an admin', async () => {

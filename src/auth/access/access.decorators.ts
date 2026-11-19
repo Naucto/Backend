@@ -23,7 +23,14 @@ export const AUTHENTICATION_REQUIRED = 'Authentication required';
 /** Every account holds the lowest role, so requiring it is `RequiresAuth`. */
 type RequirableRole = Exclude<RoleName, typeof USER>;
 
-export type Access = { kind: 'public' } | { kind: 'auth' } | { kind: 'role'; role: RequirableRole };
+/** The 401 a staff route answers a token that did not come from the staff sign-in. */
+export const STAFF_SESSION_REQUIRED = 'STAFF_SESSION_REQUIRED';
+
+export type Access =
+  | { kind: 'public' }
+  | { kind: 'auth' }
+  | { kind: 'role'; role: RequirableRole }
+  | { kind: 'staff'; role: RequirableRole };
 
 type AccessDecorator = ReturnType<typeof applyDecorators>;
 
@@ -48,5 +55,19 @@ export const RequiresRole = (role: RequirableRole): AccessDecorator =>
     SetMetadata(ACCESS_KEY, { kind: 'role', role } satisfies Access),
     ApiBearerAuth('JWT-auth'),
     ApiUnauthorizedResponse({ description: AUTHENTICATION_REQUIRED }),
+    ApiForbiddenResponse({ description: `${role} role required` }),
+  );
+
+/**
+ * Open to staff holding `role` or a role ranked above it, signed in through the admin console.
+ * The token of an ordinary site sign-in is refused whatever role its account holds.
+ */
+export const RequiresStaffSession = (role: RequirableRole): AccessDecorator =>
+  applyDecorators(
+    SetMetadata(ACCESS_KEY, { kind: 'staff', role } satisfies Access),
+    ApiBearerAuth('JWT-auth'),
+    ApiUnauthorizedResponse({
+      description: `${AUTHENTICATION_REQUIRED}, through the staff sign-in (${STAFF_SESSION_REQUIRED})`,
+    }),
     ApiForbiddenResponse({ description: `${role} role required` }),
   );

@@ -3,7 +3,11 @@ import { Prisma } from '@prisma/client';
 
 import { pageWindow } from '../../common/page-window';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CommentResponseDto, PaginatedCommentsResponseDto } from './dto/comment-response.dto';
+import {
+  CommentRemoval,
+  CommentResponseDto,
+  PaginatedCommentsResponseDto,
+} from './dto/comment-response.dto';
 import {
   CommentNestedReplyException,
   CommentNotAuthorException,
@@ -41,6 +45,10 @@ type CommentRecord = CommentReplyRecord & {
   replies?: CommentReplyRecord[];
 };
 
+function removalOf(comment: { deleted: boolean }): { removedBy?: CommentRemoval } {
+  return comment.deleted ? { removedBy: 'USER' } : {};
+}
+
 @Injectable()
 export class ProjectCommentService {
   constructor(private readonly prisma: PrismaService) {}
@@ -58,6 +66,7 @@ export class ProjectCommentService {
       id: comment.id,
       content: comment.content,
       deleted: comment.deleted,
+      ...removalOf(comment),
       createdAt: comment.createdAt,
       projectId: comment.projectId,
       author: comment.author,
@@ -65,6 +74,7 @@ export class ProjectCommentService {
         id: reply.id,
         content: reply.content,
         deleted: reply.deleted,
+        ...removalOf(reply),
         createdAt: reply.createdAt,
         projectId: reply.projectId,
         author: reply.author,
