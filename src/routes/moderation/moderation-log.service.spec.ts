@@ -79,6 +79,37 @@ describe('ModerationLogService', () => {
     });
   });
 
+  describe('recordOnce', () => {
+    it('writes one row per key, leaving a second attempt without effect', async () => {
+      const createMany = jest.fn();
+      const once = new ModerationLogService({
+        moderationAction: { createMany },
+      } as unknown as PrismaService);
+
+      await once.recordOnce(
+        {
+          action: ModerationActionType.DRAFT_VIEWED,
+          actorId: 1,
+          targetType: ModerationTargetType.PROJECT,
+          targetId: 12,
+          subjectUserId: 7,
+        },
+        'view:1:12:490000',
+      );
+
+      expect(createMany).toHaveBeenCalledWith({
+        data: [
+          expect.objectContaining({
+            action: ModerationActionType.DRAFT_VIEWED,
+            dedupeKey: 'view:1:12:490000',
+            visibleToSubject: false,
+          }),
+        ],
+        skipDuplicates: true,
+      });
+    });
+  });
+
   describe('scrubAccount', () => {
     const scrubTx = {
       moderationAction: { updateMany: jest.fn() },

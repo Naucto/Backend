@@ -577,6 +577,25 @@ describe('ProjectContentService', () => {
       ]);
     });
 
+    it.each([
+      ['still served', 'release/1'],
+      ['withheld', 'withheld/1/release'],
+    ])('hands staff the release when it is %s', async (_case, key) => {
+      s3ServiceMock.fileExists.mockImplementation((asked: string) =>
+        Promise.resolve(asked === key),
+      );
+      s3ServiceMock.downloadFile.mockResolvedValue({ body: Readable.from('x') });
+
+      await expect(service.fetchReleaseForReview(1)).resolves.toBeDefined();
+      expect(s3ServiceMock.downloadFile).toHaveBeenCalledWith({ key });
+    });
+
+    it('has no release to hand staff for a game never released', async () => {
+      s3ServiceMock.fileExists.mockResolvedValue(false);
+
+      await expect(service.fetchReleaseForReview(1)).resolves.toBeNull();
+    });
+
     it('reports no cover when none was withheld', async () => {
       s3ServiceMock.fileExists.mockImplementation((key: string) =>
         Promise.resolve(key === 'withheld/1/release'),
