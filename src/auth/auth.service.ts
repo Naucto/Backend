@@ -188,9 +188,13 @@ export class AuthService {
 
       user = await this.userService.createOAuthUser(email, safeUsername);
     } else if (user.emailVerifiedAt === null) {
-      user = await this.prisma.user.update({
-        where: { id: user.id },
-        data: { emailVerifiedAt: new Date() },
+      const userId = user.id;
+      user = await this.prisma.$transaction(async (tx) => {
+        await tx.refreshToken.deleteMany({ where: { userId } });
+        return tx.user.update({
+          where: { id: userId },
+          data: { emailVerifiedAt: new Date(), password: null },
+        });
       });
     }
 

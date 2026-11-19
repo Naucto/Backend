@@ -370,17 +370,29 @@ describe('AuthService', () => {
       );
     });
 
-    it('should confirm an unconfirmed address the provider vouches for', async () => {
+    it('should confirm an unconfirmed address the provider vouches for, dropping what an unproven registrant left', async () => {
       const unconfirmed = userRow({ id: 4, email: 'ada@example.com', emailVerifiedAt: null });
       userService.findByEmail.mockResolvedValue(unconfirmed);
-      prismaService.user.update.mockResolvedValue({ ...unconfirmed, emailVerifiedAt: new Date() });
+      prismaService.tx.user.update.mockResolvedValue({
+        ...unconfirmed,
+        emailVerifiedAt: new Date(),
+        password: null,
+      });
 
       await signInWithGoogle('ada@example.com', 'Ada Lovelace');
 
-      expect(prismaService.user.update).toHaveBeenCalledWith({
-        where: { id: 4 },
-        data: { emailVerifiedAt: expect.any(Date) },
+      expect(prismaService.tx.refreshToken.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 4 },
       });
+      expect(prismaService.tx.user.update).toHaveBeenCalledWith({
+        where: { id: 4 },
+        data: { emailVerifiedAt: expect.any(Date), password: null },
+      });
+      expect(prismaService.user.update).not.toHaveBeenCalled();
+      expect(jwtService.sign).toHaveBeenCalledWith(
+        { sub: 4, email: 'ada@example.com' },
+        expect.any(Object),
+      );
     });
 
     it("should create the account under the provider's name when that handle is free", async () => {
