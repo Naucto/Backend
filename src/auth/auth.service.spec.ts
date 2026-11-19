@@ -605,7 +605,7 @@ describe('AuthService', () => {
   });
 
   describe('verifyEmail', () => {
-    it('should confirm the address and sign its account in', async () => {
+    it('should confirm the address without signing anyone in', async () => {
       emailTokens.consume.mockResolvedValue(7);
       prismaService.tx.user.update.mockResolvedValue({
         id: 7,
@@ -613,10 +613,9 @@ describe('AuthService', () => {
         deletedAt: null,
       });
 
-      await expect(authService.verifyEmail('token')).resolves.toEqual({
-        access_token: 'token123',
-        refresh_token: 'token123',
-      });
+      await expect(authService.verifyEmail('token')).resolves.toBeUndefined();
+      expect(jwtService.sign).not.toHaveBeenCalled();
+      expect(prismaService.tx.refreshToken.create).not.toHaveBeenCalled();
 
       expect(emailTokens.consume).toHaveBeenCalledWith('token', 'VERIFY_EMAIL', prismaService.tx);
       expect(prismaService.tx.user.update).toHaveBeenCalledWith(

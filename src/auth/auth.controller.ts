@@ -114,24 +114,18 @@ export class AuthController {
 
   @Public()
   @Post('verify-email')
+  @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
-    summary: 'Confirm an email address from the mailed link and sign its account in',
+    summary: 'Confirm an email address from the mailed link, without signing anyone in',
   })
   @ApiBody({ type: VerifyEmailDto })
-  @ApiResponse({
-    status: 201,
-    description: 'Address confirmed, signed in',
-    type: AccessTokenResponseDto,
-  })
+  @ApiResponse({ status: 204, description: 'Address confirmed' })
   @ApiResponse({
     status: 400,
     description: 'Link invalid, already used or expired (code INVALID_EMAIL_TOKEN)',
   })
-  async verifyEmail(
-    @Body() dto: VerifyEmailDto,
-    @Res({ passthrough: true }) res: Response,
-  ): Promise<AccessTokenResponseDto> {
-    return this.issue(res, await this.authService.verifyEmail(dto.token));
+  async verifyEmail(@Body() dto: VerifyEmailDto): Promise<void> {
+    await this.authService.verifyEmail(dto.token);
   }
 
   @Public()

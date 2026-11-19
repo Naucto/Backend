@@ -274,8 +274,11 @@ export class AuthService {
     });
   }
 
-  /** Confirms the address the token was mailed to and signs its account in. */
-  async verifyEmail(token: string): Promise<AuthResponseDto> {
+  /**
+   * Confirms the address the token was mailed to. It signs nobody in: the link can be opened by
+   * whoever it was sent to, so a session here would hand the reader the sender's account.
+   */
+  async verifyEmail(token: string): Promise<void> {
     return this.prisma.$transaction(async (tx) => {
       const userId = await this.emailTokens.consume(token, EmailTokenPurpose.VERIFY_EMAIL, tx);
       if (userId === null) {
@@ -290,8 +293,6 @@ export class AuthService {
       if (user.deletedAt) {
         throw invalidEmailToken();
       }
-
-      return this.generateTokens(user, tx);
     });
   }
 
