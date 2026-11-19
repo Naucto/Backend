@@ -44,6 +44,13 @@ export class AdminAccountController {
     return this.accounts.admins(parseRole(req.user.role));
   }
 
+  @Get('staff')
+  @ApiOperation({ summary: 'Every account holding a role that signs in to the console' })
+  @ApiResponse({ status: HttpStatus.OK, type: AdminAccountListDto })
+  staff(@Req() req: RequestWithUser): Promise<AdminAccountListDto> {
+    return this.accounts.staff(parseRole(req.user.role));
+  }
+
   @Get('search')
   @ApiOperation({ summary: 'Naucto accounts matching part of a handle, display name or email' })
   @ApiResponse({ status: HttpStatus.OK, type: AccountSearchResultDto })

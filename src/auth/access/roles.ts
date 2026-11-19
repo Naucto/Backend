@@ -22,6 +22,9 @@ const RANK: Record<RoleName, number> = {
 
 export const ROLE_NAMES: readonly RoleName[] = [USER, VIEWER, MODERATOR, ADMIN];
 
+/** The roles that sign in to the admin console. */
+export const STAFF_ROLE_NAMES: readonly RoleName[] = ROLE_NAMES.filter((role) => role !== USER);
+
 /** Reads a stored role; a value the hierarchy does not know grants the least privilege. */
 export function parseRole(value: string): RoleName {
   return ROLE_NAMES.find((role) => role === value) ?? USER;
