@@ -1,7 +1,9 @@
 import { BadRequestException, ForbiddenException, HttpStatus } from '@nestjs/common';
 
 /** Codes a client branches on, carried next to the message of the two rejections below. */
-export type AuthErrorCode = 'EMAIL_NOT_VERIFIED' | 'INVALID_EMAIL_TOKEN';
+export const AUTH_ERROR_CODES = ['EMAIL_NOT_VERIFIED', 'INVALID_EMAIL_TOKEN'] as const;
+
+export type AuthErrorCode = (typeof AUTH_ERROR_CODES)[number];
 
 export function emailNotVerified(): ForbiddenException {
   return new ForbiddenException({

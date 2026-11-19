@@ -10,7 +10,14 @@ import {
   Res,
   UnauthorizedException,
 } from '@nestjs/common';
-import { ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBody,
+  ApiExtraModels,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+  getSchemaPath,
+} from '@nestjs/swagger';
 import { Request, Response } from 'express';
 
 import {
@@ -22,6 +29,7 @@ import { Public, RequiresAuth } from './access/access.decorators';
 import { AuthService } from './auth.service';
 import { RequestWithUser } from './auth.types';
 import { REFRESH_COOKIE_NAME, refreshCookieOptions } from './auth.utils';
+import { AuthErrorResponseDto } from './dto/auth-error-response.dto';
 import { AccessTokenResponseDto, AuthResponseDto } from './dto/auth-response.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import {
@@ -36,6 +44,7 @@ import { PASSWORD_POLICY } from './password-policy';
 import { decryptRefreshToken, encryptRefreshToken } from './refresh-cookie.crypto';
 
 @ApiTags('auth')
+@ApiExtraModels(AuthErrorResponseDto, ValidationErrorResponseDto)
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
@@ -66,7 +75,8 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   @ApiResponse({
     status: 403,
-    description: 'Email address not confirmed',
+    description: 'Email address not confirmed (code EMAIL_NOT_VERIFIED)',
+    type: AuthErrorResponseDto,
   })
   async login(
     @Body() loginDto: LoginDto,
@@ -123,6 +133,7 @@ export class AuthController {
   @ApiResponse({
     status: 400,
     description: 'Link invalid, already used or expired (code INVALID_EMAIL_TOKEN)',
+    type: AuthErrorResponseDto,
   })
   async verifyEmail(@Body() dto: VerifyEmailDto): Promise<void> {
     await this.authService.verifyEmail(dto.token);
@@ -170,8 +181,13 @@ export class AuthController {
   @ApiResponse({
     status: 400,
     description:
-      'Password rejected, or link invalid, already used or expired (code INVALID_EMAIL_TOKEN)',
-    type: ValidationErrorResponseDto,
+      'Password rejected (violations), or link invalid, already used or expired (code INVALID_EMAIL_TOKEN)',
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(ValidationErrorResponseDto) },
+        { $ref: getSchemaPath(AuthErrorResponseDto) },
+      ],
+    },
   })
   async resetPassword(
     @Body() dto: ResetPasswordDto,
