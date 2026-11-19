@@ -22,3 +22,8 @@ export function parseRole(value: string): RoleName {
 export function holdsRole(userRole: RoleName, required: RoleName): boolean {
   return RANK[userRole] >= RANK[required];
 }
+
+/** Whether `actor` ranks strictly above `target`: staff act only on accounts below their own role. */
+export function outranks(actor: RoleName, target: RoleName): boolean {
+  return RANK[actor] > RANK[target];
+}

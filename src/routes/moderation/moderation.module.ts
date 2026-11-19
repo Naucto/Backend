@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { NotificationsModule } from '../../notifications/notifications.module';
 import { AccountModerationService } from './account-moderation.service';
 import { AdminCaseController } from './admin-case.controller';
 import { AdminModerationAccountController } from './admin-moderation-account.controller';
@@ -11,12 +12,13 @@ import { ContentModerationService } from './content-moderation.service';
 import { FlagsService } from './flags.service';
 import { ModerationController } from './moderation.controller';
 import { ModerationDirectoryService } from './moderation-directory.service';
-import { ModerationLogService } from './moderation-log.service';
+import { ModerationLogModule } from './moderation-log.module';
 import { StaffPreviewController } from './staff-preview.controller';
 import { StaffPreviewService } from './staff-preview.service';
 import { StandingService } from './standing.service';
 
 @Module({
+  imports: [ModerationLogModule, NotificationsModule],
   controllers: [
     ModerationController,
     StaffPreviewController,
@@ -34,7 +36,6 @@ import { StandingService } from './standing.service';
     AccountModerationService,
     ContentModerationService,
     ModerationDirectoryService,
-    ModerationLogService,
   ],
 })
 export class ModerationModule {}

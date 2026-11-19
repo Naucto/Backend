@@ -1,4 +1,4 @@
-import { ADMIN, holdsRole, MODERATOR, parseRole, RoleName, USER } from './roles';
+import { ADMIN, holdsRole, MODERATOR, outranks, parseRole, RoleName, USER } from './roles';
 
 describe('holdsRole', () => {
   it.each<[RoleName, RoleName, boolean]>([
@@ -13,6 +13,19 @@ describe('holdsRole', () => {
     [ADMIN, ADMIN, true],
   ])('%s holds %s: %s', (userRole, required, expected) => {
     expect(holdsRole(userRole, required)).toBe(expected);
+  });
+});
+
+describe('outranks', () => {
+  it.each<[RoleName, RoleName, boolean]>([
+    [MODERATOR, USER, true],
+    [ADMIN, MODERATOR, true],
+    [MODERATOR, MODERATOR, false],
+    [ADMIN, ADMIN, false],
+    [MODERATOR, ADMIN, false],
+    [USER, USER, false],
+  ])('%s outranks %s: %s', (actor, target, expected) => {
+    expect(outranks(actor, target)).toBe(expected);
   });
 });
 
