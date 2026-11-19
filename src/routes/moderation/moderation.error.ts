@@ -1,5 +1,3 @@
-import { NotImplementedException } from '@nestjs/common';
-
 /** The refusals a client of moderation tells apart, each answered as the `code` of the error body. */
 export const MODERATION_ERROR = {
   CANNOT_FLAG_OWN_CONTENT: 'CANNOT_FLAG_OWN_CONTENT',
@@ -16,8 +14,3 @@ export const MODERATION_ERROR = {
 } as const;
 
 export type ModerationErrorCode = keyof typeof MODERATION_ERROR;
-
-// TODO(NCTO-211): gone once every moderation service is implemented.
-export function notAvailableYet(): never {
-  throw new NotImplementedException('Moderation is not available yet');
-}
