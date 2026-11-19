@@ -18,7 +18,7 @@ import {
   ValidationErrorResponseDto,
 } from '../common/validation/error-response.dto';
 import { CreateUserDto } from '../routes/user/dto/create-user.dto';
-import { Public, RequiresAuth } from './access/access.decorators';
+import { AllowedWhileSuspended, Public, RequiresAuth } from './access/access.decorators';
 import { AuthService } from './auth.service';
 import { RequestWithUser } from './auth.types';
 import { REFRESH_COOKIE_NAME, refreshCookieOptions } from './auth.utils';
@@ -201,6 +201,7 @@ export class AuthController {
   }
 
   @Patch('password')
+  @AllowedWhileSuspended()
   @RequiresAuth()
   @ApiOperation({
     summary: 'Change password, OAuth users can set one without providing a current password',
@@ -233,6 +234,7 @@ export class AuthController {
    * is revoked by authenticated user rather than by presented token.
    */
   @Post('logout')
+  @AllowedWhileSuspended()
   @HttpCode(HttpStatus.OK)
   @RequiresAuth()
   @ApiOperation({ summary: 'End the session and clear the refresh token cookie' })

@@ -14,7 +14,7 @@ import {
 } from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 
-import { Public, RequiresAuth } from '../../auth/access/access.decorators';
+import { AllowedWhileSuspended, Public, RequiresAuth } from '../../auth/access/access.decorators';
 import { RequestWithUser } from '../../auth/auth.types';
 import { CommentResponseDto, PaginatedCommentsResponseDto } from './dto/comment-response.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
@@ -126,6 +126,7 @@ export class ProjectCommentController {
   }
 
   @Delete(':commentId')
+  @AllowedWhileSuspended()
   @ApiOperation({ summary: 'Delete a comment' })
   @ApiParam({ name: 'projectId', type: 'number' })
   @ApiParam({ name: 'commentId', type: 'number' })

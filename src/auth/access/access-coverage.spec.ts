@@ -1,13 +1,39 @@
 import { globSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { RequestMethod } from '@nestjs/common';
 import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 
-import { Access, ACCESS_KEY } from './access.decorators';
+import { Access, ACCESS_KEY, ALLOWED_WHILE_SUSPENDED_KEY } from './access.decorators';
 
 const SOURCE_ROOT = join(__dirname, '..', '..');
 
+/**
+ * Every write a suspended account keeps: leaving, withdrawing its own content, and looking after
+ * its own account. Opening one more is a decision, so it is made here as well as on the route.
+ */
+const KEPT_WHILE_SUSPENDED = [
+  'AnalyticsIngestController.link',
+  'AuthController.changePassword',
+  'AuthController.logout',
+  'MultiplayerController.leave',
+  'NotificationsController.markAllAsRead',
+  'NotificationsController.markAsRead',
+  'ProjectCommentController.deleteComment',
+  'ProjectContentController.unpublish',
+  'ProjectController.remove',
+  'ReportsController.updatePrompt',
+  'UserAnalyticsController.erase',
+  'UserController.deleteMe',
+  'UserController.removeProfileBackground',
+  'UserController.removeProfilePicture',
+  'WorkSessionController.leave',
+];
+
 interface ScannedRoute {
+  handler: string;
+  method: string;
+  allowedWhileSuspended: boolean;
   /** `Controller.handler (file)` */
   name: string;
   controllerPath: string;
@@ -33,6 +59,9 @@ async function scanRoutes(): Promise<ScannedRoute[]> {
           continue;
         }
         routes.push({
+          handler: `${exported.name}.${name}`,
+          method: RequestMethod[Reflect.getMetadata(METHOD_METADATA, handler) as number] ?? '',
+          allowedWhileSuspended: Reflect.getMetadata(ALLOWED_WHILE_SUSPENDED_KEY, handler) === true,
           name: `${exported.name}.${name} (${file})`,
           controllerPath: String(Reflect.getMetadata(PATH_METADATA, exported)),
           access:
@@ -69,6 +98,21 @@ describe('route access', () => {
 
     expect(adminRoutes).not.toEqual([]);
     expect(namesOf(adminRoutes.filter((route) => route.access?.kind !== 'staff'))).toEqual([]);
+  });
+
+  it('keeps open to a suspended account exactly the writes listed here', () => {
+    const kept = routes.filter((route) => route.allowedWhileSuspended);
+
+    expect(kept.map((route) => route.handler).sort()).toEqual(KEPT_WHILE_SUSPENDED);
+  });
+
+  // A read is open to a suspended account anyway and a public route never asks who calls, so the
+  // mark on either would say something that is not true.
+  it('marks as kept only writes that ask for an account', () => {
+    const kept = routes.filter((route) => route.allowedWhileSuspended);
+
+    expect(namesOf(kept.filter((route) => route.method === 'GET'))).toEqual([]);
+    expect(namesOf(kept.filter((route) => route.access?.kind !== 'auth'))).toEqual([]);
   });
 
   // The web app only ever holds the token of a site sign-in, which a staff route refuses.

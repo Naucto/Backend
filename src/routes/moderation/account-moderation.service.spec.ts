@@ -4,6 +4,8 @@ import { FlagStatus, ModerationActionType, ModerationReason } from '@prisma/clie
 import { ADMIN, MODERATOR, RoleName, USER } from '../../auth/access/roles';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { MultiplayerService } from '../multiplayer/multiplayer.service';
+import { WorkSessionService } from '../work-session/work-session.service';
 import { AccountModerationService } from './account-moderation.service';
 import { MODERATION_ERROR } from './moderation.error';
 import { ModerationLogService } from './moderation-log.service';
@@ -38,17 +40,20 @@ describe('AccountModerationService', () => {
     createdAt: new Date('2026-11-19T12:00:00.000Z'),
   };
 
-  const tx = { flag: { updateMany: jest.fn() } };
+  const tx = { flag: { updateMany: jest.fn() }, user: { update: jest.fn() } };
   const prisma = {
     user: { findUnique: jest.fn() },
     $transaction: jest.fn((run: (client: typeof tx) => unknown) => run(tx)),
   };
   const log = { record: jest.fn() };
   const notifications = { notifyBestEffort: jest.fn() };
+  const multiplayer = { removeAccount: jest.fn() };
+  const workSessions = { kickEverywhere: jest.fn() };
   let service: AccountModerationService;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
+    prisma.$transaction.mockImplementation((run: (client: typeof tx) => unknown) => run(tx));
     prisma.user.findUnique.mockResolvedValue(target(USER));
     log.record.mockResolvedValue(recorded);
     tx.flag.updateMany.mockResolvedValue({ count: 2 });
@@ -57,7 +62,123 @@ describe('AccountModerationService', () => {
       prisma as unknown as PrismaService,
       log as unknown as ModerationLogService,
       notifications as unknown as NotificationsService,
+      multiplayer as unknown as MultiplayerService,
+      workSessions as unknown as WorkSessionService,
     );
+  });
+
+  describe('suspend', () => {
+    const SUSPENSION = { reason: ModerationReason.HARASSMENT, publicMessage: 'Repeated insults.' };
+
+    beforeEach(() => {
+      jest.useFakeTimers({ now: new Date('2026-11-19T12:00:00.000Z') });
+      log.record.mockResolvedValue({
+        ...recorded,
+        action: ModerationActionType.ACCOUNT_SUSPENDED,
+      });
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('suspends for the days asked, and records when it ends, in one transaction', async () => {
+      await service.suspend(MOD, 7, { ...SUSPENSION, durationDays: 7 });
+
+      const until = new Date('2026-11-26T12:00:00.000Z');
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(tx.user.update).toHaveBeenCalledWith({
+        where: { id: 7 },
+        data: { suspendedAt: new Date('2026-11-19T12:00:00.000Z'), suspendedUntil: until },
+      });
+      expect(log.record).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({
+          action: ModerationActionType.ACCOUNT_SUSPENDED,
+          subjectUserId: 7,
+          expiresAt: until,
+        }),
+      );
+    });
+
+    it('suspends until reinstated when no duration is given', async () => {
+      await service.suspend(MOD, 7, SUSPENSION);
+
+      expect(tx.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ suspendedUntil: null }) }),
+      );
+    });
+
+    it('takes the account out of its live sessions once the suspension is written', async () => {
+      await service.suspend(MOD, 7, SUSPENSION);
+
+      expect(multiplayer.removeAccount).toHaveBeenCalledWith(7);
+      expect(workSessions.kickEverywhere).toHaveBeenCalledWith(7);
+      expect(tx.user.update.mock.invocationCallOrder[0]).toBeLessThan(
+        multiplayer.removeAccount.mock.invocationCallOrder[0]!,
+      );
+    });
+
+    it('stands even when a live session could not be ended', async () => {
+      multiplayer.removeAccount.mockRejectedValue(new Error('room server is down'));
+      jest.spyOn(service['logger'], 'warn').mockImplementation();
+
+      await expect(service.suspend(MOD, 7, SUSPENSION)).resolves.toBeDefined();
+      expect(notifications.notifyBestEffort).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 7, title: 'Your account is suspended' }),
+      );
+    });
+
+    it('touches no session when the suspension could not be written', async () => {
+      tx.user.update.mockRejectedValue(new Error('database is down'));
+
+      await expect(service.suspend(MOD, 7, SUSPENSION)).rejects.toThrow('database is down');
+      expect(multiplayer.removeAccount).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('reinstate', () => {
+    it('refuses an account that is not suspended', async () => {
+      await expect(service.reinstate(MOD, 7, {})).rejects.toMatchObject({
+        code: MODERATION_ERROR.NOT_SUSPENDED,
+      });
+      expect(tx.user.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses one whose suspension already ran out', async () => {
+      prisma.user.findUnique.mockResolvedValue(
+        target(USER, {
+          suspendedAt: new Date('2020-01-01'),
+          suspendedUntil: new Date('2020-01-02'),
+        }),
+      );
+
+      await expect(service.reinstate(MOD, 7, {})).rejects.toMatchObject({
+        code: MODERATION_ERROR.NOT_SUSPENDED,
+      });
+    });
+
+    it('lifts the suspension, records it and tells the account', async () => {
+      prisma.user.findUnique.mockResolvedValue(target(USER, { suspendedAt: new Date() }));
+      log.record.mockResolvedValue({
+        ...recorded,
+        action: ModerationActionType.ACCOUNT_REINSTATED,
+      });
+
+      await service.reinstate(MOD, 7, {});
+
+      expect(tx.user.update).toHaveBeenCalledWith({
+        where: { id: 7 },
+        data: { suspendedAt: null, suspendedUntil: null },
+      });
+      expect(log.record).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({ action: ModerationActionType.ACCOUNT_REINSTATED }),
+      );
+      expect(notifications.notifyBestEffort).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Your suspension was lifted.' }),
+      );
+    });
   });
 
   describe('who may decide about whom', () => {

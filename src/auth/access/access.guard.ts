@@ -6,14 +6,23 @@ import { isObservable, lastValueFrom } from 'rxjs';
 import { CodedException } from '../../common/coded.exception';
 import { UserService } from '../../routes/user/user.service';
 import { TokenInfo } from '../auth.types';
-import { Access, ACCESS_KEY, STAFF_SESSION_REQUIRED } from './access.decorators';
+import {
+  Access,
+  ACCESS_KEY,
+  ALLOWED_WHILE_SUSPENDED_KEY,
+  STAFF_SESSION_REQUIRED,
+} from './access.decorators';
 import { ADMIN, holdsRole } from './roles';
+import { ACCOUNT_SUSPENDED, currentSuspension, SuspensionState } from './suspension';
 
 /** What a route that states nothing gets: forgetting to annotate one must not open it. */
 const DEFAULT_ACCESS: Access = { kind: 'role', role: ADMIN };
 
+const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
 interface AccessRequest {
-  user?: { id: number } | null;
+  method: string;
+  user?: ({ id: number } & Partial<SuspensionState>) | null;
   /** Set by passport from the strategy once the token verified. */
   authInfo?: TokenInfo;
 }
@@ -35,6 +44,32 @@ export class AccessGuard extends AuthGuard('jwt') {
   private async authenticate(context: ExecutionContext): Promise<void> {
     const activated = super.canActivate(context);
     await (isObservable(activated) ? lastValueFrom(activated) : activated);
+  }
+
+  /**
+   * A suspended account still signs in and reads, so it can see why and look after its account. It
+   * writes only where a route says so, and holds no staff power at all.
+   */
+  private refuseSuspended(access: Access, request: AccessRequest, context: ExecutionContext): void {
+    const suspension = request.user ? currentSuspension(request.user) : null;
+    if (!suspension) {
+      return;
+    }
+    const allowed =
+      access.kind === 'auth' &&
+      (READ_METHODS.has(request.method) ||
+        this.reflector.get<boolean | undefined>(
+          ALLOWED_WHILE_SUSPENDED_KEY,
+          context.getHandler(),
+        ) === true);
+    if (!allowed) {
+      throw new CodedException(
+        HttpStatus.FORBIDDEN,
+        ACCOUNT_SUSPENDED,
+        'This account is suspended',
+        { until: suspension.until },
+      );
+    }
   }
 
   override async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -74,6 +109,8 @@ export class AccessGuard extends AuthGuard('jwt') {
     if (access.kind !== 'staff' && staffToken) {
       throw new UnauthorizedException('A staff session opens the admin console only');
     }
+
+    this.refuseSuspended(access, request, context);
 
     if (access.kind === 'auth') {
       return true;

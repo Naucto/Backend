@@ -1,7 +1,7 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 
-import { RequiresAuth } from '../../auth/access/access.decorators';
+import { AllowedWhileSuspended, RequiresAuth } from '../../auth/access/access.decorators';
 import { RequestWithUser } from '../../auth/auth.types';
 import { ProjectCollaboratorGuard } from '../../auth/guards/project.guard';
 import { ProjectId } from '../project/project-id.decorator';
@@ -34,6 +34,7 @@ export class WorkSessionController {
   }
 
   @Post('leave/:id')
+  @AllowedWhileSuspended()
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Leave a work session' })
   @ApiResponse({

@@ -394,6 +394,33 @@ export class MultiplayerService {
     }
   }
 
+  /**
+   * Takes an account out of multiplayer: the sessions it hosts end and their rooms close, and it
+   * gives up its seat in the sessions of others.
+   */
+  async removeAccount(userId: number): Promise<void> {
+    const hosted = await this._prismaService.gameSession.findMany({
+      where: { hostId: userId, endedAt: null },
+      select: { sessionId: true },
+    });
+    for (const { sessionId } of hosted) {
+      await this._softEnd(sessionId);
+      this._syncServer.closeRoom(sessionId);
+    }
+
+    const joined = await this._prismaService.gameSession.findMany({
+      where: { endedAt: null, otherUsers: { some: { id: userId } } },
+      select: { sessionId: true, hostId: true },
+    });
+    for (const session of joined) {
+      await this._prismaService.gameSession.update({
+        where: { sessionId: session.sessionId },
+        data: { otherUsers: { disconnect: { id: userId } } },
+      });
+      this._eventEmitter.emit(ACTIVITY_CHANGED, new ActivityChangedEvent(session.hostId));
+    }
+  }
+
   @Cron(CronExpression.EVERY_30_MINUTES)
   async reapStaleSessions(): Promise<void> {
     const cutoff = new Date(Date.now() - MultiplayerService.MAX_SESSION_AGE_MS);

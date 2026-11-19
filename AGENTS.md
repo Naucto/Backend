@@ -130,6 +130,14 @@ controller, declares with exactly one of four decorators (`src/auth/access/acces
   under `admin/` uses it except `admin/auth`, which is how the session is opened, and
   `access-coverage.spec.ts` fails on one that does not.
 
+**Suspension** is decided by the same guard, from the two `suspended*` columns read through
+`currentSuspension` (`src/auth/access/suspension.ts`), which also lets a dated suspension lapse
+without anything clearing it. A suspended account signs in and reads. Every write that asks for an
+account answers it 403 with the code `ACCOUNT_SUSPENDED`, unless its handler carries
+`@AllowedWhileSuspended()`, and it holds no role at all, staff routes included. A new write is
+therefore closed to suspended accounts by default. Opening one means adding the decorator and the
+handler to the list in `access-coverage.spec.ts`, which fails until both agree.
+
 A route that declares nothing is treated as `@RequiresRole(ADMIN)`, and `access-coverage.spec.ts`
 fails on it anyway: every route states who may call it. Handler metadata overrides the
 controller's, so a `@RequiresAuth()` controller can open single routes with `@Public()`. The

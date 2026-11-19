@@ -31,7 +31,11 @@ import {
 } from '@nestjs/swagger';
 import { Response } from 'express';
 
-import { RequiresAuth, RequiresRole } from '../../auth/access/access.decorators';
+import {
+  AllowedWhileSuspended,
+  RequiresAuth,
+  RequiresRole,
+} from '../../auth/access/access.decorators';
 import { ADMIN } from '../../auth/access/roles';
 import { currentSuspension } from '../../auth/access/suspension';
 import { RequestWithUser } from '../../auth/auth.types';
@@ -184,6 +188,7 @@ export class UserController {
   }
 
   @Delete('me')
+  @AllowedWhileSuspended()
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary:
@@ -291,6 +296,7 @@ export class UserController {
   }
 
   @Delete(':id/profile-picture')
+  @AllowedWhileSuspended()
   @ApiOperation({ summary: 'Remove your own profile picture' })
   @ApiParam({ name: 'id', description: 'User ID' })
   @ApiResponse({
@@ -341,6 +347,7 @@ export class UserController {
   }
 
   @Delete(':id/profile-background')
+  @AllowedWhileSuspended()
   @ApiOperation({ summary: 'Remove your own profile background' })
   @ApiParam({ name: 'id', description: 'User ID' })
   @ApiResponse({

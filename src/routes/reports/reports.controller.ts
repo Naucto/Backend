@@ -15,7 +15,7 @@ import {
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 
-import { RequiresAuth } from '../../auth/access/access.decorators';
+import { AllowedWhileSuspended, RequiresAuth } from '../../auth/access/access.decorators';
 import { RequestWithUser } from '../../auth/auth.types';
 import { CreateBugReportDto } from './dto/bug.dto';
 import { CreatedReportDto } from './dto/created-report.dto';
@@ -41,6 +41,7 @@ export class ReportsController {
   }
 
   @Put('prompt')
+  @AllowedWhileSuspended()
   @ApiOperation({ summary: 'Snooze or decline the rating prompt, or let it ask again' })
   @ApiResponse({ status: HttpStatus.OK, type: FeedbackPromptDto })
   updatePrompt(

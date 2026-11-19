@@ -2,7 +2,7 @@ import { Controller, Delete, Get, HttpCode, HttpStatus, Req, Res } from '@nestjs
 import { ApiOperation, ApiProduces, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 
-import { RequiresAuth } from '../../auth/access/access.decorators';
+import { AllowedWhileSuspended, RequiresAuth } from '../../auth/access/access.decorators';
 import { RequestWithUser } from '../../auth/auth.types';
 import {
   UserAnalyticsEraseResponseDto,
@@ -37,6 +37,7 @@ export class UserAnalyticsController {
   }
 
   @Delete('me/analytics')
+  @AllowedWhileSuspended()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Erase what analytics holds about the signed-in account; collection starts afresh',
