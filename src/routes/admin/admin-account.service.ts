@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
-import { ADMIN, RoleName } from '../../auth/access/roles';
+import { ADMIN, readsAddresses, RoleName } from '../../auth/access/roles';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ADMIN_ACCOUNT_SELECT, AdminAccountRow, toAccountSummary } from './admin-session.service';
 import {
@@ -25,16 +25,16 @@ export class AdminAccountService {
     return toAccountSummary(await this.liveAccount(userId));
   }
 
-  async admins(): Promise<AdminAccountListDto> {
+  async admins(reader: RoleName): Promise<AdminAccountListDto> {
     const rows = await this.prisma.user.findMany({
       where: { role: ADMIN, deletedAt: null },
       select: ADMIN_ACCOUNT_SELECT,
       orderBy: { createdAt: 'asc' },
     });
-    return { items: rows.map(toAccountSummary) };
+    return { items: rows.map((row) => toAccountSummary(row, readsAddresses(reader))) };
   }
 
-  async search(query: string): Promise<AccountSearchResultDto> {
+  async search(query: string, reader: RoleName): Promise<AccountSearchResultDto> {
     const term = query.trim();
     const rows = await this.prisma.user.findMany({
       where: {
@@ -42,14 +42,17 @@ export class AdminAccountService {
         OR: [
           { username: { contains: term, mode: 'insensitive' } },
           { nickname: { contains: term, mode: 'insensitive' } },
-          { email: { contains: term, mode: 'insensitive' } },
+          // An address is searched only by who may read it back, or a match would give it away.
+          ...(readsAddresses(reader)
+            ? [{ email: { contains: term, mode: 'insensitive' as const } }]
+            : []),
         ],
       },
       select: ADMIN_ACCOUNT_SELECT,
       orderBy: { username: 'asc' },
       take: SEARCH_LIMIT,
     });
-    return { items: rows.map(toAccountSummary) };
+    return { items: rows.map((row) => toAccountSummary(row, readsAddresses(reader))) };
   }
 
   /**

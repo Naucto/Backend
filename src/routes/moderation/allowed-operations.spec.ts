@@ -1,6 +1,6 @@
 import { ModerationTargetType } from '@prisma/client';
 
-import { ADMIN, MODERATOR, USER } from '../../auth/access/roles';
+import { ADMIN, MODERATOR, USER, VIEWER } from '../../auth/access/roles';
 import { allowedOperations, OperationContext } from './allowed-operations';
 
 const MOD = { id: 1, role: MODERATOR } as const;
@@ -33,6 +33,13 @@ describe('allowedOperations', () => {
       'SUSPEND',
       'CLEAR_PROFILE',
     ]);
+  });
+
+  it('offers a viewer nothing, on any target in any state', () => {
+    const viewer = { id: 3, role: VIEWER } as const;
+
+    expect(allowedOperations(viewer, comment())).toEqual([]);
+    expect(allowedOperations(viewer, comment({ state: 'HIDDEN' }))).toEqual([]);
   });
 
   it('adds the permanent deletions for an admin', () => {

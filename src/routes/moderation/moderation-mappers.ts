@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 
-import { ADMIN, holdsRole, parseRole } from '../../auth/access/roles';
+import { parseRole, readsAddresses } from '../../auth/access/roles';
 import { siteUrls } from '../../common/site-urls';
 import {
   ModerationAccountRefDto,
@@ -38,7 +38,7 @@ export function toAccountRef(row: AccountRefRow, staff: StaffActor): ModerationA
     role: parseRole(row.role),
     deleted,
     profileUrl: deleted ? null : siteUrls.profile(row.username),
-    email: holdsRole(staff.role, ADMIN) ? row.email : null,
+    email: readsAddresses(staff.role) ? row.email : null,
   };
 }
 

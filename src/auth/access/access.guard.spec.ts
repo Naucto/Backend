@@ -26,7 +26,7 @@ import {
   STAFF_SESSION_REQUIRED,
 } from './access.decorators';
 import { AccessGuard } from './access.guard';
-import { ADMIN, MODERATOR, RoleName, USER } from './roles';
+import { ADMIN, MODERATOR, RoleName, USER, VIEWER } from './roles';
 import { ACCOUNT_SUSPENDED } from './suspension';
 
 const SECRET = 'access-guard-spec-secret';
@@ -38,6 +38,7 @@ const DELETED_USER = 4;
 const SUSPENDED_USER = 5;
 const SUSPENDED_MODERATOR = 6;
 const LAPSED_USER = 7;
+const VIEWER_USER = 8;
 
 const ROLES: Record<number, RoleName> = {
   [PLAIN_USER]: USER,
@@ -47,6 +48,7 @@ const ROLES: Record<number, RoleName> = {
   [SUSPENDED_USER]: USER,
   [SUSPENDED_MODERATOR]: MODERATOR,
   [LAPSED_USER]: USER,
+  [VIEWER_USER]: VIEWER,
 };
 
 const SUSPENDED_UNTIL = new Date('2999-01-01T00:00:00.000Z');
@@ -98,6 +100,10 @@ class ProbeController {
   @RequiresStaffSession(ADMIN)
   @Get('staff-admin')
   staffAdmin(): void {}
+
+  @RequiresStaffSession(MODERATOR)
+  @Post('staff-write')
+  staffWrite(): void {}
 }
 
 @Controller('bare')
@@ -281,6 +287,60 @@ describe('AccessGuard', () => {
 
       expect(response.status).toBe(HttpStatus.OK);
       expect(response.body).toEqual({ user: null });
+    });
+  });
+
+  describe('a viewer', () => {
+    it.each([
+      ['a route moderators act on', '/probe/staff'],
+      ['a route only admins act on', '/probe/staff-admin'],
+    ])('reads %s in the admin console', async (_case, path) => {
+      const response = await request(app.getHttpServer())
+        .get(path)
+        .set('Authorization', staffTokenFor(VIEWER_USER));
+
+      expect(response.status).toBe(HttpStatus.OK);
+    });
+
+    it('writes nothing there', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/probe/staff-write')
+        .set('Authorization', staffTokenFor(VIEWER_USER));
+
+      expect(response.status).toBe(HttpStatus.FORBIDDEN);
+    });
+
+    it('still needs the staff sign-in to read the console', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/probe/staff')
+        .set('Authorization', tokenFor(VIEWER_USER));
+
+      expect(response.status).toBe(HttpStatus.UNAUTHORIZED);
+      expect(response.body).toMatchObject({ code: STAFF_SESSION_REQUIRED });
+    });
+
+    it('holds no staff role on the site, where it is an ordinary account', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/probe/moderator')
+        .set('Authorization', tokenFor(VIEWER_USER));
+
+      expect(response.status).toBe(HttpStatus.FORBIDDEN);
+    });
+
+    it('does not lend its reach to a moderator, who ranks above it', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/probe/staff-admin')
+        .set('Authorization', staffTokenFor(MODERATOR_USER));
+
+      expect(response.status).toBe(HttpStatus.FORBIDDEN);
+    });
+
+    it('lets a moderator write where the route asks for a moderator', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/probe/staff-write')
+        .set('Authorization', staffTokenFor(MODERATOR_USER));
+
+      expect(response.status).toBe(HttpStatus.CREATED);
     });
   });
 

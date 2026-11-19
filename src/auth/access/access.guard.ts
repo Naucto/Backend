@@ -12,7 +12,7 @@ import {
   ALLOWED_WHILE_SUSPENDED_KEY,
   STAFF_SESSION_REQUIRED,
 } from './access.decorators';
-import { ADMIN, holdsRole } from './roles';
+import { ADMIN, holdsRole, VIEWER } from './roles';
 import { ACCOUNT_SUSPENDED, currentSuspension, SuspensionState } from './suspension';
 
 /** What a route that states nothing gets: forgetting to annotate one must not open it. */
@@ -120,6 +120,12 @@ export class AccessGuard extends AuthGuard('jwt') {
     if (userId === undefined) {
       return false;
     }
-    return holdsRole(await this.userService.getUserRole(userId), access.role);
+    const role = await this.userService.getUserRole(userId);
+    if (holdsRole(role, access.role)) {
+      return true;
+    }
+    // A viewer observes the admin console: every read of it, whatever role the route asks of those
+    // who act there, and no write. Outside the console it is an ordinary account.
+    return access.kind === 'staff' && role === VIEWER && READ_METHODS.has(request.method);
   }
 }
