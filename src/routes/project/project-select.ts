@@ -20,7 +20,7 @@ export const WITH_PEOPLE = {
 export const WITH_PEOPLE_AND_COUNTS = {
   ...WITH_PEOPLE,
   _count: {
-    select: { forks: true, comments: { where: { deleted: false } } },
+    select: { forks: true, comments: { where: { deleted: false, hiddenAt: null } } },
   },
 } satisfies Prisma.ProjectInclude;
 

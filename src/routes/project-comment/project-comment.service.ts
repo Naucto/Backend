@@ -3,11 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { pageWindow } from '../../common/page-window';
 import { PrismaService } from '../../prisma/prisma.service';
-import {
-  CommentRemoval,
-  CommentResponseDto,
-  PaginatedCommentsResponseDto,
-} from './dto/comment-response.dto';
+import { CommentResponseDto, PaginatedCommentsResponseDto } from './dto/comment-response.dto';
 import {
   CommentNestedReplyException,
   CommentNotAuthorException,
@@ -36,6 +32,7 @@ type CommentReplyRecord = {
   id: number;
   content: string;
   deleted: boolean;
+  hiddenAt: Date | null;
   createdAt: Date;
   projectId: number;
   author: CommentAuthor;
@@ -45,8 +42,19 @@ type CommentRecord = CommentReplyRecord & {
   replies?: CommentReplyRecord[];
 };
 
-function removalOf(comment: { deleted: boolean }): { removedBy?: CommentRemoval } {
-  return comment.deleted ? { removedBy: 'USER' } : {};
+/**
+ * What anyone but staff reads of a comment. One that moderation hid keeps its text in the database
+ * for a restore, so the text is withheld here, the one place a comment is turned into an answer.
+ */
+function published(
+  comment: CommentReplyRecord,
+): Pick<CommentResponseDto, 'content' | 'deleted' | 'removedBy'> {
+  if (comment.hiddenAt) {
+    return { content: '', deleted: true, removedBy: 'MODERATION' };
+  }
+  return comment.deleted
+    ? { content: comment.content, deleted: true, removedBy: 'USER' }
+    : { content: comment.content, deleted: false };
 }
 
 @Injectable()
@@ -64,17 +72,13 @@ export class ProjectCommentService {
   private mapComment(comment: CommentRecord): CommentResponseDto {
     return {
       id: comment.id,
-      content: comment.content,
-      deleted: comment.deleted,
-      ...removalOf(comment),
+      ...published(comment),
       createdAt: comment.createdAt,
       projectId: comment.projectId,
       author: comment.author,
       replies: comment.replies?.map((reply) => ({
         id: reply.id,
-        content: reply.content,
-        deleted: reply.deleted,
-        ...removalOf(reply),
+        ...published(reply),
         createdAt: reply.createdAt,
         projectId: reply.projectId,
         author: reply.author,
@@ -175,6 +179,7 @@ export class ProjectCommentService {
         parentId: true,
         projectId: true,
         deleted: true,
+        hiddenAt: true,
         project: { select: { publishedAt: true } },
       },
     });
@@ -195,7 +200,7 @@ export class ProjectCommentService {
       throw new CommentNestedReplyException();
     }
 
-    if (parentComment.deleted) {
+    if (parentComment.deleted || parentComment.hiddenAt) {
       throw new CommentReplyToDeletedException();
     }
 
@@ -222,10 +227,10 @@ export class ProjectCommentService {
   ): Promise<CommentResponseDto> {
     const comment = await this.prisma.comment.findUnique({
       where: { id: commentId },
-      select: { id: true, authorId: true, projectId: true, deleted: true },
+      select: { id: true, authorId: true, projectId: true, deleted: true, hiddenAt: true },
     });
 
-    if (!comment || comment.deleted) {
+    if (!comment || comment.deleted || comment.hiddenAt) {
       throw new CommentNotFoundException(commentId);
     }
 

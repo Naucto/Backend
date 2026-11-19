@@ -96,6 +96,32 @@ describe('ProjectCommentService', () => {
       });
     });
 
+    it('withholds the text of a comment moderation hid, and says who removed it', async () => {
+      const hidden = { ...stored, hiddenAt: new Date('2026-08-18T09:00:00Z') };
+      const hiddenReply = { ...hidden, id: 6, parentId: 5 };
+      prismaMock.comment.findMany.mockResolvedValue([{ ...hidden, replies: [hiddenReply] }]);
+
+      const { comments } = await service.getComments(1);
+
+      expect(comments[0]).toMatchObject({ content: '', deleted: true, removedBy: 'MODERATION' });
+      expect(comments[0]?.replies?.[0]).toMatchObject({
+        content: '',
+        deleted: true,
+        removedBy: 'MODERATION',
+      });
+      expect(JSON.stringify(comments)).not.toContain('Great game!');
+    });
+
+    it('says a user removed a comment a user deleted', async () => {
+      prismaMock.comment.findMany.mockResolvedValue([
+        { ...stored, content: '', deleted: true, replies: [] },
+      ]);
+
+      const { comments } = await service.getComments(1);
+
+      expect(comments[0]).toMatchObject({ deleted: true, removedBy: 'USER' });
+    });
+
     it('keeps a deleted comment only while it still has replies', async () => {
       await service.getComments(1);
 
@@ -217,6 +243,15 @@ describe('ProjectCommentService', () => {
       );
     });
 
+    it('refuses a reply to a comment moderation hid', async () => {
+      prismaMock.comment.findUnique.mockResolvedValue({ ...parent, hiddenAt: new Date() });
+
+      await expect(service.createReply(1, 5, 8, 'Agreed')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(prismaMock.comment.create).not.toHaveBeenCalled();
+    });
+
     it('refuses a reply on an unpublished project', async () => {
       prismaMock.comment.findUnique.mockResolvedValue({
         ...parent,
@@ -282,6 +317,15 @@ describe('ProjectCommentService', () => {
 
     it('does not edit a deleted comment', async () => {
       prismaMock.comment.findUnique.mockResolvedValue({ ...own, deleted: true });
+
+      await expect(service.updateComment(1, 5, 7, 'Edited')).rejects.toBeInstanceOf(
+        CommentNotFoundException,
+      );
+      expect(prismaMock.comment.update).not.toHaveBeenCalled();
+    });
+
+    it('does not let the author rewrite a comment moderation hid', async () => {
+      prismaMock.comment.findUnique.mockResolvedValue({ ...own, hiddenAt: new Date() });
 
       await expect(service.updateComment(1, 5, 7, 'Edited')).rejects.toBeInstanceOf(
         CommentNotFoundException,
