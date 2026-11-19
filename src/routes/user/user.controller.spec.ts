@@ -9,8 +9,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 
-import { ACCESS_KEY } from '../../auth/access/access.decorators';
-import { ADMIN, USER } from '../../auth/access/roles';
+import { USER } from '../../auth/access/roles';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AnalyticsFactService } from '../analytics/analytics-fact.service';
 import { EdgeService } from '../s3/edge.service';
@@ -35,9 +34,6 @@ describe('UserController', () => {
   let userService: UserService;
   let s3Service: S3Service;
   let edgeService: EdgeService;
-  let prisma: {
-    user: { findUnique: jest.Mock; findMany: jest.Mock; update: jest.Mock; count: jest.Mock };
-  };
   const accountDeletion = { deleteAccount: jest.fn() };
 
   beforeEach(async () => {
@@ -94,7 +90,6 @@ describe('UserController', () => {
     userService = module.get<UserService>(UserService);
     s3Service = module.get<S3Service>(S3Service);
     edgeService = module.get<EdgeService>(EdgeService);
-    prisma = module.get(PrismaService);
   });
 
   it('should be defined', () => {
@@ -359,68 +354,6 @@ describe('UserController', () => {
         controller.deleteMe({ user: { id: 7 } } as any, { confirmation: 'DELETE' }, res),
       ).rejects.toThrow('boom');
       expect(res.clearCookie).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('the account routes', () => {
-    const account = { id: 9, email: 'ada@example.com', username: 'ada' };
-
-    it.each(['findAll', 'findOne', 'update', 'remove'] as const)(
-      '%s is open to admins only',
-      (handler) => {
-        const method = UserController.prototype[handler];
-
-        expect(Reflect.getMetadata(ACCESS_KEY, method)).toEqual({ kind: 'role', role: ADMIN });
-      },
-    );
-
-    it('the list selects its columns, the password hash not among them', async () => {
-      prisma.user.findMany.mockResolvedValue([account]);
-      prisma.user.count.mockResolvedValue(1);
-
-      await controller.findAll({});
-
-      const { select } = prisma.user.findMany.mock.calls[0][0];
-      expect(select).toMatchObject({ id: true, email: true });
-      expect(select).not.toHaveProperty('password');
-    });
-
-    it('one account selects its columns, the password hash not among them', async () => {
-      prisma.user.findUnique.mockResolvedValue(account);
-
-      await controller.findOne(9);
-
-      const { select } = prisma.user.findUnique.mock.calls[0][0];
-      expect(select).toMatchObject({ id: true, email: true });
-      expect(select).not.toHaveProperty('password');
-    });
-
-    it('an update selects its columns, the password hash not among them', async () => {
-      prisma.user.update.mockResolvedValue(account);
-
-      await controller.update(9, { nickname: 'Ada' });
-
-      const { select } = prisma.user.update.mock.calls[0][0];
-      expect(select).toMatchObject({ id: true, email: true });
-      expect(select).not.toHaveProperty('password');
-    });
-  });
-
-  describe('DELETE /users/:id', () => {
-    it('goes through account deletion, keeping the published games', async () => {
-      accountDeletion.deleteAccount.mockResolvedValue(undefined);
-
-      await expect(controller.remove(9)).resolves.toEqual({
-        statusCode: HttpStatus.OK,
-        message: 'User deleted successfully',
-      });
-      expect(accountDeletion.deleteAccount).toHaveBeenCalledWith(9, false, { by: 'admin' });
-    });
-
-    it('answers not found for an unknown id', async () => {
-      accountDeletion.deleteAccount.mockRejectedValue(new NotFoundException('User not found'));
-
-      await expect(controller.remove(9)).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });

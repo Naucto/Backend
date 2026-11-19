@@ -3,14 +3,11 @@ import { AnalyticsFactType, PersonalColour, Prisma, SessionJoinPolicy, User } fr
 import * as bcrypt from 'bcryptjs';
 
 import { parseRole, RoleName } from '../../auth/access/roles';
-import { toSkipTake } from '../../common/dto/pagination-query.dto';
 import { conflictViolation } from '../../common/validation/violation.exception';
 import { isUniqueViolation, PrismaService } from '../../prisma/prisma.service';
 import { AnalyticsFactService, signupFactKey } from '../analytics/analytics-fact.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { MeDto } from './dto/me.dto';
-import { UpdateUserDto } from './dto/update-user.dto';
-import { DEFAULT_USER_PAGE_SIZE, UserFilterDto } from './dto/user-filter.dto';
 import { generateFriendCode, normalizeFriendCode } from './friend-code.util';
 
 /** The columns anyone may read of a person. */
@@ -22,20 +19,6 @@ const PUBLIC_PROFILE_SELECT = {
   colour: true,
   createdAt: true,
 } as const;
-
-/** The columns of an account that may leave the server. */
-const USER_ACCOUNT_SELECT = {
-  id: true,
-  email: true,
-  username: true,
-  nickname: true,
-  createdAt: true,
-  role: true,
-} as const;
-
-export type UserAccount = Prisma.UserGetPayload<{
-  select: typeof USER_ACCOUNT_SELECT;
-}>;
 
 /** The columns a search hit carries. */
 const PUBLIC_SEARCH_HIT_SELECT = { id: true, username: true, nickname: true } as const;
@@ -306,47 +289,6 @@ export class UserService {
     return this.prisma.user.findMany(query);
   }
 
-  async findPage(filter: UserFilterDto): Promise<{
-    users: UserAccount[];
-    total: number;
-    page: number;
-    limit: number;
-  }> {
-    const { q: search, nickname, email, sortBy, order } = filter;
-    const { skip, take } = toSkipTake(filter, DEFAULT_USER_PAGE_SIZE);
-
-    const where: Prisma.UserWhereInput = {};
-    if (search) {
-      where.OR = [
-        { username: { contains: search, mode: 'insensitive' } },
-        { nickname: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-    if (nickname) {
-      where.nickname = { contains: nickname };
-    }
-    if (email) {
-      where.email = { contains: email };
-    }
-
-    const orderBy: Prisma.UserOrderByWithRelationInput = sortBy
-      ? { [sortBy]: order ?? 'asc' }
-      : { id: 'asc' };
-
-    const [users, total] = await Promise.all([
-      this.prisma.user.findMany({
-        where,
-        orderBy,
-        skip,
-        take,
-        select: USER_ACCOUNT_SELECT,
-      }),
-      this.prisma.user.count({ where }),
-    ]);
-
-    return { users, total, page: filter.page ?? 1, limit: take };
-  }
-
   async findOne(id: number): Promise<User> {
     const user = await this.prisma.user.findUnique({ where: { id } });
 
@@ -355,55 +297,6 @@ export class UserService {
     }
 
     return user;
-  }
-
-  async findAccount(id: number): Promise<UserAccount> {
-    const user = await this.prisma.user.findUnique({
-      where: { id },
-      select: USER_ACCOUNT_SELECT,
-    });
-
-    if (!user) {
-      throw new NotFoundException(`User with ID ${id} not found`);
-    }
-
-    return user;
-  }
-
-  async update(id: number, updateUserDto: UpdateUserDto): Promise<UserAccount> {
-    const data: Prisma.UserUpdateInput = { ...updateUserDto };
-
-    if (updateUserDto.password) {
-      data.password = await bcrypt.hash(updateUserDto.password, UserService.BCRYPT_SALT_ROUNDS);
-    }
-
-    try {
-      return await this.prisma.user.update({
-        where: { id },
-        data,
-        select: USER_ACCOUNT_SELECT,
-      });
-    } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-        throw new NotFoundException(`User with ID ${id} not found`);
-      }
-      if (isUniqueViolation(error)) {
-        // Email and handle are the two unique columns this update may write; the email is
-        // checked, so a conflict that is not on it is on the handle.
-        const emailOwner =
-          updateUserDto.email === undefined
-            ? null
-            : await this.prisma.user.findUnique({
-                where: { email: updateUserDto.email },
-                select: { id: true },
-              });
-        if (emailOwner && emailOwner.id !== id) {
-          throw conflictViolation('Email already in use', 'email', 'EMAIL_TAKEN');
-        }
-        throw conflictViolation('Username already in use', 'username', 'USERNAME_TAKEN');
-      }
-      throw error;
-    }
   }
 
   async findByEmail(email: string): Promise<User | undefined> {

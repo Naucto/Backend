@@ -6,14 +6,12 @@ import {
   Get,
   HttpCode,
   HttpStatus,
-  Logger,
   NotFoundException,
   Param,
   ParseFilePipeBuilder,
   ParseIntPipe,
   Patch,
   Post,
-  Query,
   Res,
   UploadedFile,
   UseInterceptors,
@@ -31,12 +29,7 @@ import {
 } from '@nestjs/swagger';
 import { Response } from 'express';
 
-import {
-  AllowedWhileSuspended,
-  RequiresAuth,
-  RequiresRole,
-} from '../../auth/access/access.decorators';
-import { ADMIN } from '../../auth/access/roles';
+import { AllowedWhileSuspended, RequiresAuth } from '../../auth/access/access.decorators';
 import { currentSuspension } from '../../auth/access/suspension';
 import { RequestWithUser } from '../../auth/auth.types';
 import { REFRESH_COOKIE_NAME, refreshCookieOptions } from '../../auth/auth.utils';
@@ -47,14 +40,9 @@ import { ProfileImageRemovedResponseDto } from './dto/profile-image-removed-resp
 import { ProfileImageUploadResponseDto } from './dto/profile-image-upload-response.dto';
 import { ProfileImageUrlDto } from './dto/profile-image-url.dto';
 import { PublicUserProfileResponseDto } from './dto/public-user-profile-response.dto';
-import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
-import { UserFilterDto } from './dto/user-filter.dto';
-import { UserListResponseDto } from './dto/user-list-response.dto';
 import { UserProfileResponseDto } from './dto/user-profile-response.dto';
-import { UserRemovedResponseDto } from './dto/user-removed-response.dto';
 import { UserResponseDto } from './dto/user-response.dto';
-import { UserSingleResponseDto } from './dto/user-single-response.dto';
 import { ProfileAsset, ProfileAssetService } from './profile-asset.service';
 import { UserService } from './user.service';
 
@@ -76,17 +64,9 @@ const PROFILE_IMAGE_PIPE = new ParseFilePipeBuilder()
 const PROFILE_IMAGE_LIMITS = { fileSize: MAX_FILE_SIZE, files: 1 };
 
 @ApiTags('users')
-@ApiExtraModels(
-  UserResponseDto,
-  UserListResponseDto,
-  UserSingleResponseDto,
-  UserProfileResponseDto,
-  PublicUserProfileResponseDto,
-)
+@ApiExtraModels(UserResponseDto, UserProfileResponseDto, PublicUserProfileResponseDto)
 @Controller('users')
 export class UserController {
-  private readonly logger = new Logger(UserController.name);
-
   constructor(
     private readonly userService: UserService,
     private readonly profileAssetService: ProfileAssetService,
@@ -383,118 +363,5 @@ export class UserController {
     }
 
     return { resourceUrl };
-  }
-
-  @Get()
-  @ApiOperation({ summary: 'Get all users with pagination and filtering' })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Returns paginated list of users',
-    type: UserListResponseDto,
-  })
-  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: 'Unauthorized' })
-  @ApiResponse({
-    status: HttpStatus.FORBIDDEN,
-    description: 'Insufficient permissions',
-  })
-  @RequiresRole(ADMIN)
-  async findAll(@Query() filterDto: UserFilterDto): Promise<UserListResponseDto> {
-    this.logger.debug(`Fetching users with pagination: ${JSON.stringify(filterDto)}`);
-
-    const { users, total, page, limit } = await this.userService.findPage(filterDto);
-
-    return {
-      statusCode: HttpStatus.OK,
-      message: 'Users retrieved successfully',
-      data: users,
-      meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
-    };
-  }
-
-  @Get(':id')
-  @ApiOperation({ summary: 'Get a user by ID' })
-  @ApiParam({ name: 'id', description: 'User ID' })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Returns the user',
-    type: UserSingleResponseDto,
-  })
-  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'User not found' })
-  @ApiResponse({
-    status: HttpStatus.BAD_REQUEST,
-    description: 'Invalid ID format',
-  })
-  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: 'Unauthorized' })
-  @ApiResponse({
-    status: HttpStatus.FORBIDDEN,
-    description: 'Insufficient permissions',
-  })
-  @RequiresRole(ADMIN)
-  async findOne(@Param('id', ParseIntPipe) id: number): Promise<UserSingleResponseDto> {
-    this.logger.debug(`Fetching user with ID: ${id}`);
-    const user = await this.userService.findAccount(id);
-
-    return {
-      statusCode: HttpStatus.OK,
-      message: 'User retrieved successfully',
-      data: user,
-    };
-  }
-
-  @Patch(':id')
-  @ApiOperation({ summary: 'Update a user by ID' })
-  @ApiParam({ name: 'id', description: 'User ID' })
-  @ApiBody({ type: UpdateUserDto })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'User updated successfully',
-    type: UserSingleResponseDto,
-  })
-  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'User not found' })
-  @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: 'Invalid input' })
-  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: 'Unauthorized' })
-  @ApiResponse({
-    status: HttpStatus.FORBIDDEN,
-    description: 'Insufficient permissions',
-  })
-  @RequiresRole(ADMIN)
-  async update(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() updateUserDto: UpdateUserDto,
-  ): Promise<UserSingleResponseDto> {
-    this.logger.debug(`Updating user with ID: ${id}`);
-    const user = await this.userService.update(id, updateUserDto);
-
-    return {
-      statusCode: HttpStatus.OK,
-      message: 'User updated successfully',
-      data: user,
-    };
-  }
-
-  @Delete(':id')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Delete a user by ID' })
-  @ApiParam({ name: 'id', description: 'User ID' })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'User deleted successfully',
-    type: UserRemovedResponseDto,
-  })
-  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'User not found' })
-  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: 'Unauthorized' })
-  @ApiResponse({
-    status: HttpStatus.FORBIDDEN,
-    description: 'Insufficient permissions',
-  })
-  @RequiresRole(ADMIN)
-  async remove(@Param('id', ParseIntPipe) id: number): Promise<UserRemovedResponseDto> {
-    this.logger.debug(`Deleting user with ID: ${id}`);
-    await this.accountDeletionService.deleteAccount(id, false, { by: 'admin' });
-
-    return {
-      statusCode: HttpStatus.OK,
-      message: 'User deleted successfully',
-    };
   }
 }

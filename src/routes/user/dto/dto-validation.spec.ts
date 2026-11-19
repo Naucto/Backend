@@ -1,13 +1,10 @@
 import { ClassConstructor, plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 
-import { ADMIN, MODERATOR, USER } from '../../../auth/access/roles';
 import { CreateUserDto } from './create-user.dto';
 import { DeleteAccountDto } from './delete-account.dto';
 import { UpdateMeDto } from './me.dto';
-import { UpdateUserDto } from './update-user.dto';
 import { UpdateUserProfileDto } from './update-user-profile.dto';
-import { UserFilterDto } from './user-filter.dto';
 
 async function rejected<T extends object>(
   dto: ClassConstructor<T>,
@@ -45,23 +42,6 @@ describe('an optional field left out', () => {
     await expect(rejected(UpdateUserProfileDto, {})).resolves.toEqual([]);
     await expect(rejected(UpdateMeDto, {})).resolves.toEqual([]);
     await expect(rejected(DeleteAccountDto, { confirmation: 'DELETE' })).resolves.toEqual([]);
-  });
-});
-
-describe('UserFilterDto', () => {
-  it('caps the page size', async () => {
-    await expect(rejected(UserFilterDto, { limit: '100' })).resolves.toEqual([]);
-    await expect(rejected(UserFilterDto, { limit: '101' })).resolves.toEqual(['limit']);
-  });
-});
-
-describe('UpdateUserDto', () => {
-  it.each([USER, MODERATOR, ADMIN])('accepts the role %s', async (role) => {
-    await expect(rejected(UpdateUserDto, { role })).resolves.toEqual([]);
-  });
-
-  it.each(['Superuser', ADMIN.toLowerCase()])('rejects the role %s', async (role) => {
-    await expect(rejected(UpdateUserDto, { role })).resolves.toEqual(['role']);
   });
 });
 

@@ -76,6 +76,19 @@ export class ModerationLogService {
     });
   }
 
+  /**
+   * The one change the record ever takes: erasing an account removes what the record kept of the
+   * person, their words and their profile as they read. Who decided what, when and why stays.
+   */
+  async scrubAccount(tx: Prisma.TransactionClient, userId: number): Promise<void> {
+    await tx.moderationAction.updateMany({
+      where: { subjectUserId: userId },
+      data: { snapshot: Prisma.DbNull },
+    });
+    await tx.flag.updateMany({ where: { targetOwnerId: userId }, data: { snapshot: {} } });
+    await tx.flag.updateMany({ where: { reporterId: userId }, data: { details: null } });
+  }
+
   async list(staff: StaffActor, query: LogQueryDto): Promise<ModerationLogDto> {
     const { skip, take } = toSkipTake(query);
     const where: Prisma.ModerationActionWhereInput = {

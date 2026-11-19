@@ -7,6 +7,7 @@ import { PROJECT_CHANGED, ProjectChangedEvent } from '../../common/domain-events
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MultiplayerService } from '../multiplayer/multiplayer.service';
+import { ProjectService } from '../project/project.service';
 import { ProjectContentService } from '../project/project-content.service';
 import { ContentModerationService } from './content-moderation.service';
 import { MODERATION_ERROR } from './moderation.error';
@@ -81,6 +82,7 @@ describe('ContentModerationService', () => {
   };
   const multiplayer = { endSessionsOfProject: jest.fn() };
   const eventEmitter = { emit: jest.fn() };
+  const projects = { remove: jest.fn() };
   let service: ContentModerationService;
 
   beforeEach(() => {
@@ -95,10 +97,96 @@ describe('ContentModerationService', () => {
       log as unknown as ModerationLogService,
       notifications as unknown as NotificationsService,
       content as unknown as ProjectContentService,
+      projects as unknown as ProjectService,
       multiplayer as unknown as MultiplayerService,
       eventEmitter as unknown as EventEmitter2,
     );
     jest.spyOn(service['logger'], 'error').mockImplementation();
+  });
+
+  describe('removeProject', () => {
+    beforeEach(() => {
+      log.record.mockResolvedValue({
+        ...(recorded(ModerationActionType.PROJECT_DELETED) as object),
+        targetType: 'PROJECT',
+        targetId: 12,
+      });
+      projects.remove.mockImplementation(
+        async (_id: number, alongside: (client: typeof tx) => unknown) => {
+          await alongside(tx);
+        },
+      );
+    });
+
+    it('deletes the game as its creator could, recording it in the same transaction', async () => {
+      await service.removeProject(MOD, 12, DECISION);
+
+      expect(projects.remove).toHaveBeenCalledWith(12, expect.any(Function));
+      expect(log.record).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({
+          action: ModerationActionType.PROJECT_DELETED,
+          targetId: 12,
+          subjectUserId: 7,
+          snapshot: { title: 'Ferry Click', body: 'Click the ferry\n\nA longer text' },
+        }),
+      );
+      expect(tx.flag.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { targetType: 'PROJECT', targetId: 12, status: FlagStatus.OPEN },
+        }),
+      );
+    });
+
+    it('tells its creator', async () => {
+      await service.removeProject(MOD, 12, DECISION);
+
+      expect(notifications.notifyBestEffort).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 7, title: 'Your game was deleted' }),
+      );
+    });
+
+    it('tells nobody when the game was not deleted', async () => {
+      projects.remove.mockRejectedValue(new Error('database is down'));
+
+      await expect(service.removeProject(MOD, 12, DECISION)).rejects.toThrow('database is down');
+      expect(notifications.notifyBestEffort).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('removeComment', () => {
+    const txComments = { count: jest.fn(), update: jest.fn(), delete: jest.fn() };
+
+    beforeEach(() => {
+      Object.assign(tx.comment, txComments);
+      txComments.count.mockResolvedValue(0);
+      log.record.mockResolvedValue(recorded(ModerationActionType.COMMENT_DELETED));
+    });
+
+    it('deletes a comment nobody replied to, keeping its text in the log only', async () => {
+      await service.removeComment(MOD, 31, DECISION);
+
+      expect(txComments.delete).toHaveBeenCalledWith({ where: { id: 31 } });
+      expect(log.record).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({
+          action: ModerationActionType.COMMENT_DELETED,
+          snapshot: { title: null, body: 'Buy my thing' },
+        }),
+      );
+    });
+
+    it('empties a comment that has replies, so they keep their place', async () => {
+      txComments.count.mockResolvedValue(2);
+
+      await service.removeComment(MOD, 31, DECISION);
+
+      expect(txComments.delete).not.toHaveBeenCalled();
+      expect(tx.comment.update).toHaveBeenCalledWith({
+        where: { id: 31 },
+        data: { deleted: true, content: '', hiddenAt: expect.any(Date) },
+      });
+    });
   });
 
   describe('hideProject', () => {

@@ -303,16 +303,24 @@ export class ProjectService {
     }
   }
 
-  async remove(id: number): Promise<void> {
+  /**
+   * `alongside` runs in the transaction that deletes the project, for a caller whose own record of
+   * the deletion must exist exactly when the project is gone.
+   */
+  async remove(
+    id: number,
+    alongside?: (tx: Prisma.TransactionClient) => Promise<void>,
+  ): Promise<void> {
     await this.findOne(id);
 
     // Both session tables reference the project with ON DELETE RESTRICT, so their rows go first,
     // in the same transaction as the project.
-    await this.prisma.$transaction([
-      this.prisma.gameSession.deleteMany({ where: { projectId: id } }),
-      this.prisma.workSession.deleteMany({ where: { projectId: id } }),
-      this.prisma.project.delete({ where: { id } }),
-    ]);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.gameSession.deleteMany({ where: { projectId: id } });
+      await tx.workSession.deleteMany({ where: { projectId: id } });
+      await tx.project.delete({ where: { id } });
+      await alongside?.(tx);
+    });
 
     // After the row, and never fatally: an orphaned blob can still be swept, content dropped
     // ahead of a failed delete cannot be restored.
