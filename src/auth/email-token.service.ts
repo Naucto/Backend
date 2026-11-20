@@ -11,7 +11,7 @@ export const EMAIL_TOKEN_LIFETIME_MS: Record<EmailTokenPurpose, number> = {
   RESET_PASSWORD: 1 * HOURS,
 };
 
-export const EMAIL_TOKEN_COOLDOWN_MS = 10 * 1000;
+export const EMAIL_TOKEN_COOLDOWN_MS = 60 * 1000;
 
 const TOKEN_BYTES = 32;
 
