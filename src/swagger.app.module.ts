@@ -65,6 +65,8 @@ import { ProjectCommentController } from './routes/project-comment/project-comme
 import { ProjectCommentService } from './routes/project-comment/project-comment.service';
 import { AdminFeaturedReleaseController } from './routes/recommendations/admin-featured-release.controller';
 import { FeaturedReleaseController } from './routes/recommendations/featured-release.controller';
+import { HubFeedController } from './routes/recommendations/hub-feed.controller';
+import { HubFeedService } from './routes/recommendations/hub-feed.service';
 import { RecommendationsService } from './routes/recommendations/recommendations.service';
 import { AdminReportsController } from './routes/reports/admin-reports.controller';
 import { AdminReportsService } from './routes/reports/admin-reports.service';
@@ -108,6 +110,7 @@ const nullProvider = (token: InjectionToken): Provider => ({
     UserPresenceController,
     FeaturedReleaseController,
     AdminFeaturedReleaseController,
+    HubFeedController,
     AnalyticsIngestController,
     AdminAnalyticsController,
     AnalyticsMarkerController,
@@ -140,6 +143,7 @@ const nullProvider = (token: InjectionToken): Provider => ({
     nullProvider(FriendsService),
     nullProvider(PresenceService),
     nullProvider(RecommendationsService),
+    nullProvider(HubFeedService),
     nullProvider(AnalyticsIngestService),
     nullProvider(AnalyticsTallyService),
     nullProvider(AnalyticsQueryService),
