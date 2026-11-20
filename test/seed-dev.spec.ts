@@ -1,4 +1,5 @@
 import { clearAnalytics, seedAnalytics } from '../prisma/seed-dev-analytics';
+import { seedHubSignals } from '../prisma/seed-dev-hub';
 import { normalizeFriendCode } from '../src/routes/user/friend-code.util';
 import { withEnv } from './env';
 
@@ -17,6 +18,9 @@ jest.mock('bcryptjs', () => ({ hash: jest.fn().mockResolvedValue('hashed') }));
 jest.mock('../prisma/seed-dev-analytics', () => ({
   seedAnalytics: jest.fn().mockResolvedValue('seeded'),
   clearAnalytics: jest.fn().mockResolvedValue('cleared'),
+}));
+jest.mock('../prisma/seed-dev-hub', () => ({
+  seedHubSignals: jest.fn().mockResolvedValue('ranked'),
 }));
 
 /** Runs the script the way `npm run seed:dev` does, and resolves once it has let go of the database. */
@@ -81,6 +85,27 @@ describe('seed:dev', () => {
     expect(seedAnalytics).not.toHaveBeenCalled();
   });
 
+  it('gives the hub its signals last, from the people it seeded, with or without analytics', async () => {
+    await runSeed();
+
+    expect(seedHubSignals).toHaveBeenCalledWith(
+      mockPrisma,
+      Array.from({ length: mockPrisma.user.upsert.mock.calls.length }, (_, index) => index + 1),
+    );
+    expect(jest.mocked(seedAnalytics).mock.invocationCallOrder[0]).toBeLessThan(
+      jest.mocked(seedHubSignals).mock.invocationCallOrder[0]!,
+    );
+
+    jest.mocked(seedHubSignals).mockClear();
+    process.argv.push('--no-analytics');
+    try {
+      await runSeed();
+    } finally {
+      process.argv.pop();
+    }
+    expect(seedHubSignals).toHaveBeenCalledTimes(1);
+  });
+
   it('only removes the analytics when asked to clear them', async () => {
     process.argv.push('--clear-analytics');
     try {
@@ -91,6 +116,7 @@ describe('seed:dev', () => {
 
     expect(clearAnalytics).toHaveBeenCalledWith(mockPrisma);
     expect(mockPrisma.user.upsert).not.toHaveBeenCalled();
+    expect(seedHubSignals).not.toHaveBeenCalled();
   });
 
   it('refuses to write anything when NODE_ENV is production', async () => {

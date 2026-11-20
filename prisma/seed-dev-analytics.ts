@@ -146,21 +146,42 @@ const ROUTES = ['hub', 'play/:id', 'play/:id', 'learn', 'u/:username', 'games'] 
 interface SampleGame {
   name: string;
   shortDesc: string;
+  /** Shared with the games of the Frontend's `seed:content`, so the hub has several tag shelves. */
+  tags: string[];
   /** Day of the window it is published on, negative for before the window. */
   publishDay: number;
   weight: number;
 }
 
 const SAMPLE_GAMES: SampleGame[] = [
-  { name: 'Orbit Run', shortDesc: 'Slingshot around planets.', publishDay: -20, weight: 3 },
-  { name: 'Pixel Garden', shortDesc: 'Grow a garden, one pixel a day.', publishDay: 26, weight: 2 },
+  {
+    name: 'Orbit Run',
+    shortDesc: 'Slingshot around planets.',
+    tags: ['arcade', 'physics'],
+    publishDay: -20,
+    weight: 3,
+  },
+  {
+    name: 'Pixel Garden',
+    shortDesc: 'Grow a garden, one pixel a day.',
+    tags: ['puzzle', 'relaxing', 'remixable'],
+    publishDay: 26,
+    weight: 2,
+  },
   {
     name: 'Dungeon Bell',
     shortDesc: 'Ring the bell, wake the dungeon.',
+    tags: ['puzzle', 'relaxing', 'classic'],
     publishDay: 39,
     weight: 2,
   },
-  { name: 'Neon Drift', shortDesc: 'Drift through a neon city.', publishDay: 55, weight: 2.5 },
+  {
+    name: 'Neon Drift',
+    shortDesc: 'Drift through a neon city.',
+    tags: ['arcade', 'multiplayer', 'physics'],
+    publishDay: 55,
+    weight: 2.5,
+  },
 ];
 
 interface Post {
@@ -452,10 +473,13 @@ export async function seedAnalytics(prisma: PrismaClient): Promise<string> {
       data: {
         name: sample.name,
         shortDesc: sample.shortDesc,
+        tags: sample.tags,
         publishedName: sample.name,
         publishedShortDesc: sample.shortDesc,
+        publishedTags: sample.tags,
         status: 'COMPLETED',
         publishedAt,
+        firstPublishedAt: publishedAt,
         releaseRevision: 1,
         userId: creator.id,
         createdAt: new Date(publishedAt.getTime() - 5 * DAY_MS),
