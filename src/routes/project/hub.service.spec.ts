@@ -366,7 +366,7 @@ describe('HubService', () => {
           _count: {
             select: {
               forks: true,
-              comments: { where: { deleted: false } },
+              comments: { where: { deleted: false, hiddenAt: null } },
             },
           },
         },
