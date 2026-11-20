@@ -60,7 +60,7 @@ from `client/` (see `client/README.md`).
 | `npm run client:build`                                                              | Emit `swagger.json`, then generate + compile `@naucto/api-client` into `client/dist` (what the publish workflow runs)                                                                                                             |
 | `npx prisma migrate dev --name <desc>`                                              | Create + apply a dev migration from the schema                                                                                                                                                                                    |
 | `npx prisma generate`                                                               | Regenerate the Prisma client                                                                                                                                                                                                      |
-| `npm run seed:dev`                                                                  | Seed a local database with people, friendships, pending requests, shared game sessions and 80 days of coherent analytics up to now (`-- --no-analytics` skips them, `-- --clear-analytics` removes them). Refuses non-local hosts |
+| `npm run seed:dev`                                                                  | Seed a local database with people, friendships, pending requests, shared game sessions, 80 days of coherent analytics up to now (`-- --no-analytics` skips them, `-- --clear-analytics` removes them) and a month of views, likes, comments and plays for the hub to rank on. Refuses non-local hosts |
 | `npm run analytics:acceptance`                                                      | Run the analytics acceptance scenarios against a scratch copy of the local database, over two connections; by hand, never in CI                                                                                                   |
 | `npm run repair:release-view-keys`                                                  | Delete the release view keys once derived from readers' addresses (one-off)                                                                                                                                                       |
 | `docker compose -f docker-compose.yml -f docker-compose.dev.yml up --watch backend` | Dev stack: Postgres, MinIO, and the API with hot reload                                                                                                                                                                           |
@@ -88,7 +88,7 @@ Create it with `cp config/webrtc.example.json config/webrtc.json`.
 | `src/main.ts`                                | Bootstrap: Express adapter, global `ValidationPipe`, CORS, `cookie-parser`, Swagger, request logging                                                                                                                                |
 | `src/app.module.ts`                          | Root module wiring every feature module                                                                                                                                                                                             |
 | `src/auth/`                                  | JWT auth, passport strategy, access control (`access/`: global guard, `@Public()`/`@RequiresAuth()`/`@RequiresRole()`, roles), project ownership guards, OAuth providers (Google/GitHub/Microsoft), refresh-token crypto            |
-| `src/routes/<feature>/`                      | One folder per HTTP feature: `*.controller.ts`, `*.service.ts`, `*.module.ts`, `*.error.ts`, `dto/`, co-located `*.spec.ts` (`recommendations` = featured release / game of the week, admin-only writes via `@RequiresRole(ADMIN)`) |
+| `src/routes/<feature>/`                      | One folder per HTTP feature: `*.controller.ts`, `*.service.ts`, `*.module.ts`, `*.error.ts`, `dto/`, co-located `*.spec.ts` (`recommendations` = what the hub puts forward: its daily shelves, hero and game of the week, see _Hub_ below) |
 | `src/webrtc/`                                | `ws` + Yjs real-time multiplayer server (`server/`); `WebRTCService` allocates one port per server and advertises its public URL (see _WebSocket servers_ below)                                                                    |
 | `src/routes/analytics/`                      | Usage analytics: ingest from browsers, business facts, multiplayer accounting, minute presence sampling, finalization into rollups, account history projection, purge, and the admin and user read APIs (see _Analytics_ below)     |
 | `src/presence/`                              | What friends see each other doing (online, playing, building, hosting), fed by the notifications socket and by domain events (see _Presence_ below)                                                                                 |
@@ -330,6 +330,28 @@ on the client side only: the routes answer whatever the flag says.
 - Staff read any game through `/moderation/projects/:id/preview`, with the token of a site sign-in
   because the web app shows it. Those routes write nothing but one log row per look.
 - Moderators never read email addresses: `toAccountRef` gives one to admins only.
+
+**Hub** (`src/routes/recommendations/`), what the hub puts forward:
+
+- The hub is drawn once per UTC day and kept as one `HubSnapshot` row of project ids: at 00:05 UTC,
+  at start, and on the first request of a day that has no row. Only the whole days before the one
+  computed are read, so computing a day again writes the same row. Rows are kept 60 days.
+- `hub-scoring.ts` holds every formula as a pure function and `hub-snapshot.ts` composes a day from
+  them. A draw is seeded by the day and the shelf (`draw`), never by `Math.random`, so a spec with
+  a fixed day sees the shelves a visitor would.
+- "On the hub" is one test, `PUBLISHED` in `project-select.ts` (`PUBLISHED_SQL` in a raw query).
+  **A hub query that spells the test itself misses the next condition added there.**
+- The same run picks the game of the week, once per UTC week: the best trending game that was not
+  picked in the last eight weeks. Nobody picks by hand; `FeaturedRelease` keeps the history. A
+  pick whose game moderation withholds ends the next time it is read.
+- One computation of a day runs at a time (held in memory, one instance): two at once would each
+  pick a game of the week.
+- Nothing personal is stored in a snapshot. "Continue", "your friends play" and "because you
+  played" are read per request, from `AnalyticsUserDaily` (rows exist only for an account whose
+  browser consented to analytics) and from the presence friends already see.
+- A card is a `HubGameDto`, built field by field by `toHubGame`: spreading a project row would hand
+  out its content size and release hash. Its `coverUrl` comes from the row (`Project.coverVersion`,
+  written at upload); a list never asks the store about a cover.
 
 ## Conventions (not all enforced by tooling — follow these)
 
