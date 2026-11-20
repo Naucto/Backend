@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { GameSessionVisibility } from '@prisma/client';
 
 import { RequestWithUser } from '../../auth/auth.types';
+import { SESSION_ROSTER_PREVIEW } from './dto/game-session-limits';
 import { MultiplayerController } from './multiplayer.controller';
 import { GameSessionEx, MultiplayerService } from './multiplayer.service';
 
@@ -18,7 +19,7 @@ function makeSession(overrides: Partial<GameSessionEx> = {}): GameSessionEx {
     joinCode: null,
     sessionId: 'session-uuid',
     host: { id: 1, username: 'alice', nickname: null },
-    project: { name: 'Snake', publishedName: null },
+    project: { id: 1, name: 'Snake', publishedName: null, iconUrl: null, coverVersion: null },
     otherUsers: [],
     ...overrides,
   };
@@ -27,12 +28,17 @@ function makeSession(overrides: Partial<GameSessionEx> = {}): GameSessionEx {
 describe('MultiplayerController', () => {
   let controller: MultiplayerController;
 
-  const multiplayerService = { get: jest.fn(), connectedPlayerCount: jest.fn() };
+  const multiplayerService = {
+    get: jest.fn(),
+    connectedPlayerCount: jest.fn(),
+    coverUrl: jest.fn(),
+  };
   const req = { user: { id: 1 } } as RequestWithUser;
 
   beforeEach(async () => {
     jest.resetAllMocks();
     multiplayerService.connectedPlayerCount.mockReturnValue(0);
+    multiplayerService.coverUrl.mockReturnValue(null);
 
     const module = await Test.createTestingModule({
       controllers: [MultiplayerController],
@@ -66,7 +72,9 @@ describe('MultiplayerController', () => {
 
     it('names the game as it was published, not by its working name', async () => {
       multiplayerService.get.mockResolvedValueOnce(
-        makeSession({ project: { name: 'snake-wip', publishedName: 'Snake' } }),
+        makeSession({
+          project: { ...makeSession().project, name: 'snake-wip', publishedName: 'Snake' },
+        }),
       );
 
       await expect(controller.get(req, 'session-uuid')).resolves.toMatchObject({
@@ -80,6 +88,37 @@ describe('MultiplayerController', () => {
       await expect(controller.get(req, 'session-uuid')).resolves.toMatchObject({
         projectName: 'Snake',
       });
+    });
+
+    it('names at most eight players, the host first, with a nickname only where one is set', async () => {
+      const guests = Array.from({ length: SESSION_ROSTER_PREVIEW + 2 }, (_, index) => ({
+        id: index + 2,
+        username: `guest-${index}`,
+        nickname: index === 0 ? 'Bobby' : null,
+      }));
+      multiplayerService.get.mockResolvedValueOnce(makeSession({ otherUsers: guests }));
+
+      const { roster, playerCount } = await controller.get(req, 'session-uuid');
+
+      expect(roster).toHaveLength(SESSION_ROSTER_PREVIEW);
+      expect(roster.slice(0, 2)).toEqual([
+        { username: 'alice' },
+        { username: 'guest-0', nickname: 'Bobby' },
+      ]);
+      expect(playerCount).toBe(guests.length + 1);
+    });
+
+    it('says when the session was opened and where the cover of its game is', async () => {
+      const startedAt = new Date('2026-11-20T18:30:00Z');
+      const session = makeSession({ startedAt });
+      multiplayerService.get.mockResolvedValueOnce(session);
+      multiplayerService.coverUrl.mockReturnValueOnce('https://cdn.test/projects/1/image?v=abc');
+
+      await expect(controller.get(req, 'session-uuid')).resolves.toMatchObject({
+        startedAt,
+        coverUrl: 'https://cdn.test/projects/1/image?v=abc',
+      });
+      expect(multiplayerService.coverUrl).toHaveBeenCalledWith(session);
     });
   });
 });

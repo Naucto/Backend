@@ -24,9 +24,10 @@ import {
 import { WebRTCService } from '../../webrtc/webrtc.service';
 import { FriendsService } from '../friends/friends.service';
 import { ProjectService } from '../project/project.service';
+import { PUBLISHED } from '../project/project-select';
 import { CreateGameSessionDto } from './dto/create-game-session.dto';
 import { GameSessionConnectionResponseDto } from './dto/game-session-connection.dto';
-import { JOIN_CODE_LENGTH } from './dto/game-session-limits';
+import { JOIN_CODE_LENGTH, SESSION_LIST_MAX } from './dto/game-session-limits';
 import { SessionRosterResponseDto } from './dto/session-roster.dto';
 import { UpdateGameSessionDto } from './dto/update-game-session.dto';
 import { canJoin, isListedTo, SESSION_AUDIENCE } from './game-session-access';
@@ -47,7 +48,9 @@ const PLAYER_SELECT = { id: true, username: true, nickname: true } as const;
 const SESSION_RELATIONS = {
   otherUsers: { select: PLAYER_SELECT },
   host: { select: PLAYER_SELECT },
-  project: { select: { name: true, publishedName: true } },
+  project: {
+    select: { id: true, name: true, publishedName: true, iconUrl: true, coverVersion: true },
+  },
 } as const;
 
 export type GameSessionEx = Prisma.GameSessionGetPayload<{
@@ -180,7 +183,11 @@ export class MultiplayerService {
     return this._buildConnection(created, userId, 'host');
   }
 
-  /** Open sessions the caller may see: one game's when a project is named, every game's otherwise, narrowed to those whose title or game name contains `search`. */
+  /**
+   * Open sessions the caller may see, the latest first, narrowed to those whose title or game name
+   * contains `search`: one game's when a project is named, else the latest across the games on
+   * the hub, without the rooms an editor opened to test. A withheld game lists none.
+   */
   async list(
     projectId: number | undefined,
     userId: number,
@@ -191,10 +198,12 @@ export class MultiplayerService {
 
     const sessions = await this._prismaService.gameSession.findMany({
       include: SESSION_RELATIONS,
+      orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
       where: {
         endedAt: null,
-        project: { hiddenAt: null },
-        ...(projectId === undefined ? {} : { projectId }),
+        ...(projectId === undefined
+          ? { project: PUBLISHED }
+          : { projectId, project: { hiddenAt: null } }),
         ...(term
           ? {
               OR: [
@@ -209,18 +218,34 @@ export class MultiplayerService {
 
     const friendIds = new Set(await this._friendsService.friendIdsOf(userId));
 
-    return sessions.filter((session) =>
+    const listed = sessions.filter((session) =>
       isListedTo(session.visibility, {
         isMember: this._isMember(session, userId),
         isHostFriend: friendIds.has(session.hostId),
       }),
     );
+    if (projectId !== undefined) {
+      return listed;
+    }
+
+    const editorTests = await this._accounting.editorTests(
+      listed.map((session) => session.sessionId),
+    );
+
+    return listed
+      .filter((session) => !editorTests.has(session.sessionId))
+      .slice(0, SESSION_LIST_MAX);
   }
 
   // Live connected-player count (host + slaves) from the WebRTC room, so the
   // figure includes editor self-joins that aren't persisted as members.
   connectedPlayerCount(sessionId: string): number {
     return this._syncServer.connectedCount(sessionId);
+  }
+
+  /** The cover of the game a session plays, from the session's own row. */
+  coverUrl(session: GameSessionEx): string | null {
+    return this._projectService.storedCoverUrl(session.project);
   }
 
   async get(sessionId: string, userId: number): Promise<GameSessionEx> {

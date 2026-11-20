@@ -15,7 +15,7 @@ import {
 import { WebRTCService } from '../../webrtc/webrtc.service';
 import { FriendsService } from '../friends/friends.service';
 import { ProjectService } from '../project/project.service';
-import { JOIN_CODE_LENGTH } from './dto/game-session-limits';
+import { JOIN_CODE_LENGTH, SESSION_LIST_MAX } from './dto/game-session-limits';
 import {
   MultiplayerForbiddenError,
   MultiplayerGameSessionNotFoundError,
@@ -51,7 +51,7 @@ function makeSession(overrides: Partial<GameSessionEx> = {}): GameSessionEx {
     joinCode: null,
     sessionId: 'session-uuid',
     host: { ...aPlayer(1), username: 'alice' },
-    project: { name: 'Snake', publishedName: null },
+    project: { id: 1, name: 'Snake', publishedName: null, iconUrl: null, coverVersion: null },
     otherUsers: [],
     ...overrides,
   };
@@ -99,12 +99,13 @@ describe('MultiplayerService', () => {
   const notificationsService = { createNotification: jest.fn() };
   const eventEmitter = { emit: jest.fn() };
   const friendsService = { areFriends: jest.fn(), friendIdsOf: jest.fn() };
-  const projectService = { findOne: jest.fn() };
+  const projectService = { findOne: jest.fn(), storedCoverUrl: jest.fn() };
   const webrtcService = { buildOffer: jest.fn() };
   const jwtService = { sign: jest.fn(), verify: jest.fn() };
   const accounting = {
     roomCreated: jest.fn(),
     editorJoined: jest.fn(),
+    editorTests: jest.fn(),
     sessionEnded: jest.fn(),
     seatConnected: jest.fn(),
     seatDisconnected: jest.fn(),
@@ -142,6 +143,7 @@ describe('MultiplayerService', () => {
     project.count.mockResolvedValue(0);
     friendsService.areFriends.mockResolvedValue(false);
     friendsService.friendIdsOf.mockResolvedValue([]);
+    accounting.editorTests.mockResolvedValue(new Set());
 
     const module = await Test.createTestingModule({
       providers: [
@@ -1006,7 +1008,7 @@ describe('MultiplayerService', () => {
       gameSession.findFirst.mockResolvedValueOnce(
         makeSession({
           hostId: 1,
-          project: { name: 'snake-wip', publishedName: 'Snake' },
+          project: { ...makeSession().project, name: 'snake-wip', publishedName: 'Snake' },
         }),
       );
       friendsService.areFriends.mockResolvedValueOnce(true);
@@ -1028,7 +1030,7 @@ describe('MultiplayerService', () => {
     });
   });
 
-  describe('list (visibility filtering)', () => {
+  describe('list', () => {
     it('returns PUBLIC sessions but omits FRIENDS_ONLY and INVITE_CODE', async () => {
       gameSession.findMany.mockResolvedValueOnce([
         makeSession({
@@ -1051,14 +1053,65 @@ describe('MultiplayerService', () => {
       expect(sessions.map((session) => session.sessionId)).toEqual(['public-uuid']);
     });
 
-    it('asks about every game when no project is named', async () => {
+    it('asks about every game on the hub when no project is named', async () => {
       gameSession.findMany.mockResolvedValueOnce([]);
 
       await service.list(undefined, 99);
 
       expect(gameSession.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { endedAt: null, project: { hiddenAt: null } } }),
+        expect.objectContaining({
+          where: { endedAt: null, project: { publishedAt: { not: null }, hiddenAt: null } },
+        }),
       );
+    });
+
+    it("lists one game's sessions as they are, the latest first, tests of its editor included", async () => {
+      gameSession.findMany.mockResolvedValue([makeSession()]);
+
+      await expect(service.list(7, 2)).resolves.toHaveLength(1);
+
+      expect(gameSession.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { endedAt: null, projectId: 7, project: { hiddenAt: null } },
+          orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
+        }),
+      );
+      expect(accounting.editorTests).not.toHaveBeenCalled();
+    });
+
+    it('leaves the rooms an editor opened to test out of a listing across games', async () => {
+      gameSession.findMany.mockResolvedValue([
+        makeSession({ sessionId: 'played' }),
+        makeSession({ sessionId: 'tested' }),
+      ]);
+      accounting.editorTests.mockResolvedValue(new Set(['tested']));
+
+      const sessions = await service.list(undefined, 2);
+
+      expect(sessions.map((session) => session.sessionId)).toEqual(['played']);
+      expect(accounting.editorTests).toHaveBeenCalledWith(['played', 'tested']);
+    });
+
+    it('caps a listing across games, after leaving out what the caller may not see', async () => {
+      gameSession.findMany.mockResolvedValue([
+        makeSession({ sessionId: 'hidden', visibility: GameSessionVisibility.INVITE_CODE }),
+        ...Array.from({ length: SESSION_LIST_MAX + 5 }, (_, index) =>
+          makeSession({ sessionId: `open-${index}` }),
+        ),
+      ]);
+
+      const sessions = await service.list(undefined, 2);
+
+      expect(sessions).toHaveLength(SESSION_LIST_MAX);
+      expect(sessions[0]?.sessionId).toBe('open-0');
+    });
+
+    it('reads the cover of a session from the row of its game', () => {
+      const session = makeSession();
+      projectService.storedCoverUrl.mockReturnValue('https://cdn.test/projects/1/image');
+
+      expect(service.coverUrl(session)).toBe('https://cdn.test/projects/1/image');
+      expect(projectService.storedCoverUrl).toHaveBeenCalledWith(session.project);
     });
 
     it("matches a term against the room's name and both names of the game", async () => {

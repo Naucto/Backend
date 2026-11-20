@@ -31,6 +31,9 @@ describe('MultiplayerAccountingService', () => {
         Promise.resolve({ count: 1 }),
       ),
       findUnique: jest.fn(() => Promise.resolve({ ...stored })),
+      findMany: jest.fn((_args: { where: object; select: object }) =>
+        Promise.resolve([{ id: SESSION }]),
+      ),
     },
     analyticsMpSeat: { createMany: jest.fn() },
   };
@@ -58,6 +61,17 @@ describe('MultiplayerAccountingService', () => {
     expect(prisma.analyticsMpSession.createMany).toHaveBeenCalledWith({
       data: [{ id: SESSION, projectId: 3, editorTest: true }],
       skipDuplicates: true,
+    });
+  });
+
+  it('tells which of some rooms an editor opened to test', async () => {
+    const other = '7c1d2e3f-0a1b-4c2d-8e3f-4a5b6c7d8e9f';
+
+    await expect(service.editorTests([SESSION, other])).resolves.toEqual(new Set([SESSION]));
+
+    expect(prisma.analyticsMpSession.findMany).toHaveBeenCalledWith({
+      where: { id: { in: [SESSION, other] }, editorTest: true },
+      select: { id: true },
     });
   });
 

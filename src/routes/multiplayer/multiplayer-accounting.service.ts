@@ -63,6 +63,16 @@ export class MultiplayerAccountingService implements SyncedGameTableObserver {
     }
   }
 
+  /** Those of `sessionIds` the editor opened to test a game. */
+  async editorTests(sessionIds: string[]): Promise<Set<string>> {
+    const rooms = await this.prisma.analyticsMpSession.findMany({
+      where: { id: { in: sessionIds }, editorTest: true },
+      select: { id: true },
+    });
+
+    return new Set(rooms.map((room) => room.id));
+  }
+
   seatConnected(sessionId: string, seatId: number, now = Date.now()): void {
     const room = this.tallyOf(sessionId);
     const firstConnection = room.connected.size === 0 && room.peak === 0;

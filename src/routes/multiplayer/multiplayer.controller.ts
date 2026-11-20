@@ -20,6 +20,7 @@ import { RequestWithUser } from '../../auth/auth.types';
 import { CreateGameSessionDto } from './dto/create-game-session.dto';
 import { GameSessionListResponseDto, GameSessionResponseDto } from './dto/game-session.dto';
 import { GameSessionConnectionResponseDto } from './dto/game-session-connection.dto';
+import { SESSION_ROSTER_PREVIEW } from './dto/game-session-limits';
 import { InviteToSessionDto } from './dto/invite-to-session.dto';
 import { JoinByCodeDto } from './dto/join-by-code.dto';
 import { JoinGameSessionDto } from './dto/join-game-session.dto';
@@ -69,7 +70,8 @@ export class MultiplayerController {
 
   @Get()
   @ApiOperation({
-    summary: "List open game sessions from the caller's perspective, one game's or every game's",
+    summary:
+      "List open game sessions from the caller's perspective, the latest first: one game's, or the latest across published games",
   })
   @ApiQuery({ name: 'projectId', type: 'number', required: false })
   @ApiQuery({
@@ -207,6 +209,11 @@ export class MultiplayerController {
     dto.playerCount =
       this._multiplayerService.connectedPlayerCount(session.sessionId) ||
       session.otherUsers.length + 1;
+    dto.startedAt = session.startedAt;
+    dto.roster = [session.host, ...session.otherUsers]
+      .slice(0, SESSION_ROSTER_PREVIEW)
+      .map(({ username, nickname }) => (nickname ? { username, nickname } : { username }));
+    dto.coverUrl = this._multiplayerService.coverUrl(session);
 
     return dto;
   }

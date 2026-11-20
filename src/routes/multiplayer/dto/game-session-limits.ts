@@ -6,6 +6,12 @@ export const SESSION_TITLE_MAX_LENGTH = 80;
 export const SESSION_MIN_PLAYERS = 2;
 export const SESSION_MAX_PLAYERS = 16;
 
+/** Sessions a listing across every game answers with, the latest first. */
+export const SESSION_LIST_MAX = 50;
+
+/** Players a listed session names, its host first; `playerCount` still counts them all. */
+export const SESSION_ROSTER_PREVIEW = 8;
+
 /** Length of the join code a session is given. */
 export const JOIN_CODE_LENGTH = 8;
 
