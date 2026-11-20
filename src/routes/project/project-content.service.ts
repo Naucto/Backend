@@ -509,6 +509,20 @@ export class ProjectContentService {
     return this.s3Service.downloadFile({ key: projectKeys.release(projectId) });
   }
 
+  /**
+   * The released build wherever it sits, served or withheld, for staff reviewing the game. Null
+   * when the game has no release. Never behind a public route: this is the one reader that does
+   * not refuse a withheld game.
+   */
+  async fetchReleaseForReview(projectId: number): Promise<DownloadedFile | null> {
+    for (const key of [projectKeys.release(projectId), projectKeys.withheldRelease(projectId)]) {
+      if (await this.s3Service.fileExists(key)) {
+        return this.s3Service.downloadFile({ key });
+      }
+    }
+    return null;
+  }
+
   /** A game that does not exist is left to answer as a missing file does. */
   private async refuseHidden(projectId: number): Promise<void> {
     const project = await this.prisma.project.findUnique({

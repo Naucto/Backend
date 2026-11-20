@@ -77,6 +77,29 @@ export class ModerationLogService {
   }
 
   /**
+   * Writes a row for something that happens many times over, such as staff opening the same draft
+   * again, keeping one row per `dedupeKey`. A read changes nothing, so it has no transaction of
+   * its own to join.
+   */
+  async recordOnce(input: RecordedAction, dedupeKey: string): Promise<void> {
+    await this.prisma.moderationAction.createMany({
+      data: [
+        {
+          action: input.action,
+          actorId: input.actorId,
+          targetType: input.targetType,
+          targetId: input.targetId,
+          subjectUserId: input.subjectUserId ?? null,
+          ...(input.snapshot ? { snapshot: { ...input.snapshot } } : {}),
+          visibleToSubject: VISIBLE_TO_SUBJECT[input.action],
+          dedupeKey,
+        },
+      ],
+      skipDuplicates: true,
+    });
+  }
+
+  /**
    * The one change the record ever takes: erasing an account removes what the record kept of the
    * person, their words and their profile as they read. Who decided what, when and why stays.
    */
