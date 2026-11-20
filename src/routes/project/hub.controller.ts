@@ -35,6 +35,7 @@ import { ReleaseTagsResponseDto } from './dto/release-tags-response.dto';
 import { ViewResponseDto } from './dto/view-response.dto';
 import type { PublishedProjectFilters, ReleaseSort, ReleaseWindow } from './hub.service';
 import { HubService, RELEASE_SORTS, RELEASE_WINDOWS } from './hub.service';
+import { ProjectHiddenException } from './project.error';
 import { ProjectId } from './project-id.decorator';
 import { parseOptionalInt, parseTags } from './project-query';
 
@@ -216,6 +217,9 @@ export class HubController {
     // Public, so a draft's name and people are nobody's business until it is on the hub.
     if (!projectRelease.publishedAt) {
       throw new NotFoundException(`Published project with ID ${id} not found`);
+    }
+    if (projectRelease.hiddenAt) {
+      throw new ProjectHiddenException();
     }
 
     return projectRelease;

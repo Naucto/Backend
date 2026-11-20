@@ -109,14 +109,14 @@ describe('AccountDeletionService', () => {
     expect(bcrypt.compare).not.toHaveBeenCalled();
   });
 
-  it('removes unpublished projects only, keeping published games by default', async () => {
+  it('removes drafts and withheld games, keeping published games by default', async () => {
     prisma.project.findMany.mockResolvedValue([{ id: 1 }, { id: 2 }]);
 
     await service.deleteAccount(7, false, { by: 'self' });
 
     expect(prisma.project.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { userId: 7, publishedAt: null },
+        where: { userId: 7, OR: [{ publishedAt: null }, { hiddenAt: { not: null } }] },
       }),
     );
     expect(projectService.remove).toHaveBeenCalledTimes(2);

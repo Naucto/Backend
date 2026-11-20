@@ -20,6 +20,27 @@ export class ProjectNotPublishedException extends HttpException {
   }
 }
 
+export const PROJECT_HIDDEN_CODE = 'PROJECT_HIDDEN';
+
+/**
+ * Raised wherever a game moderation withholds is asked for as a release, or asked to change what
+ * the hub would show of it. Told apart from a game that does not exist: its owner and its players
+ * are owed the difference.
+ */
+export class ProjectHiddenException extends HttpException {
+  constructor() {
+    super(
+      {
+        statusCode: HttpStatus.FORBIDDEN,
+        error: 'Forbidden',
+        code: PROJECT_HIDDEN_CODE,
+        message: 'This game is unavailable',
+      },
+      HttpStatus.FORBIDDEN,
+    );
+  }
+}
+
 export const CHECKPOINT_LIMIT_CODE = 'CHECKPOINT_LIMIT';
 
 /** Raised when a project holds as many named versions as it may, and the name is new. */

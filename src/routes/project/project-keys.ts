@@ -17,11 +17,23 @@ export const projectKeys = {
   cover: (projectId: number): string => `projects/${projectId}/image`,
 
   /**
+   * Where the release and the cover of a game sit while moderation withholds it. Never made
+   * public-read, so the edge stops serving them the moment they are moved here.
+   */
+  withheldRelease: (projectId: number): string => `withheld/${projectId}/release`,
+  withheldCover: (projectId: number): string => `withheld/${projectId}/cover`,
+
+  /**
    * Everything the project owns in the bucket, as single keys and as prefixes to list. A new kind
    * of object belongs here too, or deleting the project leaves it behind.
    */
   owned: (projectId: number): { keys: string[]; prefixes: string[] } => ({
-    keys: [projectKeys.release(projectId), projectKeys.cover(projectId)],
+    keys: [
+      projectKeys.release(projectId),
+      projectKeys.cover(projectId),
+      projectKeys.withheldRelease(projectId),
+      projectKeys.withheldCover(projectId),
+    ],
     prefixes: [projectKeys.checkpoints(projectId), projectKeys.saves(projectId)],
   }),
 };

@@ -89,6 +89,7 @@ export const encodeGame = (codeLength: number): Buffer => {
 /** The release state a release change reads under its row lock. */
 export interface ReleaseStateRow {
   publishedAt: Date | null;
+  hiddenAt?: Date | null;
   releaseContentHash: string | null;
   releaseRevision: number;
 }

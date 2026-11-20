@@ -1057,7 +1057,7 @@ describe('MultiplayerService', () => {
       await service.list(undefined, 99);
 
       expect(gameSession.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { endedAt: null } }),
+        expect.objectContaining({ where: { endedAt: null, project: { hiddenAt: null } } }),
       );
     });
 

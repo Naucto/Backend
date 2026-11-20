@@ -1,9 +1,13 @@
 import { NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { FlagStatus, ModerationActionType, ModerationReason } from '@prisma/client';
 
 import { MODERATOR, USER } from '../../auth/access/roles';
+import { PROJECT_CHANGED, ProjectChangedEvent } from '../../common/domain-events';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { MultiplayerService } from '../multiplayer/multiplayer.service';
+import { ProjectContentService } from '../project/project-content.service';
 import { ContentModerationService } from './content-moderation.service';
 import { MODERATION_ERROR } from './moderation.error';
 import { ModerationLogService } from './moderation-log.service';
@@ -44,22 +48,188 @@ describe('ContentModerationService', () => {
     createdAt: new Date('2026-11-19T12:00:00.000Z'),
   });
 
-  const tx = { comment: { update: jest.fn() }, flag: { updateMany: jest.fn() } };
-  const prisma = { comment: { findUnique: jest.fn() }, $transaction: jest.fn() };
+  const game = (overrides: object = {}): object => ({
+    id: 12,
+    userId: 7,
+    name: 'Draft name',
+    shortDesc: 'Draft blurb',
+    longDesc: null,
+    publishedName: 'Ferry Click',
+    publishedShortDesc: 'Click the ferry',
+    publishedLongDesc: 'A longer text',
+    hiddenAt: null,
+    ...overrides,
+  });
+
+  const tx = {
+    comment: { update: jest.fn() },
+    project: { updateMany: jest.fn() },
+    flag: { updateMany: jest.fn() },
+  };
+  const prisma = {
+    comment: { findUnique: jest.fn() },
+    project: { findUnique: jest.fn() },
+    $transaction: jest.fn(),
+  };
   const log = { record: jest.fn() };
   const notifications = { notifyBestEffort: jest.fn() };
+  const content = {
+    copyToWithheld: jest.fn(),
+    removeServedCopies: jest.fn(),
+    copyFromWithheld: jest.fn(),
+    removeWithheldCopies: jest.fn(),
+  };
+  const multiplayer = { endSessionsOfProject: jest.fn() };
+  const eventEmitter = { emit: jest.fn() };
   let service: ContentModerationService;
 
   beforeEach(() => {
     jest.resetAllMocks();
     prisma.$transaction.mockImplementation((run: (client: typeof tx) => unknown) => run(tx));
     prisma.comment.findUnique.mockResolvedValue(comment());
+    prisma.project.findUnique.mockResolvedValue(game());
     tx.flag.updateMany.mockResolvedValue({ count: 1 });
+    tx.project.updateMany.mockResolvedValue({ count: 1 });
     service = new ContentModerationService(
       prisma as unknown as PrismaService,
       log as unknown as ModerationLogService,
       notifications as unknown as NotificationsService,
+      content as unknown as ProjectContentService,
+      multiplayer as unknown as MultiplayerService,
+      eventEmitter as unknown as EventEmitter2,
     );
+    jest.spyOn(service['logger'], 'error').mockImplementation();
+  });
+
+  describe('hideProject', () => {
+    beforeEach(() => {
+      log.record.mockResolvedValue({
+        ...(recorded(ModerationActionType.PROJECT_HIDDEN) as object),
+        targetType: 'PROJECT',
+        targetId: 12,
+      });
+    });
+
+    it('copies the release out of reach, marks the row, then removes what is served', async () => {
+      await service.hideProject(MOD, 12, DECISION);
+
+      const order = [
+        content.copyToWithheld.mock.invocationCallOrder[0]!,
+        tx.project.updateMany.mock.invocationCallOrder[0]!,
+        content.removeServedCopies.mock.invocationCallOrder[0]!,
+      ];
+      expect(order).toEqual([...order].sort((a, b) => a - b));
+      expect(tx.project.updateMany).toHaveBeenCalledWith({
+        where: { id: 12, hiddenAt: null },
+        data: { hiddenAt: expect.any(Date), iconUrl: null },
+      });
+    });
+
+    it('records the game as its page read, for its creator to find in their standing', async () => {
+      await service.hideProject(MOD, 12, DECISION);
+
+      expect(log.record).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({
+          action: ModerationActionType.PROJECT_HIDDEN,
+          targetId: 12,
+          subjectUserId: 7,
+          snapshot: { title: 'Ferry Click', body: 'Click the ferry\n\nA longer text' },
+        }),
+      );
+    });
+
+    it('ends the live sessions of the game and tells who watches it', async () => {
+      await service.hideProject(MOD, 12, DECISION);
+
+      expect(multiplayer.endSessionsOfProject).toHaveBeenCalledWith(12);
+      expect(eventEmitter.emit).toHaveBeenCalledWith(PROJECT_CHANGED, new ProjectChangedEvent(12));
+      expect(notifications.notifyBestEffort).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 7, title: 'Your game was hidden' }),
+      );
+    });
+
+    it('stays hidden when what is served could not be removed', async () => {
+      content.removeServedCopies.mockRejectedValue(new Error('storage is down'));
+
+      await expect(service.hideProject(MOD, 12, DECISION)).resolves.toBeDefined();
+    });
+
+    it('removes nothing that is served when the row could not be marked', async () => {
+      log.record.mockRejectedValue(new Error('database is down'));
+
+      await expect(service.hideProject(MOD, 12, DECISION)).rejects.toThrow('database is down');
+      expect(content.removeServedCopies).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [
+        'is hidden already',
+        () => prisma.project.findUnique.mockResolvedValue(game({ hiddenAt: new Date() })),
+      ],
+      [
+        'another staff member hid meanwhile',
+        () => tx.project.updateMany.mockResolvedValue({ count: 0 }),
+      ],
+    ])('refuses a game that %s', async (_case, arrange) => {
+      arrange();
+
+      await expect(service.hideProject(MOD, 12, DECISION)).rejects.toMatchObject({
+        code: MODERATION_ERROR.ALREADY_HIDDEN,
+      });
+      expect(log.record).not.toHaveBeenCalled();
+    });
+
+    it('refuses staff deciding about a game they created', async () => {
+      prisma.project.findUnique.mockResolvedValue(game({ userId: MOD.id }));
+
+      await expect(service.hideProject(MOD, 12, DECISION)).rejects.toMatchObject({
+        code: MODERATION_ERROR.OWN_CASE,
+      });
+      expect(content.copyToWithheld).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('restoreProject', () => {
+    beforeEach(() => {
+      prisma.project.findUnique.mockResolvedValue(game({ hiddenAt: new Date() }));
+      content.copyFromWithheld.mockResolvedValue({
+        coverUrl: 'https://cdn.test/projects/12/image',
+      });
+      log.record.mockResolvedValue({
+        ...(recorded(ModerationActionType.PROJECT_RESTORED) as object),
+        targetType: 'PROJECT',
+        targetId: 12,
+      });
+    });
+
+    it('refuses a game that is not hidden', async () => {
+      prisma.project.findUnique.mockResolvedValue(game());
+
+      await expect(service.restoreProject(MOD, 12, {})).rejects.toMatchObject({
+        code: MODERATION_ERROR.NOT_HIDDEN,
+      });
+      expect(content.copyFromWithheld).not.toHaveBeenCalled();
+    });
+
+    it('puts the release and the cover back, then drops the withheld copies', async () => {
+      await service.restoreProject(MOD, 12, {});
+
+      expect(tx.project.updateMany).toHaveBeenCalledWith({
+        where: { id: 12, hiddenAt: { not: null } },
+        data: { hiddenAt: null, iconUrl: 'https://cdn.test/projects/12/image' },
+      });
+      expect(content.removeWithheldCopies).toHaveBeenCalledWith(12);
+      expect(content.removeServedCopies).not.toHaveBeenCalled();
+    });
+
+    it('takes the release back out of reach when the row could not be cleared', async () => {
+      log.record.mockRejectedValue(new Error('database is down'));
+
+      await expect(service.restoreProject(MOD, 12, {})).rejects.toThrow('database is down');
+      expect(content.removeServedCopies).toHaveBeenCalledWith(12);
+      expect(content.removeWithheldCopies).not.toHaveBeenCalled();
+    });
   });
 
   describe('hideComment', () => {

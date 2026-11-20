@@ -16,7 +16,11 @@ import { AnalyticsFactService } from '../analytics/analytics-fact.service';
 import { EdgeService } from '../s3/edge.service';
 import { S3Service } from '../s3/s3.service';
 import { PROJECT_CONTENT_MAX_BYTES } from './content-size';
-import { ProjectNotPublishedException, ProjectTooLargeException } from './project.error';
+import {
+  ProjectHiddenException,
+  ProjectNotPublishedException,
+  ProjectTooLargeException,
+} from './project.error';
 import { ProjectService } from './project.service';
 import { ProjectContentService } from './project-content.service';
 
@@ -478,6 +482,111 @@ describe('ProjectContentService', () => {
       expect(s3ServiceMock.uploadFile).not.toHaveBeenCalled();
     });
   });
+
+  describe('a game moderation withholds', () => {
+    const hiddenRow = {
+      publishedAt: new Date(),
+      hiddenAt: new Date(),
+      name: 'Small',
+      shortDesc: '',
+      longDesc: null,
+      tags: [],
+    };
+
+    it.each([
+      ['publish', () => service.publish(1, 9)],
+      ['update its release', () => service.updateRelease(1, 9)],
+    ])('refuses to %s, before anything is uploaded', async (_case, act) => {
+      prismaMock.project.findUnique.mockResolvedValue(hiddenRow);
+
+      await expect(act()).rejects.toBeInstanceOf(ProjectHiddenException);
+      expect(s3ServiceMock.uploadFile).not.toHaveBeenCalled();
+    });
+
+    it('takes back a release uploaded while the game was being hidden', async () => {
+      mockPublishable(encodeGame(3));
+      txMock.$queryRaw.mockResolvedValue([
+        { publishedAt: null, hiddenAt: new Date(), releaseContentHash: null, releaseRevision: 0 },
+      ]);
+
+      await expect(service.publish(1, 9)).rejects.toBeInstanceOf(ProjectHiddenException);
+      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({ key: 'release/1' });
+      expect(txMock.project.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses to unpublish, which would strand the release held for a restore', async () => {
+      txMock.$queryRaw.mockResolvedValue([
+        {
+          publishedAt: new Date(),
+          hiddenAt: new Date(),
+          releaseContentHash: null,
+          releaseRevision: 1,
+        },
+      ]);
+
+      await expect(service.unpublish(1, 9)).rejects.toBeInstanceOf(ProjectHiddenException);
+      expect(txMock.project.update).not.toHaveBeenCalled();
+      expect(s3ServiceMock.deleteFile).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['its release file', () => service.fetchReleaseContent(1)],
+      ['the address of its release', () => service.releaseUrl(1)],
+    ])('refuses to serve %s', async (_case, act) => {
+      prismaMock.project.findUnique.mockResolvedValue({ hiddenAt: new Date() });
+
+      await expect(act()).rejects.toBeInstanceOf(ProjectHiddenException);
+      expect(s3ServiceMock.downloadFile).not.toHaveBeenCalled();
+    });
+
+    it('copies the release and the cover to keys the edge does not serve', async () => {
+      s3ServiceMock.fileExists.mockResolvedValue(true);
+      s3ServiceMock.downloadFile.mockResolvedValue({ body: Readable.from('x') });
+
+      await service.copyToWithheld(1);
+
+      expect(s3ServiceMock.uploadFile.mock.calls.map(([upload]) => upload.keyName)).toEqual([
+        'withheld/1/release',
+        'withheld/1/cover',
+      ]);
+      expect(s3ServiceMock.setObjectPublicRead).not.toHaveBeenCalled();
+    });
+
+    it('has nothing to copy for a game with no release and no cover', async () => {
+      s3ServiceMock.fileExists.mockResolvedValue(false);
+
+      await service.copyToWithheld(1);
+
+      expect(s3ServiceMock.uploadFile).not.toHaveBeenCalled();
+    });
+
+    it('puts both back where the edge serves them, readable again', async () => {
+      s3ServiceMock.fileExists.mockResolvedValue(true);
+      s3ServiceMock.downloadFile.mockResolvedValue({ body: Readable.from('x') });
+
+      await expect(service.copyFromWithheld(1)).resolves.toEqual({
+        coverUrl: 'https://cdn.test/projects/1/image',
+      });
+
+      expect(s3ServiceMock.uploadFile).toHaveBeenCalledWith(
+        expect.objectContaining({ keyName: 'release/1', cacheControl: 'no-cache' }),
+      );
+      expect(s3ServiceMock.setObjectPublicRead.mock.calls).toEqual([
+        ['release/1'],
+        ['projects/1/image'],
+      ]);
+    });
+
+    it('reports no cover when none was withheld', async () => {
+      s3ServiceMock.fileExists.mockImplementation((key: string) =>
+        Promise.resolve(key === 'withheld/1/release'),
+      );
+      s3ServiceMock.downloadFile.mockResolvedValue({ body: Readable.from('x') });
+
+      await expect(service.copyFromWithheld(1)).resolves.toEqual({ coverUrl: null });
+    });
+  });
+
   describe('release transitions', () => {
     /** The release state of the project row, as the row lock reads it and the update writes it. */
     let row: {

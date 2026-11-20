@@ -31,7 +31,7 @@ function aHostedSession(overrides: Partial<HostedSession> = {}): HostedSession {
     maxPlayers: 4,
     players: 1,
     openToFriends: true,
-    project: { publishedAt: null, iconUrl: null, name: 'Race' },
+    project: { publishedAt: null, hiddenAt: null, iconUrl: null, name: 'Race' },
     ...overrides,
   };
 }
@@ -173,7 +173,7 @@ describe('PresenceService', () => {
     multiplayerService.hostedSession.mockResolvedValue(
       aHostedSession({
         players: 3,
-        project: { publishedAt: new Date(), iconUrl: null, name: 'Race' },
+        project: { publishedAt: new Date(), hiddenAt: null, iconUrl: null, name: 'Race' },
       }),
     );
 

@@ -60,7 +60,7 @@ const HOSTED_SESSION_SELECT = {
   title: true,
   maxPlayers: true,
   visibility: true,
-  project: { select: { publishedAt: true, iconUrl: true, name: true } },
+  project: { select: { publishedAt: true, hiddenAt: true, iconUrl: true, name: true } },
   _count: { select: { otherUsers: true } },
 } as const;
 
@@ -126,6 +126,11 @@ export class MultiplayerService {
   ): Promise<GameSessionConnectionResponseDto> {
     const project = await this._projectService.findOne(dto.projectId);
 
+    // Nobody plays a withheld game together, its collaborators included: a session is a way in.
+    if (project.hiddenAt) {
+      throw new MultiplayerForbiddenError('This game is unavailable');
+    }
+
     if (
       !project.publishedAt &&
       project.creator.id !== userId &&
@@ -188,6 +193,7 @@ export class MultiplayerService {
       include: SESSION_RELATIONS,
       where: {
         endedAt: null,
+        project: { hiddenAt: null },
         ...(projectId === undefined ? {} : { projectId }),
         ...(term
           ? {
@@ -418,6 +424,18 @@ export class MultiplayerService {
         data: { otherUsers: { disconnect: { id: userId } } },
       });
       this._eventEmitter.emit(ACTIVITY_CHANGED, new ActivityChangedEvent(session.hostId));
+    }
+  }
+
+  /** Ends every live session of a game, whoever hosts it. */
+  async endSessionsOfProject(projectId: number): Promise<void> {
+    const live = await this._prismaService.gameSession.findMany({
+      where: { projectId, endedAt: null },
+      select: { sessionId: true },
+    });
+    for (const { sessionId } of live) {
+      await this._softEnd(sessionId);
+      this._syncServer.closeRoom(sessionId);
     }
   }
 
