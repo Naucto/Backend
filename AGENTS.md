@@ -93,6 +93,7 @@ Create it with `cp config/webrtc.example.json config/webrtc.json`.
 | `src/routes/analytics/`                      | Usage analytics: ingest from browsers, business facts, multiplayer accounting, minute presence sampling, finalization into rollups, account history projection, purge, and the admin and user read APIs (see _Analytics_ below)     |
 | `src/presence/`                              | What friends see each other doing (online, playing, building, hosting), fed by the notifications socket and by domain events (see _Presence_ below)                                                                                 |
 | `src/routes/admin/`                          | The admin console's own sign-in and admin accounts: who holds the role, promoting and revoking (see _Admin console_ below)                                                                                                          |
+| `src/routes/moderation/`                     | Flags from users, the case queue, staff decisions on accounts, games and comments, the log of them and each account's standing (see _Moderation_ below)                                                                             |
 | `src/tasks/`                                 | Scheduled jobs (`@nestjs/schedule` cron)                                                                                                                                                                                            |
 | `src/prisma/`                                | `PrismaService` + module                                                                                                                                                                                                            |
 | `src/common/`                                | Cross-feature DTOs + decorators (pagination, signed-CDN, `@AtLeastOne`), and the domain events (`domain-events.ts`)                                                                                                                 |
@@ -287,6 +288,35 @@ at the controller boundary (see `project.controller.ts` catching `S3ObjectNotFou
   rate limit and never throws. `CrashNotifier` uses it to post a crash to
   `DISCORD_CRASH_WEBHOOK_URL` when it is new, comes back after being resolved, or reaches 10, 100,
   1000 or 10000 occurrences.
+
+**Moderation** (`src/routes/moderation/`), behind the `moderation` flag of `config/features.json`
+on the client side only: the routes answer whatever the flag says.
+
+- "Report" already names feedback (`src/routes/reports/`), so what a person reports about a game, a
+  comment or a profile is a **flag**. The flags on one target read as one **case**, which is what
+  the admin console queues.
+- Every decision is one `ModerationAction` row, written by `ModerationLogService.record` in the
+  transaction of the change it records. A row is never updated or deleted, with one exception in
+  that service: erasing an account takes the copies the record kept of what the person wrote.
+  `moderation-log.append-only.spec.ts` fails on any other.
+- Whether the account a decision bears on sees it in its standing is decided per kind of action
+  (`VISIBLE_TO_SUBJECT`), never by a caller. The standing never carries who decided, the staff
+  note, or who reported.
+- Decisions are taken through `/admin/moderation/*`, so with a staff session only. Moderators hide,
+  restore, warn, suspend, reinstate and clear profiles. Deleting for good is an admin's.
+  `allowedOperations` holds those rules once, and the admin console draws its buttons from what it
+  answers. Staff act only on accounts ranked below their own role, and never on their own account
+  or content.
+- A hidden comment keeps its text stored and is served as a tombstone by the one mapper of the
+  comment service. A hidden game keeps `publishedAt`, and `PUBLISHED` (`project-select.ts`) now
+  means released and not hidden: read the published state through it, or through `RELEASED` for an
+  owner's own shelf, never from `publishedAt` alone.
+- The storage layer cannot take a public grant back, so hiding a game moves its release and cover
+  to `withheld/<id>/`. Copy first, mark the row, then remove the served copies: a failure midway
+  leaves a copy too many, and `repair:publish-state` removes it.
+- Staff read any game through `/moderation/projects/:id/preview`, with the token of a site sign-in
+  because the web app shows it. Those routes write nothing but one log row per look.
+- Moderators never read email addresses: `toAccountRef` gives one to admins only.
 
 ## Conventions (not all enforced by tooling — follow these)
 
