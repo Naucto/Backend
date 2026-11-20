@@ -297,6 +297,28 @@ describe('HubService', () => {
     });
   });
 
+  describe('disk of a listed game', () => {
+    const counts = { _count: { forks: 0, comments: 0 } };
+
+    it('is the one its author chose, without the parts they left out', async () => {
+      prismaMock.project.findMany.mockResolvedValue([
+        { ...released, diskColor: '#10d275', diskFinish: 'stripes', ...counts },
+      ]);
+
+      const [release] = await service.fetchReleasesByIds([2]);
+
+      expect(release?.disk).toEqual({ color: '#10d275', finish: 'stripes' });
+    });
+
+    it('is null for a game nobody styled', async () => {
+      prismaMock.project.findMany.mockResolvedValue([{ ...released, ...counts }]);
+
+      const [release] = await service.fetchReleasesByIds([2]);
+
+      expect(release?.disk).toBeNull();
+    });
+  });
+
   describe('publishedCoverUrl', () => {
     it('rejects a project the hub does not carry', async () => {
       prismaMock.project.findFirst.mockResolvedValue(null);

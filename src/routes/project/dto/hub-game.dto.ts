@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 
+import { DiskStyleDto } from './disk-style.dto';
 import { ProjectExResponseDto } from './project-response.dto';
 
 /** A game as a card of the hub shows it. */
@@ -13,4 +14,13 @@ export class HubGameDto extends ProjectExResponseDto {
     required: true,
   })
   override coverUrl!: string | null;
+
+  @ApiProperty({
+    description:
+      'The disk its author chose. Null when none was chosen: a client then derives a colour from the id',
+    type: DiskStyleDto,
+    nullable: true,
+    required: true,
+  })
+  override disk!: DiskStyleDto | null;
 }

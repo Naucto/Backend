@@ -1,6 +1,8 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { MonetizationType, ProjectStatus } from '@prisma/client';
 
+import { DiskStyleDto } from './disk-style.dto';
+
 export class UserBasicInfoDto {
   @ApiProperty({
     example: 1,
@@ -59,13 +61,22 @@ export class ProjectResponseDto {
 
   @ApiProperty({
     description:
-      'Address of the cover, usable as is: it changes when the cover does. Null without a cover; absent from answers that do not list games',
+      'Address of the cover, usable as is: it changes when the cover does. Null without a cover. Absent from answers that neither list nor open a project',
     example: 'https://cdn.example.com/projects/1/image?v=5d41402abc4b2a76b9719d911017c592',
     type: String,
     nullable: true,
     required: false,
   })
   coverUrl?: string | null;
+
+  @ApiProperty({
+    description:
+      'The disk its author chose. Null when none was chosen: a client then derives a colour from the id. Absent from answers that neither list nor open a project',
+    type: DiskStyleDto,
+    nullable: true,
+    required: false,
+  })
+  disk?: DiskStyleDto | null;
 
   @ApiProperty({
     description: 'The current status of the project',

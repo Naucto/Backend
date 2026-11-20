@@ -1,5 +1,7 @@
 import { Prisma, Project } from '@prisma/client';
 
+import { DiskStyleDto } from './dto/disk-style.dto';
+
 // What a project says about its people, on public routes as well as private ones: the id
 // and the name, never the address behind the account.
 export const CREATOR_SELECT = {
@@ -55,11 +57,17 @@ export type ProjectWithCounts = ProjectEx & {
   };
 };
 
-export type ReleaseProject = ProjectEx & {
-  commentCount: number;
-  forkCount: number;
+/** What an answer adds to a project row for whoever draws the game. */
+export type ProjectLook = {
   coverUrl: string | null;
+  disk: DiskStyleDto | null;
 };
+
+export type ReleaseProject = ProjectEx &
+  ProjectLook & {
+    commentCount: number;
+    forkCount: number;
+  };
 
 export type PaginatedProjectsResult<T> = {
   projects: T[];

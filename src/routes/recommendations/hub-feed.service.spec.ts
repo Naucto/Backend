@@ -26,6 +26,7 @@ const release = (id: number, overrides: Partial<ReleaseProject> = {}): ReleasePr
   commentCount: 0,
   forkCount: 0,
   coverUrl: `https://cdn.test/projects/${id}/image?v=1`,
+  disk: null,
   ...overrides,
 });
 
@@ -286,6 +287,18 @@ describe('HubFeedService', () => {
         expect(card).not.toHaveProperty('releaseRevision');
         expect(card.coverUrl).toBe(`https://cdn.test/projects/${card.id}/image?v=1`);
       }
+    });
+
+    it('hands out the disk a game was given, and none for a game without one', async () => {
+      onHub.set(1, release(1, { disk: { color: '#ffd100', finish: 'gold' } }));
+
+      const [popular] = (await service.feed(null, NOW)).shelves;
+
+      expect(popular?.games.find((game) => game.id === 1)?.disk).toEqual({
+        color: '#ffd100',
+        finish: 'gold',
+      });
+      expect(popular?.games.find((game) => game.id === 2)?.disk).toBeNull();
     });
   });
 

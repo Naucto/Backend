@@ -33,6 +33,7 @@ import { UserDto } from '../../auth/dto/user.dto';
 import { ProjectCollaboratorGuard, ProjectCreatorGuard } from '../../auth/guards/project.guard';
 import { AddCollaboratorDto, RemoveCollaboratorDto } from './dto/collaborator-project.dto';
 import { CreateProjectDto } from './dto/create-project.dto';
+import { ProjectDiskDto } from './dto/disk-style.dto';
 import { ImageUrlResponseDto } from './dto/image-url-response.dto';
 import { ProjectActionResponseDto } from './dto/project-action-response.dto';
 import {
@@ -195,6 +196,21 @@ export class ProjectController {
     @Body() updateProjectDto: UpdateProjectDto,
   ): Promise<ProjectResponseDto> {
     return this.projectService.update(id, updateProjectDto);
+  }
+
+  @Patch(':id/disk')
+  @UseGuards(ProjectCollaboratorGuard)
+  @ApiOperation({
+    summary: 'Choose the disk of a project, or go back to the derived one with null',
+  })
+  @ApiParam({ name: 'id', type: 'number' })
+  @ApiBody({ type: ProjectDiskDto })
+  @ApiResponse({ status: 200, description: 'The disk as stored', type: ProjectDiskDto })
+  @ApiResponse({ status: 400, description: 'A colour, finish or direction the disk cannot take' })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  @ApiResponse({ status: 404, description: 'Project not found' })
+  async setDisk(@ProjectId() id: number, @Body() dto: ProjectDiskDto): Promise<ProjectDiskDto> {
+    return { disk: await this.projectService.setDisk(id, dto.disk) };
   }
 
   @UseGuards(ProjectCreatorGuard)

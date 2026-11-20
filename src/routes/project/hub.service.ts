@@ -85,7 +85,7 @@ export class HubService {
       ...hubFields(project),
       commentCount: _count.comments,
       forkCount: _count.forks,
-      coverUrl: this.projectService.storedCoverUrl(project),
+      ...this.projectService.lookOf(project),
     };
   }
 

@@ -26,6 +26,7 @@ import { EdgeService } from '../s3/edge.service';
 import { S3DownloadException, S3ObjectNotFoundException } from '../s3/s3.error';
 import { S3Service } from '../s3/s3.service';
 import { PROJECT_BLOB_MAX_BYTES } from './content-size';
+import { DISK_COLORS, DISK_FINISHES, DISK_GRAD_DIRS } from './dto/disk-style-limits';
 import { HubController } from './hub.controller';
 import type { ReleaseWindow } from './hub.service';
 import { HubService } from './hub.service';
@@ -143,6 +144,7 @@ describe('project controllers', () => {
       'findOne',
       'getSize',
       'update',
+      'setDisk',
       'saveProjectContent',
       'uploadProjectImage',
       'getProjectImage',
@@ -346,6 +348,7 @@ describe('project controllers', () => {
       ['patch', '/projects/12.34e2/add-collaborator', 'addCollaborator'],
       ['delete', '/projects/12.34e2/remove-collaborator', 'removeCollaborator'],
       ['post', '/projects/12.34e2/image', 'uploadImage'],
+      ['patch', '/projects/12.34e2/disk', 'setDisk'],
     ] as const)(
       '%s %s never reaches a project other than the one the guard checked',
       async (verb, path, method) => {
@@ -414,6 +417,88 @@ describe('project controllers', () => {
         .put('/projects/99')
         .send({ name: 'Taken over', shortDesc: '' })
         .expect(HttpStatus.FORBIDDEN);
+
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    describe('PATCH /projects/:id/disk', () => {
+      let setDisk: jest.SpyInstance;
+
+      beforeEach(() => {
+        setDisk = jest
+          .spyOn(projectService, 'setDisk')
+          .mockImplementation(async (_id, disk) => disk);
+      });
+
+      it('sets the disk of a project the caller is on, and answers it', async () => {
+        const disk = { color: '#ff8426', finish: 'gradient', color2: '#ffd100', gradDir: 'r' };
+
+        const response = await http().patch('/projects/12/disk').send({ disk }).expect(200);
+
+        expect(setDisk).toHaveBeenCalledWith(OWN_PROJECT, disk);
+        expect(response.body).toEqual({ disk });
+      });
+
+      it('clears it with null', async () => {
+        const response = await http().patch('/projects/12/disk').send({ disk: null }).expect(200);
+
+        expect(setDisk).toHaveBeenCalledWith(OWN_PROJECT, null);
+        expect(response.body).toEqual({ disk: null });
+      });
+
+      it.each([
+        ['no disk at all', {}],
+        ['a colour outside the engine palette', { disk: { color: '#123456', finish: 'solid' } }],
+        ['a palette colour spelled another way', { disk: { color: '#FF8426', finish: 'solid' } }],
+        ['a colour that is not one', { disk: { color: 'red', finish: 'solid' } }],
+        ['a finish it does not know', { disk: { color: '#ff8426', finish: 'glitter' } }],
+        ['no finish', { disk: { color: '#ff8426' } }],
+        ['no colour', { disk: { finish: 'gold' } }],
+        [
+          'a second colour outside the palette',
+          { disk: { color: '#ff8426', finish: 'stripes', color2: '#000000' } },
+        ],
+        [
+          'a direction it does not know',
+          { disk: { color: '#ff8426', finish: 'gradient', gradDir: 'up' } },
+        ],
+        ['a field a disk does not have', { disk: { color: '#ff8426', finish: 'solid', glow: 1 } }],
+        ['a list', { disk: [{ color: '#ff8426', finish: 'solid' }] }],
+        ['the columns themselves', { diskColor: '#ff8426', diskFinish: 'solid' }],
+      ])('refuses %s', async (_case, body) => {
+        await http().patch('/projects/12/disk').send(body).expect(HttpStatus.BAD_REQUEST);
+
+        expect(setDisk).not.toHaveBeenCalled();
+      });
+
+      it('refuses someone who is not on the project', async () => {
+        await http()
+          .patch('/projects/99/disk')
+          .send({ disk: { color: '#ff8426', finish: 'solid' } })
+          .expect(HttpStatus.FORBIDDEN);
+
+        expect(setDisk).not.toHaveBeenCalled();
+      });
+
+      it('takes every finish and every direction the disk draws', async () => {
+        for (const finish of DISK_FINISHES) {
+          for (const gradDir of DISK_GRAD_DIRS) {
+            await http()
+              .patch('/projects/12/disk')
+              .send({ disk: { color: DISK_COLORS[0], finish, gradDir } })
+              .expect(HttpStatus.OK);
+          }
+        }
+      });
+    });
+
+    it('does not let the whole-project update set the disk', async () => {
+      const update = jest.spyOn(projectService, 'update');
+
+      await http()
+        .put('/projects/12')
+        .send({ name: 'Renamed', shortDesc: '', diskColor: '#ff8426' })
+        .expect(HttpStatus.BAD_REQUEST);
 
       expect(update).not.toHaveBeenCalled();
     });

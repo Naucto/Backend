@@ -21,13 +21,16 @@ import { S3Service } from '../s3/s3.service';
 import { WorkSessionService } from '../work-session/work-session.service';
 import { AddCollaboratorDto, RemoveCollaboratorDto } from './dto/collaborator-project.dto';
 import { CreateProjectDto } from './dto/create-project.dto';
+import { DiskStyleDto } from './dto/disk-style.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
+import { diskOf } from './hub-fields';
 import { ProjectHiddenException } from './project.error';
 import { projectKeys } from './project-keys';
 import {
   DEFAULT_LIMIT,
   PaginatedProjectsResult,
   ProjectEx,
+  ProjectLook,
   RELEASED,
   WITH_PEOPLE,
 } from './project-select';
@@ -92,6 +95,16 @@ export class ProjectService {
     return project.coverVersion ? versionedUrl(url, project.coverVersion) : url;
   }
 
+  /** How the row says the game is drawn, for an answer that lists or opens it. */
+  lookOf(
+    project: Pick<
+      Project,
+      'id' | 'iconUrl' | 'coverVersion' | 'diskColor' | 'diskFinish' | 'diskColor2' | 'diskGradDir'
+    >,
+  ): ProjectLook {
+    return { coverUrl: this.storedCoverUrl(project), disk: diskOf(project) };
+  }
+
   private buildUserProjectsWhere(
     userId: number,
     filters: UserProjectFilters = {},
@@ -142,7 +155,7 @@ export class ProjectService {
     userId: number,
     page?: number,
     limit?: number,
-  ): Promise<PaginatedProjectsResult<ProjectEx & { coverUrl: string | null }>> {
+  ): Promise<PaginatedProjectsResult<ProjectEx & ProjectLook>> {
     const window = pageWindow(page, limit, DEFAULT_LIMIT);
     const where = this.buildUserProjectsWhere(userId);
 
@@ -160,10 +173,7 @@ export class ProjectService {
     ]);
 
     return {
-      projects: projects.map((project) => ({
-        ...project,
-        coverUrl: this.storedCoverUrl(project),
-      })),
+      projects: projects.map((project) => ({ ...project, ...this.lookOf(project) })),
       total,
       page: window.page,
       limit: window.limit,
@@ -176,7 +186,7 @@ export class ProjectService {
     });
   }
 
-  async findOne(id: number): Promise<ProjectEx> {
+  async findOne(id: number): Promise<ProjectEx & ProjectLook> {
     const project = await this.prisma.project.findUnique({
       where: { id },
       include: WITH_PEOPLE,
@@ -186,7 +196,7 @@ export class ProjectService {
       throw new NotFoundException(`Project with ID ${id} not found`);
     }
 
-    return project;
+    return { ...project, ...this.lookOf(project) };
   }
 
   async create(createProjectDto: CreateProjectDto, userId: number): Promise<Project> {
@@ -243,6 +253,22 @@ export class ProjectService {
     this.eventEmitter.emit(PROJECT_CHANGED, new ProjectChangedEvent(id));
 
     return updated;
+  }
+
+  /** Sets the disk of a project whole, or clears it with null. */
+  async setDisk(id: number, disk: DiskStyleDto | null): Promise<DiskStyleDto | null> {
+    const updated = await this.prisma.project.update({
+      where: { id },
+      data: {
+        diskColor: disk?.color ?? null,
+        diskFinish: disk?.finish ?? null,
+        diskColor2: disk?.color2 ?? null,
+        diskGradDir: disk?.gradDir ?? null,
+      },
+      select: { diskColor: true, diskFinish: true, diskColor2: true, diskGradDir: true },
+    });
+
+    return diskOf(updated);
   }
 
   private async storeCover(

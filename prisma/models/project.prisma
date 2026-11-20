@@ -25,6 +25,12 @@ model Project {
   // Version of the stored cover, read back from the store when it was uploaded; null for a cover
   // stored before the version was kept, or when there is none.
   coverVersion String?
+  // The disk its author chose for the game: a colour of the engine palette and a finish, set
+  // together. Null until chosen: a client then derives a colour from the id.
+  diskColor   String?
+  diskFinish  String?
+  diskColor2  String?
+  diskGradDir String?
   monetization MonetizationType  @default(NONE)
   price        Float?
   createdAt    DateTime          @default(now())

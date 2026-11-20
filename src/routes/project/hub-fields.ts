@@ -1,5 +1,7 @@
 import { Project } from '@prisma/client';
 
+import { DiskStyleDto } from './dto/disk-style.dto';
+import { DiskColor, DiskFinish, DiskGradDir } from './dto/disk-style-limits';
 import { HubGameDto } from './dto/hub-game.dto';
 import { ReleaseProject } from './project-select';
 
@@ -43,6 +45,25 @@ export function hubFields<T extends HubSnapshot>(project: T): T {
 }
 
 /**
+ * The disk an author chose, or null while they chose none. The colour and the finish are written
+ * together, from values the route that sets them checked.
+ */
+export function diskOf(
+  project: Pick<Project, 'diskColor' | 'diskFinish' | 'diskColor2' | 'diskGradDir'>,
+): DiskStyleDto | null {
+  if (!project.diskColor || !project.diskFinish) {
+    return null;
+  }
+
+  return {
+    color: project.diskColor as DiskColor,
+    finish: project.diskFinish as DiskFinish,
+    ...(project.diskColor2 ? { color2: project.diskColor2 as DiskColor } : {}),
+    ...(project.diskGradDir ? { gradDir: project.diskGradDir as DiskGradDir } : {}),
+  };
+}
+
+/**
  * The card of a game, field by field: a release row also carries what only its authors may read
  * (content size, release hash and revision), and a spread would hand that out.
  */
@@ -55,6 +76,7 @@ export function toHubGame(release: ReleaseProject): HubGameDto {
     tags: release.tags,
     iconUrl: release.iconUrl,
     coverUrl: release.coverUrl,
+    disk: release.disk,
     status: release.status,
     monetization: release.monetization,
     price: release.price,

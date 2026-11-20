@@ -63,8 +63,8 @@ describe('ProjectService', () => {
 
       expect(result).toEqual({
         projects: [
-          { ...draft, coverUrl: null },
-          { ...released, coverUrl: null },
+          { ...draft, coverUrl: null, disk: null },
+          { ...released, coverUrl: null, disk: null },
         ],
         total: 2,
         page: 1,
@@ -88,8 +88,8 @@ describe('ProjectService', () => {
       );
       expect(result).toEqual({
         projects: [
-          { ...draft, coverUrl: null },
-          { ...released, coverUrl: null },
+          { ...draft, coverUrl: null, disk: null },
+          { ...released, coverUrl: null, disk: null },
         ],
         total: 250,
         page: 2,
@@ -103,6 +103,68 @@ describe('ProjectService', () => {
       prismaMock.project.findUnique.mockResolvedValue(null);
 
       await expect(service.findOne(999)).rejects.toThrow(NotFoundException);
+    });
+
+    it('opens a project with the disk its author chose', async () => {
+      prismaMock.project.findUnique.mockResolvedValue({
+        ...draft,
+        diskColor: '#ff8426',
+        diskFinish: 'gradient',
+        diskColor2: '#ffd100',
+        diskGradDir: 'd2',
+      });
+
+      await expect(service.findOne(draft.id)).resolves.toMatchObject({
+        disk: { color: '#ff8426', finish: 'gradient', color2: '#ffd100', gradDir: 'd2' },
+      });
+    });
+
+    it('opens a project nobody styled without a disk, for the client to derive one', async () => {
+      prismaMock.project.findUnique.mockResolvedValue(draft);
+
+      await expect(service.findOne(draft.id)).resolves.toMatchObject({ disk: null });
+    });
+  });
+
+  describe('setDisk', () => {
+    const columns = { diskColor: true, diskFinish: true, diskColor2: true, diskGradDir: true };
+
+    beforeEach(() => {
+      prismaMock.project.update.mockImplementation(async ({ data }: { data: object }) => data);
+    });
+
+    it('writes the style whole, leaving out what it does not name', async () => {
+      const stored = await service.setDisk(4, { color: '#16171a', finish: 'holo' });
+
+      expect(prismaMock.project.update).toHaveBeenCalledWith({
+        where: { id: 4 },
+        data: { diskColor: '#16171a', diskFinish: 'holo', diskColor2: null, diskGradDir: null },
+        select: columns,
+      });
+      expect(stored).toEqual({ color: '#16171a', finish: 'holo' });
+    });
+
+    it('goes back to no chosen style with null', async () => {
+      const stored = await service.setDisk(4, null);
+
+      expect(prismaMock.project.update).toHaveBeenCalledWith({
+        where: { id: 4 },
+        data: { diskColor: null, diskFinish: null, diskColor2: null, diskGradDir: null },
+        select: columns,
+      });
+      expect(stored).toBeNull();
+    });
+
+    it('leaves the release alone: the disk is live, like the cover', async () => {
+      await service.setDisk(4, { color: '#16171a', finish: 'solid' });
+
+      const [{ data }] = prismaMock.project.update.mock.calls[0] as [{ data: object }];
+      expect(Object.keys(data).sort()).toEqual([
+        'diskColor',
+        'diskColor2',
+        'diskFinish',
+        'diskGradDir',
+      ]);
     });
   });
 
