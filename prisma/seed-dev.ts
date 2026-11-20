@@ -1,8 +1,9 @@
 /**
  * Development seed: people, friendships, pending requests and shared game sessions, so the lists
  * and panels that stay hidden on an empty database have rows to draw, 80 days of usage
- * analytics for the admin console (`seed-dev-analytics.ts`), and a month of views, likes,
- * comments and plays for the hub to rank the published games on (`seed-dev-hub.ts`).
+ * analytics for the admin console (`seed-dev-analytics.ts`), collections of the published games
+ * (`seed-dev-collections.ts`), and a month of views, likes, comments and plays for the hub to
+ * rank the published games on (`seed-dev-hub.ts`).
  *
  *   npm run seed:dev                         everything
  *   npm run seed:dev -- --no-analytics       everything but the analytics
@@ -22,6 +23,7 @@ import * as bcrypt from 'bcryptjs';
 import { getOptionalEnv } from '../src/config/env';
 import { databaseUrl } from '../src/prisma/database-url';
 import { clearAnalytics, seedAnalytics } from './seed-dev-analytics';
+import { seedCollections } from './seed-dev-collections';
 import { seedHubSignals } from './seed-dev-hub';
 
 const connectionString = databaseUrl();
@@ -305,7 +307,9 @@ async function main(): Promise<void> {
   if (!process.argv.includes('--no-analytics')) {
     console.log(`analytics: ${await seedAnalytics(prisma)}`);
   }
-  // After the analytics, which create the sample games again on every run.
+  // After the analytics, which create the sample games again on every run, and with the hub
+  // signals last: they have the hub of the day drawn again, over the collections too.
+  console.log(`collections: ${await seedCollections(prisma, ids)}`);
   console.log(`hub: ${await seedHubSignals(prisma, [...ids.values()])}`);
   console.log('next: npm run seed:content in the Frontend, for games with playable content');
 }

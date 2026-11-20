@@ -1,4 +1,5 @@
 import { clearAnalytics, seedAnalytics } from '../prisma/seed-dev-analytics';
+import { seedCollections } from '../prisma/seed-dev-collections';
 import { seedHubSignals } from '../prisma/seed-dev-hub';
 import { normalizeFriendCode } from '../src/routes/user/friend-code.util';
 import { withEnv } from './env';
@@ -18,6 +19,9 @@ jest.mock('bcryptjs', () => ({ hash: jest.fn().mockResolvedValue('hashed') }));
 jest.mock('../prisma/seed-dev-analytics', () => ({
   seedAnalytics: jest.fn().mockResolvedValue('seeded'),
   clearAnalytics: jest.fn().mockResolvedValue('cleared'),
+}));
+jest.mock('../prisma/seed-dev-collections', () => ({
+  seedCollections: jest.fn().mockResolvedValue('collected'),
 }));
 jest.mock('../prisma/seed-dev-hub', () => ({
   seedHubSignals: jest.fn().mockResolvedValue('ranked'),
@@ -102,11 +106,21 @@ describe('seed:dev', () => {
     expect(seedHubSignals).toHaveBeenCalledTimes(1);
   });
 
+  it('seeds the collections once the sample games are there, before the hub is drawn again', async () => {
+    await runSeed();
+
+    const [calledAt] = jest.mocked(seedCollections).mock.invocationCallOrder;
+    expect(jest.mocked(seedCollections).mock.calls[0]?.[1].get('alexis')).toBe(1);
+    expect(jest.mocked(seedAnalytics).mock.invocationCallOrder[0]).toBeLessThan(calledAt!);
+    expect(calledAt).toBeLessThan(jest.mocked(seedHubSignals).mock.invocationCallOrder[0]!);
+  });
+
   it('only removes the analytics when asked to clear them', async () => {
     await runSeed('--clear-analytics');
 
     expect(clearAnalytics).toHaveBeenCalledWith(mockPrisma);
     expect(mockPrisma.user.upsert).not.toHaveBeenCalled();
+    expect(seedCollections).not.toHaveBeenCalled();
     expect(seedHubSignals).not.toHaveBeenCalled();
   });
 
