@@ -814,6 +814,21 @@ describe('HubService', () => {
       );
     });
 
+    it('gives the fork the palette of its source', async () => {
+      prismaMock.project.findUnique.mockResolvedValue({
+        ...source,
+        palette: ['#16171a', '#fafdff'],
+      });
+
+      await service.fork(2, 9);
+
+      expect(prismaMock.project.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ palette: ['#16171a', '#fafdff'] }),
+        }),
+      );
+    });
+
     it("keeps the fork's name within the limit a later update enforces", async () => {
       const longest = 'N'.repeat(PROJECT_NAME_MAX_LENGTH);
       prismaMock.project.findUnique.mockResolvedValue({

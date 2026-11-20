@@ -8,14 +8,17 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   Min,
 } from 'class-validator';
 
 import {
+  HEX_COLOR,
   PROJECT_LONG_DESC_MAX_LENGTH,
   PROJECT_MAX_TAGS,
   PROJECT_NAME_MAX_LENGTH,
+  PROJECT_PALETTE_MAX_COLORS,
   PROJECT_SHORT_DESC_MAX_LENGTH,
 } from './project-field-limits';
 
@@ -63,6 +66,20 @@ export class UpdateProjectDto {
   @IsString({ each: true })
   @IsOptional()
   tags?: string[];
+
+  @ApiProperty({
+    description:
+      'The colours the game draws with, as `#rrggbb` in the order the game indexes them: the palette of its content, mirrored here so a client reads it without the engine',
+    example: ['#16171a', '#7f0622', '#d62411'],
+    required: false,
+    type: [String],
+    maxItems: PROJECT_PALETTE_MAX_COLORS,
+  })
+  @IsArray()
+  @ArrayMaxSize(PROJECT_PALETTE_MAX_COLORS)
+  @Matches(HEX_COLOR, { each: true })
+  @IsOptional()
+  palette?: string[];
 
   @ApiProperty({
     description: 'Project status',

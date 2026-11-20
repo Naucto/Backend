@@ -286,6 +286,7 @@ describe('HubFeedService', () => {
         expect(card).not.toHaveProperty('contentSizeTotal');
         expect(card).not.toHaveProperty('releaseContentHash');
         expect(card).not.toHaveProperty('releaseRevision');
+        expect(card).not.toHaveProperty('palette');
         expect(card.coverUrl).toBe(`https://cdn.test/projects/${card.id}/image?v=1`);
       }
     });

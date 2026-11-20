@@ -52,6 +52,14 @@ export class ProjectResponseDto {
   tags!: string[];
 
   @ApiProperty({
+    description:
+      'The colours the game draws with, as lower-case `#rrggbb` in the order the game indexes them. Empty until its editor wrote them',
+    example: ['#16171a', '#7f0622', '#d62411'],
+    type: [String],
+  })
+  palette!: string[];
+
+  @ApiProperty({
     description: 'URL to the project icon',
     example: 'https://example.com/icons/MySuperVideoGame.png',
     type: String,

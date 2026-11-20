@@ -34,6 +34,7 @@ export const aProject = (overrides: Partial<ProjectWithPeople> = {}): ProjectWit
   publishedShortDesc: null,
   publishedLongDesc: null,
   publishedTags: [],
+  palette: [],
   status: ProjectStatus.IN_PROGRESS,
   iconUrl: null,
   coverVersion: null,

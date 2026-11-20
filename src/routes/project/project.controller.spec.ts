@@ -603,6 +603,60 @@ describe('project controllers', () => {
       });
     });
 
+    describe('the palette of a project', () => {
+      let update: jest.SpyInstance;
+      const project = { name: 'Renamed', shortDesc: '' };
+
+      beforeEach(() => {
+        update = jest.spyOn(projectService, 'update').mockResolvedValue({} as never);
+      });
+
+      it('is written with the rest of the project, by a collaborator', async () => {
+        const palette = ['#16171a', '#FAFDFF'];
+
+        await http()
+          .put('/projects/12')
+          .send({ ...project, palette })
+          .expect(HttpStatus.OK);
+
+        expect(update).toHaveBeenCalledWith(OWN_PROJECT, { ...project, palette });
+      });
+
+      it.each([
+        ['no colour at all', []],
+        ['sixty-four colours', Array.from({ length: 64 }, () => '#000000')],
+      ])('may hold %s', async (_case, palette) => {
+        await http()
+          .put('/projects/12')
+          .send({ ...project, palette })
+          .expect(HttpStatus.OK);
+      });
+
+      it.each([
+        ['sixty-five colours', Array.from({ length: 65 }, () => '#000000')],
+        ['a colour of three digits', ['#000']],
+        ['a colour by its name', ['#16171a', 'white']],
+        ['a colour index', [0, 1]],
+        ['one colour instead of a list', '#16171a'],
+      ])('is refused with %s', async (_case, palette) => {
+        await http()
+          .put('/projects/12')
+          .send({ ...project, palette })
+          .expect(HttpStatus.BAD_REQUEST);
+
+        expect(update).not.toHaveBeenCalled();
+      });
+
+      it('is not written by someone who is not on the project', async () => {
+        await http()
+          .put('/projects/99')
+          .send({ ...project, palette: ['#16171a'] })
+          .expect(HttpStatus.FORBIDDEN);
+
+        expect(update).not.toHaveBeenCalled();
+      });
+    });
+
     it('does not let the whole-project update set the disk', async () => {
       const update = jest.spyOn(projectService, 'update');
 

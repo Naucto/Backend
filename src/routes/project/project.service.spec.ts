@@ -262,6 +262,35 @@ describe('ProjectService', () => {
       );
     });
 
+    it('stores the palette of the game in lower case, in the order given', async () => {
+      prismaMock.project.findUnique.mockResolvedValue(draft);
+      prismaMock.project.update.mockResolvedValue(draft);
+
+      await service.update(1, { ...updateDto, palette: ['#FAFDFF', '#16171a'] });
+
+      expect(prismaMock.project.update).toHaveBeenCalledWith({
+        where: { id: 1 },
+        data: { ...updateDto, palette: ['#fafdff', '#16171a'] },
+      });
+    });
+
+    it('leaves the palette alone when the update does not name it, and empties it when asked', async () => {
+      prismaMock.project.findUnique.mockResolvedValue(draft);
+      prismaMock.project.update.mockResolvedValue(draft);
+
+      await service.update(1, updateDto);
+      await service.update(1, { ...updateDto, palette: [] });
+
+      expect(prismaMock.project.update).toHaveBeenNthCalledWith(1, {
+        where: { id: 1 },
+        data: updateDto,
+      });
+      expect(prismaMock.project.update).toHaveBeenNthCalledWith(2, {
+        where: { id: 1 },
+        data: { ...updateDto, palette: [] },
+      });
+    });
+
     it('should throw NotFoundException if project does not exist', async () => {
       prismaMock.project.findUnique.mockResolvedValue(null);
 

@@ -267,6 +267,9 @@ export class ProjectService {
       data: {
         ...updateProjectDto,
         ...(updateProjectDto.tags ? { tags: normalizeTags(updateProjectDto.tags) } : {}),
+        ...(updateProjectDto.palette
+          ? { palette: updateProjectDto.palette.map((colour) => colour.toLowerCase()) }
+          : {}),
       },
     });
     this.eventEmitter.emit(PROJECT_CHANGED, new ProjectChangedEvent(id));

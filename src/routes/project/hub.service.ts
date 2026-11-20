@@ -602,6 +602,7 @@ export class HubService {
       publishedShortDesc: true,
       publishedLongDesc: true,
       publishedTags: true,
+      palette: true,
     });
 
     if (!sourceProject.publishedAt) {
@@ -627,6 +628,7 @@ export class HubService {
         name: `Fork of ${shown.name}`.slice(0, PROJECT_NAME_MAX_LENGTH),
         shortDesc: shown.shortDesc,
         longDesc: shown.longDesc,
+        palette: sourceProject.palette,
         forkedFrom: { connect: { id: sourceProjectId } },
         creator: { connect: { id: userId } },
         collaborators: { connect: [{ id: userId }] },

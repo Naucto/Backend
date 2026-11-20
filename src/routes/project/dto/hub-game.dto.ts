@@ -1,10 +1,10 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, OmitType } from '@nestjs/swagger';
 
 import { DiskStyleDto } from './disk-style.dto';
 import { ProjectExResponseDto } from './project-response.dto';
 
-/** A game as a card of the hub shows it. */
-export class HubGameDto extends ProjectExResponseDto {
+/** A game as a card of the hub shows it. A card draws no pixel of the game, so it has no palette. */
+export class HubGameDto extends OmitType(ProjectExResponseDto, ['palette'] as const) {
   @ApiProperty({
     description:
       'Address of the cover, usable as is: it changes when the cover does. Null without a cover',
