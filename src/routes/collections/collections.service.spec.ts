@@ -44,6 +44,7 @@ const release = (id: number): ReleaseProject => ({
   commentCount: 0,
   forkCount: 0,
   coverUrl: null,
+  clipUrl: null,
   disk: null,
 });
 

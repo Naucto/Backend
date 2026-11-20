@@ -60,6 +60,7 @@ export type ProjectWithCounts = ProjectEx & {
 /** What an answer adds to a project row for whoever draws the game. */
 export type ProjectLook = {
   coverUrl: string | null;
+  clipUrl: string | null;
   disk: DiskStyleDto | null;
 };
 

@@ -76,6 +76,7 @@ export function toHubGame(release: ReleaseProject): HubGameDto {
     tags: release.tags,
     iconUrl: release.iconUrl,
     coverUrl: release.coverUrl,
+    clipUrl: release.clipUrl,
     disk: release.disk,
     status: release.status,
     monetization: release.monetization,

@@ -17,6 +17,16 @@ export class HubGameDto extends ProjectExResponseDto {
 
   @ApiProperty({
     description:
+      'Address of the short gameplay clip, usable as is: it changes when the clip does. Null without a clip',
+    example: 'https://cdn.example.com/projects/1/clip?v=5d41402abc4b2a76b9719d911017c592',
+    type: String,
+    nullable: true,
+    required: true,
+  })
+  override clipUrl!: string | null;
+
+  @ApiProperty({
+    description:
       'The disk its author chose. Null when none was chosen: a client then derives a colour from the id',
     type: DiskStyleDto,
     nullable: true,

@@ -31,6 +31,9 @@ model Project {
   diskFinish  String?
   diskColor2  String?
   diskGradDir String?
+  // Version of the stored clip, written when it was uploaded; null without a clip. It is all the
+  // row says of the clip: its address is derived from the project id.
+  clipVersion String?
   monetization MonetizationType  @default(NONE)
   price        Float?
   createdAt    DateTime          @default(now())

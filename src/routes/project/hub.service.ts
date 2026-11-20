@@ -647,14 +647,20 @@ export class HubService {
       this.projectService.recordProjectCreated(tx, newProject.id, userId),
     );
 
-    try {
-      await this.projectService.copyCover(sourceProjectId, newProject.id);
-    } catch (error) {
-      this.logger.warn(
-        `Cover of project ${sourceProjectId} was not copied to its fork ${newProject.id}: ${
-          error instanceof Error ? error.message : 'unknown error'
-        }`,
-      );
+    // Each on its own: a fork is worth having without its cover, or without its clip.
+    for (const [what, copy] of [
+      ['Cover', (): Promise<void> => this.projectService.copyCover(sourceProjectId, newProject.id)],
+      ['Clip', (): Promise<void> => this.projectService.copyClip(sourceProjectId, newProject.id)],
+    ] as const) {
+      try {
+        await copy();
+      } catch (error) {
+        this.logger.warn(
+          `${what} of project ${sourceProjectId} was not copied to its fork ${newProject.id}: ${
+            error instanceof Error ? error.message : 'unknown error'
+          }`,
+        );
+      }
     }
 
     return newProject;

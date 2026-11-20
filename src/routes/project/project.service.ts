@@ -95,14 +95,33 @@ export class ProjectService {
     return project.coverVersion ? versionedUrl(url, project.coverVersion) : url;
   }
 
-  /** How the row says the game is drawn, for an answer that lists or opens it. */
+  /** Where the edge serves a version of the clip: another address each time the clip changes. */
+  private clipUrlAt(projectId: number, version: string): string {
+    return versionedUrl(this.edgeService.getCDNUrl(projectKeys.clip(projectId)), version);
+  }
+
+  /**
+   * How the row says the game is drawn, for an answer that lists or opens it. Like the cover's,
+   * the clip's address comes from the row alone.
+   */
   lookOf(
     project: Pick<
       Project,
-      'id' | 'iconUrl' | 'coverVersion' | 'diskColor' | 'diskFinish' | 'diskColor2' | 'diskGradDir'
+      | 'id'
+      | 'iconUrl'
+      | 'coverVersion'
+      | 'clipVersion'
+      | 'diskColor'
+      | 'diskFinish'
+      | 'diskColor2'
+      | 'diskGradDir'
     >,
   ): ProjectLook {
-    return { coverUrl: this.storedCoverUrl(project), disk: diskOf(project) };
+    return {
+      coverUrl: this.storedCoverUrl(project),
+      clipUrl: project.clipVersion ? this.clipUrlAt(project.id, project.clipVersion) : null,
+      disk: diskOf(project),
+    };
   }
 
   private buildUserProjectsWhere(
@@ -271,12 +290,12 @@ export class ProjectService {
     return diskOf(updated);
   }
 
-  private async storeCover(
-    projectId: number,
+  /** Puts an object anyone may read at `key`, and answers the version the store gave it. */
+  private async storePublic(
+    key: string,
     file: Express.Multer.File | DownloadedFile,
-    metadata: Record<string, string> = {},
-  ): Promise<void> {
-    const key = projectKeys.cover(projectId);
+    metadata: Record<string, string>,
+  ): Promise<string | undefined> {
     await this.s3Service.uploadFile({
       file,
       keyName: key,
@@ -284,15 +303,42 @@ export class ProjectService {
       cacheControl: 'no-cache',
     });
     await this.s3Service.setObjectPublicRead(key);
-    const stored = await this.s3Service.getFileMetadataOrNull(key);
+
+    return (await this.s3Service.getFileMetadataOrNull(key))?.ETag;
+  }
+
+  private async storeCover(
+    projectId: number,
+    file: Express.Multer.File | DownloadedFile,
+    metadata: Record<string, string> = {},
+  ): Promise<void> {
+    const key = projectKeys.cover(projectId);
+    const version = await this.storePublic(key, file, metadata);
 
     // The row keeps the image's public URL and its version, so readers of the project need no
     // storage lookup.
     await this.prisma.project.update({
       where: { id: projectId },
-      data: { iconUrl: this.edgeService.getCDNUrl(key), coverVersion: stored?.ETag ?? null },
+      data: { iconUrl: this.edgeService.getCDNUrl(key), coverVersion: version ?? null },
     });
     this.eventEmitter.emit(PROJECT_CHANGED, new ProjectChangedEvent(projectId));
+  }
+
+  private async storeClip(
+    projectId: number,
+    file: Express.Multer.File | DownloadedFile,
+    metadata: Record<string, string> = {},
+  ): Promise<string> {
+    // The version is all the row keeps of a clip: when the store gives none, the time stands in,
+    // or the clip just stored would read as absent.
+    const clipVersion =
+      (await this.storePublic(projectKeys.clip(projectId), file, metadata)) ??
+      Date.now().toString();
+
+    await this.prisma.project.update({ where: { id: projectId }, data: { clipVersion } });
+    this.eventEmitter.emit(PROJECT_CHANGED, new ProjectChangedEvent(projectId));
+
+    return this.clipUrlAt(projectId, clipVersion);
   }
 
   async uploadImage(id: number, file: Express.Multer.File, uploaderId: number): Promise<void> {
@@ -316,6 +362,32 @@ export class ProjectService {
         await this.s3Service.downloadFile({ key: sourceCover }),
       );
     }
+  }
+
+  /** Stores the clip of a project over the one it has, and answers its address. */
+  async uploadClip(id: number, file: Express.Multer.File, uploaderId: number): Promise<string> {
+    return this.storeClip(id, file, {
+      uploadedBy: uploaderId.toString(),
+      projectId: id.toString(),
+    });
+  }
+
+  /** Gives `targetProjectId` the clip of `sourceProjectId`, when the source has one. */
+  async copyClip(sourceProjectId: number, targetProjectId: number): Promise<void> {
+    const sourceClip = projectKeys.clip(sourceProjectId);
+    if (await this.s3Service.fileExists(sourceClip)) {
+      await this.storeClip(targetProjectId, await this.s3Service.downloadFile({ key: sourceClip }));
+    }
+  }
+
+  /**
+   * The row first: an object left in the store is dropped with the project or replaced by the
+   * next clip, while a row still naming a deleted object would hand out an address that fails.
+   */
+  async removeClip(id: number): Promise<void> {
+    await this.prisma.project.update({ where: { id }, data: { clipVersion: null } });
+    await this.s3Service.deleteFile({ key: projectKeys.clip(id) });
+    this.eventEmitter.emit(PROJECT_CHANGED, new ProjectChangedEvent(id));
   }
 
   /** The versioned CDN URL of the cover, or null when the project has none. */

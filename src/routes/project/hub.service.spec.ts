@@ -297,6 +297,29 @@ describe('HubService', () => {
     });
   });
 
+  describe('clip address of a listed game', () => {
+    const counts = { _count: { forks: 0, comments: 0 } };
+
+    it('is versioned from the row, without asking the store', async () => {
+      prismaMock.project.findMany.mockResolvedValue([
+        { ...released, clipVersion: '"c11p"', ...counts },
+      ]);
+
+      const [release] = await service.fetchReleasesByIds([2]);
+
+      expect(release?.clipUrl).toBe('https://cdn.test/projects/2/clip?v=c11p');
+      expect(s3ServiceMock.getFileMetadataOrNull).not.toHaveBeenCalled();
+    });
+
+    it('is null for a game without a clip', async () => {
+      prismaMock.project.findMany.mockResolvedValue([{ ...released, ...counts }]);
+
+      const [release] = await service.fetchReleasesByIds([2]);
+
+      expect(release?.clipUrl).toBeNull();
+    });
+  });
+
   describe('disk of a listed game', () => {
     const counts = { _count: { forks: 0, comments: 0 } };
 
@@ -833,13 +856,58 @@ describe('HubService', () => {
       });
     });
 
-    it('still forks, and says so in the log, when the cover cannot be copied', async () => {
+    it('copies the clip and records the version the store gave it', async () => {
+      s3ServiceMock.fileExists.mockImplementation(async (key: string) => key === 'projects/2/clip');
+      s3ServiceMock.getFileMetadataOrNull.mockResolvedValue({ ETag: '"copied"' });
+
+      await service.fork(2, 9);
+
+      expect(s3ServiceMock.downloadFile).toHaveBeenCalledWith({ key: 'projects/2/clip' });
+      expect(s3ServiceMock.uploadFile).toHaveBeenCalledWith(
+        expect.objectContaining({ keyName: 'projects/50/clip' }),
+      );
+      expect(s3ServiceMock.setObjectPublicRead).toHaveBeenCalledWith('projects/50/clip');
+      expect(prismaMock.project.update).toHaveBeenCalledWith({
+        where: { id: 50 },
+        data: { clipVersion: '"copied"' },
+      });
+    });
+
+    it('gives the fork no clip when its source has none', async () => {
+      await service.fork(2, 9);
+
+      expect(s3ServiceMock.uploadFile).not.toHaveBeenCalledWith(
+        expect.objectContaining({ keyName: 'projects/50/clip' }),
+      );
+    });
+
+    it('still forks, and says so in the log, when the cover and the clip cannot be copied', async () => {
       const warned = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
       s3ServiceMock.fileExists.mockRejectedValue(new Error('store down'));
 
       await expect(service.fork(2, 9)).resolves.toBe(forked);
 
-      expect(warned).toHaveBeenCalledTimes(1);
+      expect(warned.mock.calls.map(([message]) => String(message).split(' ')[0])).toEqual([
+        'Cover',
+        'Clip',
+      ]);
+      warned.mockRestore();
+    });
+
+    it('still copies the clip when the cover cannot be copied', async () => {
+      const warned = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      s3ServiceMock.fileExists.mockImplementation(async (key: string) => {
+        if (key === 'projects/2/image') {
+          throw new Error('store down');
+        }
+        return true;
+      });
+
+      await service.fork(2, 9);
+
+      expect(s3ServiceMock.uploadFile).toHaveBeenCalledWith(
+        expect.objectContaining({ keyName: 'projects/50/clip' }),
+      );
       warned.mockRestore();
     });
   });

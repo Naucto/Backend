@@ -27,6 +27,7 @@ import { S3DownloadException, S3ObjectNotFoundException } from '../s3/s3.error';
 import { S3Service } from '../s3/s3.service';
 import { PROJECT_BLOB_MAX_BYTES } from './content-size';
 import { DISK_COLORS, DISK_FINISHES, DISK_GRAD_DIRS } from './dto/disk-style-limits';
+import { PROJECT_CLIP_MAX_BYTES } from './dto/project-field-limits';
 import { HubController } from './hub.controller';
 import type { ReleaseWindow } from './hub.service';
 import { HubService } from './hub.service';
@@ -37,8 +38,26 @@ import { ProjectContentController } from './project-content.controller';
 import { ProjectContentService } from './project-content.service';
 import { projectIdOf } from './project-id.decorator';
 
+// The signature detector is an ES module this Jest setup cannot load, and the upload validator
+// refuses every file without it. This one knows the two containers a clip may come in.
+jest.mock('load-esm', () => ({
+  loadEsm: async (): Promise<unknown> => ({
+    fileTypeFromBuffer: async (buffer: Buffer): Promise<{ mime: string } | undefined> => {
+      if (buffer.subarray(0, 4).toString('hex') === '1a45dfa3') {
+        return { mime: 'video/webm' };
+      }
+      return buffer.subarray(4, 8).toString('latin1') === 'ftyp'
+        ? { mime: 'video/mp4' }
+        : undefined;
+    },
+  }),
+}));
+
 const SIGNED_IN_USER = 7;
 const OWN_PROJECT = 12;
+
+const WEBM = Buffer.concat([Buffer.from('1a45dfa3', 'hex'), Buffer.from('webm clip')]);
+const MP4 = Buffer.concat([Buffer.alloc(4), Buffer.from('ftypisom'), Buffer.from('mp4 clip')]);
 
 /** The controllers in the order the module registers them, which is the order Express tries them. */
 const CONTROLLERS = Reflect.getMetadata(MODULE_METADATA.CONTROLLERS, ProjectModule) as Array<
@@ -145,6 +164,8 @@ describe('project controllers', () => {
       'getSize',
       'update',
       'setDisk',
+      'uploadClip',
+      'removeClip',
       'saveProjectContent',
       'uploadProjectImage',
       'getProjectImage',
@@ -349,12 +370,14 @@ describe('project controllers', () => {
       ['delete', '/projects/12.34e2/remove-collaborator', 'removeCollaborator'],
       ['post', '/projects/12.34e2/image', 'uploadImage'],
       ['patch', '/projects/12.34e2/disk', 'setDisk'],
+      ['post', '/projects/12.34e2/clip', 'uploadClip'],
+      ['delete', '/projects/12.34e2/clip', 'removeClip'],
     ] as const)(
       '%s %s never reaches a project other than the one the guard checked',
       async (verb, path, method) => {
         const reached = jest.spyOn(projectService, method).mockResolvedValue(undefined as never);
         const pending = http()[verb](path);
-        if (method === 'uploadImage') {
+        if (method === 'uploadImage' || method === 'uploadClip') {
           pending.attach('file', Buffer.from('blob'), 'game.bin');
         } else if (verb !== 'get') {
           pending.send({ name: 'Renamed', shortDesc: '', userId: 3 });
@@ -489,6 +512,84 @@ describe('project controllers', () => {
               .expect(HttpStatus.OK);
           }
         }
+      });
+    });
+
+    describe('the clip of a project', () => {
+      let uploadClip: jest.SpyInstance;
+      let removeClip: jest.SpyInstance;
+
+      const upload = (project: number, file: Buffer, contentType: string): request.Test =>
+        http().post(`/projects/${project}/clip`).attach('file', file, {
+          filename: 'clip',
+          contentType,
+        });
+
+      beforeEach(() => {
+        uploadClip = jest
+          .spyOn(projectService, 'uploadClip')
+          .mockResolvedValue('https://cdn.test/projects/12/clip?v=1');
+        removeClip = jest.spyOn(projectService, 'removeClip').mockResolvedValue(undefined);
+      });
+
+      it.each([
+        ['WebM', WEBM, 'video/webm'],
+        ['MP4', MP4, 'video/mp4'],
+      ])(
+        'stores a %s clip for a collaborator and answers its address',
+        async (_name, file, type) => {
+          const response = await upload(OWN_PROJECT, file, type).expect(HttpStatus.CREATED);
+
+          expect(response.body).toEqual({ clipUrl: 'https://cdn.test/projects/12/clip?v=1' });
+          expect(uploadClip).toHaveBeenCalledWith(
+            OWN_PROJECT,
+            expect.objectContaining({ mimetype: type, buffer: file }),
+            SIGNED_IN_USER,
+          );
+        },
+      );
+
+      it.each([
+        ['a video declared as an image', WEBM, 'image/png'],
+        ['a video declared as a container it does not take', WEBM, 'video/quicktime'],
+        ['a page declared as a video', Buffer.from('<script>alert(1)</script>'), 'video/webm'],
+        ['an image declared as a video', Buffer.from('\x89PNG\r\n', 'latin1'), 'video/mp4'],
+        ['nothing but a declared type', Buffer.alloc(0), 'video/webm'],
+      ])('refuses %s with 422', async (_case, file, type) => {
+        await upload(OWN_PROJECT, file, type).expect(HttpStatus.UNPROCESSABLE_ENTITY);
+
+        expect(uploadClip).not.toHaveBeenCalled();
+      });
+
+      it('refuses a clip over 4 MiB with 413, and takes one just under', async () => {
+        const most = Buffer.concat([WEBM, Buffer.alloc(PROJECT_CLIP_MAX_BYTES - WEBM.length - 1)]);
+
+        await upload(OWN_PROJECT, Buffer.concat([most, Buffer.alloc(2)]), 'video/webm').expect(
+          HttpStatus.PAYLOAD_TOO_LARGE,
+        );
+        expect(uploadClip).not.toHaveBeenCalled();
+
+        await upload(OWN_PROJECT, most, 'video/webm').expect(HttpStatus.CREATED);
+      });
+
+      it('refuses a request without a file', async () => {
+        await http().post('/projects/12/clip').expect(HttpStatus.UNPROCESSABLE_ENTITY);
+
+        expect(uploadClip).not.toHaveBeenCalled();
+      });
+
+      it('removes the clip for a collaborator', async () => {
+        await http().delete('/projects/12/clip').expect(HttpStatus.NO_CONTENT);
+
+        expect(removeClip).toHaveBeenCalledWith(OWN_PROJECT);
+      });
+
+      it('refuses someone who is not on the project, to store as to remove', async () => {
+        await upload(99, WEBM, 'video/webm').expect(HttpStatus.FORBIDDEN);
+        await http().delete('/projects/99/clip').expect(HttpStatus.FORBIDDEN);
+
+        expect(uploadClip).not.toHaveBeenCalled();
+        expect(removeClip).not.toHaveBeenCalled();
       });
     });
 

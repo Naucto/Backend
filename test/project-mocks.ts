@@ -37,6 +37,7 @@ export const aProject = (overrides: Partial<ProjectWithPeople> = {}): ProjectWit
   status: ProjectStatus.IN_PROGRESS,
   iconUrl: null,
   coverVersion: null,
+  clipVersion: null,
   diskColor: null,
   diskFinish: null,
   diskColor2: null,

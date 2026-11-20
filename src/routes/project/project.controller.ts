@@ -36,6 +36,8 @@ import { CreateProjectDto } from './dto/create-project.dto';
 import { ProjectDiskDto } from './dto/disk-style.dto';
 import { ImageUrlResponseDto } from './dto/image-url-response.dto';
 import { ProjectActionResponseDto } from './dto/project-action-response.dto';
+import { ProjectClipDto } from './dto/project-clip.dto';
+import { PROJECT_CLIP_MAX_BYTES, PROJECT_CLIP_TYPES } from './dto/project-field-limits';
 import {
   PaginatedProjectsResponseDto,
   ProjectExResponseDto,
@@ -54,6 +56,15 @@ interface RequestWithUser extends Request {
 
 /** Multer stops reading past it and answers 413 itself, before the route's pipe runs. */
 const PROJECT_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+
+/**
+ * The clip is stored and served under the type the client declared, so that type is held to the
+ * same list as the container read from the content.
+ */
+const CLIP_FILE = new ParseFilePipeBuilder()
+  .addFileTypeValidator({ fileType: PROJECT_CLIP_TYPES })
+  .addFileTypeValidator({ fileType: PROJECT_CLIP_TYPES, skipMagicNumbersValidation: true })
+  .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY });
 
 @ApiTags('projects')
 @Controller('projects')
@@ -411,5 +422,47 @@ export class ProjectController {
     }
 
     return { url };
+  }
+
+  @Post(':id/clip')
+  @UseGuards(ProjectCollaboratorGuard)
+  // Multer stops reading past the limit and answers 413 itself, before the route's pipe runs.
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: PROJECT_CLIP_MAX_BYTES, files: 1 } }),
+  )
+  @ApiOperation({ summary: 'Upload the gameplay clip of a project, over the one it has' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: { type: 'string', format: 'binary', description: 'WebM or MP4 video, 4 MiB' },
+      },
+    },
+  })
+  @ApiParam({ name: 'id', type: 'number' })
+  @ApiResponse({ status: 201, description: 'Clip stored', type: ProjectClipDto })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  @ApiResponse({ status: 413, description: 'Larger than 4 MiB' })
+  @ApiResponse({ status: 422, description: 'Not a WebM or MP4 video, by its type or its content' })
+  @HttpCode(HttpStatus.CREATED)
+  async uploadClip(
+    @ProjectId() id: number,
+    @UploadedFile(CLIP_FILE) file: Express.Multer.File,
+    @Req() req: RequestWithUser,
+  ): Promise<ProjectClipDto> {
+    return { clipUrl: await this.projectService.uploadClip(id, file, req.user.id) };
+  }
+
+  @Delete(':id/clip')
+  @UseGuards(ProjectCollaboratorGuard)
+  @ApiOperation({ summary: 'Remove the gameplay clip of a project; no-op when it has none' })
+  @ApiParam({ name: 'id', type: 'number' })
+  @ApiResponse({ status: 204, description: 'Clip removed' })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async removeClip(@ProjectId() id: number): Promise<void> {
+    await this.projectService.removeClip(id);
   }
 }

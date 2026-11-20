@@ -63,8 +63,8 @@ describe('ProjectService', () => {
 
       expect(result).toEqual({
         projects: [
-          { ...draft, coverUrl: null, disk: null },
-          { ...released, coverUrl: null, disk: null },
+          { ...draft, coverUrl: null, clipUrl: null, disk: null },
+          { ...released, coverUrl: null, clipUrl: null, disk: null },
         ],
         total: 2,
         page: 1,
@@ -88,8 +88,8 @@ describe('ProjectService', () => {
       );
       expect(result).toEqual({
         projects: [
-          { ...draft, coverUrl: null, disk: null },
-          { ...released, coverUrl: null, disk: null },
+          { ...draft, coverUrl: null, clipUrl: null, disk: null },
+          { ...released, coverUrl: null, clipUrl: null, disk: null },
         ],
         total: 250,
         page: 2,
@@ -285,6 +285,89 @@ describe('ProjectService', () => {
     });
   });
 
+  describe('clip', () => {
+    const file = { originalname: 'clip.webm', mimetype: 'video/webm' } as Express.Multer.File;
+
+    beforeEach(() => {
+      prismaMock.project.update.mockImplementation(
+        async ({ where, data }: { where: { id: number }; data: object }) => ({
+          ...draft,
+          ...where,
+          ...data,
+        }),
+      );
+      s3ServiceMock.getFileMetadataOrNull.mockResolvedValue({ ETag: '"c11p"' });
+    });
+
+    it('stores the clip where anyone may read it and keeps its version on the row', async () => {
+      const clipUrl = await service.uploadClip(1, file, 7);
+
+      expect(s3ServiceMock.uploadFile).toHaveBeenCalledWith({
+        file,
+        keyName: 'projects/1/clip',
+        metadata: { uploadedBy: '7', projectId: '1' },
+        cacheControl: 'no-cache',
+      });
+      expect(s3ServiceMock.setObjectPublicRead).toHaveBeenCalledWith('projects/1/clip');
+      expect(prismaMock.project.update).toHaveBeenCalledWith({
+        where: { id: 1 },
+        data: { clipVersion: '"c11p"' },
+      });
+      expect(clipUrl).toBe('https://cdn.test/projects/1/clip?v=c11p');
+    });
+
+    it('tells whoever shows the project that it changed, as a new cover does', async () => {
+      await service.uploadClip(1, file, 7);
+
+      expect(eventEmitterMock.emit).toHaveBeenCalledWith(
+        PROJECT_CHANGED,
+        new ProjectChangedEvent(1),
+      );
+    });
+
+    it('still records a clip the store gave no version for', async () => {
+      s3ServiceMock.getFileMetadataOrNull.mockResolvedValue(null);
+
+      await expect(service.uploadClip(1, file, 7)).resolves.toMatch(
+        /^https:\/\/cdn\.test\/projects\/1\/clip\?v=\d+$/,
+      );
+    });
+
+    it('records nothing when the store refuses the clip', async () => {
+      s3ServiceMock.uploadFile.mockRejectedValue(new Error('store down'));
+
+      await expect(service.uploadClip(1, file, 7)).rejects.toThrow('store down');
+
+      expect(prismaMock.project.update).not.toHaveBeenCalled();
+    });
+
+    it('gives a listed or opened project the address of its clip, from the row alone', async () => {
+      prismaMock.project.findUnique.mockResolvedValue({ ...draft, clipVersion: '"c11p"' });
+
+      await expect(service.findOne(draft.id)).resolves.toMatchObject({
+        clipUrl: 'https://cdn.test/projects/1/clip?v=c11p',
+      });
+      expect(s3ServiceMock.getFileMetadataOrNull).not.toHaveBeenCalled();
+    });
+
+    it('removes the clip from the row before the store, and says the project changed', async () => {
+      await service.removeClip(1);
+
+      expect(prismaMock.project.update).toHaveBeenCalledWith({
+        where: { id: 1 },
+        data: { clipVersion: null },
+      });
+      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({ key: 'projects/1/clip' });
+      expect(prismaMock.project.update.mock.invocationCallOrder[0]).toBeLessThan(
+        s3ServiceMock.deleteFile.mock.invocationCallOrder[0]!,
+      );
+      expect(eventEmitterMock.emit).toHaveBeenCalledWith(
+        PROJECT_CHANGED,
+        new ProjectChangedEvent(1),
+      );
+    });
+  });
+
   describe('remove', () => {
     it('runs what a caller records alongside in the transaction that deletes the project', async () => {
       prismaMock.project.findUnique.mockResolvedValue(draft);
@@ -341,7 +424,7 @@ describe('ProjectService', () => {
       });
     });
 
-    it('drops everything the project stored: release, cover, saves and checkpoints', async () => {
+    it('drops everything the project stored: release, cover, clip, saves and checkpoints', async () => {
       prismaMock.project.findUnique.mockResolvedValue(draft);
       txMock.project.delete.mockResolvedValue(draft);
       s3ServiceMock.deleteFile.mockResolvedValue(undefined);
@@ -357,6 +440,7 @@ describe('ProjectService', () => {
       expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({
         key: 'projects/1/image',
       });
+      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({ key: 'projects/1/clip' });
       expect(s3ServiceMock.deleteFiles).toHaveBeenCalledWith({
         keys: ['checkpoint/1/a', 'checkpoint/1/b'],
       });

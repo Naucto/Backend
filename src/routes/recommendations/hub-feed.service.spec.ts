@@ -26,6 +26,7 @@ const release = (id: number, overrides: Partial<ReleaseProject> = {}): ReleasePr
   commentCount: 0,
   forkCount: 0,
   coverUrl: `https://cdn.test/projects/${id}/image?v=1`,
+  clipUrl: null,
   disk: null,
   ...overrides,
 });
@@ -289,16 +290,25 @@ describe('HubFeedService', () => {
       }
     });
 
-    it('hands out the disk a game was given, and none for a game without one', async () => {
-      onHub.set(1, release(1, { disk: { color: '#ffd100', finish: 'gold' } }));
+    it('hands out the disk and the clip a game was given, and none for a game without', async () => {
+      onHub.set(
+        1,
+        release(1, {
+          disk: { color: '#ffd100', finish: 'gold' },
+          clipUrl: 'https://cdn.test/projects/1/clip?v=2',
+        }),
+      );
 
       const [popular] = (await service.feed(null, NOW)).shelves;
 
-      expect(popular?.games.find((game) => game.id === 1)?.disk).toEqual({
-        color: '#ffd100',
-        finish: 'gold',
+      expect(popular?.games.find((game) => game.id === 1)).toMatchObject({
+        disk: { color: '#ffd100', finish: 'gold' },
+        clipUrl: 'https://cdn.test/projects/1/clip?v=2',
       });
-      expect(popular?.games.find((game) => game.id === 2)?.disk).toBeNull();
+      expect(popular?.games.find((game) => game.id === 2)).toMatchObject({
+        disk: null,
+        clipUrl: null,
+      });
     });
   });
 

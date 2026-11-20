@@ -16,6 +16,9 @@ export const projectKeys = {
 
   cover: (projectId: number): string => `projects/${projectId}/image`,
 
+  /** The short gameplay video, at one key whatever its container. */
+  clip: (projectId: number): string => `projects/${projectId}/clip`,
+
   /**
    * Where the release and the cover of a game sit while moderation withholds it. Never made
    * public-read, so the edge stops serving them the moment they are moved here.
@@ -31,6 +34,7 @@ export const projectKeys = {
     keys: [
       projectKeys.release(projectId),
       projectKeys.cover(projectId),
+      projectKeys.clip(projectId),
       projectKeys.withheldRelease(projectId),
       projectKeys.withheldCover(projectId),
     ],
