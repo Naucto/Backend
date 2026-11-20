@@ -1,6 +1,6 @@
 import { ModerationTargetType } from '@prisma/client';
 
-import { ADMIN, holdsRole, outranks, parseRole } from '../../auth/access/roles';
+import { ADMIN, holdsRole, MODERATOR, outranks, parseRole } from '../../auth/access/roles';
 import { ModerationOperation, TargetState } from './dto/case.dto';
 import { StaffActor } from './staff-actor';
 
@@ -20,8 +20,8 @@ export function allowedOperations(
   staff: StaffActor,
   context: OperationContext,
 ): ModerationOperation[] {
-  // Nobody settles a case about their own account or content.
-  if (context.owner?.id === staff.id) {
+  // A viewer observes and decides nothing. Nobody settles a case about their own account or content.
+  if (!holdsRole(staff.role, MODERATOR) || context.owner?.id === staff.id) {
     return [];
   }
   const isAdmin = holdsRole(staff.role, ADMIN);

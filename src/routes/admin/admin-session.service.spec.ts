@@ -2,7 +2,7 @@ import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 
 import { withEnv } from '../../../test/env';
-import { ADMIN, MODERATOR, USER } from '../../auth/access/roles';
+import { ADMIN, MODERATOR, USER, VIEWER } from '../../auth/access/roles';
 import { SuspensionState } from '../../auth/access/suspension';
 import { AuthService } from '../../auth/auth.service';
 import { JwtPayload, STAFF_SCOPE } from '../../auth/auth.types';
@@ -68,6 +68,14 @@ describe('AdminSessionService', () => {
     const { session } = await service.login('mia@example.com', 'pw', '1.1.1.1');
 
     expect(session.account).toMatchObject({ id: 3, role: MODERATOR });
+  });
+
+  it('signs a viewer in, to observe', async () => {
+    rows.set(4, row({ id: 4, email: 'vic@example.com', role: VIEWER }));
+
+    const { session } = await service.login('vic@example.com', 'pw', '1.1.1.1');
+
+    expect(session.account).toMatchObject({ id: 4, role: VIEWER });
   });
 
   it('scopes every access token it issues to staff, at sign-in and at renewal', async () => {

@@ -8,6 +8,7 @@ import {
   ParseIntPipe,
   Put,
   Query,
+  Req,
   Res,
 } from '@nestjs/common';
 import { ApiOperation, ApiProduces, ApiResponse, ApiTags } from '@nestjs/swagger';
@@ -15,7 +16,8 @@ import { Response } from 'express';
 import { pipeline } from 'stream/promises';
 
 import { RequiresStaffSession } from '../../auth/access/access.decorators';
-import { ADMIN } from '../../auth/access/roles';
+import { ADMIN, parseRole } from '../../auth/access/roles';
+import { RequestWithUser } from '../../auth/auth.types';
 import { AdminReportsService } from './admin-reports.service';
 import {
   AdminReportDetailDto,
@@ -37,7 +39,10 @@ export class AdminReportsController {
   @Get()
   @ApiOperation({ summary: 'Reports, newest first, filtered by kind, status and their fields' })
   @ApiResponse({ status: HttpStatus.OK, type: AdminReportListDto })
-  list(@Query() query: AdminReportQueryDto): Promise<AdminReportListDto> {
+  list(
+    @Req() req: RequestWithUser,
+    @Query() query: AdminReportQueryDto,
+  ): Promise<AdminReportListDto> {
     return this.reports.list(
       {
         kind: query.kind,
@@ -53,6 +58,7 @@ export class AdminReportsController {
       },
       query.sort ?? 'created',
       { page: query.page, limit: query.limit },
+      parseRole(req.user.role),
     );
   }
 
@@ -74,8 +80,11 @@ export class AdminReportsController {
   @ApiOperation({ summary: 'One report in full' })
   @ApiResponse({ status: HttpStatus.OK, type: AdminReportDetailDto })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No such report' })
-  detail(@Param('id', ParseIntPipe) id: number): Promise<AdminReportDetailDto> {
-    return this.reports.detail(id);
+  detail(
+    @Req() req: RequestWithUser,
+    @Param('id', ParseIntPipe) id: number,
+  ): Promise<AdminReportDetailDto> {
+    return this.reports.detail(id, parseRole(req.user.role));
   }
 
   @Put(':id')
@@ -83,10 +92,15 @@ export class AdminReportsController {
   @ApiResponse({ status: HttpStatus.OK, type: AdminReportDetailDto })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No such report' })
   update(
+    @Req() req: RequestWithUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateReportDto,
   ): Promise<AdminReportDetailDto> {
-    return this.reports.update(id, { status: dto.status, adminNote: dto.adminNote });
+    return this.reports.update(
+      id,
+      { status: dto.status, adminNote: dto.adminNote },
+      parseRole(req.user.role),
+    );
   }
 
   @Get(':id/screenshot')

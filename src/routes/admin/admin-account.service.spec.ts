@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 
-import { ADMIN, USER } from '../../auth/access/roles';
+import { ADMIN, USER, VIEWER } from '../../auth/access/roles';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AdminAccountService } from './admin-account.service';
 import { AdminAccountRow } from './admin-session.service';
@@ -11,6 +11,7 @@ describe('AdminAccountService', () => {
   const prisma = {
     user: {
       findUnique: jest.fn(({ where }: { where: { id: number } }) => rows.get(where.id)),
+      findMany: jest.fn(async (_query: object) => [...rows.values()]),
       count: jest.fn(
         async () => [...rows.values()].filter((row) => row.role === ADMIN && !row.deletedAt).length,
       ),
@@ -41,6 +42,29 @@ describe('AdminAccountService', () => {
       [2, row({ id: 2, username: 'bob', email: 'bob@example.com', role: USER })],
     ]);
     service = new AdminAccountService(prisma as unknown as PrismaService);
+  });
+
+  it('lists admins with their address for an admin, without it for a viewer', async () => {
+    const asAdmin = await service.admins(ADMIN);
+    const asViewer = await service.admins(VIEWER);
+
+    expect(asAdmin.items[0]?.email).toBe('ada@example.com');
+    expect(asViewer.items.every((item) => item.email === null)).toBe(true);
+  });
+
+  it('searches addresses only for a reader who would be shown them', async () => {
+    await service.search('example', ADMIN);
+    await service.search('example', VIEWER);
+
+    const [asAdmin, asViewer] = prisma.user.findMany.mock.calls.map(([query]) =>
+      JSON.stringify(query),
+    );
+    expect(asAdmin).toContain('email');
+    expect(asViewer).not.toContain('"email":{');
+  });
+
+  it('makes an account a viewer', async () => {
+    await expect(service.setRole(1, 2, VIEWER)).resolves.toMatchObject({ id: 2, role: VIEWER });
   });
 
   it('promotes an account to admin, and demotes it back', async () => {

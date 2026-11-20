@@ -9,6 +9,7 @@ import {
   ReportStatus,
 } from '@prisma/client';
 
+import { readsAddresses, RoleName } from '../../auth/access/roles';
 import { PageRequest, toSkipTake } from '../../common/dto/pagination-query.dto';
 import { siteUrls } from '../../common/site-urls';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -113,6 +114,7 @@ export class AdminReportsService {
     filter: ReportFilter,
     sort: ReportSort,
     page: PageRequest,
+    reader: RoleName,
   ): Promise<AdminReportListDto> {
     const { skip, take } = toSkipTake(page, LIST_PAGE_SIZE);
     const where = this.where(filter);
@@ -128,7 +130,7 @@ export class AdminReportsService {
     ]);
     const releases = await this.releases(rows.map((row) => row.releaseId));
     return {
-      items: rows.map((row) => this.summary(row, releases)),
+      items: rows.map((row) => this.summary(row, releases, reader)),
       total,
       page: page.page ?? 1,
       limit: take,
@@ -139,7 +141,7 @@ export class AdminReportsService {
     return this.prisma.report.count({ where: { kind, ...(status ? { status } : {}) } });
   }
 
-  async detail(id: number): Promise<AdminReportDetailDto> {
+  async detail(id: number, reader: RoleName): Promise<AdminReportDetailDto> {
     const row = await this.prisma.report.findUnique({
       where: { id },
       include: {
@@ -165,7 +167,7 @@ export class AdminReportsService {
     }
     const releases = await this.releases([row.releaseId]);
     return {
-      ...this.summary(row, releases),
+      ...this.summary(row, releases, reader),
       adminNote: row.adminNote,
       projectId: row.projectId,
       context: jsonObject(row.context),
@@ -201,7 +203,7 @@ export class AdminReportsService {
     }
   }
 
-  async update(id: number, update: ReportUpdate): Promise<AdminReportDetailDto> {
+  async update(id: number, update: ReportUpdate, reader: RoleName): Promise<AdminReportDetailDto> {
     const updated = await this.prisma.report.updateMany({
       where: { id },
       data: {
@@ -212,7 +214,7 @@ export class AdminReportsService {
     if (updated.count === 0) {
       throw new NotFoundException('Report not found');
     }
-    return this.detail(id);
+    return this.detail(id, reader);
   }
 
   async ratingSummary(from: string, to: string, grain: AnalyticsGrain): Promise<RatingSummaryDto> {
@@ -255,14 +257,18 @@ export class AdminReportsService {
     };
   }
 
-  private summary(row: ReportRow, releases: Map<number, ReportReleaseDto>): AdminReportDto {
+  private summary(
+    row: ReportRow,
+    releases: Map<number, ReportReleaseDto>,
+    reader: RoleName,
+  ): AdminReportDto {
     return {
       id: row.id,
       kind: row.kind,
       status: row.status,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
-      account: row.user ? this.account(row.user) : null,
+      account: row.user ? this.account(row.user, reader) : null,
       role: row.role,
       route: row.route,
       release: row.releaseId ? (releases.get(row.releaseId) ?? null) : null,
@@ -285,10 +291,10 @@ export class AdminReportsService {
     };
   }
 
-  private account(row: AdminAccountRow): ReportAccountDto {
+  private account(row: AdminAccountRow, reader: RoleName): ReportAccountDto {
     const deleted = row.deletedAt !== null;
     return {
-      ...toAccountSummary(row),
+      ...toAccountSummary(row, readsAddresses(reader)),
       deleted,
       profileUrl: deleted ? null : siteUrls.profile(row.username),
     };

@@ -1,6 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 
-import { USER } from '../../auth/access/roles';
+import { ADMIN, USER, VIEWER } from '../../auth/access/roles';
 import { PrismaService } from '../../prisma/prisma.service';
 import { S3Service } from '../s3/s3.service';
 import { AdminReportsService } from './admin-reports.service';
@@ -83,6 +83,7 @@ describe('AdminReportsService', () => {
       },
       'created',
       { page: 1 },
+      ADMIN,
     );
 
     expect(prisma.report.count).toHaveBeenCalledWith({
@@ -107,11 +108,22 @@ describe('AdminReportsService', () => {
     });
   });
 
+  it('gives the address of who sent a report to an admin, and to no other reader', async () => {
+    prisma.report.count.mockResolvedValue(1);
+    prisma.report.findMany.mockResolvedValue([rating]);
+
+    const asAdmin = await service.list({}, 'created', {}, ADMIN);
+    const asViewer = await service.list({}, 'created', {}, VIEWER);
+
+    expect(asAdmin.items[0]?.account?.email).toEqual(expect.any(String));
+    expect(asViewer.items[0]?.account?.email).toBeNull();
+  });
+
   it('lets an exact status win over the view', async () => {
     prisma.report.count.mockResolvedValue(0);
     prisma.report.findMany.mockResolvedValue([]);
 
-    await service.list({ view: 'OPEN', status: 'RESOLVED' }, 'created', {});
+    await service.list({ view: 'OPEN', status: 'RESOLVED' }, 'created', {}, ADMIN);
 
     expect(prisma.report.count).toHaveBeenCalledWith({ where: { status: { in: ['RESOLVED'] } } });
   });
@@ -119,7 +131,7 @@ describe('AdminReportsService', () => {
   it('answers 404 for an update of a report that does not exist', async () => {
     prisma.report.updateMany.mockResolvedValue({ count: 0 });
 
-    await expect(service.update(99, { status: 'RESOLVED' })).rejects.toBeInstanceOf(
+    await expect(service.update(99, { status: 'RESOLVED' }, ADMIN)).rejects.toBeInstanceOf(
       NotFoundException,
     );
   });
@@ -128,7 +140,7 @@ describe('AdminReportsService', () => {
     prisma.report.updateMany.mockResolvedValue({ count: 1 });
     prisma.report.findUnique.mockResolvedValue(rating);
 
-    await service.update(5, { adminNote: '   ' });
+    await service.update(5, { adminNote: '   ' }, ADMIN);
 
     expect(prisma.report.updateMany).toHaveBeenCalledWith({
       where: { id: 5 },
@@ -177,7 +189,7 @@ describe('AdminReportsService', () => {
       rating: { id: 5, score: 3, liked: null, improve: 'Loading' },
     });
 
-    const detail = await service.detail(31);
+    const detail = await service.detail(31, ADMIN);
 
     expect(detail).toMatchObject({
       kind: 'BUG',
@@ -201,7 +213,7 @@ describe('AdminReportsService', () => {
     prisma.report.count.mockResolvedValue(0);
     prisma.report.findMany.mockResolvedValue([]);
 
-    await service.list({ kind: 'CRASH', source: 'ENGINE' }, 'count', { page: 2, limit: 10 });
+    await service.list({ kind: 'CRASH', source: 'ENGINE' }, 'count', { page: 2, limit: 10 }, ADMIN);
 
     expect(prisma.report.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -242,7 +254,7 @@ describe('AdminReportsService', () => {
       ],
     });
 
-    const detail = await service.detail(4);
+    const detail = await service.detail(4, ADMIN);
 
     expect(detail).toMatchObject({
       kind: 'CRASH',

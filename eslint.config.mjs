@@ -12,8 +12,8 @@ const privateFieldSyntax = {
 
 const roleLiteralSyntax = {
   selector: [
-    'Literal[value=/^(Admin|Moderator|User)$/]',
-    'TemplateElement[value.raw=/^(Admin|Moderator|User)$/]',
+    'Literal[value=/^(Admin|Moderator|Viewer|User)$/]',
+    'TemplateElement[value.raw=/^(Admin|Moderator|Viewer|User)$/]',
   ].join(', '),
   message: 'Refer to a role through the constants of src/auth/access/roles.ts.',
 };

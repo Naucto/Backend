@@ -12,7 +12,7 @@ import {
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { RequiresStaffSession } from '../../auth/access/access.decorators';
-import { ADMIN, MODERATOR } from '../../auth/access/roles';
+import { ADMIN, parseRole, VIEWER } from '../../auth/access/roles';
 import { RequestWithUser } from '../../auth/auth.types';
 import { AdminAccountService } from './admin-account.service';
 import {
@@ -30,7 +30,7 @@ export class AdminAccountController {
   constructor(private readonly accounts: AdminAccountService) {}
 
   @Get('me')
-  @RequiresStaffSession(MODERATOR)
+  @RequiresStaffSession(VIEWER)
   @ApiOperation({ summary: 'The signed-in staff member' })
   @ApiResponse({ status: HttpStatus.OK, type: AccountSummaryDto })
   me(@Req() req: RequestWithUser): Promise<AccountSummaryDto> {
@@ -40,15 +40,18 @@ export class AdminAccountController {
   @Get('admins')
   @ApiOperation({ summary: 'Every account holding the admin role' })
   @ApiResponse({ status: HttpStatus.OK, type: AdminAccountListDto })
-  admins(): Promise<AdminAccountListDto> {
-    return this.accounts.admins();
+  admins(@Req() req: RequestWithUser): Promise<AdminAccountListDto> {
+    return this.accounts.admins(parseRole(req.user.role));
   }
 
   @Get('search')
   @ApiOperation({ summary: 'Naucto accounts matching part of a handle, display name or email' })
   @ApiResponse({ status: HttpStatus.OK, type: AccountSearchResultDto })
-  search(@Query() query: AccountSearchQueryDto): Promise<AccountSearchResultDto> {
-    return this.accounts.search(query.term);
+  search(
+    @Req() req: RequestWithUser,
+    @Query() query: AccountSearchQueryDto,
+  ): Promise<AccountSearchResultDto> {
+    return this.accounts.search(query.term, parseRole(req.user.role));
   }
 
   @Put(':id/role')

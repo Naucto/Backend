@@ -1,7 +1,7 @@
 import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 
-import { holdsRole, MODERATOR, parseRole } from '../../auth/access/roles';
+import { holdsRole, parseRole, VIEWER } from '../../auth/access/roles';
 import { currentSuspension } from '../../auth/access/suspension';
 import { AuthService } from '../../auth/auth.service';
 import { JwtPayload, STAFF_SCOPE } from '../../auth/auth.types';
@@ -35,12 +35,13 @@ export interface AdminAccountRow {
   deletedAt: Date | null;
 }
 
-export function toAccountSummary(row: AdminAccountRow): AccountSummaryDto {
+/** `withAddress` is false for a reader who does not read email addresses. */
+export function toAccountSummary(row: AdminAccountRow, withAddress = true): AccountSummaryDto {
   return {
     id: row.id,
     username: row.username,
     nickname: row.nickname,
-    email: row.email,
+    email: withAddress ? row.email : null,
     role: parseRole(row.role),
     createdAt: row.createdAt,
   };
@@ -126,7 +127,7 @@ export class AdminSessionService {
     if (!account || account.deletedAt) {
       throw new UnauthorizedException('Account not found');
     }
-    if (!holdsRole(parseRole(account.role), MODERATOR)) {
+    if (!holdsRole(parseRole(account.role), VIEWER)) {
       throw new refusal('This account is not a staff account');
     }
     if (currentSuspension(account)) {

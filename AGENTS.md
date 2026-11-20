@@ -131,6 +131,14 @@ controller, declares with exactly one of four decorators (`src/auth/access/acces
   under `admin/` uses it except `admin/auth`, which is how the session is opened, and
   `access-coverage.spec.ts` fails on one that does not.
 
+**The viewer role** observes. It sits between `USER` and `MODERATOR` in rank and its reach is not
+its rank: on a staff route it passes every read, whatever role the route asks of those who act
+there, and no write. So it reads the statistics and the support screens a moderator does not open,
+and changes nothing. The guard grants that to the role by name, so a moderator does not inherit it.
+Outside the admin console a viewer is an ordinary account. Because of this rule **a `GET` under
+`admin/` must never change anything**: a read that writes would be a write a viewer can make.
+Nobody but an admin reads email addresses (`readsAddresses`), viewers included.
+
 **Suspension** is decided by the same guard, from the two `suspended*` columns read through
 `currentSuspension` (`src/auth/access/suspension.ts`), which also lets a dated suspension lapse
 without anything clearing it. A suspended account signs in and reads. Every write that asks for an
