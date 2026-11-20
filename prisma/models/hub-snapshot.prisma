@@ -1,0 +1,7 @@
+// The hub's shelves for one UTC day: the pools the engine drew, as project ids in the day's order.
+// Rows are rewritten whole, never patched, so a reader of an older day sees what was served then.
+model HubSnapshot {
+  day        DateTime @id @db.Date
+  computedAt DateTime
+  payload    Json
+}
