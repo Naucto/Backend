@@ -228,12 +228,25 @@ describe('AccessGuard', () => {
       expect(response.body).not.toHaveProperty('code');
     });
 
-    it('takes a staff token on a route that only asks for a role', async () => {
+    it.each([
+      ['asks for an account', '/probe/auth'],
+      ['asks for a role its account holds', '/probe/admin'],
+    ])('never lets a staff token open a site route that %s', async (_case, path) => {
       const response = await request(app.getHttpServer())
-        .get('/probe/admin')
+        .get(path)
+        .set('Authorization', staffTokenFor(ADMIN_USER));
+
+      expect(response.status).toBe(HttpStatus.UNAUTHORIZED);
+      expect(userService.getUserRole).not.toHaveBeenCalled();
+    });
+
+    it('identifies nobody on a public route from a staff token', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/probe/public')
         .set('Authorization', staffTokenFor(ADMIN_USER));
 
       expect(response.status).toBe(HttpStatus.OK);
+      expect(response.body).toEqual({ user: null });
     });
   });
 

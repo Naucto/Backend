@@ -14,7 +14,7 @@ import { ApiOperation, ApiProduces, ApiResponse, ApiTags } from '@nestjs/swagger
 import { Response } from 'express';
 import { pipeline } from 'stream/promises';
 
-import { RequiresRole } from '../../auth/access/access.decorators';
+import { RequiresStaffSession } from '../../auth/access/access.decorators';
 import { ADMIN } from '../../auth/access/roles';
 import { AdminReportsService } from './admin-reports.service';
 import {
@@ -28,7 +28,7 @@ import { RatingSummaryDto, RatingSummaryQueryDto } from './dto/rating-summary.dt
 
 @ApiTags('admin')
 @Controller('admin/reports')
-@RequiresRole(ADMIN)
+@RequiresStaffSession(ADMIN)
 export class AdminReportsController {
   private readonly logger = new Logger(AdminReportsController.name);
 

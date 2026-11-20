@@ -1,4 +1,4 @@
-import { ExecutionContext, HttpStatus, Injectable } from '@nestjs/common';
+import { ExecutionContext, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
 import { isObservable, lastValueFrom } from 'rxjs';
@@ -51,23 +51,32 @@ export class AccessGuard extends AuthGuard('jwt') {
       } catch {
         request.user = null;
       }
+      if (request.authInfo?.staff === true) {
+        request.user = null;
+      }
       return true;
     }
 
     await this.authenticate(context);
-
-    if (access.kind === 'auth') {
-      return true;
-    }
+    const staffToken = request.authInfo?.staff === true;
 
     // A 401 rather than a 403: the admin console renews its token on a 401, which is what turns a
     // token issued before the staff scope existed into one that carries it.
-    if (access.kind === 'staff' && request.authInfo?.staff !== true) {
+    if (access.kind === 'staff' && !staffToken) {
       throw new CodedException(
         HttpStatus.UNAUTHORIZED,
         STAFF_SESSION_REQUIRED,
         'Staff session required',
       );
+    }
+    // The two kinds of token never stand in for each other: one taken from the admin console
+    // cannot act as its account on the site.
+    if (access.kind !== 'staff' && staffToken) {
+      throw new UnauthorizedException('A staff session opens the admin console only');
+    }
+
+    if (access.kind === 'auth') {
+      return true;
     }
 
     const userId = request.user?.id;

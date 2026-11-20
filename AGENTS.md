@@ -114,7 +114,7 @@ rejects unexpected ones** — so every accepted field needs a validator decorato
 
 **Access control — deny by default.** One global guard (`src/auth/access/access.guard.ts`,
 registered as `APP_GUARD`) decides every route from the access its handler, or failing that its
-controller, declares with exactly one of three decorators (`src/auth/access/access.decorators.ts`):
+controller, declares with exactly one of four decorators (`src/auth/access/access.decorators.ts`):
 
 - `@Public()` — anyone; a valid bearer token still sets `req.user`, a missing or bad one leaves it
   `null` and never refuses.
@@ -123,6 +123,12 @@ controller, declares with exactly one of three decorators (`src/auth/access/acce
   ranked above it (403 otherwise). Roles are a hierarchy, `MODERATOR` < `ADMIN`: an admin is also a
   moderator. The constants live in `src/auth/access/roles.ts` and equal the role rows the
   migrations seed.
+- `@RequiresStaffSession(MODERATOR)` / `@RequiresStaffSession(ADMIN)`: the same role check, on a
+  token the staff sign-in of the admin console issued (`scope: staff`). The token of a site sign-in
+  gets a 401 with the code `STAFF_SESSION_REQUIRED` whatever role its account holds, and a staff
+  token is refused on every other route, so neither ever stands in for the other. Every route
+  under `admin/` uses it except `admin/auth`, which is how the session is opened, and
+  `access-coverage.spec.ts` fails on one that does not.
 
 A route that declares nothing is treated as `@RequiresRole(ADMIN)`, and `access-coverage.spec.ts`
 fails on it anyway: every route states who may call it. Handler metadata overrides the
@@ -200,9 +206,14 @@ at the controller boundary (see `project.controller.ts` catching `S3ObjectNotFou
 
 **Admin console** (`src/routes/admin/`), for the separate Admin-Panel app:
 
-- `admin/auth/*` signs an admin in with a password and an account holding the admin role. It
-  answers an access token and sets the httpOnly `naucto_admin_session` cookie that renews it for
-  eight hours; that cookie is signed with a key of its own, so it never verifies as a bearer token.
+- `admin/auth/*` signs a staff member in with a password and an account holding the moderator or
+  the admin role, not suspended. It answers an access token scoped to staff and sets the httpOnly
+  `naucto_admin_session` cookie that renews it for eight hours; that cookie is signed with a key of
+  its own, so it never verifies as a bearer token. The account is read again at each renewal, so a
+  role change or a suspension takes effect within the fifteen minutes an access token lives.
+- A moderator signs in to the same console and opens only the routes that ask for the moderator
+  role. An account that signs in with Google, GitHub or Microsoft alone has no password to give
+  here and needs to set one first.
 - Wrong passwords per address are limited in memory (`attempt-limiter.ts`), which holds while the
   backend runs as one instance.
 - An admin cannot change their own role, and the last admin cannot be demoted.

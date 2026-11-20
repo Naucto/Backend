@@ -1,7 +1,8 @@
 import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 
-import { ADMIN, holdsRole, parseRole } from '../../auth/access/roles';
+import { holdsRole, MODERATOR, parseRole } from '../../auth/access/roles';
+import { currentSuspension } from '../../auth/access/suspension';
 import { AuthService } from '../../auth/auth.service';
 import { JwtPayload, STAFF_SCOPE } from '../../auth/auth.types';
 import { getEnv } from '../../config/env';
@@ -51,7 +52,13 @@ export interface IssuedSession {
   sessionToken?: string;
 }
 
-/** Signing in to the admin console: a password, and an account holding the admin role. */
+const STAFF_ACCOUNT_SELECT = {
+  ...ADMIN_ACCOUNT_SELECT,
+  suspendedAt: true,
+  suspendedUntil: true,
+} as const;
+
+/** Signing in to the admin console: a password, and an account holding a staff role. */
 @Injectable()
 export class AdminSessionService {
   private readonly passwordAttempts = new AttemptLimiter(10, WINDOW_MS);
@@ -72,7 +79,7 @@ export class AdminSessionService {
       this.passwordAttempts.fail(key);
       throw error;
     }
-    return this.issue(await this.adminAccount(userId, ForbiddenException));
+    return this.issue(await this.staffAccount(userId, ForbiddenException));
   }
 
   async refresh(sessionToken: string): Promise<IssuedSession> {
@@ -84,7 +91,7 @@ export class AdminSessionService {
     } catch {
       throw new UnauthorizedException('Session expired');
     }
-    const issued = await this.issue(await this.adminAccount(sub, UnauthorizedException));
+    const issued = await this.issue(await this.staffAccount(sub, UnauthorizedException));
     // The session ends when it was always going to: renewing the access token does not extend it.
     return { session: issued.session };
   }
@@ -104,20 +111,26 @@ export class AdminSessionService {
     };
   }
 
-  /** A live account holding the admin role, or `refusal` for anything else. */
-  private async adminAccount(
+  /**
+   * A live account holding a staff role and in good standing, or `refusal` for anything else. What
+   * a moderator may open once inside is each route's own business.
+   */
+  private async staffAccount(
     userId: number,
     refusal: typeof ForbiddenException | typeof UnauthorizedException,
   ): Promise<AdminAccountRow> {
     const account = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: ADMIN_ACCOUNT_SELECT,
+      select: STAFF_ACCOUNT_SELECT,
     });
     if (!account || account.deletedAt) {
       throw new UnauthorizedException('Account not found');
     }
-    if (!holdsRole(parseRole(account.role), ADMIN)) {
-      throw new refusal('This account is not an admin');
+    if (!holdsRole(parseRole(account.role), MODERATOR)) {
+      throw new refusal('This account is not a staff account');
+    }
+    if (currentSuspension(account)) {
+      throw new refusal('This account is suspended');
     }
     return account;
   }

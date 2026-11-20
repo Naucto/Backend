@@ -25,10 +25,10 @@ export class AdminAuthController {
   @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Sign in to the admin console with an admin account' })
+  @ApiOperation({ summary: 'Sign in to the admin console with a moderator or an admin account' })
   @ApiResponse({ status: HttpStatus.OK, type: AdminSessionDto })
   @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: 'Invalid email or password' })
-  @ApiResponse({ status: HttpStatus.FORBIDDEN, description: 'Not an admin account' })
+  @ApiResponse({ status: HttpStatus.FORBIDDEN, description: 'Not a staff account, or suspended' })
   @ApiResponse({ status: HttpStatus.TOO_MANY_REQUESTS, description: 'Too many failed attempts' })
   async login(
     @Body() dto: AdminLoginDto,
@@ -74,7 +74,7 @@ export class AdminAuthController {
   @Public()
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'End the admin session in this browser' })
+  @ApiOperation({ summary: 'End the staff session in this browser' })
   @ApiResponse({ status: HttpStatus.NO_CONTENT })
   logout(@Res({ passthrough: true }) res: Response): void {
     res.clearCookie(ADMIN_SESSION_COOKIE, adminSessionCookieOptions(false));

@@ -1,7 +1,7 @@
 import { Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
-import { RequiresRole } from '../../auth/access/access.decorators';
+import { RequiresStaffSession } from '../../auth/access/access.decorators';
 import { ADMIN } from '../../auth/access/roles';
 import { AnalyticsQueryService } from './analytics-query.service';
 import { AnalyticsTimelineService } from './analytics-timeline.service';
@@ -45,7 +45,7 @@ import { UserAnalyticsService } from './user-analytics.service';
 
 @ApiTags('admin')
 @Controller('admin/analytics')
-@RequiresRole(ADMIN)
+@RequiresStaffSession(ADMIN)
 export class AdminAnalyticsController {
   constructor(
     private readonly analytics: AnalyticsQueryService,
