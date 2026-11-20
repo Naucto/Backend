@@ -4,6 +4,7 @@ import {
   HttpStatus,
   INestApplication,
   NotFoundException,
+  Post,
   Req,
 } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
@@ -17,6 +18,7 @@ import { UserService } from '../../routes/user/user.service';
 import { STAFF_SCOPE } from '../auth.types';
 import { JwtStrategy } from '../strategies/jwt.strategy';
 import {
+  AllowedWhileSuspended,
   Public,
   RequiresAuth,
   RequiresRole,
@@ -25,6 +27,7 @@ import {
 } from './access.decorators';
 import { AccessGuard } from './access.guard';
 import { ADMIN, MODERATOR, RoleName, USER } from './roles';
+import { ACCOUNT_SUSPENDED } from './suspension';
 
 const SECRET = 'access-guard-spec-secret';
 
@@ -32,12 +35,25 @@ const PLAIN_USER = 1;
 const MODERATOR_USER = 2;
 const ADMIN_USER = 3;
 const DELETED_USER = 4;
+const SUSPENDED_USER = 5;
+const SUSPENDED_MODERATOR = 6;
+const LAPSED_USER = 7;
 
 const ROLES: Record<number, RoleName> = {
   [PLAIN_USER]: USER,
   [MODERATOR_USER]: MODERATOR,
   [ADMIN_USER]: ADMIN,
   [DELETED_USER]: ADMIN,
+  [SUSPENDED_USER]: USER,
+  [SUSPENDED_MODERATOR]: MODERATOR,
+  [LAPSED_USER]: USER,
+};
+
+const SUSPENDED_UNTIL = new Date('2999-01-01T00:00:00.000Z');
+const SUSPENSIONS: Record<number, { suspendedAt: Date; suspendedUntil: Date | null }> = {
+  [SUSPENDED_USER]: { suspendedAt: new Date('2026-01-01'), suspendedUntil: SUSPENDED_UNTIL },
+  [SUSPENDED_MODERATOR]: { suspendedAt: new Date('2026-01-01'), suspendedUntil: null },
+  [LAPSED_USER]: { suspendedAt: new Date('2020-01-01'), suspendedUntil: new Date('2020-01-02') },
 };
 
 type Caller = { user: { id: number } | null };
@@ -64,6 +80,17 @@ class ProbeController {
   @Get('admin')
   admin(): void {}
 
+  @Post('write')
+  write(): void {}
+
+  @AllowedWhileSuspended()
+  @Post('leave')
+  leave(): void {}
+
+  @Public()
+  @Post('public-write')
+  publicWrite(): void {}
+
   @RequiresStaffSession(MODERATOR)
   @Get('staff')
   staff(): void {}
@@ -86,7 +113,14 @@ describe('AccessGuard', () => {
       if (ROLES[id] === undefined) {
         throw new NotFoundException();
       }
-      return { id, password: 'hash', deletedAt: id === DELETED_USER ? new Date() : null };
+      return {
+        id,
+        password: 'hash',
+        deletedAt: id === DELETED_USER ? new Date() : null,
+        suspendedAt: null,
+        suspendedUntil: null,
+        ...SUSPENSIONS[id],
+      };
     }),
     getUserRole: jest.fn(async (id: number) => ROLES[id] ?? USER),
   };
@@ -247,6 +281,72 @@ describe('AccessGuard', () => {
 
       expect(response.status).toBe(HttpStatus.OK);
       expect(response.body).toEqual({ user: null });
+    });
+  });
+
+  describe('a suspended account', () => {
+    it('still reads', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/probe/auth')
+        .set('Authorization', tokenFor(SUSPENDED_USER));
+
+      expect(response.status).toBe(HttpStatus.OK);
+    });
+
+    it('is refused a write, and told until when', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/probe/write')
+        .set('Authorization', tokenFor(SUSPENDED_USER));
+
+      expect(response.status).toBe(HttpStatus.FORBIDDEN);
+      expect(response.body).toMatchObject({
+        code: ACCOUNT_SUSPENDED,
+        until: SUSPENDED_UNTIL.toISOString(),
+      });
+    });
+
+    it('keeps a write the route leaves open to it', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/probe/leave')
+        .set('Authorization', tokenFor(SUSPENDED_USER));
+
+      expect(response.status).toBe(HttpStatus.CREATED);
+    });
+
+    it('is not held back on a public write, which acts for nobody', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/probe/public-write')
+        .set('Authorization', tokenFor(SUSPENDED_USER));
+
+      expect(response.status).toBe(HttpStatus.CREATED);
+    });
+
+    it.each([
+      ['the token of a site sign-in', '/probe/moderator', tokenFor],
+      ['a staff token', '/probe/staff', staffTokenFor],
+    ])('holds no staff power with %s, even to read', async (_case, path, token) => {
+      const response = await request(app.getHttpServer())
+        .get(path)
+        .set('Authorization', token(SUSPENDED_MODERATOR));
+
+      expect(response.status).toBe(HttpStatus.FORBIDDEN);
+      expect(response.body).toMatchObject({ code: ACCOUNT_SUSPENDED, until: null });
+    });
+
+    it('writes again once its suspension has run out, with nothing to clear', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/probe/write')
+        .set('Authorization', tokenFor(LAPSED_USER));
+
+      expect(response.status).toBe(HttpStatus.CREATED);
+    });
+
+    it('leaves an account in good standing alone', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/probe/write')
+        .set('Authorization', tokenFor(PLAIN_USER));
+
+      expect(response.status).toBe(HttpStatus.CREATED);
     });
   });
 

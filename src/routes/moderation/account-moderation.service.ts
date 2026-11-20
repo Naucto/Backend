@@ -1,10 +1,13 @@
-import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
+import { HttpStatus, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { FlagStatus, ModerationActionType, ModerationTargetType, Prisma } from '@prisma/client';
 
 import { outranks, parseRole } from '../../auth/access/roles';
+import { currentSuspension } from '../../auth/access/suspension';
 import { CodedException } from '../../common/coded.exception';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { MultiplayerService } from '../multiplayer/multiplayer.service';
+import { WorkSessionService } from '../work-session/work-session.service';
 import { ModerationActionDto } from './dto/moderation-action.dto';
 import {
   ClearProfileDto,
@@ -15,21 +18,37 @@ import {
 } from './dto/moderation-decision.dto';
 import { resolveOpenFlags } from './flag-resolution';
 import { MODERATION_ERROR, notAvailableYet } from './moderation.error';
-import { ModerationLogService } from './moderation-log.service';
-import { ACCOUNT_REF_SELECT, toActionDto } from './moderation-mappers';
+import { ModerationLogService, RecordedAction } from './moderation-log.service';
+import { ACCOUNT_REF_SELECT, ActionRow, toActionDto } from './moderation-mappers';
 import { StaffActor } from './staff-actor';
 
-const SUBJECT_SELECT = { ...ACCOUNT_REF_SELECT, description: true } as const;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const SUBJECT_SELECT = {
+  ...ACCOUNT_REF_SELECT,
+  description: true,
+  suspendedAt: true,
+  suspendedUntil: true,
+} as const;
 
 type SubjectRow = Prisma.UserGetPayload<{ select: typeof SUBJECT_SELECT }>;
+
+type AccountDecision = Pick<
+  RecordedAction,
+  'action' | 'reason' | 'publicMessage' | 'internalNote' | 'expiresAt'
+>;
 
 /** What staff decide about an account. */
 @Injectable()
 export class AccountModerationService {
+  private readonly logger = new Logger(AccountModerationService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly log: ModerationLogService,
     private readonly notifications: NotificationsService,
+    private readonly multiplayer: MultiplayerService,
+    private readonly workSessions: WorkSessionService,
   ) {}
 
   async warn(
@@ -40,55 +59,85 @@ export class AccountModerationService {
     const account = await this.subject(staff, accountId);
 
     const row = await this.prisma.$transaction(async (tx) => {
-      const recorded = await this.log.record(tx, {
+      const recorded = await this.record(tx, staff, account, {
         action: ModerationActionType.ACCOUNT_WARNED,
-        actorId: staff.id,
-        targetType: ModerationTargetType.USER,
-        targetId: account.id,
-        subjectUserId: account.id,
         reason: input.reason,
         publicMessage: input.publicMessage,
         internalNote: input.internalNote,
-        snapshot: { title: account.nickname ?? account.username, body: account.description },
       });
-      if (input.resolveFlags !== false) {
-        await resolveOpenFlags(tx, {
-          targetType: ModerationTargetType.USER,
-          targetId: account.id,
-          status: FlagStatus.ACTIONED,
-          resolvedById: staff.id,
-          resolutionId: recorded.id,
-        });
-      }
+      await this.settleFlags(tx, staff, recorded, input.resolveFlags);
       return recorded;
     });
 
-    await this.notifications.notifyBestEffort({
-      userId: account.id,
-      title: 'You received a warning',
-      message: input.publicMessage,
-      type: 'WARNING',
-      kind: 'MODERATION',
-      data: { actionId: row.id, action: row.action },
-    });
-
+    await this.notify(row, 'You received a warning', input.publicMessage);
     return toActionDto(row, staff);
   }
 
-  suspend(
-    _staff: StaffActor,
-    _accountId: number,
-    _input: SuspendAccountDto,
+  async suspend(
+    staff: StaffActor,
+    accountId: number,
+    input: SuspendAccountDto,
   ): Promise<ModerationActionDto> {
-    return notAvailableYet();
+    const account = await this.subject(staff, accountId);
+    const since = new Date();
+    const until =
+      input.durationDays === undefined
+        ? null
+        : new Date(since.getTime() + input.durationDays * DAY_MS);
+
+    const row = await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: account.id },
+        data: { suspendedAt: since, suspendedUntil: until },
+      });
+      const recorded = await this.record(tx, staff, account, {
+        action: ModerationActionType.ACCOUNT_SUSPENDED,
+        reason: input.reason,
+        publicMessage: input.publicMessage,
+        internalNote: input.internalNote,
+        expiresAt: until ?? undefined,
+      });
+      await this.settleFlags(tx, staff, recorded, input.resolveFlags);
+      return recorded;
+    });
+
+    await this.endLiveSessions(account.id);
+    await this.notify(row, 'Your account is suspended', input.publicMessage);
+    return toActionDto(row, staff);
   }
 
-  reinstate(
-    _staff: StaffActor,
-    _accountId: number,
-    _input: ModerationNoteDto,
+  async reinstate(
+    staff: StaffActor,
+    accountId: number,
+    input: ModerationNoteDto,
   ): Promise<ModerationActionDto> {
-    return notAvailableYet();
+    const account = await this.subject(staff, accountId);
+    if (!currentSuspension(account)) {
+      throw new CodedException(
+        HttpStatus.CONFLICT,
+        MODERATION_ERROR.NOT_SUSPENDED,
+        'This account is not suspended',
+      );
+    }
+
+    const row = await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: account.id },
+        data: { suspendedAt: null, suspendedUntil: null },
+      });
+      return this.record(tx, staff, account, {
+        action: ModerationActionType.ACCOUNT_REINSTATED,
+        publicMessage: input.publicMessage,
+        internalNote: input.internalNote,
+      });
+    });
+
+    await this.notify(
+      row,
+      'Your account is reinstated',
+      input.publicMessage || 'Your suspension was lifted.',
+    );
+    return toActionDto(row, staff);
   }
 
   clearProfile(
@@ -131,5 +180,67 @@ export class AccountModerationService {
       );
     }
     return account;
+  }
+
+  private record(
+    tx: Prisma.TransactionClient,
+    staff: StaffActor,
+    account: SubjectRow,
+    decision: AccountDecision,
+  ): Promise<ActionRow> {
+    return this.log.record(tx, {
+      ...decision,
+      actorId: staff.id,
+      targetType: ModerationTargetType.USER,
+      targetId: account.id,
+      subjectUserId: account.id,
+      snapshot: { title: account.nickname ?? account.username, body: account.description },
+    });
+  }
+
+  private async settleFlags(
+    tx: Prisma.TransactionClient,
+    staff: StaffActor,
+    recorded: ActionRow,
+    resolveFlags: boolean | undefined,
+  ): Promise<void> {
+    if (resolveFlags === false) {
+      return;
+    }
+    await resolveOpenFlags(tx, {
+      targetType: ModerationTargetType.USER,
+      targetId: recorded.targetId,
+      status: FlagStatus.ACTIONED,
+      resolvedById: staff.id,
+      resolutionId: recorded.id,
+    });
+  }
+
+  private notify(row: ActionRow, title: string, message: string): Promise<void> {
+    return this.notifications.notifyBestEffort({
+      userId: row.targetId,
+      title,
+      message,
+      type: 'WARNING',
+      kind: 'MODERATION',
+      data: { actionId: row.id, action: row.action },
+    });
+  }
+
+  /**
+   * A suspended account hosts and joins nothing. The suspension is already written when this runs,
+   * so a failure here is logged and never undoes it: the guard refuses the account either way.
+   */
+  private async endLiveSessions(accountId: number): Promise<void> {
+    try {
+      await this.multiplayer.removeAccount(accountId);
+      await this.workSessions.kickEverywhere(accountId);
+    } catch (error) {
+      this.logger.warn(
+        `Could not end the live sessions of account ${String(accountId)}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 }

@@ -23,6 +23,16 @@ export const AUTHENTICATION_REQUIRED = 'Authentication required';
 /** Every account holds the lowest role, so requiring it is `RequiresAuth`. */
 type RequirableRole = Exclude<RoleName, typeof USER>;
 
+export const ALLOWED_WHILE_SUSPENDED_KEY = 'allowedWhileSuspended';
+
+/**
+ * Keeps a write open to a suspended account. Suspension refuses every other one, so a new route is
+ * closed to suspended accounts unless it says otherwise here: leaving, withdrawing its own content
+ * and looking after its own account are what a suspended person keeps.
+ */
+export const AllowedWhileSuspended = (): MethodDecorator =>
+  SetMetadata(ALLOWED_WHILE_SUSPENDED_KEY, true);
+
 /** The 401 a staff route answers a token that did not come from the staff sign-in. */
 export const STAFF_SESSION_REQUIRED = 'STAFF_SESSION_REQUIRED';
 

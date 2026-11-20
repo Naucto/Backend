@@ -1276,6 +1276,36 @@ describe('MultiplayerService', () => {
     });
   });
 
+  describe('removeAccount', () => {
+    it('ends what the account hosts and gives up its seats elsewhere', async () => {
+      gameSession.findMany
+        .mockResolvedValueOnce([{ sessionId: 'hosted-uuid' }])
+        .mockResolvedValueOnce([{ sessionId: 'joined-uuid', hostId: 9 }]);
+      gameSession.updateManyAndReturn.mockResolvedValueOnce([{ hostId: 4 }]);
+
+      await service.removeAccount(4);
+
+      expect(gameSession.updateManyAndReturn).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { sessionId: 'hosted-uuid', endedAt: null } }),
+      );
+      expect(gameTable().server.closeRoom).toHaveBeenCalledWith('hosted-uuid');
+      expect(gameSession.update).toHaveBeenCalledWith({
+        where: { sessionId: 'joined-uuid' },
+        data: { otherUsers: { disconnect: { id: 4 } } },
+      });
+      expect(eventEmitter.emit).toHaveBeenCalledWith(ACTIVITY_CHANGED, new ActivityChangedEvent(9));
+    });
+
+    it('does nothing for an account in no session', async () => {
+      gameSession.findMany.mockResolvedValue([]);
+
+      await service.removeAccount(4);
+
+      expect(gameSession.update).not.toHaveBeenCalled();
+      expect(gameTable().server.closeRoom).not.toHaveBeenCalled();
+    });
+  });
+
   describe('reapStaleSessions', () => {
     it('soft-ends orphaned sessions left active past the max lifetime', async () => {
       jest.spyOn(service, 'connectedPlayerCount').mockReturnValue(0);

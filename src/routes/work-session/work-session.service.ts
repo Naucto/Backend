@@ -129,6 +129,17 @@ export class WorkSessionService {
     this.eventEmitter.emit(ACTIVITY_CHANGED, new ActivityChangedEvent(userId));
   }
 
+  /** Takes an account out of every work session it sits in. */
+  async kickEverywhere(userId: number): Promise<void> {
+    const sessions = await this.prismaService.workSession.findMany({
+      where: { users: { some: { id: userId } } },
+      select: { projectId: true },
+    });
+    for (const { projectId } of sessions) {
+      await this.kick(projectId, userId);
+    }
+  }
+
   async sweepAbandoned(olderThan: Date): Promise<void> {
     const where = { lastSaveAt: { lt: olderThan } };
     const abandoned = (

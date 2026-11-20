@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 
 import { NotificationsModule } from '../../notifications/notifications.module';
+import { MultiplayerModule } from '../multiplayer/multiplayer.module';
+import { WorkSessionModule } from '../work-session/work-session.module';
 import { AccountModerationService } from './account-moderation.service';
 import { AdminCaseController } from './admin-case.controller';
 import { AdminModerationAccountController } from './admin-moderation-account.controller';
@@ -18,7 +20,7 @@ import { StaffPreviewService } from './staff-preview.service';
 import { StandingService } from './standing.service';
 
 @Module({
-  imports: [ModerationLogModule, NotificationsModule],
+  imports: [ModerationLogModule, NotificationsModule, MultiplayerModule, WorkSessionModule],
   controllers: [
     ModerationController,
     StaffPreviewController,
