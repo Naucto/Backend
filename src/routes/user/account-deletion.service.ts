@@ -56,6 +56,11 @@ export const USER_RELATION_FATES: Record<UserRelation, 'deleted' | 'unlinked' | 
     // A report stays with the platform once its author is anonymised. Its screenshot goes, since an
     // image can show the person.
     reports: 'kept',
+    // The moderation record outlives the account it is about and the staff member who wrote it.
+    flagsFiled: 'kept',
+    flagsResolved: 'kept',
+    moderationActionsTaken: 'kept',
+    moderationRecord: 'kept',
   };
 
 /**

@@ -1,14 +1,22 @@
-import { ExecutionContext, Injectable } from '@nestjs/common';
+import { ExecutionContext, HttpStatus, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
 import { isObservable, lastValueFrom } from 'rxjs';
 
+import { CodedException } from '../../common/coded.exception';
 import { UserService } from '../../routes/user/user.service';
-import { Access, ACCESS_KEY } from './access.decorators';
+import { TokenInfo } from '../auth.types';
+import { Access, ACCESS_KEY, STAFF_SESSION_REQUIRED } from './access.decorators';
 import { ADMIN, holdsRole } from './roles';
 
 /** What a route that states nothing gets: forgetting to annotate one must not open it. */
 const DEFAULT_ACCESS: Access = { kind: 'role', role: ADMIN };
+
+interface AccessRequest {
+  user?: { id: number } | null;
+  /** Set by passport from the strategy once the token verified. */
+  authInfo?: TokenInfo;
+}
 
 /**
  * The application's only authentication guard, registered globally: every route is decided by the
@@ -35,7 +43,7 @@ export class AccessGuard extends AuthGuard('jwt') {
         context.getHandler(),
         context.getClass(),
       ]) ?? DEFAULT_ACCESS;
-    const request = context.switchToHttp().getRequest<{ user?: { id: number } | null }>();
+    const request = context.switchToHttp().getRequest<AccessRequest>();
 
     if (access.kind === 'public') {
       try {
@@ -50,6 +58,16 @@ export class AccessGuard extends AuthGuard('jwt') {
 
     if (access.kind === 'auth') {
       return true;
+    }
+
+    // A 401 rather than a 403: the admin console renews its token on a 401, which is what turns a
+    // token issued before the staff scope existed into one that carries it.
+    if (access.kind === 'staff' && request.authInfo?.staff !== true) {
+      throw new CodedException(
+        HttpStatus.UNAUTHORIZED,
+        STAFF_SESSION_REQUIRED,
+        'Staff session required',
+      );
     }
 
     const userId = request.user?.id;

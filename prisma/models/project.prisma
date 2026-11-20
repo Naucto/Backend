@@ -27,6 +27,9 @@ model Project {
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
   publishedAt  DateTime?
+  // Set while moderation withholds the game: it leaves the hub and its release stops being served,
+  // while `publishedAt` stays so a restore puts it back as it was.
+  hiddenAt     DateTime?
   // Bumped on each release transition (publish, content change, unpublish); keys its analytics fact.
   releaseRevision    Int     @default(0)
   // Hash of the released content and published metadata, so republishing them unchanged is no-op.
@@ -66,6 +69,9 @@ model Comment {
   replies   Comment[] @relation("CommentReplies")
   content   String
   deleted   Boolean   @default(false)
+  // Set while moderation has removed the comment. The content stays stored so a restore brings it
+  // back, and is never served meanwhile.
+  hiddenAt  DateTime?
   createdAt DateTime  @default(now())
 
   @@index([projectId])

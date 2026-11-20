@@ -15,4 +15,11 @@ export class FeaturesResponseDto {
     example: false,
   })
   analytics!: boolean;
+
+  @ApiProperty({
+    description:
+      'Whether moderation is offered: people can report games, comments and profiles, and see their account standing. Off unless a deployment turns it on.',
+    example: false,
+  })
+  moderation!: boolean;
 }

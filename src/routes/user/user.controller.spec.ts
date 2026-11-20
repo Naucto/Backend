@@ -113,7 +113,18 @@ describe('UserController', () => {
       friendCode: '7K3QW9ZB',
       sessionJoinPolicy: 'ANYONE',
       deletedAt: null,
+      suspendedAt: null,
+      suspendedUntil: null,
     };
+
+    it('says what suspension the account is under', async () => {
+      (s3Service.getFileMetadataOrNull as jest.Mock).mockResolvedValue(null);
+      const since = new Date('2025-03-20T09:00:00.000Z');
+
+      await expect(
+        controller.getProfile({ user: { ...row, suspendedAt: since } } as any),
+      ).resolves.toMatchObject({ suspension: { since, until: null } });
+    });
 
     it('answers with the declared fields and nothing else of the row', async () => {
       (s3Service.getFileMetadataOrNull as jest.Mock)
@@ -129,6 +140,7 @@ describe('UserController', () => {
         createdAt: row.createdAt,
         profileImageUrl: 'https://cdn.example/users/7/profile?v=abc',
         backgroundImageUrl: null,
+        suspension: null,
       });
     });
 

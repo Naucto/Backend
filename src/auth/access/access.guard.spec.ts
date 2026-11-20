@@ -14,8 +14,15 @@ import request from 'supertest';
 
 import { withEnv } from '../../../test/env';
 import { UserService } from '../../routes/user/user.service';
+import { STAFF_SCOPE } from '../auth.types';
 import { JwtStrategy } from '../strategies/jwt.strategy';
-import { Public, RequiresAuth, RequiresRole } from './access.decorators';
+import {
+  Public,
+  RequiresAuth,
+  RequiresRole,
+  RequiresStaffSession,
+  STAFF_SESSION_REQUIRED,
+} from './access.decorators';
 import { AccessGuard } from './access.guard';
 import { ADMIN, MODERATOR, RoleName, USER } from './roles';
 
@@ -56,6 +63,14 @@ class ProbeController {
   @RequiresRole(ADMIN)
   @Get('admin')
   admin(): void {}
+
+  @RequiresStaffSession(MODERATOR)
+  @Get('staff')
+  staff(): void {}
+
+  @RequiresStaffSession(ADMIN)
+  @Get('staff-admin')
+  staffAdmin(): void {}
 }
 
 @Controller('bare')
@@ -77,6 +92,8 @@ describe('AccessGuard', () => {
   };
   const tokenFor = (userId: number): string =>
     `Bearer ${new JwtService({ secret: SECRET }).sign({ sub: userId, email: 'someone@example.com' })}`;
+  const staffTokenFor = (userId: number): string =>
+    `Bearer ${new JwtService({ secret: SECRET }).sign({ sub: userId, email: 'someone@example.com', scope: STAFF_SCOPE })}`;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -171,6 +188,52 @@ describe('AccessGuard', () => {
 
       expect(response.status).toBe(HttpStatus.UNAUTHORIZED);
       expect(userService.getUserRole).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('a route requiring a staff session', () => {
+    it('refuses the token of a site sign-in whatever its role, and names the refusal', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/probe/staff')
+        .set('Authorization', tokenFor(ADMIN_USER));
+
+      expect(response.status).toBe(HttpStatus.UNAUTHORIZED);
+      expect(response.body).toMatchObject({ code: STAFF_SESSION_REQUIRED });
+      expect(userService.getUserRole).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a moderator', '/probe/staff', MODERATOR_USER, HttpStatus.OK],
+      ['an admin, who outranks it', '/probe/staff', ADMIN_USER, HttpStatus.OK],
+      ['an account that lost its role', '/probe/staff', PLAIN_USER, HttpStatus.FORBIDDEN],
+      ['an admin', '/probe/staff-admin', ADMIN_USER, HttpStatus.OK],
+      [
+        'a moderator, who ranks below it',
+        '/probe/staff-admin',
+        MODERATOR_USER,
+        HttpStatus.FORBIDDEN,
+      ],
+    ])('answers the staff token of %s on %s with %s', async (_caller, path, userId, status) => {
+      const response = await request(app.getHttpServer())
+        .get(path)
+        .set('Authorization', staffTokenFor(userId));
+
+      expect(response.status).toBe(status);
+    });
+
+    it('refuses an anonymous caller', async () => {
+      const response = await request(app.getHttpServer()).get('/probe/staff');
+
+      expect(response.status).toBe(HttpStatus.UNAUTHORIZED);
+      expect(response.body).not.toHaveProperty('code');
+    });
+
+    it('takes a staff token on a route that only asks for a role', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/probe/admin')
+        .set('Authorization', staffTokenFor(ADMIN_USER));
+
+      expect(response.status).toBe(HttpStatus.OK);
     });
   });
 
