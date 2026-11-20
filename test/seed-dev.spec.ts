@@ -8,7 +8,7 @@ const mockPrisma = {
   user: { upsert: jest.fn() },
   friendship: { upsert: jest.fn() },
   friendRequest: { upsert: jest.fn() },
-  project: { findMany: jest.fn() },
+  project: { findMany: jest.fn(), update: jest.fn() },
   $disconnect: jest.fn(),
 };
 
@@ -79,6 +79,26 @@ describe('seed:dev', () => {
 
     expect(codes).not.toHaveLength(0);
     expect(codes.map(normalizeFriendCode)).toEqual(codes);
+  });
+
+  it('gives a few games the disk their author chose, without dating them as edited', async () => {
+    const updatedAt = new Date('2026-11-02T08:00:00Z');
+    mockPrisma.project.findMany.mockImplementation(async ({ where }: { where?: object }) =>
+      where ? [{ id: 4, name: 'Duel', updatedAt }] : [],
+    );
+
+    await runSeed();
+
+    expect(mockPrisma.project.update).toHaveBeenCalledWith({
+      where: { id: 4 },
+      data: {
+        diskColor: '#ffd100',
+        diskFinish: 'gold',
+        diskColor2: null,
+        diskGradDir: null,
+        updatedAt,
+      },
+    });
   });
 
   it('seeds the analytics after the people, unless told not to', async () => {

@@ -1,8 +1,8 @@
 /**
  * Development seed: people, friendships, pending requests and shared game sessions, so the lists
  * and panels that stay hidden on an empty database have rows to draw, 80 days of usage
- * analytics for the admin console (`seed-dev-analytics.ts`), collections of the published games
- * (`seed-dev-collections.ts`), and a month of views, likes, comments and plays for the hub to
+ * analytics for the admin console (`seed-dev-analytics.ts`), a disk style on a few games,
+ * collections of the published games (`seed-dev-collections.ts`), and a month of views, likes, comments and plays for the hub to
  * rank the published games on (`seed-dev-hub.ts`).
  *
  *   npm run seed:dev                         everything
@@ -22,6 +22,8 @@ import * as bcrypt from 'bcryptjs';
 
 import { getOptionalEnv } from '../src/config/env';
 import { databaseUrl } from '../src/prisma/database-url';
+import { DiskStyleDto } from '../src/routes/project/dto/disk-style.dto';
+import { keepEditTime } from '../src/routes/project/keep-edit-time';
 import { clearAnalytics, seedAnalytics } from './seed-dev-analytics';
 import { seedCollections } from './seed-dev-collections';
 import { seedHubSignals } from './seed-dev-hub';
@@ -123,6 +125,16 @@ const SHARED_SESSIONS: {
     hostedByThem: true,
   },
 ];
+
+/**
+ * Disks their authors chose, by project name as the Frontend's `tools/seed-content.ts` spells it.
+ * The other games keep the colour a client derives from their id, so a local hub shows both.
+ */
+const DISK_STYLES: Record<string, DiskStyleDto> = {
+  'Snake 8-bit': { color: '#10d275', finish: 'stripes', color2: '#bfff3c' },
+  'Moon Lander': { color: '#234975', finish: 'gradient', color2: '#430067', gradDir: 'v' },
+  Duel: { color: '#ffd100', finish: 'gold' },
+};
 
 function assertLocalDatabase(url: string): void {
   // A deployment reaches its database under a compose service name too, so the host alone does
@@ -277,6 +289,32 @@ async function seedGameSessions(
   return { total, made };
 }
 
+/** Answers how many games it styled; none while the Frontend's games are not seeded. */
+async function seedDiskStyles(): Promise<number> {
+  const games = await prisma.project.findMany({
+    where: { name: { in: Object.keys(DISK_STYLES) } },
+    select: { id: true, name: true, updatedAt: true },
+  });
+
+  for (const game of games) {
+    const disk = DISK_STYLES[game.name];
+    if (!disk) {
+      continue;
+    }
+    await prisma.project.update({
+      where: { id: game.id },
+      data: {
+        diskColor: disk.color,
+        diskFinish: disk.finish,
+        diskColor2: disk.color2 ?? null,
+        diskGradDir: disk.gradDir ?? null,
+        ...keepEditTime(game),
+      },
+    });
+  }
+  return games.length;
+}
+
 async function main(): Promise<void> {
   assertLocalDatabase(connectionString);
   if (process.argv.includes('--clear-analytics')) {
@@ -291,6 +329,7 @@ async function main(): Promise<void> {
 
   await seedSocialGraph(ids, alexis);
   const sessions = await seedGameSessions(ids, alexis);
+  const styled = await seedDiskStyles();
 
   console.log(`seeded ${String(ids.size)} people`);
   console.log(`  sign in as any of them: <name>@naucto.local / ${DEV_PASSWORD}`);
@@ -304,6 +343,7 @@ async function main(): Promise<void> {
       : `  ${String(sessions.total)} shared game sessions (${String(sessions.made)} new), ` +
           'so PLAYED WITH RECENTLY has rows',
   );
+  console.log(`  ${String(styled)} games with a disk their author chose`);
   if (!process.argv.includes('--no-analytics')) {
     console.log(`analytics: ${await seedAnalytics(prisma)}`);
   }
