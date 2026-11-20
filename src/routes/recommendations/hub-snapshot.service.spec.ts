@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import { HubSnapshot } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { CollectionsService } from '../collections/collections.service';
 import { HubSnapshotService } from './hub-snapshot.service';
 import { RecommendationsService } from './recommendations.service';
 
@@ -46,6 +47,7 @@ describe('HubSnapshotService', () => {
     },
   };
   const recommendations = { electGameOfTheWeek: jest.fn() };
+  const collections = { listedWithGames: jest.fn() };
   let service: HubSnapshotService;
 
   beforeEach(() => {
@@ -63,10 +65,12 @@ describe('HubSnapshotService', () => {
       return create;
     });
     prisma.hubSnapshot.deleteMany.mockResolvedValue({ count: 0 });
+    collections.listedWithGames.mockResolvedValue([]);
 
     service = new HubSnapshotService(
       prisma as unknown as PrismaService,
       recommendations as unknown as RecommendationsService,
+      collections as unknown as CollectionsService,
     );
   });
 
@@ -157,6 +161,18 @@ describe('HubSnapshotService', () => {
       expect(recommendations.electGameOfTheWeek).toHaveBeenCalledWith([3, 5, 1], NOW);
     });
 
+    it('puts forward the public collections holding three games on the hub', async () => {
+      collections.listedWithGames.mockResolvedValue([
+        { id: 'trio', ownerId: 1, games: [1, 2, 3] },
+        { id: 'pair', ownerId: 2, games: [1, 2] },
+      ]);
+
+      await service.refresh(NOW);
+
+      const payload = rows.get(TODAY.getTime())?.payload as { collections: object };
+      expect(payload.collections).toEqual({ total: 2, ids: ['trio'] });
+    });
+
     it('drops the snapshots older than sixty days', async () => {
       await service.refresh(NOW);
 
@@ -194,7 +210,10 @@ describe('HubSnapshotService', () => {
 
   describe('today', () => {
     it('answers the stored row of the day without computing anything', async () => {
-      const payload = { popular: { total: 1, games: [9] } };
+      const payload = {
+        popular: { total: 1, games: [9] },
+        collections: { total: 1, ids: ['one'] },
+      };
       rows.set(TODAY.getTime(), { day: TODAY, computedAt: NOW, payload });
 
       await expect(service.today(new Date('2026-11-20T15:00:00Z'))).resolves.toEqual({
@@ -203,6 +222,16 @@ describe('HubSnapshotService', () => {
       });
       expect(prisma.project.findMany).not.toHaveBeenCalled();
       expect(recommendations.electGameOfTheWeek).not.toHaveBeenCalled();
+    });
+
+    it('reads a row written before collections had a shelf as a day without any', async () => {
+      const payload = { popular: { total: 1, games: [9] } };
+      rows.set(TODAY.getTime(), { day: TODAY, computedAt: NOW, payload });
+
+      await expect(service.today(NOW)).resolves.toEqual({
+        day: '2026-11-20',
+        payload: { ...payload, collections: { total: 0, ids: [] } },
+      });
     });
 
     it('computes a day that has no row yet, once for everyone asking meanwhile', async () => {

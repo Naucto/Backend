@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { HubSnapshot, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { CollectionsService } from '../collections/collections.service';
 import { hubTags } from '../project/hub-fields';
 import { LIVE_COMMENT, LIVE_COMMENT_SQL, PUBLISHED } from '../project/project-select';
 import { activity, DailySignals, engagement, TRENDING_WINDOW_DAYS } from './hub-scoring';
@@ -24,8 +25,15 @@ function utcDay(at: Date): Date {
   return new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate()));
 }
 
-const payloadOf = (snapshot: HubSnapshot): HubSnapshotPayload =>
-  snapshot.payload as unknown as HubSnapshotPayload;
+type StoredPayload = Omit<HubSnapshotPayload, 'collections'> &
+  Partial<Pick<HubSnapshotPayload, 'collections'>>;
+
+/** A row written before collections had a shelf holds none. */
+const payloadOf = (snapshot: HubSnapshot): HubSnapshotPayload => {
+  const stored = snapshot.payload as unknown as StoredPayload;
+
+  return { ...stored, collections: stored.collections ?? { total: 0, ids: [] } };
+};
 
 /**
  * Computes the hub once per UTC day and keeps it: the shelves a day shows are drawn when the day
@@ -41,6 +49,7 @@ export class HubSnapshotService implements OnApplicationBootstrap, OnApplication
   constructor(
     private readonly prisma: PrismaService,
     private readonly recommendations: RecommendationsService,
+    private readonly collections: CollectionsService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -140,7 +149,10 @@ export class HubSnapshotService implements OnApplicationBootstrap, OnApplication
 
   /** Computes `day`, writes its row over any it already has, and drops the rows past retention. */
   private async write(day: Date, now: Date): Promise<HubSnapshot> {
-    const candidates = await this.readCandidates(day);
+    const [candidates, collections] = await Promise.all([
+      this.readCandidates(day),
+      this.collections.listedWithGames(),
+    ]);
 
     // The best trending game of the days just read, then the most played, lead the vote.
     await this.recommendations.electGameOfTheWeek(
@@ -155,6 +167,7 @@ export class HubSnapshotService implements OnApplicationBootstrap, OnApplication
     });
     const payload = composeSnapshot(
       candidates,
+      collections,
       day.toISOString().slice(0, 10),
       yesterday && payloadOf(yesterday),
     ) as unknown as Prisma.InputJsonObject;

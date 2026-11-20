@@ -1,12 +1,21 @@
-export const HUB_SHELF_KINDS = ['POPULAR', 'TRENDING', 'FRIENDS', 'TAG'] as const;
+export const HUB_SHELF_KINDS = ['POPULAR', 'TRENDING', 'FRIENDS', 'TAG', 'COLLECTIONS'] as const;
 export type HubShelfKind = (typeof HUB_SHELF_KINDS)[number];
 
-/** A shelf as a client names it: `popular`, `trending`, `friends`, or `tag:<tag>`. */
-export type HubShelfKey = { kind: Exclude<HubShelfKind, 'TAG'> } | { kind: 'TAG'; tag: string };
+type FixedGameShelf = Exclude<HubShelfKind, 'TAG' | 'COLLECTIONS'>;
+
+/**
+ * A shelf of games as a client names it: `popular`, `trending`, `friends`, or `tag:<tag>`. The
+ * shelf of collections has no key here: it holds no game, and its "see all" is the public list
+ * of collections.
+ */
+export type HubShelfKey = { kind: FixedGameShelf } | { kind: 'TAG'; tag: string };
+
+/** What the shelf of collections is named by in an answer. */
+export const COLLECTIONS_SHELF_KEY = 'collections';
 
 const TAG_PREFIX = 'tag:';
 
-const FIXED_KEYS: Record<string, Exclude<HubShelfKind, 'TAG'>> = {
+const FIXED_KEYS: Record<string, FixedGameShelf> = {
   popular: 'POPULAR',
   trending: 'TRENDING',
   friends: 'FRIENDS',

@@ -3,6 +3,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { pageWindow } from '../../common/page-window';
 import { PresenceService } from '../../presence/presence.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CollectionsService } from '../collections/collections.service';
 import { FriendsService } from '../friends/friends.service';
 import { HubGameDto } from '../project/dto/hub-game.dto';
 import { HubService } from '../project/hub.service';
@@ -14,8 +15,8 @@ import {
   HubShelfPageDto,
   HubShelfPageQueryDto,
 } from './dto/hub.dto';
-import { HUB_SHELF_SIZE } from './hub-limits';
-import { formatShelfKey, HubShelfKey, parseShelfKey } from './hub-shelf-key';
+import { HUB_COLLECTION_MIN_GAMES, HUB_COLLECTIONS_SIZE, HUB_SHELF_SIZE } from './hub-limits';
+import { COLLECTIONS_SHELF_KEY, formatShelfKey, HubShelfKey, parseShelfKey } from './hub-shelf-key';
 import { HubSnapshotPayload, ShelfPool } from './hub-snapshot';
 import { HubSnapshotService } from './hub-snapshot.service';
 import { RecommendationsService } from './recommendations.service';
@@ -60,6 +61,7 @@ export class HubFeedService {
     private readonly recommendations: RecommendationsService,
     private readonly friendsService: FriendsService,
     private readonly presence: PresenceService,
+    private readonly collections: CollectionsService,
   ) {}
 
   private requireKey(raw: string): HubShelfKey {
@@ -187,10 +189,11 @@ export class HubFeedService {
 
   async feed(viewer: Viewer, now = new Date()): Promise<HubResponseDto> {
     const { day, payload } = await this.snapshots.today(now);
-    const [featured, lastEdited, friends, [mostPlayed]] = await Promise.all([
+    const [featured, lastEdited, friends, putForward, [mostPlayed]] = await Promise.all([
       this.recommendations.getCurrent(),
       viewer === null ? null : this.hubService.fetchLastEdited(viewer),
       this.pool({ kind: 'FRIENDS' }, payload, viewer, now),
+      this.collections.listedByIds(payload.collections.ids),
       // The game the reader played most over the last weeks; none without a play history.
       viewer === null
         ? []
@@ -206,6 +209,10 @@ export class HubFeedService {
             take: 1,
           }),
     ]);
+    // Drawn this morning: one may have lost games to an unpublish since.
+    const collections = putForward
+      .filter((collection) => collection.gameCount >= HUB_COLLECTION_MIN_GAMES)
+      .slice(0, HUB_COLLECTIONS_SIZE);
     const games = await this.gamesById([
       ...payload.popular.games.slice(0, HUB_SHELF_SIZE),
       ...payload.trending.games,
@@ -258,6 +265,17 @@ export class HubFeedService {
         ...this.toShelf({ kind: 'POPULAR' }, payload.popular, games),
         ...this.toShelf({ kind: 'FRIENDS' }, friends, games),
         ...this.toShelf({ kind: 'TRENDING' }, payload.trending, games),
+        ...(collections.length > 0
+          ? [
+              {
+                key: COLLECTIONS_SHELF_KEY,
+                kind: 'COLLECTIONS' as const,
+                total: payload.collections.total,
+                games: [],
+                collections,
+              },
+            ]
+          : []),
       ],
       more: payload.tags.map(({ tag }) => formatShelfKey({ kind: 'TAG', tag })),
     };

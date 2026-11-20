@@ -1,4 +1,4 @@
-import { HUB_SHELF_SIZE } from './hub-limits';
+import { HUB_COLLECTION_MIN_GAMES, HUB_COLLECTIONS_SIZE, HUB_SHELF_SIZE } from './hub-limits';
 import {
   keepApart,
   REPEAT_OPENER_WEIGHT,
@@ -32,6 +32,14 @@ export interface HubCandidate {
   daysOut: number;
 }
 
+/** What the engine knows of a collection of the public list. */
+export interface HubCollectionCandidate {
+  id: string;
+  ownerId: number;
+  /** Its games on the hub. */
+  games: number[];
+}
+
 /** A shelf as a snapshot keeps it: the day's order of its pool, and how many games it lists. */
 export interface ShelfPool {
   total: number;
@@ -46,6 +54,11 @@ export interface HubSnapshotPayload {
   rising: number[];
   /** The tag shelves of the day, in the order the page offers them. */
   tags: (ShelfPool & { tag: string })[];
+  /**
+   * The collections put forward, one per owner, and how many the public list holds. Twice what
+   * the shelf shows are kept, so one that leaves during the day has another to take its place.
+   */
+  collections: { total: number; ids: string[] };
 }
 
 type Scored = { id: number; authorId: number; score: number };
@@ -81,6 +94,7 @@ function drawPool(
  */
 export function composeSnapshot(
   games: HubCandidate[],
+  collections: HubCollectionCandidate[],
   day: string,
   yesterday: HubSnapshotPayload | null,
 ): HubSnapshotPayload {
@@ -150,10 +164,34 @@ export function composeSnapshot(
       ),
     }));
 
+  const activityOf = new Map(games.map((game) => [game.id, game.activity]));
+  const owners = new Set<number>();
+  const putForward = weightedOrder(
+    collections.filter((collection) => collection.games.length >= HUB_COLLECTION_MIN_GAMES),
+    seed('collections'),
+    (collection) => collection.id,
+    (collection) => {
+      // Every collection keeps a chance to open the shelf; one whose games move gets more.
+      const weight = 1 + collection.games.reduce((sum, id) => sum + (activityOf.get(id) ?? 0), 0);
+
+      return collection.id === yesterday?.collections.ids[0]
+        ? weight * REPEAT_OPENER_WEIGHT
+        : weight;
+    },
+  ).filter(({ ownerId }) => {
+    const first = !owners.has(ownerId);
+    owners.add(ownerId);
+    return first;
+  });
+
   return {
     popular: { total: games.length, games: popular },
     trending: { total: trending.length, games: trending },
     rising,
     tags,
+    collections: {
+      total: collections.length,
+      ids: putForward.slice(0, 2 * HUB_COLLECTIONS_SIZE).map((collection) => collection.id),
+    },
   };
 }

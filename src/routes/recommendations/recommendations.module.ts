@@ -4,6 +4,7 @@ import { AuthModule } from '../../auth/auth.module';
 import { NotificationsModule } from '../../notifications/notifications.module';
 import { PresenceModule } from '../../presence/presence.module';
 import { PrismaModule } from '../../prisma/prisma.module';
+import { CollectionsModule } from '../collections/collections.module';
 import { FriendsModule } from '../friends/friends.module';
 import { ProjectModule } from '../project/project.module';
 import { AdminFeaturedReleaseController } from './admin-featured-release.controller';
@@ -22,6 +23,7 @@ import { RecommendationsService } from './recommendations.service';
     NotificationsModule,
     FriendsModule,
     PresenceModule,
+    CollectionsModule,
   ],
   controllers: [FeaturedReleaseController, AdminFeaturedReleaseController, HubFeedController],
   providers: [RecommendationsService, HubSnapshotService, HubFeedService],

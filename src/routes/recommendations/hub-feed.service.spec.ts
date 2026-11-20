@@ -3,6 +3,8 @@ import { BadRequestException } from '@nestjs/common';
 import { aProject } from '../../../test/project-mocks';
 import { PresenceService } from '../../presence/presence.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CollectionsService } from '../collections/collections.service';
+import { CollectionPreviewDto } from '../collections/dto/collection.dto';
 import { FriendsService } from '../friends/friends.service';
 import { HubService } from '../project/hub.service';
 import { ReleaseProject } from '../project/project-select';
@@ -27,6 +29,19 @@ const release = (id: number, overrides: Partial<ReleaseProject> = {}): ReleasePr
   ...overrides,
 });
 
+/** A public collection as a list shows it, owned by someone of its own. */
+const collection = (index: number, gameCount = 5): CollectionPreviewDto => ({
+  id: `c${index}`,
+  title: `Collection ${index}`,
+  description: null,
+  visibility: 'PUBLIC',
+  owner: { id: 500 + index, username: `owner${index}` },
+  gameCount,
+  createdAt: NOW,
+  updatedAt: NOW,
+  games: [],
+});
+
 const range = (from: number, to: number): number[] =>
   Array.from({ length: to - from + 1 }, (_, index) => from + index);
 
@@ -47,6 +62,9 @@ describe('HubFeedService', () => {
   const recommendations = { getCurrent: jest.fn() };
   const friendsService = { friendIdsOf: jest.fn() };
   const presence = { get: jest.fn() };
+  /** The collections of the public list; an id missing from it reads as one that left. */
+  let listed: CollectionPreviewDto[];
+  const collections = { listedByIds: jest.fn() };
   let service: HubFeedService;
 
   /** What friends played lately, as the grouping by game and friend answers it. */
@@ -75,7 +93,12 @@ describe('HubFeedService', () => {
         { tag: 'arcade', total: 4, games: [3, 33, 35, 52] },
         { tag: 'puzzle', total: 3, games: [5, 6, 7] },
       ],
+      collections: { total: 0, ids: [] },
     };
+    listed = [];
+    collections.listedByIds.mockImplementation(async (ids: string[]) =>
+      ids.flatMap((id) => listed.find((one) => one.id === id) ?? []),
+    );
     snapshots.today.mockImplementation(async () => ({ day: '2026-11-20', payload }));
     hubService.fetchReleasesByIds.mockImplementation(async (ids: number[]) =>
       ids.flatMap((id) => onHub.get(id) ?? []),
@@ -94,6 +117,7 @@ describe('HubFeedService', () => {
       recommendations as unknown as RecommendationsService,
       friendsService as unknown as FriendsService,
       presence as unknown as PresenceService,
+      collections as unknown as CollectionsService,
     );
   });
 
@@ -168,6 +192,73 @@ describe('HubFeedService', () => {
 
       expect(feed.shelves.map((shelf) => shelf.key)).toEqual(['popular']);
       expect(feed.shelves[0]?.games.map((game) => game.id)).not.toContain(2);
+    });
+
+    describe('collections', () => {
+      const putForward = (...drawn: CollectionPreviewDto[]): void => {
+        listed = drawn;
+        payload.collections = { total: 40, ids: drawn.map((one) => one.id) };
+      };
+
+      it('follow trending as one shelf of collections, in the order of the day', async () => {
+        putForward(collection(2), collection(1));
+
+        const feed = await service.feed(null, NOW);
+
+        expect(feed.shelves.map((shelf) => shelf.key)).toEqual([
+          'popular',
+          'trending',
+          'collections',
+        ]);
+        expect(feed.shelves[2]).toEqual({
+          key: 'collections',
+          kind: 'COLLECTIONS',
+          total: 40,
+          games: [],
+          collections: [collection(2), collection(1)],
+        });
+      });
+
+      it('have no shelf on a day without any', async () => {
+        const feed = await service.feed(null, NOW);
+
+        expect(feed.shelves.map((shelf) => shelf.kind)).not.toContain('COLLECTIONS');
+      });
+
+      it('leave out one that left the public list since the day was drawn', async () => {
+        putForward(collection(1), collection(2));
+        listed = [collection(2)];
+
+        const feed = await service.feed(null, NOW);
+
+        expect(feed.shelves[2]?.collections?.map((one) => one.id)).toEqual(['c2']);
+      });
+
+      it('leave out one that fell under three games on the hub', async () => {
+        putForward(collection(1, 2), collection(2, 3));
+
+        const feed = await service.feed(null, NOW);
+
+        expect(feed.shelves[2]?.collections?.map((one) => one.id)).toEqual(['c2']);
+      });
+
+      it('have no shelf once every one drawn is gone', async () => {
+        putForward(collection(1, 2));
+
+        const feed = await service.feed(null, NOW);
+
+        expect(feed.shelves.map((shelf) => shelf.key)).toEqual(['popular', 'trending']);
+      });
+
+      it('show twelve at most, the spare ones standing in for those that left', async () => {
+        putForward(...range(1, 24).map((index) => collection(index, index === 3 ? 0 : 5)));
+
+        const feed = await service.feed(null, NOW);
+
+        expect(feed.shelves[2]?.collections?.map((one) => one.id)).toEqual(
+          [1, 2, ...range(4, 13)].map((index) => `c${index}`),
+        );
+      });
     });
 
     it('reads nothing about anyone', async () => {
@@ -394,6 +485,12 @@ describe('HubFeedService', () => {
         BadRequestException,
       );
       await expect(service.shelves(['staff-picks'], null, NOW)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('refuses the shelf of collections, which the public list of collections serves', async () => {
+      await expect(service.shelves(['collections'], null, NOW)).rejects.toBeInstanceOf(
         BadRequestException,
       );
     });

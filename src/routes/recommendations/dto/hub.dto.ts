@@ -14,9 +14,15 @@ import {
 } from 'class-validator';
 
 import { MAX_PAGE_SIZE, PaginationQueryDto } from '../../../common/dto/pagination-query.dto';
+import { CollectionPreviewDto } from '../../collections/dto/collection.dto';
 import { HubGameDto } from '../../project/dto/hub-game.dto';
 import { RELEASE_SORTS, ReleaseSort } from '../../project/hub.service';
-import { HUB_SHELF_KEY_MAX_LENGTH, HUB_SHELF_KEYS_MAX, HUB_SHELF_SIZE } from '../hub-limits';
+import {
+  HUB_COLLECTIONS_SIZE,
+  HUB_SHELF_KEY_MAX_LENGTH,
+  HUB_SHELF_KEYS_MAX,
+  HUB_SHELF_SIZE,
+} from '../hub-limits';
 import { HUB_SHELF_KINDS, HubShelfKind } from '../hub-shelf-key';
 
 export const HUB_REASONS = [
@@ -53,7 +59,8 @@ export class HubHeroSlotDto {
 
 export class HubShelfDto {
   @ApiProperty({
-    description: 'What names the shelf to the shelf routes',
+    description:
+      'What names the shelf to the shelf routes. They do not serve `collections`: its "see all" is GET /collections',
     example: 'tag:Platformer',
   })
   key!: string;
@@ -64,14 +71,21 @@ export class HubShelfDto {
   @ApiPropertyOptional({ description: 'The tag of a TAG shelf', example: 'Platformer' })
   tag?: string;
 
-  @ApiProperty({ description: 'Games its "see all" lists', example: 57 })
+  @ApiProperty({ description: 'Games, or collections, its "see all" lists', example: 57 })
   total!: number;
 
   @ApiProperty({
     type: [HubGameDto],
-    description: `Its games in order: the first ${HUB_SHELF_SIZE} on the hub, one page in "see all"`,
+    description: `Its games in order: the first ${HUB_SHELF_SIZE} on the hub, one page in "see all". Empty for COLLECTIONS`,
   })
   games!: HubGameDto[];
+
+  @ApiPropertyOptional({
+    type: [CollectionPreviewDto],
+    description: `The collections of a COLLECTIONS shelf in order, one per owner, ${HUB_COLLECTIONS_SIZE} at most`,
+    maxItems: HUB_COLLECTIONS_SIZE,
+  })
+  collections?: CollectionPreviewDto[];
 }
 
 export class HubResponseDto {
