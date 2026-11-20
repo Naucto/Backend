@@ -10,7 +10,7 @@ import {
 } from '@prisma/client';
 
 import { PageRequest, toSkipTake } from '../../common/dto/pagination-query.dto';
-import { getOptionalEnv } from '../../config/env';
+import { siteUrls } from '../../common/site-urls';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   ADMIN_ACCOUNT_SELECT,
@@ -104,11 +104,6 @@ function averageOf(scores: number[]): RatingAverageDto {
 /** What the admin console reads of reports, and the triage it writes back. */
 @Injectable()
 export class AdminReportsService {
-  private readonly frontendUrl = getOptionalEnv('FRONTEND_URL', 'http://localhost:3001').replace(
-    /\/+$/,
-    '',
-  );
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly s3Service: S3Service,
@@ -295,7 +290,7 @@ export class AdminReportsService {
     return {
       ...toAccountSummary(row),
       deleted,
-      profileUrl: deleted ? null : `${this.frontendUrl}/u/${encodeURIComponent(row.username)}`,
+      profileUrl: deleted ? null : siteUrls.profile(row.username),
     };
   }
 
