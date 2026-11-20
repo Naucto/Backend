@@ -359,9 +359,12 @@ on the client side only: the routes answer whatever the flag says.
 - How a game is drawn is live, not released: the cover, the clip (`POST`/`DELETE
   /projects/:id/clip`, WebM or MP4 by declared type and by content, 4 MiB, public-read) and the
   disk style (`PATCH /projects/:id/disk`) change the moment a collaborator sets them, take no part
-  in the release hash, and reach every answer through `ProjectService.lookOf`. A disk colour is one
-  of the engine's default palette, mirrored in `dto/disk-style-limits.ts` from the Frontend
-  repository; no style means the client derives a colour from the project id.
+  in the release hash, and reach every answer through `ProjectService.lookOf`. A disk colour is any
+  `#rrggbb`; no style means the client derives a colour from the project id.
+- `Project.palette` mirrors the palette of the game's content, written by the editor through
+  `PUT /projects/:id` as the name and the tags are, so a client can draw with the game's colours
+  without the engine. It is live as well, travels with project and release answers but not with
+  hub cards, and a fork starts with its source's.
 
 **Collections** (`src/routes/collections/`), a person's lists of games:
 
