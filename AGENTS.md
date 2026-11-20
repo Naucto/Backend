@@ -60,7 +60,7 @@ from `client/` (see `client/README.md`).
 | `npm run client:build`                                                              | Emit `swagger.json`, then generate + compile `@naucto/api-client` into `client/dist` (what the publish workflow runs)                                                                                                             |
 | `npx prisma migrate dev --name <desc>`                                              | Create + apply a dev migration from the schema                                                                                                                                                                                    |
 | `npx prisma generate`                                                               | Regenerate the Prisma client                                                                                                                                                                                                      |
-| `npm run seed:dev`                                                                  | Seed a local database with people, friendships, pending requests, shared game sessions, 80 days of coherent analytics up to now (`-- --no-analytics` skips them, `-- --clear-analytics` removes them) and a month of views, likes, comments and plays for the hub to rank on. Refuses non-local hosts |
+| `npm run seed:dev`                                                                  | Seed a local database with people, friendships, pending requests, shared game sessions, 80 days of coherent analytics up to now (`-- --no-analytics` skips them, `-- --clear-analytics` removes them), collections of the published games and a month of views, likes, comments and plays for the hub to rank on. Refuses non-local hosts |
 | `npm run analytics:acceptance`                                                      | Run the analytics acceptance scenarios against a scratch copy of the local database, over two connections; by hand, never in CI                                                                                                   |
 | `npm run repair:release-view-keys`                                                  | Delete the release view keys once derived from readers' addresses (one-off)                                                                                                                                                       |
 | `docker compose -f docker-compose.yml -f docker-compose.dev.yml up --watch backend` | Dev stack: Postgres, MinIO, and the API with hot reload                                                                                                                                                                           |
@@ -333,9 +333,10 @@ on the client side only: the routes answer whatever the flag says.
 
 **Hub** (`src/routes/recommendations/`), what the hub puts forward:
 
-- The hub is drawn once per UTC day and kept as one `HubSnapshot` row of project ids: at 00:05 UTC,
-  at start, and on the first request of a day that has no row. Only the whole days before the one
-  computed are read, so computing a day again writes the same row. Rows are kept 60 days.
+- The hub is drawn once per UTC day and kept as one `HubSnapshot` row of project and collection
+  ids: at 00:05 UTC, at start, and on the first request of a day that has no row. Only the whole
+  days before the one computed are read, so computing a day again writes the same row. Rows are
+  kept 60 days.
 - `hub-scoring.ts` holds every formula as a pure function and `hub-snapshot.ts` composes a day from
   them. A draw is seeded by the day and the shelf (`draw`), never by `Math.random`, so a spec with
   a fixed day sees the shelves a visitor would.
@@ -354,6 +355,23 @@ on the client side only: the routes answer whatever the flag says.
 - A card is a `HubGameDto`, built field by field by `toHubGame`: spreading a project row would hand
   out its content size and release hash. Its `coverUrl` comes from the row (`Project.coverVersion`,
   written at upload); a list never asks the store about a cover.
+
+**Collections** (`src/routes/collections/`), a person's lists of games:
+
+- Who reads one is decided in `CollectionsService` alone: `PUBLIC` by anyone, `UNLISTED` by whoever
+  holds its id, `PRIVATE` by its owner. A private one answers anyone else 404, as an id that names
+  nothing does, and only the owner writes. The id is a random UUID because an unlisted collection
+  has nothing else to keep it from being walked.
+- A game is added only while it is on the hub (`PUBLISHED`), and shows only while it is. Its row
+  stays when it leaves, so the owner is told it is unavailable (`unavailableGameIds`) and can
+  remove it, and it comes back in place if it is published again. `gameCount` and the previews
+  count the games on the hub; the 200 limit counts every row.
+- Deleting a project or a collection takes its rows by foreign key. An account is soft-deleted, so
+  `AccountDeletionService` deletes its collections itself.
+- The public list (`GET /collections`) holds the public collections with at least one game on the
+  hub. The hub's shelf of them is drawn with the day (`composeSnapshot`): three games on the hub
+  at least, weighted by the activity of those games, one per owner. Its "see all" is the public
+  list, not a shelf route.
 
 ## Conventions (not all enforced by tooling — follow these)
 
