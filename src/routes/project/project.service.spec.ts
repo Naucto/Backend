@@ -144,6 +144,16 @@ describe('ProjectService', () => {
       expect(stored).toEqual({ color: '#16171a', finish: 'holo' });
     });
 
+    it('stores the colours in lower case, however they were spelled', async () => {
+      const stored = await service.setDisk(4, {
+        color: '#FF8426',
+        finish: 'stripes',
+        color2: '#AbCdEf',
+      });
+
+      expect(stored).toEqual({ color: '#ff8426', finish: 'stripes', color2: '#abcdef' });
+    });
+
     it('goes back to no chosen style with null', async () => {
       const stored = await service.setDisk(4, null);
 

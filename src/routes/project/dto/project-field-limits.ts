@@ -11,6 +11,9 @@ export const PROJECT_LONG_DESC_MAX_LENGTH = 300;
 /** Tags a project carries; a tag filter reads no more than this many either. */
 export const PROJECT_MAX_TAGS = 12;
 
+/** A colour as the API takes it, in either case; it is stored and answered in lower case. */
+export const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+
 /**
  * A clip is some 25 seconds of the game at its native 320×180, without sound: the size leaves
  * room for a busy screen at the bitrate a browser records at.

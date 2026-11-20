@@ -1,7 +1,7 @@
 import { Project } from '@prisma/client';
 
 import { DiskStyleDto } from './dto/disk-style.dto';
-import { DiskColor, DiskFinish, DiskGradDir } from './dto/disk-style-limits';
+import { DiskFinish, DiskGradDir } from './dto/disk-style-limits';
 import { HubGameDto } from './dto/hub-game.dto';
 import { ReleaseProject } from './project-select';
 
@@ -46,7 +46,7 @@ export function hubFields<T extends HubSnapshot>(project: T): T {
 
 /**
  * The disk an author chose, or null while they chose none. The colour and the finish are written
- * together, from values the route that sets them checked.
+ * together, and the finish and the direction from values the route that sets them checked.
  */
 export function diskOf(
   project: Pick<Project, 'diskColor' | 'diskFinish' | 'diskColor2' | 'diskGradDir'>,
@@ -56,9 +56,9 @@ export function diskOf(
   }
 
   return {
-    color: project.diskColor as DiskColor,
+    color: project.diskColor,
     finish: project.diskFinish as DiskFinish,
-    ...(project.diskColor2 ? { color2: project.diskColor2 as DiskColor } : {}),
+    ...(project.diskColor2 ? { color2: project.diskColor2 } : {}),
     ...(project.diskGradDir ? { gradDir: project.diskGradDir as DiskGradDir } : {}),
   };
 }

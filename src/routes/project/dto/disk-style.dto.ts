@@ -1,38 +1,32 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsIn, IsObject, IsOptional, ValidateIf, ValidateNested } from 'class-validator';
+import { IsIn, IsObject, IsOptional, Matches, ValidateIf, ValidateNested } from 'class-validator';
 
-import {
-  DISK_COLORS,
-  DISK_FINISHES,
-  DISK_GRAD_DIRS,
-  DiskColor,
-  DiskFinish,
-  DiskGradDir,
-} from './disk-style-limits';
+import { DISK_FINISHES, DISK_GRAD_DIRS, DiskFinish, DiskGradDir } from './disk-style-limits';
+import { HEX_COLOR } from './project-field-limits';
 
 /** The disk an author chose for their game. */
 export class DiskStyleDto {
   @ApiProperty({
-    enum: DISK_COLORS,
-    enumName: 'DiskColor',
-    description: 'A colour of the engine palette',
+    description: 'Any colour, as `#rrggbb`; answered in lower case',
+    example: '#ff8426',
+    pattern: HEX_COLOR.source,
   })
-  @IsIn(DISK_COLORS)
-  color!: DiskColor;
+  @Matches(HEX_COLOR)
+  color!: string;
 
   @ApiProperty({ enum: DISK_FINISHES, enumName: 'DiskFinish' })
   @IsIn(DISK_FINISHES)
   finish!: DiskFinish;
 
   @ApiPropertyOptional({
-    enum: DISK_COLORS,
-    enumName: 'DiskColor',
-    description: 'The second colour, for a finish that takes two',
+    description: 'The second colour, for a finish that takes two, as `#rrggbb`',
+    example: '#ffd100',
+    pattern: HEX_COLOR.source,
   })
   @IsOptional()
-  @IsIn(DISK_COLORS)
-  color2?: DiskColor;
+  @Matches(HEX_COLOR)
+  color2?: string;
 
   @ApiPropertyOptional({
     enum: DISK_GRAD_DIRS,

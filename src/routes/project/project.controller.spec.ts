@@ -26,7 +26,7 @@ import { EdgeService } from '../s3/edge.service';
 import { S3DownloadException, S3ObjectNotFoundException } from '../s3/s3.error';
 import { S3Service } from '../s3/s3.service';
 import { PROJECT_BLOB_MAX_BYTES } from './content-size';
-import { DISK_COLORS, DISK_FINISHES, DISK_GRAD_DIRS } from './dto/disk-style-limits';
+import { DISK_FINISHES, DISK_GRAD_DIRS } from './dto/disk-style-limits';
 import { PROJECT_CLIP_MAX_BYTES } from './dto/project-field-limits';
 import { HubController } from './hub.controller';
 import type { ReleaseWindow } from './hub.service';
@@ -462,6 +462,14 @@ describe('project controllers', () => {
         expect(response.body).toEqual({ disk });
       });
 
+      it('takes any colour, whatever palette the game draws with', async () => {
+        const disk = { color: '#123456', finish: 'stripes', color2: '#ABCDEF' };
+
+        await http().patch('/projects/12/disk').send({ disk }).expect(200);
+
+        expect(setDisk).toHaveBeenCalledWith(OWN_PROJECT, disk);
+      });
+
       it('clears it with null', async () => {
         const response = await http().patch('/projects/12/disk').send({ disk: null }).expect(200);
 
@@ -471,15 +479,17 @@ describe('project controllers', () => {
 
       it.each([
         ['no disk at all', {}],
-        ['a colour outside the engine palette', { disk: { color: '#123456', finish: 'solid' } }],
-        ['a palette colour spelled another way', { disk: { color: '#FF8426', finish: 'solid' } }],
-        ['a colour that is not one', { disk: { color: 'red', finish: 'solid' } }],
+        ['a colour by its name', { disk: { color: 'red', finish: 'solid' } }],
+        ['a colour of three digits', { disk: { color: '#f80', finish: 'solid' } }],
+        ['a colour with an alpha', { disk: { color: '#ff8426cc', finish: 'solid' } }],
+        ['a colour without its hash', { disk: { color: 'ff8426', finish: 'solid' } }],
+        ['a colour that is not hexadecimal', { disk: { color: '#gg8426', finish: 'solid' } }],
         ['a finish it does not know', { disk: { color: '#ff8426', finish: 'glitter' } }],
         ['no finish', { disk: { color: '#ff8426' } }],
         ['no colour', { disk: { finish: 'gold' } }],
         [
-          'a second colour outside the palette',
-          { disk: { color: '#ff8426', finish: 'stripes', color2: '#000000' } },
+          'a second colour that is not `#rrggbb`',
+          { disk: { color: '#ff8426', finish: 'stripes', color2: 'black' } },
         ],
         [
           'a direction it does not know',
@@ -508,7 +518,7 @@ describe('project controllers', () => {
           for (const gradDir of DISK_GRAD_DIRS) {
             await http()
               .patch('/projects/12/disk')
-              .send({ disk: { color: DISK_COLORS[0], finish, gradDir } })
+              .send({ disk: { color: '#16171a', finish, gradDir } })
               .expect(HttpStatus.OK);
           }
         }

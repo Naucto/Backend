@@ -279,9 +279,9 @@ export class ProjectService {
     const updated = await this.prisma.project.update({
       where: { id },
       data: {
-        diskColor: disk?.color ?? null,
+        diskColor: disk?.color.toLowerCase() ?? null,
         diskFinish: disk?.finish ?? null,
-        diskColor2: disk?.color2 ?? null,
+        diskColor2: disk?.color2?.toLowerCase() ?? null,
         diskGradDir: disk?.gradDir ?? null,
       },
       select: { diskColor: true, diskFinish: true, diskColor2: true, diskGradDir: true },
