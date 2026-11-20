@@ -1,29 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsPositive, IsString, MaxLength } from 'class-validator';
 
 import { ProjectExResponseDto } from '../../project/dto/project-response.dto';
-
-const FEATURED_NOTE_MAX_LENGTH = 280;
-
-export class SetFeaturedReleaseDto {
-  @ApiProperty({ example: 42, description: 'ID of the published project' })
-  @Type(() => Number)
-  @IsInt()
-  @IsPositive()
-  projectId!: number;
-
-  @ApiProperty({
-    example: "Editor's pick: a tight one-button platformer",
-    description: 'Optional curator note shown next to the featured game',
-    required: false,
-    maxLength: FEATURED_NOTE_MAX_LENGTH,
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(FEATURED_NOTE_MAX_LENGTH)
-  note?: string;
-}
 
 export class FeaturedCuratorDto {
   @ApiProperty({ example: 1 })
@@ -40,7 +17,12 @@ export class FeaturedEntryDto {
   @ApiProperty({ example: 42, description: 'Featured project ID' })
   projectId!: number;
 
-  @ApiProperty({ type: String, nullable: true, required: false })
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    required: false,
+    description: 'What a curator wrote about the pick; null for a pick the hub made itself',
+  })
   note!: string | null;
 
   @ApiProperty({ example: '2026-08-17T09:00:00Z' })
@@ -49,7 +31,12 @@ export class FeaturedEntryDto {
   @ApiProperty({ type: String, nullable: true, required: false })
   endsAt!: Date | null;
 
-  @ApiProperty({ type: FeaturedCuratorDto, nullable: true, required: false })
+  @ApiProperty({
+    type: FeaturedCuratorDto,
+    nullable: true,
+    required: false,
+    description: 'The curator of a pick made by hand; null for a pick the hub made itself',
+  })
   featuredBy!: FeaturedCuratorDto | null;
 }
 
