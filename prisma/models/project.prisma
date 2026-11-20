@@ -57,6 +57,7 @@ model Project {
   userLikes     Like[]
   featuredReleases FeaturedRelease[]
   releaseViews  ReleaseView[]
+  collectionItems CollectionItem[]
 
   viewCount     Int @default(0)
   uniquePlayers Int @default(0)

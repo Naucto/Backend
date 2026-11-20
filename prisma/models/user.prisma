@@ -71,6 +71,8 @@ model User {
   flagsResolved          Flag[]             @relation("FlagsResolved")
   moderationActionsTaken ModerationAction[] @relation("ModerationActionsTaken")
   moderationRecord       ModerationAction[] @relation("ModerationRecord")
+
+  collections Collection[]
 }
 
 model RefreshToken {

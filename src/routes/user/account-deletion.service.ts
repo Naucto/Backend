@@ -54,6 +54,7 @@ export const USER_RELATION_FATES: Record<UserRelation, 'deleted' | 'unlinked' | 
     analyticsDays: 'deleted',
     analyticsProjectionWork: 'deleted',
     feedbackPrompt: 'deleted',
+    collections: 'deleted',
     // A report stays with the platform once its author is anonymised. Its screenshot goes, since an
     // image can show the person.
     reports: 'kept',
@@ -173,6 +174,7 @@ export class AccountDeletionService {
       });
       await tx.notification.deleteMany({ where: { userId } });
       await tx.feedbackPrompt.deleteMany({ where: { userId } });
+      await tx.collection.deleteMany({ where: { ownerId: userId } });
       await tx.gameSession.updateMany({
         where: { hostId: userId, endedAt: null },
         data: { endedAt: now },

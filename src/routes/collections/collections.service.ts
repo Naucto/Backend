@@ -1,0 +1,356 @@
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { CollectionVisibility, Prisma } from '@prisma/client';
+
+import { pageWindow } from '../../common/page-window';
+import { PrismaService } from '../../prisma/prisma.service';
+import { HubService } from '../project/hub.service';
+import { toHubGame } from '../project/hub-fields';
+import { CREATOR_SELECT, PUBLISHED, PUBLISHED_SQL } from '../project/project-select';
+import { CollectionLimitException } from './collection.error';
+import {
+  COLLECTION_GAMES_MAX,
+  COLLECTION_PREVIEW_GAMES,
+  COLLECTIONS_PAGE_SIZE,
+  COLLECTIONS_PER_USER_MAX,
+} from './collection-limits';
+import {
+  CollectionDto,
+  CollectionHeaderDto,
+  CollectionPreviewDto,
+  CollectionSort,
+  CollectionsPageDto,
+  CollectionsQueryDto,
+  CreateCollectionDto,
+  MyCollectionDto,
+  UpdateCollectionDto,
+} from './dto/collection.dto';
+
+const WITH_OWNER = { owner: { select: CREATOR_SELECT } } satisfies Prisma.CollectionInclude;
+
+type CollectionRow = Prisma.CollectionGetPayload<{ include: typeof WITH_OWNER }>;
+
+type Viewer = number | null;
+
+/** A game added twice at one position, by two requests at once, still has one place. */
+const ITEM_ORDER: Prisma.CollectionItemOrderByWithRelationInput[] = [
+  { position: 'asc' },
+  { addedAt: 'asc' },
+  { projectId: 'asc' },
+];
+
+const NEWEST_FIRST: Prisma.CollectionOrderByWithRelationInput[] = [
+  { createdAt: 'desc' },
+  { id: 'asc' },
+];
+
+/**
+ * What the public list holds: a collection anyone may read, with a game to show. One whose games
+ * all left the hub would be an empty box.
+ */
+const LISTED: Prisma.CollectionWhereInput = {
+  visibility: CollectionVisibility.PUBLIC,
+  items: { some: { project: PUBLISHED } },
+};
+
+/** Orders of the public list, over the games of a collection that are on the hub. */
+const LISTED_ORDER: Record<CollectionSort, Prisma.Sql> = {
+  popular: Prisma.sql`SUM("Project"."viewCount") DESC`,
+  recent: Prisma.sql`"Collection"."createdAt" DESC`,
+  games: Prisma.sql`COUNT(*) DESC`,
+};
+
+const toHeader = (row: CollectionRow, gameCount: number): CollectionHeaderDto => ({
+  id: row.id,
+  title: row.title,
+  description: row.description,
+  visibility: row.visibility,
+  owner: row.owner,
+  gameCount,
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+});
+
+/**
+ * Collections: a person's lists of games. Who reads one is decided here and nowhere else: PUBLIC
+ * by anyone, UNLISTED by whoever holds its id, PRIVATE by its owner. A game shows in one only
+ * while it is on the hub; its row stays, so its owner can see it left and remove it.
+ */
+@Injectable()
+export class CollectionsService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly hubService: HubService,
+  ) {}
+
+  /** The collection as `viewer` may read it. A private one answers a stranger as a gap does. */
+  private async requireReadable(id: string, viewer: Viewer): Promise<CollectionRow> {
+    const row = await this.prisma.collection.findUnique({ where: { id }, include: WITH_OWNER });
+
+    if (!row || (row.visibility === CollectionVisibility.PRIVATE && row.ownerId !== viewer)) {
+      throw new NotFoundException(`Collection ${id} not found`);
+    }
+
+    return row;
+  }
+
+  private async requireOwned(id: string, userId: number): Promise<CollectionRow> {
+    const row = await this.requireReadable(id, userId);
+
+    if (row.ownerId !== userId) {
+      throw new ForbiddenException('Only its owner changes a collection');
+    }
+
+    return row;
+  }
+
+  private async toDetail(row: CollectionRow, viewer: Viewer): Promise<CollectionDto> {
+    const items = await this.prisma.collectionItem.findMany({
+      where: { collectionId: row.id },
+      select: { projectId: true },
+      orderBy: ITEM_ORDER,
+    });
+    const listed = items.map((item) => item.projectId);
+    const games = (await this.hubService.fetchReleasesByIds(listed)).map(toHubGame);
+    const onHub = new Set(games.map((game) => game.id));
+
+    return {
+      ...toHeader(row, games.length),
+      games,
+      unavailableGameIds: viewer === row.ownerId ? listed.filter((id) => !onHub.has(id)) : [],
+    };
+  }
+
+  /** Each collection with the first games of it on the hub, and how many of them there are. */
+  private async toPreviews(rows: CollectionRow[]): Promise<CollectionPreviewDto[]> {
+    if (rows.length === 0) {
+      return [];
+    }
+
+    const items = await this.prisma.collectionItem.findMany({
+      where: { collectionId: { in: rows.map((row) => row.id) }, project: PUBLISHED },
+      select: { collectionId: true, projectId: true },
+      orderBy: ITEM_ORDER,
+    });
+    const held = new Map<string, number[]>();
+    for (const { collectionId, projectId } of items) {
+      const games = held.get(collectionId) ?? [];
+      games.push(projectId);
+      held.set(collectionId, games);
+    }
+
+    const shown = (id: string): number[] => (held.get(id) ?? []).slice(0, COLLECTION_PREVIEW_GAMES);
+    const releases = await this.hubService.fetchReleasesByIds([
+      ...new Set(rows.flatMap((row) => shown(row.id))),
+    ]);
+    const games = new Map(releases.map((release) => [release.id, toHubGame(release)]));
+
+    return rows.map((row) => ({
+      ...toHeader(row, held.get(row.id)?.length ?? 0),
+      games: shown(row.id).flatMap((id) => games.get(id) ?? []),
+    }));
+  }
+
+  async create(ownerId: number, dto: CreateCollectionDto): Promise<CollectionDto> {
+    if ((await this.prisma.collection.count({ where: { ownerId } })) >= COLLECTIONS_PER_USER_MAX) {
+      throw new CollectionLimitException('COLLECTIONS_LIMIT');
+    }
+
+    const row = await this.prisma.collection.create({
+      data: {
+        ownerId,
+        title: dto.title,
+        description: dto.description || null,
+        ...(dto.visibility ? { visibility: dto.visibility } : {}),
+      },
+      include: WITH_OWNER,
+    });
+
+    return { ...toHeader(row, 0), games: [], unavailableGameIds: [] };
+  }
+
+  async findOne(id: string, viewer: Viewer): Promise<CollectionDto> {
+    return this.toDetail(await this.requireReadable(id, viewer), viewer);
+  }
+
+  async update(id: string, userId: number, dto: UpdateCollectionDto): Promise<CollectionDto> {
+    await this.requireOwned(id, userId);
+
+    const row = await this.prisma.collection.update({
+      where: { id },
+      data: {
+        ...(dto.title ? { title: dto.title } : {}),
+        ...(dto.description === undefined ? {} : { description: dto.description || null }),
+        ...(dto.visibility ? { visibility: dto.visibility } : {}),
+      },
+      include: WITH_OWNER,
+    });
+
+    return this.toDetail(row, userId);
+  }
+
+  async remove(id: string, userId: number): Promise<void> {
+    await this.requireOwned(id, userId);
+    await this.prisma.collection.delete({ where: { id } });
+  }
+
+  /** Lists a game of the hub last; a game already listed keeps its place. */
+  async addGame(id: string, userId: number, projectId: number): Promise<void> {
+    await this.requireOwned(id, userId);
+    if ((await this.prisma.project.count({ where: { id: projectId, ...PUBLISHED } })) === 0) {
+      throw new NotFoundException(`Published project with ID ${projectId} not found`);
+    }
+
+    const items = await this.prisma.collectionItem.findMany({
+      where: { collectionId: id },
+      select: { projectId: true, position: true },
+    });
+    if (items.some((item) => item.projectId === projectId)) {
+      return;
+    }
+    if (items.length >= COLLECTION_GAMES_MAX) {
+      throw new CollectionLimitException('COLLECTION_GAMES_LIMIT');
+    }
+
+    const position = Math.max(-1, ...items.map((item) => item.position)) + 1;
+    await this.prisma.$transaction([
+      this.prisma.collectionItem.createMany({
+        data: [{ collectionId: id, projectId, position }],
+        skipDuplicates: true,
+      }),
+      this.prisma.collection.update({ where: { id }, data: { updatedAt: new Date() } }),
+    ]);
+  }
+
+  /** Works on a game that left the hub too: that is how its owner clears it. */
+  async removeGame(id: string, userId: number, projectId: number): Promise<void> {
+    await this.requireOwned(id, userId);
+    await this.prisma.$transaction([
+      this.prisma.collectionItem.deleteMany({ where: { collectionId: id, projectId } }),
+      this.prisma.collection.update({ where: { id }, data: { updatedAt: new Date() } }),
+    ]);
+  }
+
+  /**
+   * Puts the games named first, in that order. A game the caller did not name (one that left the
+   * hub, one added meanwhile from another tab) follows them in the order it had.
+   */
+  async reorder(id: string, userId: number, projectIds: number[]): Promise<void> {
+    await this.requireOwned(id, userId);
+
+    const items = await this.prisma.collectionItem.findMany({
+      where: { collectionId: id },
+      select: { projectId: true },
+      orderBy: ITEM_ORDER,
+    });
+    const listed = new Set(items.map((item) => item.projectId));
+    const stranger = projectIds.find((projectId) => !listed.has(projectId));
+    if (stranger !== undefined) {
+      throw new BadRequestException(`Project ${stranger} is not in collection ${id}`);
+    }
+
+    const named = new Set(projectIds);
+    const order = [...projectIds, ...[...listed].filter((projectId) => !named.has(projectId))];
+    await this.prisma.$transaction([
+      ...order.map((projectId, position) =>
+        this.prisma.collectionItem.update({
+          where: { collectionId_projectId: { collectionId: id, projectId } },
+          data: { position },
+        }),
+      ),
+      this.prisma.collection.update({ where: { id }, data: { updatedAt: new Date() } }),
+    ]);
+  }
+
+  /** A person's own collections, newest first, each saying whether it lists `projectId`. */
+  async listMine(userId: number, projectId?: number): Promise<MyCollectionDto[]> {
+    const previews = await this.toPreviews(
+      await this.prisma.collection.findMany({
+        where: { ownerId: userId },
+        include: WITH_OWNER,
+        orderBy: NEWEST_FIRST,
+      }),
+    );
+    if (projectId === undefined) {
+      return previews;
+    }
+
+    const holding = new Set(
+      (
+        await this.prisma.collectionItem.findMany({
+          where: { projectId, collection: { ownerId: userId } },
+          select: { collectionId: true },
+        })
+      ).map((item) => item.collectionId),
+    );
+
+    return previews.map((preview) => ({ ...preview, contains: holding.has(preview.id) }));
+  }
+
+  /** What a profile shows of a person's collections: the public ones, empty ones included. */
+  async listPublicOf(ownerId: number): Promise<CollectionPreviewDto[]> {
+    return this.toPreviews(
+      await this.prisma.collection.findMany({
+        where: { ownerId, visibility: CollectionVisibility.PUBLIC },
+        include: WITH_OWNER,
+        orderBy: NEWEST_FIRST,
+      }),
+    );
+  }
+
+  /** The collections of the public list among `ids`, in the order given. */
+  async listedByIds(ids: string[]): Promise<CollectionPreviewDto[]> {
+    const rows = await this.prisma.collection.findMany({
+      where: { id: { in: ids }, ...LISTED },
+      include: WITH_OWNER,
+    });
+    const byId = new Map(rows.map((row) => [row.id, row]));
+
+    return this.toPreviews(ids.flatMap((id) => byId.get(id) ?? []));
+  }
+
+  async listPublic(query: CollectionsQueryDto): Promise<CollectionsPageDto> {
+    const window = pageWindow(query.page, query.limit, COLLECTIONS_PAGE_SIZE);
+    const [total, page] = await Promise.all([
+      this.prisma.collection.count({ where: LISTED }),
+      this.prisma.$queryRaw<{ id: string }[]>`
+        SELECT "Collection"."id"
+        FROM "Collection"
+        JOIN "CollectionItem" ON "CollectionItem"."collectionId" = "Collection"."id"
+        JOIN "Project" ON "Project"."id" = "CollectionItem"."projectId" AND ${PUBLISHED_SQL}
+        WHERE "Collection"."visibility" = 'PUBLIC'
+        GROUP BY "Collection"."id"
+        ORDER BY ${LISTED_ORDER[query.sort ?? 'popular']}, "Collection"."id"
+        LIMIT ${window.take} OFFSET ${window.skip}`,
+    ]);
+
+    return {
+      collections: await this.listedByIds(page.map((row) => row.id)),
+      total,
+      page: window.page,
+      limit: window.limit,
+    };
+  }
+
+  /** Every collection of the public list, with the games of it that are on the hub. */
+  async listedWithGames(): Promise<{ id: string; ownerId: number; games: number[] }[]> {
+    const rows = await this.prisma.collection.findMany({
+      where: LISTED,
+      select: {
+        id: true,
+        ownerId: true,
+        items: { where: { project: PUBLISHED }, select: { projectId: true } },
+      },
+    });
+
+    return rows.map(({ id, ownerId, items }) => ({
+      id,
+      ownerId,
+      games: items.map((item) => item.projectId),
+    }));
+  }
+}

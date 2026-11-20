@@ -35,6 +35,11 @@ import { ANALYTICS_THROTTLERS } from './routes/analytics/analytics-throttler.gua
 import { AnalyticsTimelineService } from './routes/analytics/analytics-timeline.service';
 import { UserAnalyticsController } from './routes/analytics/user-analytics.controller';
 import { UserAnalyticsService } from './routes/analytics/user-analytics.service';
+import {
+  CollectionsController,
+  UserCollectionsController,
+} from './routes/collections/collections.controller';
+import { CollectionsService } from './routes/collections/collections.service';
 import { FeaturesModule } from './routes/features/features.module';
 import { FriendsController, UserFriendshipController } from './routes/friends/friends.controller';
 import { FriendsService } from './routes/friends/friends.service';
@@ -111,6 +116,8 @@ const nullProvider = (token: InjectionToken): Provider => ({
     FeaturedReleaseController,
     AdminFeaturedReleaseController,
     HubFeedController,
+    CollectionsController,
+    UserCollectionsController,
     AnalyticsIngestController,
     AdminAnalyticsController,
     AnalyticsMarkerController,
@@ -144,6 +151,7 @@ const nullProvider = (token: InjectionToken): Provider => ({
     nullProvider(PresenceService),
     nullProvider(RecommendationsService),
     nullProvider(HubFeedService),
+    nullProvider(CollectionsService),
     nullProvider(AnalyticsIngestService),
     nullProvider(AnalyticsTallyService),
     nullProvider(AnalyticsQueryService),

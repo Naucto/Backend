@@ -36,6 +36,7 @@ describe('AccountDeletionService', () => {
     friendRequest: { deleteMany: jest.fn() },
     notification: { deleteMany: jest.fn() },
     feedbackPrompt: { deleteMany: jest.fn() },
+    collection: { deleteMany: jest.fn() },
     report: { findMany: jest.fn(), updateMany: jest.fn() },
   };
   const projectService = { remove: jest.fn() };
@@ -179,6 +180,7 @@ describe('AccountDeletionService', () => {
     });
     expect(prisma.notification.deleteMany).toHaveBeenCalledWith({ where: { userId: 7 } });
     expect(prisma.feedbackPrompt.deleteMany).toHaveBeenCalledWith({ where: { userId: 7 } });
+    expect(prisma.collection.deleteMany).toHaveBeenCalledWith({ where: { ownerId: 7 } });
     expect(prisma.gameSession.updateMany).toHaveBeenCalledWith({
       where: { hostId: 7, endedAt: null },
       data: { endedAt: expect.any(Date) },
