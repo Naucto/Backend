@@ -447,6 +447,20 @@ describe('ProjectContentService', () => {
       );
     });
 
+    it('dates the first publication only on a row that has none yet', async () => {
+      mockPublishable(encodeGame(3));
+
+      await service.publish(1, 9);
+
+      const [marked] = txMock.project.update.mock.calls as unknown as Array<
+        [{ data: { publishedAt: Date } }]
+      >;
+      expect(txMock.project.updateMany).toHaveBeenCalledWith({
+        where: { id: 1, firstPublishedAt: null },
+        data: { firstPublishedAt: marked?.[0].data.publishedAt },
+      });
+    });
+
     it('unpublishes by clearing the row before dropping the blob', async () => {
       txMock.project.update.mockResolvedValue({});
       s3ServiceMock.deleteFile.mockResolvedValue(undefined);

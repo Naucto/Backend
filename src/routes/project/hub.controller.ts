@@ -35,7 +35,6 @@ import { ReleaseTagsResponseDto } from './dto/release-tags-response.dto';
 import { ViewResponseDto } from './dto/view-response.dto';
 import type { PublishedProjectFilters, ReleaseSort, ReleaseWindow } from './hub.service';
 import { HubService, RELEASE_SORTS, RELEASE_WINDOWS } from './hub.service';
-import { ProjectHiddenException } from './project.error';
 import { ProjectId } from './project-id.decorator';
 import { parseOptionalInt, parseTags } from './project-query';
 
@@ -79,20 +78,6 @@ export class HubController {
   }
 
   // `releases/:id` follows the literal `releases/…` routes, or it would take them.
-  @Public()
-  @Get('releases')
-  @ApiOperation({
-    summary: 'Get all released projects',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'A JSON array of projects with collaborators and creator information',
-    type: [ProjectExResponseDto],
-  })
-  async getAllReleases(): Promise<ProjectExResponseDto[]> {
-    return this.hubService.fetchPublishedGames();
-  }
-
   @Public()
   @Get('releases/paginated')
   @ApiOperation({
@@ -213,16 +198,7 @@ export class HubController {
     type: ProjectExResponseDto,
   })
   async getRelease(@ProjectId() id: number): Promise<ProjectExResponseDto> {
-    const projectRelease = await this.hubService.fetchRelease(id);
-    // Public, so a draft's name and people are nobody's business until it is on the hub.
-    if (!projectRelease.publishedAt) {
-      throw new NotFoundException(`Published project with ID ${id} not found`);
-    }
-    if (projectRelease.hiddenAt) {
-      throw new ProjectHiddenException();
-    }
-
-    return projectRelease;
+    return this.hubService.fetchRelease(id);
   }
 
   @Post('releases/:id/like')

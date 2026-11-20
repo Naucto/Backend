@@ -58,6 +58,16 @@ export class ProjectResponseDto {
   iconUrl?: string | null;
 
   @ApiProperty({
+    description:
+      'Address of the cover, usable as is: it changes when the cover does. Null without a cover; absent from answers that do not list games',
+    example: 'https://cdn.example.com/projects/1/image?v=5d41402abc4b2a76b9719d911017c592',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  coverUrl?: string | null;
+
+  @ApiProperty({
     description: 'The current status of the project',
     enum: ProjectStatus,
     example: ProjectStatus.IN_PROGRESS,

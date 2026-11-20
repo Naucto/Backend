@@ -1,5 +1,8 @@
 import { Project } from '@prisma/client';
 
+import { HubGameDto } from './dto/hub-game.dto';
+import { ReleaseProject } from './project-select';
+
 type HubSnapshot = Pick<
   Project,
   | 'name'
@@ -31,5 +34,36 @@ export function hubFields<T extends HubSnapshot>(project: T): T {
     shortDesc: project.publishedShortDesc ?? project.shortDesc,
     longDesc: project.publishedLongDesc ?? project.longDesc,
     tags: project.publishedTags.length > 0 ? project.publishedTags : project.tags,
+  };
+}
+
+/**
+ * The card of a game, field by field: a release row also carries what only its authors may read
+ * (content size, release hash and revision), and a spread would hand that out.
+ */
+export function toHubGame(release: ReleaseProject): HubGameDto {
+  return {
+    id: release.id,
+    name: release.name,
+    shortDesc: release.shortDesc,
+    longDesc: release.longDesc,
+    tags: release.tags,
+    iconUrl: release.iconUrl,
+    coverUrl: release.coverUrl,
+    status: release.status,
+    monetization: release.monetization,
+    price: release.price,
+    userId: release.userId,
+    createdAt: release.createdAt,
+    updatedAt: release.updatedAt,
+    publishedAt: release.publishedAt,
+    viewCount: release.viewCount,
+    uniquePlayers: release.uniquePlayers,
+    likes: release.likes,
+    commentCount: release.commentCount,
+    forkCount: release.forkCount,
+    forkedFromId: release.forkedFromId,
+    collaborators: release.collaborators,
+    creator: release.creator,
   };
 }

@@ -78,6 +78,20 @@ export class ProjectService {
     return project as Prisma.ProjectGetPayload<{ select: S }>;
   }
 
+  /**
+   * The cover's address from the row alone, for a list that cannot afford a storage lookup per
+   * game. A cover stored before its version was kept gets the bare address, which the store
+   * serves `no-cache`.
+   */
+  storedCoverUrl(project: Pick<Project, 'id' | 'iconUrl' | 'coverVersion'>): string | null {
+    if (!project.iconUrl) {
+      return null;
+    }
+    const url = this.edgeService.getCDNUrl(projectKeys.cover(project.id));
+
+    return project.coverVersion ? versionedUrl(url, project.coverVersion) : url;
+  }
+
   private buildUserProjectsWhere(
     userId: number,
     filters: UserProjectFilters = {},
@@ -128,7 +142,7 @@ export class ProjectService {
     userId: number,
     page?: number,
     limit?: number,
-  ): Promise<PaginatedProjectsResult<ProjectEx>> {
+  ): Promise<PaginatedProjectsResult<ProjectEx & { coverUrl: string | null }>> {
     const window = pageWindow(page, limit, DEFAULT_LIMIT);
     const where = this.buildUserProjectsWhere(userId);
 
@@ -139,14 +153,17 @@ export class ProjectService {
       this.prisma.project.findMany({
         where,
         include: WITH_PEOPLE,
-        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
         skip: window.skip,
         take: window.take,
       }),
     ]);
 
     return {
-      projects,
+      projects: projects.map((project) => ({
+        ...project,
+        coverUrl: this.storedCoverUrl(project),
+      })),
       total,
       page: window.page,
       limit: window.limit,
@@ -241,11 +258,13 @@ export class ProjectService {
       cacheControl: 'no-cache',
     });
     await this.s3Service.setObjectPublicRead(key);
+    const stored = await this.s3Service.getFileMetadataOrNull(key);
 
-    // The row keeps the image's public URL, so readers of the project need no storage lookup.
+    // The row keeps the image's public URL and its version, so readers of the project need no
+    // storage lookup.
     await this.prisma.project.update({
       where: { id: projectId },
-      data: { iconUrl: this.edgeService.getCDNUrl(key) },
+      data: { iconUrl: this.edgeService.getCDNUrl(key), coverVersion: stored?.ETag ?? null },
     });
     this.eventEmitter.emit(PROJECT_CHANGED, new ProjectChangedEvent(projectId));
   }

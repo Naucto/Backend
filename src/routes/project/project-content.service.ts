@@ -381,10 +381,11 @@ export class ProjectContentService {
           : null;
       const revision = type ? before.revision + 1 : before.revision;
 
+      const publishedAt = new Date();
       await tx.project.update({
         where: { id: projectId },
         data: {
-          publishedAt: new Date(),
+          publishedAt,
           publishedName: snapshot.name,
           publishedShortDesc: snapshot.shortDesc,
           publishedLongDesc: snapshot.longDesc,
@@ -392,6 +393,10 @@ export class ProjectContentService {
           releaseRevision: revision,
           releaseContentHash: contentHash,
         },
+      });
+      await tx.project.updateMany({
+        where: { id: projectId, firstPublishedAt: null },
+        data: { firstPublishedAt: publishedAt },
       });
       if (type) {
         await this.facts.record(tx, {

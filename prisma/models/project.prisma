@@ -22,6 +22,9 @@ model Project {
   publishedTags      String[]          @default([])
   status       ProjectStatus     @default(IN_PROGRESS)
   iconUrl      String?
+  // Version of the stored cover, read back from the store when it was uploaded; null for a cover
+  // stored before the version was kept, or when there is none.
+  coverVersion String?
   monetization MonetizationType  @default(NONE)
   price        Float?
   createdAt    DateTime          @default(now())
@@ -30,6 +33,8 @@ model Project {
   // Set while moderation withholds the game: it leaves the hub and its release stops being served,
   // while `publishedAt` stays so a restore puts it back as it was.
   hiddenAt     DateTime?
+  // When the game first reached the hub; later releases and a republish leave it alone.
+  firstPublishedAt DateTime?
   // Bumped on each release transition (publish, content change, unpublish); keys its analytics fact.
   releaseRevision    Int     @default(0)
   // Hash of the released content and published metadata, so republishing them unchanged is no-op.

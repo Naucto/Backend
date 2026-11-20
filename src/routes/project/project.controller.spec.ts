@@ -132,17 +132,6 @@ describe('project controllers', () => {
     hubService = module.get<HubService>(HubService);
   });
 
-  describe('getRelease', () => {
-    it('does not describe a project the hub does not carry', async () => {
-      jest.spyOn(hubService, 'fetchRelease').mockResolvedValue({
-        id: 39,
-        publishedAt: null,
-      } as unknown as Awaited<ReturnType<HubService['fetchRelease']>>);
-
-      await expect(hubController.getRelease(39)).rejects.toBeInstanceOf(NotFoundException);
-    });
-  });
-
   describe('authorization', () => {
     const guardsOf = (method: string): unknown[] => {
       const owner = CONTROLLERS.find((controller) => method in controller.prototype);
@@ -517,7 +506,6 @@ describe('project controllers', () => {
     });
 
     it.each([
-      ['/projects/releases', 'fetchPublishedGames'],
       ['/projects/releases/paginated', 'fetchPublishedGamesPaginated'],
       ['/projects/releases/tags', 'fetchPublishedTags'],
       ['/projects/releases/count', 'countPublishedGames'],

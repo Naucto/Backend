@@ -56,13 +56,16 @@ describe('ProjectService', () => {
           collaborators: { select: COLLABORATOR_SELECT },
           creator: { select: CREATOR_SELECT },
         },
-        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
         skip: 0,
         take: 24,
       });
 
       expect(result).toEqual({
-        projects: [draft, released],
+        projects: [
+          { ...draft, coverUrl: null },
+          { ...released, coverUrl: null },
+        ],
         total: 2,
         page: 1,
         limit: 24,
@@ -84,7 +87,10 @@ describe('ProjectService', () => {
         }),
       );
       expect(result).toEqual({
-        projects: [draft, released],
+        projects: [
+          { ...draft, coverUrl: null },
+          { ...released, coverUrl: null },
+        ],
         total: 250,
         page: 2,
         limit: 100,
@@ -197,6 +203,7 @@ describe('ProjectService', () => {
       prismaMock.project.update.mockResolvedValue(draft);
       s3ServiceMock.uploadFile.mockResolvedValue(undefined);
       s3ServiceMock.setObjectPublicRead.mockResolvedValue(undefined);
+      s3ServiceMock.getFileMetadataOrNull.mockResolvedValue({ ETag: '"5d41"' });
       const file = { originalname: 'cover.png' } as Express.Multer.File;
 
       await service.uploadImage(1, file, 7);
@@ -207,7 +214,7 @@ describe('ProjectService', () => {
       expect(s3ServiceMock.setObjectPublicRead).toHaveBeenCalledWith('projects/1/image');
       expect(prismaMock.project.update).toHaveBeenCalledWith({
         where: { id: 1 },
-        data: { iconUrl: 'https://cdn.test/projects/1/image' },
+        data: { iconUrl: 'https://cdn.test/projects/1/image', coverVersion: '"5d41"' },
       });
       expect(eventEmitterMock.emit).toHaveBeenCalledWith(
         PROJECT_CHANGED,

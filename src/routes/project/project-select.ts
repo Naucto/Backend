@@ -32,6 +32,9 @@ export const RELEASED: Prisma.ProjectWhereInput = { publishedAt: { not: null } }
 // a hidden game among the released ones, which is what `RELEASED` is for.
 export const PUBLISHED: Prisma.ProjectWhereInput = { ...RELEASED, hiddenAt: null };
 
+/** The same test for a raw query, as a condition on "Project". */
+export const PUBLISHED_SQL = Prisma.sql`"Project"."publishedAt" IS NOT NULL AND "Project"."hiddenAt" IS NULL`;
+
 export const DEFAULT_LIMIT = 24;
 
 export type ProjectEx = Project & {
@@ -39,7 +42,7 @@ export type ProjectEx = Project & {
   creator: { id: number; username: string };
 };
 
-type ProjectWithCounts = ProjectEx & {
+export type ProjectWithCounts = ProjectEx & {
   _count: {
     comments: number;
     forks: number;
@@ -49,6 +52,7 @@ type ProjectWithCounts = ProjectEx & {
 export type ReleaseProject = ProjectEx & {
   commentCount: number;
   forkCount: number;
+  coverUrl: string | null;
 };
 
 export type PaginatedProjectsResult<T> = {
@@ -57,12 +61,3 @@ export type PaginatedProjectsResult<T> = {
   page: number;
   limit: number;
 };
-
-export function withCounts(project: ProjectWithCounts): ReleaseProject {
-  const { _count, ...rest } = project;
-  return {
-    ...rest,
-    commentCount: _count.comments,
-    forkCount: _count.forks,
-  };
-}

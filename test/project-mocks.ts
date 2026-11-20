@@ -36,6 +36,7 @@ export const aProject = (overrides: Partial<ProjectWithPeople> = {}): ProjectWit
   publishedTags: [],
   status: ProjectStatus.IN_PROGRESS,
   iconUrl: null,
+  coverVersion: null,
   monetization: MonetizationType.NONE,
   price: 0,
   createdAt: new Date(),
@@ -46,6 +47,7 @@ export const aProject = (overrides: Partial<ProjectWithPeople> = {}): ProjectWit
   updatedAt: new Date(),
   publishedAt: null,
   hiddenAt: null,
+  firstPublishedAt: null,
   releaseRevision: 0,
   releaseContentHash: null,
   forkedFromId: null,
@@ -111,6 +113,7 @@ export class ProjectMocks {
     project: {
       create: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
       delete: jest.fn(),
     },
     gameSession: {
@@ -154,6 +157,9 @@ export class ProjectMocks {
       deleteMany: jest.fn(),
       findUnique: jest.fn(),
     },
+    comment: {
+      groupBy: jest.fn(),
+    },
     workSession: {
       updateMany: jest.fn(),
       deleteMany: jest.fn(),
@@ -175,6 +181,7 @@ export class ProjectMocks {
     downloadFile: jest.fn(),
     uploadFile: jest.fn(),
     fileExists: jest.fn(),
+    getFileMetadataOrNull: jest.fn(),
     setObjectPublicRead: jest.fn(),
   };
 

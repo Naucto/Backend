@@ -185,13 +185,12 @@ describe('HubService', () => {
   });
 
   describe('fetchRelease', () => {
-    it('names the people on a project without their addresses', async () => {
-      prismaMock.project.findFirst.mockResolvedValue({
-        ...draft,
-        _count: { forks: 0, comments: 0 },
-      });
+    const counts = { _count: { forks: 0, comments: 0 } };
 
-      const result = await service.fetchRelease(1);
+    it('names the people on a project without their addresses', async () => {
+      prismaMock.project.findMany.mockResolvedValue([{ ...released, ...counts }]);
+
+      const result = await service.fetchRelease(2);
 
       expect(result.creator).not.toHaveProperty('email');
       for (const collaborator of result.collaborators) {
@@ -199,11 +198,10 @@ describe('HubService', () => {
       }
     });
 
-    it('shows the draft of a project whose snapshot was never taken', async () => {
-      prismaMock.project.findFirst.mockResolvedValue({
-        ...draft,
-        _count: { forks: 0, comments: 0 },
-      });
+    it('shows the draft fields of a release whose snapshot was never taken', async () => {
+      prismaMock.project.findMany.mockResolvedValue([
+        { ...draft, publishedAt: new Date(), ...counts },
+      ]);
 
       await expect(service.fetchRelease(1)).resolves.toMatchObject({
         name: 'Project A',
@@ -214,16 +212,88 @@ describe('HubService', () => {
     });
 
     it('keeps a summary published empty, whatever the draft says since', async () => {
-      prismaMock.project.findFirst.mockResolvedValue({
-        ...released,
-        publishedShortDesc: '',
-        shortDesc: 'Typed after the release',
-        _count: { forks: 0, comments: 0 },
-      });
+      prismaMock.project.findMany.mockResolvedValue([
+        {
+          ...released,
+          publishedShortDesc: '',
+          shortDesc: 'Typed after the release',
+          ...counts,
+        },
+      ]);
 
       const result = await service.fetchRelease(2);
 
       expect(result.shortDesc).toBe('');
+    });
+
+    it('answers a draft as it answers a gap, and asks only for what the hub carries', async () => {
+      prismaMock.project.findMany.mockResolvedValue([]);
+
+      await expect(service.fetchRelease(1)).rejects.toBeInstanceOf(NotFoundException);
+      expect(prismaMock.project.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: { in: [1] }, publishedAt: { not: null }, hiddenAt: null },
+        }),
+      );
+    });
+
+    it('tells a withheld game apart from one that does not exist', async () => {
+      prismaMock.project.findMany.mockResolvedValue([]);
+      prismaMock.project.count.mockResolvedValueOnce(1);
+
+      await expect(service.fetchRelease(12)).rejects.toBeInstanceOf(ProjectHiddenException);
+    });
+  });
+
+  describe('fetchReleasesByIds', () => {
+    it('keeps the order asked for and leaves out what the hub no longer carries', async () => {
+      const counts = { _count: { forks: 0, comments: 0 } };
+      prismaMock.project.findMany.mockResolvedValue([
+        { ...released, id: 5, ...counts },
+        { ...released, id: 9, ...counts },
+      ]);
+
+      const result = await service.fetchReleasesByIds([9, 7, 5]);
+
+      expect(result.map((release) => release.id)).toEqual([9, 5]);
+    });
+  });
+
+  describe('cover address of a listed game', () => {
+    const counts = { _count: { forks: 0, comments: 0 } };
+
+    it('is versioned from the row, without asking the store', async () => {
+      prismaMock.project.findMany.mockResolvedValue([
+        {
+          ...released,
+          iconUrl: 'https://old.cdn/projects/2/image',
+          coverVersion: '"abc"',
+          ...counts,
+        },
+      ]);
+
+      const [release] = await service.fetchReleasesByIds([2]);
+
+      expect(release?.coverUrl).toBe('https://cdn.test/projects/2/image?v=abc');
+      expect(s3ServiceMock.getFileMetadataOrNull).not.toHaveBeenCalled();
+    });
+
+    it('is the bare address for a cover stored before its version was kept', async () => {
+      prismaMock.project.findMany.mockResolvedValue([
+        { ...released, iconUrl: 'https://cdn.test/projects/2/image', ...counts },
+      ]);
+
+      const [release] = await service.fetchReleasesByIds([2]);
+
+      expect(release?.coverUrl).toBe('https://cdn.test/projects/2/image');
+    });
+
+    it('is null for a game without a cover', async () => {
+      prismaMock.project.findMany.mockResolvedValue([{ ...released, ...counts }]);
+
+      const [release] = await service.fetchReleasesByIds([2]);
+
+      expect(release?.coverUrl).toBeNull();
     });
   });
 
@@ -383,7 +453,7 @@ describe('HubService', () => {
             },
           },
         },
-        orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+        orderBy: [{ firstPublishedAt: { sort: 'desc', nulls: 'last' } }, { id: 'desc' }],
         skip: 1,
         take: 1,
       });
@@ -426,8 +496,53 @@ describe('HubService', () => {
 
       expect(prismaMock.project.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          orderBy: [{ viewCount: 'desc' }, { publishedAt: 'desc' }],
+          orderBy: [{ viewCount: 'desc' }, { id: 'desc' }],
         }),
+      );
+    });
+
+    it('should rank the most discussed by the comments still standing, then the silent ones', async () => {
+      prismaMock.project.count.mockResolvedValueOnce(5).mockResolvedValueOnce(2);
+      prismaMock.comment.groupBy.mockResolvedValue([{ projectId: 8 }, { projectId: 3 }]);
+      prismaMock.project.findMany
+        .mockResolvedValueOnce([{ id: 9 }])
+        .mockResolvedValueOnce([3, 8, 9].map((id) => ({ ...publishedProject, id })));
+
+      const result = await service.fetchPublishedGamesPaginated(1, 3, {}, 'discussed');
+
+      expect(prismaMock.comment.groupBy).toHaveBeenCalledWith({
+        by: ['projectId'],
+        where: { deleted: false, project: { publishedAt: { not: null }, hiddenAt: null } },
+        orderBy: [{ _count: { projectId: 'desc' } }, { projectId: 'desc' }],
+        skip: 0,
+        take: 3,
+      });
+      expect(prismaMock.project.findMany).toHaveBeenNthCalledWith(1, {
+        where: {
+          AND: [
+            { publishedAt: { not: null }, hiddenAt: null },
+            { comments: { none: { deleted: false } } },
+          ],
+        },
+        select: { id: true },
+        orderBy: { id: 'desc' },
+        skip: 0,
+        take: 1,
+      });
+      expect(result.projects.map((project) => project.id)).toEqual([8, 3, 9]);
+      expect(result.total).toBe(5);
+    });
+
+    it('should start the silent games where a later page of the most discussed left them', async () => {
+      prismaMock.project.count.mockResolvedValueOnce(9).mockResolvedValueOnce(2);
+      prismaMock.comment.groupBy.mockResolvedValue([]);
+      prismaMock.project.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+
+      await service.fetchPublishedGamesPaginated(3, 3, {}, 'discussed');
+
+      expect(prismaMock.project.findMany).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ skip: 4, take: 3 }),
       );
     });
 
@@ -469,7 +584,7 @@ describe('HubService', () => {
       );
     });
 
-    it('should keep a release window to games published inside it', async () => {
+    it('should keep a release window to games first published inside it', async () => {
       prismaMock.project.count.mockResolvedValue(0);
       prismaMock.project.findMany.mockResolvedValue([]);
       const week = 7 * 24 * 60 * 60 * 1000;
@@ -478,9 +593,9 @@ describe('HubService', () => {
       await service.fetchPublishedGamesPaginated(1, 10, { releaseWindow: '7d' });
 
       const where = prismaMock.project.count.mock.calls[0]![0]!.where as {
-        AND: [{ publishedAt: { gte: Date } }];
+        AND: [{ firstPublishedAt: { gte: Date } }];
       };
-      const threshold = where.AND[0].publishedAt.gte.getTime();
+      const threshold = where.AND[0].firstPublishedAt.gte.getTime();
       expect(threshold).toBeGreaterThanOrEqual(asked - week);
       expect(threshold).toBeLessThanOrEqual(Date.now() - week);
     });
@@ -677,8 +792,9 @@ describe('HubService', () => {
       });
     });
 
-    it('copies the cover and records where it landed', async () => {
+    it('copies the cover and records where it landed, under the version the store gave it', async () => {
       s3ServiceMock.fileExists.mockResolvedValue(true);
+      s3ServiceMock.getFileMetadataOrNull.mockResolvedValue({ ETag: '"copied"' });
 
       await service.fork(2, 9);
 
@@ -687,7 +803,7 @@ describe('HubService', () => {
       );
       expect(prismaMock.project.update).toHaveBeenCalledWith({
         where: { id: 50 },
-        data: { iconUrl: 'https://cdn.test/projects/50/image' },
+        data: { iconUrl: 'https://cdn.test/projects/50/image', coverVersion: '"copied"' },
       });
     });
 
