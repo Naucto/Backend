@@ -139,6 +139,11 @@ Outside the admin console a viewer is an ordinary account. Because of this rule 
 `admin/` must never change anything**: a read that writes would be a write a viewer can make.
 Nobody but an admin reads email addresses (`readsAddresses`), viewers included.
 
+**Staff roles are handed out by an admin** through `PUT admin/accounts/:id/role`, and
+`GET admin/accounts/staff` lists whoever holds one (`STAFF_ROLE_NAMES`). A change is written to the
+moderation log as `ROLE_CHANGED` in the transaction of the change, with the role left and the role
+taken in its internal note. Giving an account the role it already holds writes nothing.
+
 **Suspension** is decided by the same guard, from the two `suspended*` columns read through
 `currentSuspension` (`src/auth/access/suspension.ts`), which also lets a dated suspension lapse
 without anything clearing it. A suspended account signs in and reads. Every write that asks for an

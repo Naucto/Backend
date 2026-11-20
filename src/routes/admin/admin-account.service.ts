@@ -4,9 +4,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ModerationActionType, ModerationTargetType } from '@prisma/client';
 
-import { ADMIN, readsAddresses, RoleName } from '../../auth/access/roles';
+import { ADMIN, readsAddresses, RoleName, STAFF_ROLE_NAMES } from '../../auth/access/roles';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ModerationLogService } from '../moderation/moderation-log.service';
 import { ADMIN_ACCOUNT_SELECT, AdminAccountRow, toAccountSummary } from './admin-session.service';
 import {
   AccountSearchResultDto,
@@ -19,7 +21,10 @@ const SEARCH_LIMIT = 8;
 /** Who administers Naucto. */
 @Injectable()
 export class AdminAccountService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly log: ModerationLogService,
+  ) {}
 
   async me(userId: number): Promise<AccountSummaryDto> {
     return toAccountSummary(await this.liveAccount(userId));
@@ -28,6 +33,16 @@ export class AdminAccountService {
   async admins(reader: RoleName): Promise<AdminAccountListDto> {
     const rows = await this.prisma.user.findMany({
       where: { role: ADMIN, deletedAt: null },
+      select: ADMIN_ACCOUNT_SELECT,
+      orderBy: { createdAt: 'asc' },
+    });
+    return { items: rows.map((row) => toAccountSummary(row, readsAddresses(reader))) };
+  }
+
+  /** Everyone who signs in to the console, whatever their role there. */
+  async staff(reader: RoleName): Promise<AdminAccountListDto> {
+    const rows = await this.prisma.user.findMany({
+      where: { role: { in: [...STAFF_ROLE_NAMES] }, deletedAt: null },
       select: ADMIN_ACCOUNT_SELECT,
       orderBy: { createdAt: 'asc' },
     });
@@ -57,7 +72,8 @@ export class AdminAccountService {
 
   /**
    * An admin cannot change their own role, so nobody locks themselves out by mistake, and the
-   * last admin always stays one.
+   * last admin always stays one. A change is written to the moderation log with the role it left
+   * and the role it took.
    */
   async setRole(actorId: number, targetId: number, role: RoleName): Promise<AccountSummaryDto> {
     if (actorId === targetId) {
@@ -70,10 +86,24 @@ export class AdminAccountService {
         throw new ConflictException('Naucto needs at least one admin');
       }
     }
-    const updated = await this.prisma.user.update({
-      where: { id: targetId },
-      data: { role },
-      select: ADMIN_ACCOUNT_SELECT,
+    if (target.role === role) {
+      return toAccountSummary(target);
+    }
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.user.update({
+        where: { id: targetId },
+        data: { role },
+        select: ADMIN_ACCOUNT_SELECT,
+      });
+      await this.log.record(tx, {
+        action: ModerationActionType.ROLE_CHANGED,
+        actorId,
+        targetType: ModerationTargetType.USER,
+        targetId,
+        subjectUserId: targetId,
+        internalNote: `From ${target.role} to ${role}`,
+      });
+      return row;
     });
     return toAccountSummary(updated);
   }
