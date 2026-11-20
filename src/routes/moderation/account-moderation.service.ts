@@ -1,4 +1,10 @@
-import { HttpStatus, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  HttpStatus,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { FlagStatus, ModerationActionType, ModerationTargetType, Prisma } from '@prisma/client';
 
 import { outranks, parseRole } from '../../auth/access/roles';
@@ -7,22 +13,30 @@ import { CodedException } from '../../common/coded.exception';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MultiplayerService } from '../multiplayer/multiplayer.service';
+import { AccountDeletionService } from '../user/account-deletion.service';
+import { ProfileAsset, ProfileAssetService } from '../user/profile-asset.service';
 import { WorkSessionService } from '../work-session/work-session.service';
 import { ModerationActionDto } from './dto/moderation-action.dto';
 import {
   ClearProfileDto,
   ModerationNoteDto,
+  ProfilePart,
   StaffDeleteAccountDto,
   SuspendAccountDto,
   WarnAccountDto,
 } from './dto/moderation-decision.dto';
 import { resolveOpenFlags } from './flag-resolution';
-import { MODERATION_ERROR, notAvailableYet } from './moderation.error';
+import { MODERATION_ERROR } from './moderation.error';
 import { ModerationLogService, RecordedAction } from './moderation-log.service';
 import { ACCOUNT_REF_SELECT, ActionRow, toActionDto } from './moderation-mappers';
 import { StaffActor } from './staff-actor';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+const PROFILE_IMAGES: readonly [ProfilePart, ProfileAsset][] = [
+  ['PICTURE', 'profile'],
+  ['BACKGROUND', 'background'],
+];
 
 const SUBJECT_SELECT = {
   ...ACCOUNT_REF_SELECT,
@@ -49,6 +63,8 @@ export class AccountModerationService {
     private readonly notifications: NotificationsService,
     private readonly multiplayer: MultiplayerService,
     private readonly workSessions: WorkSessionService,
+    private readonly deletion: AccountDeletionService,
+    private readonly profileAssets: ProfileAssetService,
   ) {}
 
   async warn(
@@ -140,20 +156,81 @@ export class AccountModerationService {
     return toActionDto(row, staff);
   }
 
-  clearProfile(
-    _staff: StaffActor,
-    _accountId: number,
-    _input: ClearProfileDto,
+  async clearProfile(
+    staff: StaffActor,
+    accountId: number,
+    input: ClearProfileDto,
   ): Promise<ModerationActionDto> {
-    return notAvailableYet();
+    const account = await this.subject(staff, accountId);
+    const parts = new Set(input.parts);
+
+    // The images first: a row saying the profile was cleared while a picture still stands would be
+    // a false record, and removing a picture twice does no harm.
+    for (const [part, asset] of PROFILE_IMAGES) {
+      if (parts.has(part)) {
+        await this.profileAssets.remove(account.id, asset);
+      }
+    }
+
+    const row = await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: account.id },
+        data: {
+          ...(parts.has('NICKNAME') ? { nickname: null } : {}),
+          ...(parts.has('DESCRIPTION') ? { description: null } : {}),
+        },
+      });
+      const recorded = await this.record(tx, staff, account, {
+        action: ModerationActionType.PROFILE_CLEARED,
+        reason: input.reason,
+        publicMessage: input.publicMessage,
+        internalNote: input.internalNote,
+      });
+      await this.settleFlags(tx, staff, recorded, input.resolveFlags);
+      return recorded;
+    });
+
+    await this.notify(
+      row,
+      'Your profile was edited',
+      input.publicMessage || 'A moderator removed part of your profile.',
+    );
+    return toActionDto(row, staff);
   }
 
-  remove(
-    _staff: StaffActor,
-    _accountId: number,
-    _input: StaffDeleteAccountDto,
+  /** Erases the account as its owner could, with the record of who did and why. */
+  async remove(
+    staff: StaffActor,
+    accountId: number,
+    input: StaffDeleteAccountDto,
   ): Promise<ModerationActionDto> {
-    return notAvailableYet();
+    const account = await this.subject(staff, accountId);
+
+    let row: ActionRow | undefined;
+    await this.deletion.deleteAccount(
+      account.id,
+      input.removePublishedGames,
+      { by: 'admin' },
+      async (tx) => {
+        // No snapshot: the erasure this row records is the one that removes the profile for good.
+        const recorded = await this.log.record(tx, {
+          action: ModerationActionType.ACCOUNT_DELETED,
+          actorId: staff.id,
+          targetType: ModerationTargetType.USER,
+          targetId: account.id,
+          subjectUserId: account.id,
+          reason: input.reason,
+          internalNote: input.internalNote,
+        });
+        await this.settleFlags(tx, staff, recorded, input.resolveFlags);
+        row = recorded;
+      },
+    );
+    if (!row) {
+      throw new InternalServerErrorException('The deletion was not recorded');
+    }
+
+    return toActionDto(row, staff);
   }
 
   /** The account a decision bears on, once the caller is known to be allowed to decide about it. */

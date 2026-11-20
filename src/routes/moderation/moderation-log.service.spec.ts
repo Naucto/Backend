@@ -79,6 +79,26 @@ describe('ModerationLogService', () => {
     });
   });
 
+  describe('scrubAccount', () => {
+    const scrubTx = {
+      moderationAction: { updateMany: jest.fn() },
+      flag: { updateMany: jest.fn() },
+    };
+
+    it('takes the copies of what the person wrote, and leaves who decided what and why', async () => {
+      await service.scrubAccount(scrubTx as unknown as Prisma.TransactionClient, 7);
+
+      expect(scrubTx.moderationAction.updateMany).toHaveBeenCalledWith({
+        where: { subjectUserId: 7 },
+        data: { snapshot: Prisma.DbNull },
+      });
+      expect(scrubTx.flag.updateMany.mock.calls).toEqual([
+        [{ where: { targetOwnerId: 7 }, data: { snapshot: {} } }],
+        [{ where: { reporterId: 7 }, data: { details: null } }],
+      ]);
+    });
+  });
+
   describe('list', () => {
     beforeEach(() => {
       prisma.moderationAction.count.mockResolvedValue(0);

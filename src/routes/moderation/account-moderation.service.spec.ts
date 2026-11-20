@@ -5,6 +5,8 @@ import { ADMIN, MODERATOR, RoleName, USER } from '../../auth/access/roles';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MultiplayerService } from '../multiplayer/multiplayer.service';
+import { AccountDeletionService } from '../user/account-deletion.service';
+import { ProfileAssetService } from '../user/profile-asset.service';
 import { WorkSessionService } from '../work-session/work-session.service';
 import { AccountModerationService } from './account-moderation.service';
 import { MODERATION_ERROR } from './moderation.error';
@@ -49,6 +51,8 @@ describe('AccountModerationService', () => {
   const notifications = { notifyBestEffort: jest.fn() };
   const multiplayer = { removeAccount: jest.fn() };
   const workSessions = { kickEverywhere: jest.fn() };
+  const deletion = { deleteAccount: jest.fn() };
+  const profileAssets = { remove: jest.fn() };
   let service: AccountModerationService;
 
   beforeEach(() => {
@@ -64,7 +68,118 @@ describe('AccountModerationService', () => {
       notifications as unknown as NotificationsService,
       multiplayer as unknown as MultiplayerService,
       workSessions as unknown as WorkSessionService,
+      deletion as unknown as AccountDeletionService,
+      profileAssets as unknown as ProfileAssetService,
     );
+  });
+
+  describe('clearProfile', () => {
+    const CLEAR = { reason: ModerationReason.SEXUAL_CONTENT };
+
+    beforeEach(() => {
+      log.record.mockResolvedValue({ ...recorded, action: ModerationActionType.PROFILE_CLEARED });
+    });
+
+    it('clears only the parts asked for', async () => {
+      await service.clearProfile(MOD, 7, { ...CLEAR, parts: ['PICTURE', 'DESCRIPTION'] });
+
+      expect(profileAssets.remove.mock.calls).toEqual([[7, 'profile']]);
+      expect(tx.user.update).toHaveBeenCalledWith({
+        where: { id: 7 },
+        data: { description: null },
+      });
+    });
+
+    it('records the profile as it read before, for the account to find in its standing', async () => {
+      await service.clearProfile(MOD, 7, { ...CLEAR, parts: ['NICKNAME'] });
+
+      expect(log.record).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({
+          action: ModerationActionType.PROFILE_CLEARED,
+          snapshot: { title: 'Louis', body: 'Makes games' },
+        }),
+      );
+      expect(notifications.notifyBestEffort).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 7, title: 'Your profile was edited' }),
+      );
+    });
+
+    it('records nothing when a picture could not be removed', async () => {
+      profileAssets.remove.mockRejectedValue(new Error('storage is down'));
+
+      await expect(
+        service.clearProfile(MOD, 7, { ...CLEAR, parts: ['BACKGROUND'] }),
+      ).rejects.toThrow('storage is down');
+      expect(log.record).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('remove', () => {
+    const ERASE = {
+      reason: ModerationReason.ILLEGAL,
+      confirmation: 'DELETE' as const,
+      removePublishedGames: true,
+    };
+    const BOSS = { id: 2, role: ADMIN } as const;
+
+    beforeEach(() => {
+      log.record.mockResolvedValue({ ...recorded, action: ModerationActionType.ACCOUNT_DELETED });
+      deletion.deleteAccount.mockImplementation(
+        async (
+          _id: number,
+          _games: boolean,
+          _by: object,
+          alongside: (client: typeof tx) => unknown,
+        ) => {
+          await alongside(tx);
+        },
+      );
+    });
+
+    it('erases the account as its owner could, and records it in the same transaction', async () => {
+      await service.remove(BOSS, 7, ERASE);
+
+      expect(deletion.deleteAccount).toHaveBeenCalledWith(
+        7,
+        true,
+        { by: 'admin' },
+        expect.any(Function),
+      );
+      expect(log.record).toHaveBeenCalledWith(tx, {
+        action: ModerationActionType.ACCOUNT_DELETED,
+        actorId: BOSS.id,
+        targetType: 'USER',
+        targetId: 7,
+        subjectUserId: 7,
+        reason: ModerationReason.ILLEGAL,
+        internalNote: undefined,
+      });
+    });
+
+    it('keeps no copy of the profile it erases', async () => {
+      await service.remove(BOSS, 7, ERASE);
+
+      expect(log.record.mock.calls[0][1]).not.toHaveProperty('snapshot');
+    });
+
+    it('tells nobody: there is no account left to tell', async () => {
+      await service.remove(BOSS, 7, ERASE);
+
+      expect(notifications.notifyBestEffort).not.toHaveBeenCalled();
+    });
+
+    it('never erases an account of equal rank, nor the caller', async () => {
+      prisma.user.findUnique.mockResolvedValue(target(ADMIN));
+
+      await expect(service.remove(BOSS, 7, ERASE)).rejects.toMatchObject({
+        code: MODERATION_ERROR.TARGET_OUTRANKS_ACTOR,
+      });
+      await expect(service.remove(BOSS, BOSS.id, ERASE)).rejects.toMatchObject({
+        code: MODERATION_ERROR.CANNOT_MODERATE_SELF,
+      });
+      expect(deletion.deleteAccount).not.toHaveBeenCalled();
+    });
   });
 
   describe('suspend', () => {

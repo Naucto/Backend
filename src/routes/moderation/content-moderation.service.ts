@@ -1,4 +1,10 @@
-import { HttpStatus, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  HttpStatus,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { FlagStatus, ModerationActionType, ModerationTargetType, Prisma } from '@prisma/client';
 
@@ -7,11 +13,12 @@ import { PROJECT_CHANGED, ProjectChangedEvent } from '../../common/domain-events
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MultiplayerService } from '../multiplayer/multiplayer.service';
+import { ProjectService } from '../project/project.service';
 import { ProjectContentService } from '../project/project-content.service';
 import { ModerationActionDto, TargetContentDto } from './dto/moderation-action.dto';
 import { ContentDecisionDto, ModerationNoteDto } from './dto/moderation-decision.dto';
 import { resolveOpenFlags } from './flag-resolution';
-import { MODERATION_ERROR, notAvailableYet } from './moderation.error';
+import { MODERATION_ERROR } from './moderation.error';
 import { ModerationLogService } from './moderation-log.service';
 import { ActionRow, toActionDto } from './moderation-mappers';
 import { StaffActor } from './staff-actor';
@@ -61,6 +68,7 @@ export class ContentModerationService {
     private readonly log: ModerationLogService,
     private readonly notifications: NotificationsService,
     private readonly content: ProjectContentService,
+    private readonly projects: ProjectService,
     private readonly multiplayer: MultiplayerService,
     private readonly eventEmitter: EventEmitter2,
   ) {}
@@ -176,12 +184,40 @@ export class ContentModerationService {
     return toActionDto(row, staff);
   }
 
-  removeProject(
-    _staff: StaffActor,
-    _projectId: number,
-    _input: ContentDecisionDto,
+  async removeProject(
+    staff: StaffActor,
+    projectId: number,
+    input: ContentDecisionDto,
   ): Promise<ModerationActionDto> {
-    return notAvailableYet();
+    const project = await this.project(staff, projectId);
+
+    let row: ActionRow | undefined;
+    await this.projects.remove(project.id, async (tx) => {
+      const recorded = await this.log.record(tx, {
+        action: ModerationActionType.PROJECT_DELETED,
+        actorId: staff.id,
+        targetType: ModerationTargetType.PROJECT,
+        targetId: project.id,
+        subjectUserId: project.userId,
+        reason: input.reason,
+        publicMessage: input.publicMessage,
+        internalNote: input.internalNote,
+        snapshot: projectContent(project),
+      });
+      await this.settleFlags(tx, staff, recorded, input.resolveFlags);
+      row = recorded;
+    });
+    if (!row) {
+      throw new InternalServerErrorException('The deletion was not recorded');
+    }
+
+    this.eventEmitter.emit(PROJECT_CHANGED, new ProjectChangedEvent(project.id));
+    await this.notify(
+      row,
+      'Your game was deleted',
+      input.publicMessage || 'A moderator deleted one of your games.',
+    );
+    return toActionDto(row, staff);
   }
 
   async hideComment(
@@ -274,12 +310,64 @@ export class ContentModerationService {
     return toActionDto(row, staff);
   }
 
-  removeComment(
-    _staff: StaffActor,
-    _commentId: number,
-    _input: ContentDecisionDto,
+  async removeComment(
+    staff: StaffActor,
+    commentId: number,
+    input: ContentDecisionDto,
   ): Promise<ModerationActionDto> {
-    return notAvailableYet();
+    const comment = await this.comment(staff, commentId);
+
+    const row = await this.prisma.$transaction(async (tx) => {
+      // A comment with replies keeps its place so they keep theirs, as when a user deletes one. It
+      // is emptied for good and stays marked as removed by moderation.
+      const replies = await tx.comment.count({ where: { parentId: comment.id } });
+      if (replies > 0) {
+        await tx.comment.update({
+          where: { id: comment.id },
+          data: { deleted: true, content: '', hiddenAt: comment.hiddenAt ?? new Date() },
+        });
+      } else {
+        await tx.comment.delete({ where: { id: comment.id } });
+      }
+      const recorded = await this.log.record(tx, {
+        action: ModerationActionType.COMMENT_DELETED,
+        actorId: staff.id,
+        targetType: ModerationTargetType.COMMENT,
+        targetId: comment.id,
+        subjectUserId: comment.authorId,
+        reason: input.reason,
+        publicMessage: input.publicMessage,
+        internalNote: input.internalNote,
+        snapshot: { title: null, body: comment.content },
+      });
+      await this.settleFlags(tx, staff, recorded, input.resolveFlags);
+      return recorded;
+    });
+
+    await this.notify(
+      row,
+      'Your comment was deleted',
+      input.publicMessage || 'A moderator deleted one of your comments.',
+    );
+    return toActionDto(row, staff);
+  }
+
+  private async settleFlags(
+    tx: Prisma.TransactionClient,
+    staff: StaffActor,
+    recorded: ActionRow,
+    resolveFlags: boolean | undefined,
+  ): Promise<void> {
+    if (resolveFlags === false) {
+      return;
+    }
+    await resolveOpenFlags(tx, {
+      targetType: recorded.targetType,
+      targetId: recorded.targetId,
+      status: FlagStatus.ACTIONED,
+      resolvedById: staff.id,
+      resolutionId: recorded.id,
+    });
   }
 
   /** The game a decision bears on. Staff never decide about a game they created. */

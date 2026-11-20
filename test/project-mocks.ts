@@ -111,6 +111,13 @@ export class ProjectMocks {
     project: {
       create: jest.fn(),
       update: jest.fn(),
+      delete: jest.fn(),
+    },
+    gameSession: {
+      deleteMany: jest.fn(),
+    },
+    workSession: {
+      deleteMany: jest.fn(),
     },
     releaseView: {
       count: jest.fn(),

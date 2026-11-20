@@ -4,6 +4,7 @@ import { DiscordModule } from '../../discord/discord.module';
 import { NotificationsModule } from '../../notifications/notifications.module';
 import { MultiplayerModule } from '../multiplayer/multiplayer.module';
 import { ProjectModule } from '../project/project.module';
+import { UserModule } from '../user/user.module';
 import { WorkSessionModule } from '../work-session/work-session.module';
 import { AccountModerationService } from './account-moderation.service';
 import { AdminCaseController } from './admin-case.controller';
@@ -31,6 +32,7 @@ import { StandingService } from './standing.service';
     WorkSessionModule,
     ProjectModule,
     DiscordModule,
+    UserModule,
   ],
   controllers: [
     ModerationController,
