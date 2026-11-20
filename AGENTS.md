@@ -353,8 +353,15 @@ on the client side only: the routes answer whatever the flag says.
   played" are read per request, from `AnalyticsUserDaily` (rows exist only for an account whose
   browser consented to analytics) and from the presence friends already see.
 - A card is a `HubGameDto`, built field by field by `toHubGame`: spreading a project row would hand
-  out its content size and release hash. Its `coverUrl` comes from the row (`Project.coverVersion`,
-  written at upload); a list never asks the store about a cover.
+  out its content size and release hash. Its `coverUrl` and `clipUrl` come from the row
+  (`Project.coverVersion`, `Project.clipVersion`, written at upload); a list never asks the store
+  about a cover or a clip.
+- How a game is drawn is live, not released: the cover, the clip (`POST`/`DELETE
+  /projects/:id/clip`, WebM or MP4 by declared type and by content, 4 MiB, public-read) and the
+  disk style (`PATCH /projects/:id/disk`) change the moment a collaborator sets them, take no part
+  in the release hash, and reach every answer through `ProjectService.lookOf`. A disk colour is one
+  of the engine's default palette, mirrored in `dto/disk-style-limits.ts` from the Frontend
+  repository; no style means the client derives a colour from the project id.
 
 **Collections** (`src/routes/collections/`), a person's lists of games:
 
