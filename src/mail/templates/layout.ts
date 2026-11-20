@@ -4,6 +4,9 @@ import { frontendLink, frontendUrl } from '../../config/frontend';
 import { RenderedMail } from '../mail.types';
 import { MailTranslator } from '../mail-i18n';
 
+// TODO(NCTO-317): Use UI kit from frontend to use it on the backend for emails
+
+
 /** What changes from one mail to the next; the frame around it is the same for every mail. */
 export interface MailLayout {
   subject: string;
