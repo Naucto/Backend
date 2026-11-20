@@ -65,11 +65,11 @@ describe('EmailTokenService', () => {
   });
 
   it.each([
-    ['unknown', null, 1],
-    ['of another purpose', { purpose: 'RESET_PASSWORD' }, 1],
-    ['expired', { expiresAt: new Date(Date.now() - 1000) }, 1],
-    ['spent by a concurrent request', {}, 0],
-  ])('should refuse a token that is %s', async (_case, row, deleted) => {
+    ['unknown', null, 1, false],
+    ['of another purpose', { purpose: 'RESET_PASSWORD' }, 1, false],
+    ['expired', { expiresAt: new Date(Date.now() - 1000) }, 1, true],
+    ['spent by a concurrent request', {}, 0, true],
+  ])('should refuse a token that is %s', async (_case, row, deleted, spent) => {
     prisma.emailToken.findUnique.mockResolvedValue(
       row === null
         ? null
@@ -86,6 +86,11 @@ describe('EmailTokenService', () => {
     await expect(
       service.consume('tok', 'VERIFY_EMAIL', prisma as unknown as PrismaService),
     ).resolves.toBeNull();
+    if (spent) {
+      expect(prisma.emailToken.deleteMany).toHaveBeenCalledWith({ where: { id: 9 } });
+    } else {
+      expect(prisma.emailToken.deleteMany).not.toHaveBeenCalled();
+    }
   });
 
   it('should cool down while a link of the purpose went out in the last minute', async () => {

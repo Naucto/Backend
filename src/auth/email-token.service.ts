@@ -46,7 +46,9 @@ export class EmailTokenService {
 
   /**
    * The account the token was issued to, or null when it is unknown, of another purpose or
-   * expired. A token is spent by the call that reads it, whether it was still valid or not.
+   * expired. A token of the purpose asked for is spent by the call that reads it, whether it was
+   * still valid or not; one of another purpose is left alone, so presenting a reset link where a
+   * confirmation is expected does not spend it.
    */
   async consume(
     token: string,
