@@ -24,7 +24,7 @@ import {
 import { WebRTCService } from '../../webrtc/webrtc.service';
 import { FriendsService } from '../friends/friends.service';
 import { ProjectService } from '../project/project.service';
-import { PUBLISHED } from '../project/project-select';
+import { ProjectLook, PUBLISHED } from '../project/project-select';
 import { CreateGameSessionDto } from './dto/create-game-session.dto';
 import { GameSessionConnectionResponseDto } from './dto/game-session-connection.dto';
 import { JOIN_CODE_LENGTH, SESSION_LIST_MAX } from './dto/game-session-limits';
@@ -49,7 +49,18 @@ const SESSION_RELATIONS = {
   otherUsers: { select: PLAYER_SELECT },
   host: { select: PLAYER_SELECT },
   project: {
-    select: { id: true, name: true, publishedName: true, iconUrl: true, coverVersion: true },
+    select: {
+      id: true,
+      name: true,
+      publishedName: true,
+      iconUrl: true,
+      coverVersion: true,
+      clipVersion: true,
+      diskColor: true,
+      diskFinish: true,
+      diskColor2: true,
+      diskGradDir: true,
+    },
   },
 } as const;
 
@@ -243,9 +254,9 @@ export class MultiplayerService {
     return this._syncServer.connectedCount(sessionId);
   }
 
-  /** The cover of the game a session plays, from the session's own row. */
-  coverUrl(session: GameSessionEx): string | null {
-    return this._projectService.storedCoverUrl(session.project);
+  /** How the game a session plays is drawn, from the session's own row. */
+  lookOf(session: GameSessionEx): ProjectLook {
+    return this._projectService.lookOf(session.project);
   }
 
   async get(sessionId: string, userId: number): Promise<GameSessionEx> {

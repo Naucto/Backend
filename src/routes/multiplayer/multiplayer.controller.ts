@@ -212,8 +212,12 @@ export class MultiplayerController {
     dto.startedAt = session.startedAt;
     dto.roster = [session.host, ...session.otherUsers]
       .slice(0, SESSION_ROSTER_PREVIEW)
-      .map(({ username, nickname }) => (nickname ? { username, nickname } : { username }));
-    dto.coverUrl = this._multiplayerService.coverUrl(session);
+      .map(({ id, username, nickname }) =>
+        nickname ? { id, username, nickname } : { id, username },
+      );
+    const { coverUrl, disk } = this._multiplayerService.lookOf(session);
+    dto.coverUrl = coverUrl;
+    dto.disk = disk;
 
     return dto;
   }

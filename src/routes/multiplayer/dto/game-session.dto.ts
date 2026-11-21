@@ -2,9 +2,14 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { GameSessionVisibility } from '@prisma/client';
 import { IsArray, IsEnum, IsInt, IsOptional, IsString, IsUUID } from 'class-validator';
 
+import { DiskStyleDto } from '../../project/dto/disk-style.dto';
 import { SESSION_ROSTER_PREVIEW } from './game-session-limits';
 
 export class GameSessionRosterEntryDto {
+  @ApiProperty({ description: 'User ID', example: 42 })
+  @IsInt()
+  id!: number;
+
   @ApiProperty({ example: 'alice' })
   @IsString()
   username!: string;
@@ -74,6 +79,14 @@ export class GameSessionResponseDto {
     nullable: true,
   })
   coverUrl!: string | null;
+
+  @ApiProperty({
+    description:
+      'The disk the author of the game chose. Null when none was chosen: a client then derives a colour from the project id',
+    type: DiskStyleDto,
+    nullable: true,
+  })
+  disk!: DiskStyleDto | null;
 }
 
 export class GameSessionListResponseDto {

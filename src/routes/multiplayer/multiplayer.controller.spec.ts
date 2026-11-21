@@ -19,7 +19,18 @@ function makeSession(overrides: Partial<GameSessionEx> = {}): GameSessionEx {
     joinCode: null,
     sessionId: 'session-uuid',
     host: { id: 1, username: 'alice', nickname: null },
-    project: { id: 1, name: 'Snake', publishedName: null, iconUrl: null, coverVersion: null },
+    project: {
+      id: 1,
+      name: 'Snake',
+      publishedName: null,
+      iconUrl: null,
+      coverVersion: null,
+      clipVersion: null,
+      diskColor: null,
+      diskFinish: null,
+      diskColor2: null,
+      diskGradDir: null,
+    },
     otherUsers: [],
     ...overrides,
   };
@@ -31,14 +42,14 @@ describe('MultiplayerController', () => {
   const multiplayerService = {
     get: jest.fn(),
     connectedPlayerCount: jest.fn(),
-    coverUrl: jest.fn(),
+    lookOf: jest.fn(),
   };
   const req = { user: { id: 1 } } as RequestWithUser;
 
   beforeEach(async () => {
     jest.resetAllMocks();
     multiplayerService.connectedPlayerCount.mockReturnValue(0);
-    multiplayerService.coverUrl.mockReturnValue(null);
+    multiplayerService.lookOf.mockReturnValue({ coverUrl: null, clipUrl: null, disk: null });
 
     const module = await Test.createTestingModule({
       controllers: [MultiplayerController],
@@ -102,23 +113,35 @@ describe('MultiplayerController', () => {
 
       expect(roster).toHaveLength(SESSION_ROSTER_PREVIEW);
       expect(roster.slice(0, 2)).toEqual([
-        { username: 'alice' },
-        { username: 'guest-0', nickname: 'Bobby' },
+        { id: 1, username: 'alice' },
+        { id: 2, username: 'guest-0', nickname: 'Bobby' },
       ]);
       expect(playerCount).toBe(guests.length + 1);
     });
 
-    it('says when the session was opened and where the cover of its game is', async () => {
+    it('says when the session was opened and how its game is drawn', async () => {
       const startedAt = new Date('2026-11-20T18:30:00Z');
       const session = makeSession({ startedAt });
+      const disk = { color: '#ff8426', finish: 'solid' };
       multiplayerService.get.mockResolvedValueOnce(session);
-      multiplayerService.coverUrl.mockReturnValueOnce('https://cdn.test/projects/1/image?v=abc');
+      multiplayerService.lookOf.mockReturnValueOnce({
+        coverUrl: 'https://cdn.test/projects/1/image?v=abc',
+        clipUrl: null,
+        disk,
+      });
 
       await expect(controller.get(req, 'session-uuid')).resolves.toMatchObject({
         startedAt,
         coverUrl: 'https://cdn.test/projects/1/image?v=abc',
+        disk,
       });
-      expect(multiplayerService.coverUrl).toHaveBeenCalledWith(session);
+      expect(multiplayerService.lookOf).toHaveBeenCalledWith(session);
+    });
+
+    it('answers a game without a chosen disk with none', async () => {
+      multiplayerService.get.mockResolvedValueOnce(makeSession());
+
+      await expect(controller.get(req, 'session-uuid')).resolves.toMatchObject({ disk: null });
     });
   });
 });

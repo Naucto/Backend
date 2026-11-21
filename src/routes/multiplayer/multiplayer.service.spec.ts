@@ -51,7 +51,18 @@ function makeSession(overrides: Partial<GameSessionEx> = {}): GameSessionEx {
     joinCode: null,
     sessionId: 'session-uuid',
     host: { ...aPlayer(1), username: 'alice' },
-    project: { id: 1, name: 'Snake', publishedName: null, iconUrl: null, coverVersion: null },
+    project: {
+      id: 1,
+      name: 'Snake',
+      publishedName: null,
+      iconUrl: null,
+      coverVersion: null,
+      clipVersion: null,
+      diskColor: null,
+      diskFinish: null,
+      diskColor2: null,
+      diskGradDir: null,
+    },
     otherUsers: [],
     ...overrides,
   };
@@ -99,7 +110,7 @@ describe('MultiplayerService', () => {
   const notificationsService = { createNotification: jest.fn() };
   const eventEmitter = { emit: jest.fn() };
   const friendsService = { areFriends: jest.fn(), friendIdsOf: jest.fn() };
-  const projectService = { findOne: jest.fn(), storedCoverUrl: jest.fn() };
+  const projectService = { findOne: jest.fn(), lookOf: jest.fn() };
   const webrtcService = { buildOffer: jest.fn() };
   const jwtService = { sign: jest.fn(), verify: jest.fn() };
   const accounting = {
@@ -1106,12 +1117,17 @@ describe('MultiplayerService', () => {
       expect(sessions[0]?.sessionId).toBe('open-0');
     });
 
-    it('reads the cover of a session from the row of its game', () => {
+    it('reads how a session is drawn from the row of its game', () => {
       const session = makeSession();
-      projectService.storedCoverUrl.mockReturnValue('https://cdn.test/projects/1/image');
+      const look = {
+        coverUrl: 'https://cdn.test/projects/1/image',
+        clipUrl: null,
+        disk: { color: '#ff8426', finish: 'solid' },
+      };
+      projectService.lookOf.mockReturnValue(look);
 
-      expect(service.coverUrl(session)).toBe('https://cdn.test/projects/1/image');
-      expect(projectService.storedCoverUrl).toHaveBeenCalledWith(session.project);
+      expect(service.lookOf(session)).toBe(look);
+      expect(projectService.lookOf).toHaveBeenCalledWith(session.project);
     });
 
     it("matches a term against the room's name and both names of the game", async () => {
