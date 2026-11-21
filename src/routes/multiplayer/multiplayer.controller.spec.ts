@@ -143,5 +143,13 @@ describe('MultiplayerController', () => {
 
       await expect(controller.get(req, 'session-uuid')).resolves.toMatchObject({ disk: null });
     });
+
+    it('hands the join code it was given to the lookup', async () => {
+      multiplayerService.get.mockResolvedValueOnce(makeSession());
+
+      await controller.get(req, 'session-uuid', 'ABCDEFGH');
+
+      expect(multiplayerService.get).toHaveBeenCalledWith('session-uuid', 1, 'ABCDEFGH');
+    });
   });
 });

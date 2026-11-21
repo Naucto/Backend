@@ -883,6 +883,34 @@ describe('MultiplayerService', () => {
       );
     });
 
+    it('returns an INVITE_CODE session for a non-member who holds its code', async () => {
+      gameSession.findFirst.mockResolvedValueOnce(
+        makeSession({
+          hostId: 1,
+          visibility: GameSessionVisibility.INVITE_CODE,
+          joinCode: 'ABCDEFGH',
+        }),
+      );
+
+      const session = await service.get('session-uuid', 99, 'ABCDEFGH');
+
+      expect(session.sessionId).toBe('session-uuid');
+    });
+
+    it('hides an INVITE_CODE session from a non-member with another code (404)', async () => {
+      gameSession.findFirst.mockResolvedValueOnce(
+        makeSession({
+          hostId: 1,
+          visibility: GameSessionVisibility.INVITE_CODE,
+          joinCode: 'ABCDEFGH',
+        }),
+      );
+
+      await expect(service.get('session-uuid', 99, 'ZZZZZZZZ')).rejects.toBeInstanceOf(
+        MultiplayerGameSessionNotFoundError,
+      );
+    });
+
     it('returns a non-public session for one of its members', async () => {
       gameSession.findFirst.mockResolvedValueOnce(
         makeSession({

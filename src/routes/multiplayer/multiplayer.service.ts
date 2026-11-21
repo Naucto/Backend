@@ -259,11 +259,13 @@ export class MultiplayerService {
     return this._projectService.lookOf(session.project);
   }
 
-  async get(sessionId: string, userId: number): Promise<GameSessionEx> {
+  /** A session as someone who may see it does: its members, whoever it is listed to, and whoever holds its join code. */
+  async get(sessionId: string, userId: number, joinCode?: string): Promise<GameSessionEx> {
     const session = await this._findSessionOrThrow(sessionId);
 
     const visible =
       this._isMember(session, userId) ||
+      (joinCode !== undefined && joinCode === session.joinCode) ||
       isListedTo(session.visibility, {
         isMember: false,
         isHostFriend: await this._friendsService.areFriends(userId, session.hostId),

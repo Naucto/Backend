@@ -96,12 +96,19 @@ export class MultiplayerController {
 
   @Get(':sessionId')
   @ApiOperation({ summary: 'Fetch a single game session' })
+  @ApiQuery({
+    name: 'code',
+    type: 'string',
+    required: false,
+    description: 'The join code of a session that is reached by code, for someone not in it yet',
+  })
   @ApiResponse({ status: HttpStatus.OK, type: GameSessionResponseDto })
   async get(
     @Req() req: RequestWithUser,
     @Param('sessionId') sessionId: string,
+    @Query('code') code?: string,
   ): Promise<GameSessionResponseDto> {
-    const session = await this._multiplayerService.get(sessionId, req.user.id);
+    const session = await this._multiplayerService.get(sessionId, req.user.id, code);
     return this._toResponse(session);
   }
 
