@@ -22,12 +22,13 @@ import { WorkSessionService } from '../work-session/work-session.service';
 import { AddCollaboratorDto, RemoveCollaboratorDto } from './dto/collaborator-project.dto';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
+import { ProjectHiddenException } from './project.error';
 import { projectKeys } from './project-keys';
 import {
   DEFAULT_LIMIT,
   PaginatedProjectsResult,
   ProjectEx,
-  PUBLISHED,
+  RELEASED,
   WITH_PEOPLE,
 } from './project-select';
 import { normalizeTags } from './project-tags';
@@ -94,7 +95,7 @@ export class ProjectService {
     const normalizedTags = normalizeTags(filters.tags);
 
     if (filters.status === 'published') {
-      andClauses.push(PUBLISHED);
+      andClauses.push(RELEASED);
     } else if (filters.status === 'drafts') {
       andClauses.push({ publishedAt: null });
     }
@@ -250,7 +251,11 @@ export class ProjectService {
   }
 
   async uploadImage(id: number, file: Express.Multer.File, uploaderId: number): Promise<void> {
-    await this.findOne(id);
+    const project = await this.findOne(id);
+    // A cover is public the moment it is stored, which is what withholding a game takes away.
+    if (project.hiddenAt) {
+      throw new ProjectHiddenException();
+    }
     await this.storeCover(id, file, {
       uploadedBy: uploaderId.toString(),
       projectId: id.toString(),
@@ -298,16 +303,24 @@ export class ProjectService {
     }
   }
 
-  async remove(id: number): Promise<void> {
+  /**
+   * `alongside` runs in the transaction that deletes the project, for a caller whose own record of
+   * the deletion must exist exactly when the project is gone.
+   */
+  async remove(
+    id: number,
+    alongside?: (tx: Prisma.TransactionClient) => Promise<void>,
+  ): Promise<void> {
     await this.findOne(id);
 
     // Both session tables reference the project with ON DELETE RESTRICT, so their rows go first,
     // in the same transaction as the project.
-    await this.prisma.$transaction([
-      this.prisma.gameSession.deleteMany({ where: { projectId: id } }),
-      this.prisma.workSession.deleteMany({ where: { projectId: id } }),
-      this.prisma.project.delete({ where: { id } }),
-    ]);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.gameSession.deleteMany({ where: { projectId: id } });
+      await tx.workSession.deleteMany({ where: { projectId: id } });
+      await tx.project.delete({ where: { id } });
+      await alongside?.(tx);
+    });
 
     // After the row, and never fatally: an orphaned blob can still be swept, content dropped
     // ahead of a failed delete cannot be restored.

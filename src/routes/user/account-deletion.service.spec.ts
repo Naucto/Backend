@@ -13,6 +13,7 @@ import {
 } from '../../common/domain-events';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AnalyticsErasureService } from '../analytics/analytics-erasure.service';
+import { ModerationLogService } from '../moderation/moderation-log.service';
 import { ProjectService } from '../project/project.service';
 import { EdgeService } from '../s3/edge.service';
 import { S3Service } from '../s3/s3.service';
@@ -41,6 +42,7 @@ describe('AccountDeletionService', () => {
   const analyticsErasure = { eraseWithin: jest.fn() };
   const s3Service = { deleteFile: jest.fn() };
   const eventEmitter = { emit: jest.fn() };
+  const moderationLog = { scrubAccount: jest.fn() };
 
   beforeEach(async () => {
     jest.resetAllMocks();
@@ -66,10 +68,40 @@ describe('AccountDeletionService', () => {
         { provide: S3Service, useValue: s3Service },
         { provide: EdgeService, useValue: {} },
         { provide: EventEmitter2, useValue: eventEmitter },
+        { provide: ModerationLogService, useValue: moderationLog },
       ],
     }).compile();
 
     service = module.get(AccountDeletionService);
+  });
+
+  it('takes what the moderation record kept of the person, in the transaction that erases them', async () => {
+    await service.deleteAccount(7, false, { by: 'self' });
+
+    expect(moderationLog.scrubAccount).toHaveBeenCalledWith(prisma, 7);
+    expect(prisma.user.update.mock.invocationCallOrder[0]).toBeLessThan(
+      moderationLog.scrubAccount.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it('runs what a caller records alongside last, on the same transaction', async () => {
+    const alongside = jest.fn();
+
+    await service.deleteAccount(7, false, { by: 'admin' }, alongside);
+
+    expect(alongside).toHaveBeenCalledWith(prisma);
+    expect(moderationLog.scrubAccount.mock.invocationCallOrder[0]).toBeLessThan(
+      alongside.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it('erases nothing when what was to be recorded alongside fails', async () => {
+    await expect(
+      service.deleteAccount(7, false, { by: 'admin' }, () =>
+        Promise.reject(new Error('log is down')),
+      ),
+    ).rejects.toThrow('log is down');
+    expect(s3Service.deleteFile).not.toHaveBeenCalled();
   });
 
   it('404s for an unknown or already deleted user', async () => {
@@ -109,14 +141,14 @@ describe('AccountDeletionService', () => {
     expect(bcrypt.compare).not.toHaveBeenCalled();
   });
 
-  it('removes unpublished projects only, keeping published games by default', async () => {
+  it('removes drafts and withheld games, keeping published games by default', async () => {
     prisma.project.findMany.mockResolvedValue([{ id: 1 }, { id: 2 }]);
 
     await service.deleteAccount(7, false, { by: 'self' });
 
     expect(prisma.project.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { userId: 7, publishedAt: null },
+        where: { userId: 7, OR: [{ publishedAt: null }, { hiddenAt: { not: null } }] },
       }),
     );
     expect(projectService.remove).toHaveBeenCalledTimes(2);

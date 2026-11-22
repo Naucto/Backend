@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { PUBLISHED } from '../project/project-select';
 
 const POSITIVE_TTL_MS = 5 * 60_000;
 const NEGATIVE_TTL_MS = 60_000;
@@ -32,7 +33,7 @@ export class PublishedReleasesService {
     }
 
     const found = await this.prisma.project.findFirst({
-      where: { id: releaseId, publishedAt: { not: null } },
+      where: { id: releaseId, ...PUBLISHED },
       select: { id: true },
     });
     if (found) {
@@ -49,7 +50,7 @@ export class PublishedReleasesService {
 
   private async reload(now: number): Promise<void> {
     const rows = await this.prisma.project.findMany({
-      where: { publishedAt: { not: null } },
+      where: PUBLISHED,
       select: { id: true },
     });
     this.published = new Set(rows.map((row) => row.id));

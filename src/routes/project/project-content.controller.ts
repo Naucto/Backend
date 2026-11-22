@@ -19,7 +19,7 @@ import {
 import { ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 
-import { Public, RequiresAuth } from '../../auth/access/access.decorators';
+import { AllowedWhileSuspended, Public, RequiresAuth } from '../../auth/access/access.decorators';
 import { RequestWithUser } from '../../auth/auth.types';
 import { ProjectCollaboratorGuard } from '../../auth/guards/project.guard';
 import { S3ObjectNotFoundException } from '../s3/s3.error';
@@ -301,6 +301,7 @@ export class ProjectContentController {
   }
 
   @Post(':id/unpublish')
+  @AllowedWhileSuspended()
   @UseGuards(ProjectCollaboratorGuard)
   @ApiOperation({ summary: 'Unpublish project' })
   @ApiParam({ name: 'id', type: 'string' })

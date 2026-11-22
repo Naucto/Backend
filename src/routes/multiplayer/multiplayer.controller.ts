@@ -15,7 +15,7 @@ import {
 } from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 
-import { RequiresAuth } from '../../auth/access/access.decorators';
+import { AllowedWhileSuspended, RequiresAuth } from '../../auth/access/access.decorators';
 import { RequestWithUser } from '../../auth/auth.types';
 import { CreateGameSessionDto } from './dto/create-game-session.dto';
 import { GameSessionListResponseDto, GameSessionResponseDto } from './dto/game-session.dto';
@@ -162,6 +162,7 @@ export class MultiplayerController {
   }
 
   @Post(':sessionId/leave')
+  @AllowedWhileSuspended()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Leave a game session as a player' })
   @ApiResponse({ status: HttpStatus.OK })

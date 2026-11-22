@@ -7,6 +7,7 @@ import { withEnv } from '../../../test/env';
 import { draft, knownError, ProjectMocks, released } from '../../../test/project-mocks';
 import { PROJECT_NAME_MAX_LENGTH } from './dto/project-field-limits';
 import { HubService } from './hub.service';
+import { ProjectHiddenException } from './project.error';
 import { COLLABORATOR_SELECT, CREATOR_SELECT } from './project-select';
 
 describe('HubService', () => {
@@ -106,6 +107,18 @@ describe('HubService', () => {
       expect(likes).toBe(liked.size);
     });
 
+    it('tells a withheld game apart from one that does not exist', async () => {
+      prismaMock.project.findFirst.mockResolvedValue(null);
+      prismaMock.project.count.mockResolvedValueOnce(1);
+
+      await expect(service.likeProject(12, 7)).rejects.toBeInstanceOf(ProjectHiddenException);
+
+      expect(prismaMock.project.count).toHaveBeenCalledWith({
+        where: { id: 12, publishedAt: { not: null }, hiddenAt: { not: null } },
+      });
+      expect(prismaMock.tx.like.create).not.toHaveBeenCalled();
+    });
+
     it('refuses a like on a project the hub does not carry', async () => {
       prismaMock.project.findFirst.mockResolvedValue(null);
 
@@ -113,7 +126,7 @@ describe('HubService', () => {
 
       expect(prismaMock.project.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: 999, publishedAt: { not: null } },
+          where: { id: 999, publishedAt: { not: null }, hiddenAt: null },
         }),
       );
       expect(prismaMock.tx.like.create).not.toHaveBeenCalled();
@@ -220,7 +233,7 @@ describe('HubService', () => {
 
       await expect(service.publishedCoverUrl(1)).rejects.toBeInstanceOf(NotFoundException);
       expect(prismaMock.project.findFirst).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 1, publishedAt: { not: null } } }),
+        expect.objectContaining({ where: { id: 1, publishedAt: { not: null }, hiddenAt: null } }),
       );
     });
   });
@@ -356,17 +369,17 @@ describe('HubService', () => {
       const result = await service.fetchPublishedGamesPaginated(2, 1);
 
       expect(prismaMock.project.count).toHaveBeenCalledWith({
-        where: { publishedAt: { not: null } },
+        where: { publishedAt: { not: null }, hiddenAt: null },
       });
       expect(prismaMock.project.findMany).toHaveBeenCalledWith({
-        where: { publishedAt: { not: null } },
+        where: { publishedAt: { not: null }, hiddenAt: null },
         include: {
           collaborators: { select: COLLABORATOR_SELECT },
           creator: { select: CREATOR_SELECT },
           _count: {
             select: {
               forks: true,
-              comments: { where: { deleted: false } },
+              comments: { where: { deleted: false, hiddenAt: null } },
             },
           },
         },
@@ -426,7 +439,11 @@ describe('HubService', () => {
 
       const where = prismaMock.project.count.mock.calls[0]![0]!.where;
       expect(where).toEqual(
-        expect.objectContaining({ publishedAt: { not: null }, AND: expect.any(Array) }),
+        expect.objectContaining({
+          publishedAt: { not: null },
+          hiddenAt: null,
+          AND: expect.any(Array),
+        }),
       );
       // The same filter has to reach findMany, or page 1 of a search shows unfiltered games.
       expect(prismaMock.project.findMany).toHaveBeenCalledWith(expect.objectContaining({ where }));
@@ -475,7 +492,7 @@ describe('HubService', () => {
       await service.fetchPublishedGamesPaginated(1, 10, { releaseWindow: 'all' });
 
       expect(prismaMock.project.count).toHaveBeenCalledWith({
-        where: { publishedAt: { not: null } },
+        where: { publishedAt: { not: null }, hiddenAt: null },
       });
     });
 
@@ -490,6 +507,7 @@ describe('HubService', () => {
       expect(prismaMock.project.count).toHaveBeenCalledWith({
         where: {
           publishedAt: { not: null },
+          hiddenAt: null,
           AND: [
             {
               OR: [
@@ -515,6 +533,7 @@ describe('HubService', () => {
         expect.objectContaining({
           where: {
             publishedAt: { not: null },
+            hiddenAt: null,
             userId: { not: 7 },
             collaborators: { some: { id: 7 } },
           },
@@ -531,6 +550,7 @@ describe('HubService', () => {
         expect.objectContaining({
           where: {
             publishedAt: { not: null },
+            hiddenAt: null,
             userId: { not: 7 },
             forkedFrom: { userId: 7 },
           },

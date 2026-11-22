@@ -3,7 +3,7 @@ import { ApiConsumes, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger
 import { Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
 
-import { Public, RequiresAuth } from '../../auth/access/access.decorators';
+import { AllowedWhileSuspended, Public, RequiresAuth } from '../../auth/access/access.decorators';
 import { RequestWithUser } from '../../auth/auth.types';
 import { AnalyticsIngestService, IngestRequest } from './analytics-ingest.service';
 import { AnalyticsThrottlerGuard } from './analytics-throttler.guard';
@@ -95,6 +95,7 @@ export class AnalyticsIngestController {
 
   @RequiresAuth()
   @Post('link')
+  @AllowedWhileSuspended()
   @HttpCode(HttpStatus.OK)
   @Throttle({ identity: { limit: 30, ttl: MINUTE_MS } })
   @ApiOperation({ summary: 'Link this consenting browser to the signed-in account' })

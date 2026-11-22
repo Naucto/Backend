@@ -4,6 +4,7 @@ import {
   HttpStatus,
   INestApplication,
   NotFoundException,
+  Post,
   Req,
 } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
@@ -14,10 +15,19 @@ import request from 'supertest';
 
 import { withEnv } from '../../../test/env';
 import { UserService } from '../../routes/user/user.service';
+import { STAFF_SCOPE } from '../auth.types';
 import { JwtStrategy } from '../strategies/jwt.strategy';
-import { Public, RequiresAuth, RequiresRole } from './access.decorators';
+import {
+  AllowedWhileSuspended,
+  Public,
+  RequiresAuth,
+  RequiresRole,
+  RequiresStaffSession,
+  STAFF_SESSION_REQUIRED,
+} from './access.decorators';
 import { AccessGuard } from './access.guard';
-import { ADMIN, MODERATOR, RoleName, USER } from './roles';
+import { ADMIN, MODERATOR, RoleName, USER, VIEWER } from './roles';
+import { ACCOUNT_SUSPENDED } from './suspension';
 
 const SECRET = 'access-guard-spec-secret';
 
@@ -25,12 +35,27 @@ const PLAIN_USER = 1;
 const MODERATOR_USER = 2;
 const ADMIN_USER = 3;
 const DELETED_USER = 4;
+const SUSPENDED_USER = 5;
+const SUSPENDED_MODERATOR = 6;
+const LAPSED_USER = 7;
+const VIEWER_USER = 8;
 
 const ROLES: Record<number, RoleName> = {
   [PLAIN_USER]: USER,
   [MODERATOR_USER]: MODERATOR,
   [ADMIN_USER]: ADMIN,
   [DELETED_USER]: ADMIN,
+  [SUSPENDED_USER]: USER,
+  [SUSPENDED_MODERATOR]: MODERATOR,
+  [LAPSED_USER]: USER,
+  [VIEWER_USER]: VIEWER,
+};
+
+const SUSPENDED_UNTIL = new Date('2999-01-01T00:00:00.000Z');
+const SUSPENSIONS: Record<number, { suspendedAt: Date; suspendedUntil: Date | null }> = {
+  [SUSPENDED_USER]: { suspendedAt: new Date('2026-01-01'), suspendedUntil: SUSPENDED_UNTIL },
+  [SUSPENDED_MODERATOR]: { suspendedAt: new Date('2026-01-01'), suspendedUntil: null },
+  [LAPSED_USER]: { suspendedAt: new Date('2020-01-01'), suspendedUntil: new Date('2020-01-02') },
 };
 
 type Caller = { user: { id: number } | null };
@@ -56,6 +81,29 @@ class ProbeController {
   @RequiresRole(ADMIN)
   @Get('admin')
   admin(): void {}
+
+  @Post('write')
+  write(): void {}
+
+  @AllowedWhileSuspended()
+  @Post('leave')
+  leave(): void {}
+
+  @Public()
+  @Post('public-write')
+  publicWrite(): void {}
+
+  @RequiresStaffSession(MODERATOR)
+  @Get('staff')
+  staff(): void {}
+
+  @RequiresStaffSession(ADMIN)
+  @Get('staff-admin')
+  staffAdmin(): void {}
+
+  @RequiresStaffSession(MODERATOR)
+  @Post('staff-write')
+  staffWrite(): void {}
 }
 
 @Controller('bare')
@@ -71,12 +119,21 @@ describe('AccessGuard', () => {
       if (ROLES[id] === undefined) {
         throw new NotFoundException();
       }
-      return { id, password: 'hash', deletedAt: id === DELETED_USER ? new Date() : null };
+      return {
+        id,
+        password: 'hash',
+        deletedAt: id === DELETED_USER ? new Date() : null,
+        suspendedAt: null,
+        suspendedUntil: null,
+        ...SUSPENSIONS[id],
+      };
     }),
     getUserRole: jest.fn(async (id: number) => ROLES[id] ?? USER),
   };
   const tokenFor = (userId: number): string =>
     `Bearer ${new JwtService({ secret: SECRET }).sign({ sub: userId, email: 'someone@example.com' })}`;
+  const staffTokenFor = (userId: number): string =>
+    `Bearer ${new JwtService({ secret: SECRET }).sign({ sub: userId, email: 'someone@example.com', scope: STAFF_SCOPE })}`;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -171,6 +228,185 @@ describe('AccessGuard', () => {
 
       expect(response.status).toBe(HttpStatus.UNAUTHORIZED);
       expect(userService.getUserRole).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('a route requiring a staff session', () => {
+    it('refuses the token of a site sign-in whatever its role, and names the refusal', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/probe/staff')
+        .set('Authorization', tokenFor(ADMIN_USER));
+
+      expect(response.status).toBe(HttpStatus.UNAUTHORIZED);
+      expect(response.body).toMatchObject({ code: STAFF_SESSION_REQUIRED });
+      expect(userService.getUserRole).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a moderator', '/probe/staff', MODERATOR_USER, HttpStatus.OK],
+      ['an admin, who outranks it', '/probe/staff', ADMIN_USER, HttpStatus.OK],
+      ['an account that lost its role', '/probe/staff', PLAIN_USER, HttpStatus.FORBIDDEN],
+      ['an admin', '/probe/staff-admin', ADMIN_USER, HttpStatus.OK],
+      [
+        'a moderator, who ranks below it',
+        '/probe/staff-admin',
+        MODERATOR_USER,
+        HttpStatus.FORBIDDEN,
+      ],
+    ])('answers the staff token of %s on %s with %s', async (_caller, path, userId, status) => {
+      const response = await request(app.getHttpServer())
+        .get(path)
+        .set('Authorization', staffTokenFor(userId));
+
+      expect(response.status).toBe(status);
+    });
+
+    it('refuses an anonymous caller', async () => {
+      const response = await request(app.getHttpServer()).get('/probe/staff');
+
+      expect(response.status).toBe(HttpStatus.UNAUTHORIZED);
+      expect(response.body).not.toHaveProperty('code');
+    });
+
+    it.each([
+      ['asks for an account', '/probe/auth'],
+      ['asks for a role its account holds', '/probe/admin'],
+    ])('never lets a staff token open a site route that %s', async (_case, path) => {
+      const response = await request(app.getHttpServer())
+        .get(path)
+        .set('Authorization', staffTokenFor(ADMIN_USER));
+
+      expect(response.status).toBe(HttpStatus.UNAUTHORIZED);
+      expect(userService.getUserRole).not.toHaveBeenCalled();
+    });
+
+    it('identifies nobody on a public route from a staff token', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/probe/public')
+        .set('Authorization', staffTokenFor(ADMIN_USER));
+
+      expect(response.status).toBe(HttpStatus.OK);
+      expect(response.body).toEqual({ user: null });
+    });
+  });
+
+  describe('a viewer', () => {
+    it.each([
+      ['a route moderators act on', '/probe/staff'],
+      ['a route only admins act on', '/probe/staff-admin'],
+    ])('reads %s in the admin console', async (_case, path) => {
+      const response = await request(app.getHttpServer())
+        .get(path)
+        .set('Authorization', staffTokenFor(VIEWER_USER));
+
+      expect(response.status).toBe(HttpStatus.OK);
+    });
+
+    it('writes nothing there', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/probe/staff-write')
+        .set('Authorization', staffTokenFor(VIEWER_USER));
+
+      expect(response.status).toBe(HttpStatus.FORBIDDEN);
+    });
+
+    it('still needs the staff sign-in to read the console', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/probe/staff')
+        .set('Authorization', tokenFor(VIEWER_USER));
+
+      expect(response.status).toBe(HttpStatus.UNAUTHORIZED);
+      expect(response.body).toMatchObject({ code: STAFF_SESSION_REQUIRED });
+    });
+
+    it('holds no staff role on the site, where it is an ordinary account', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/probe/moderator')
+        .set('Authorization', tokenFor(VIEWER_USER));
+
+      expect(response.status).toBe(HttpStatus.FORBIDDEN);
+    });
+
+    it('does not lend its reach to a moderator, who ranks above it', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/probe/staff-admin')
+        .set('Authorization', staffTokenFor(MODERATOR_USER));
+
+      expect(response.status).toBe(HttpStatus.FORBIDDEN);
+    });
+
+    it('lets a moderator write where the route asks for a moderator', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/probe/staff-write')
+        .set('Authorization', staffTokenFor(MODERATOR_USER));
+
+      expect(response.status).toBe(HttpStatus.CREATED);
+    });
+  });
+
+  describe('a suspended account', () => {
+    it('still reads', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/probe/auth')
+        .set('Authorization', tokenFor(SUSPENDED_USER));
+
+      expect(response.status).toBe(HttpStatus.OK);
+    });
+
+    it('is refused a write, and told until when', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/probe/write')
+        .set('Authorization', tokenFor(SUSPENDED_USER));
+
+      expect(response.status).toBe(HttpStatus.FORBIDDEN);
+      expect(response.body).toMatchObject({
+        code: ACCOUNT_SUSPENDED,
+        until: SUSPENDED_UNTIL.toISOString(),
+      });
+    });
+
+    it('keeps a write the route leaves open to it', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/probe/leave')
+        .set('Authorization', tokenFor(SUSPENDED_USER));
+
+      expect(response.status).toBe(HttpStatus.CREATED);
+    });
+
+    it('is not held back on a public write, which acts for nobody', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/probe/public-write')
+        .set('Authorization', tokenFor(SUSPENDED_USER));
+
+      expect(response.status).toBe(HttpStatus.CREATED);
+    });
+
+    it.each([
+      ['the token of a site sign-in', '/probe/moderator', tokenFor],
+      ['a staff token', '/probe/staff', staffTokenFor],
+    ])('holds no staff power with %s, even to read', async (_case, path, token) => {
+      const response = await request(app.getHttpServer())
+        .get(path)
+        .set('Authorization', token(SUSPENDED_MODERATOR));
+
+      expect(response.status).toBe(HttpStatus.FORBIDDEN);
+      expect(response.body).toMatchObject({ code: ACCOUNT_SUSPENDED, until: null });
+    });
+
+    it('writes again once its suspension has run out, with nothing to clear', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/probe/write')
+        .set('Authorization', tokenFor(LAPSED_USER));
+
+      expect(response.status).toBe(HttpStatus.CREATED);
+    });
+
+    it('leaves an account in good standing alone', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/probe/write')
+        .set('Authorization', tokenFor(PLAIN_USER));
+
+      expect(response.status).toBe(HttpStatus.CREATED);
     });
   });
 

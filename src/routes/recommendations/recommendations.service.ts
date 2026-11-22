@@ -6,6 +6,7 @@ import { NotificationsService } from '../../notifications/notifications.service'
 import { PrismaService } from '../../prisma/prisma.service';
 import { HubService } from '../project/hub.service';
 import { hubName } from '../project/hub-fields';
+import { ProjectHiddenException } from '../project/project.error';
 import { ProjectService } from '../project/project.service';
 import {
   FeaturedEntryDto,
@@ -77,8 +78,8 @@ export class RecommendationsService {
     }
 
     const project = await this.hubService.fetchRelease(current.projectId);
-    if (!project.publishedAt) {
-      // The game was unpublished since it was picked: retire the entry.
+    if (!project.publishedAt || project.hiddenAt) {
+      // The game was unpublished or withheld since it was picked: retire the entry.
       await this.retireCurrentPick(this.prisma, current.id);
       return null;
     }
@@ -93,6 +94,7 @@ export class RecommendationsService {
   ): Promise<FeaturedReleaseDto> {
     const project = await this.projectService.requireProject(projectId, {
       publishedAt: true,
+      hiddenAt: true,
       userId: true,
       publishedName: true,
       name: true,
@@ -100,6 +102,9 @@ export class RecommendationsService {
 
     if (!project.publishedAt) {
       throw new BadRequestException('Only published projects can be featured');
+    }
+    if (project.hiddenAt) {
+      throw new ProjectHiddenException();
     }
 
     const created = await this.prisma.$transaction(async (tx) => {

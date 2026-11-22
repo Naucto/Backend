@@ -14,6 +14,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { AnalyticsErasureService } from '../analytics/analytics-erasure.service';
 import { friendIdOf } from '../friends/friend-id-of';
+import { ModerationLogService } from '../moderation/moderation-log.service';
 import { ProjectService } from '../project/project.service';
 import { S3Service } from '../s3/s3.service';
 import { PROFILE_ASSETS, ProfileAssetService } from './profile-asset.service';
@@ -56,6 +57,11 @@ export const USER_RELATION_FATES: Record<UserRelation, 'deleted' | 'unlinked' | 
     // A report stays with the platform once its author is anonymised. Its screenshot goes, since an
     // image can show the person.
     reports: 'kept',
+    // The moderation record outlives the account it is about and the staff member who wrote it.
+    flagsFiled: 'kept',
+    flagsResolved: 'kept',
+    moderationActionsTaken: 'kept',
+    moderationRecord: 'kept',
   };
 
 /**
@@ -80,12 +86,14 @@ export class AccountDeletionService {
     private readonly analyticsErasure: AnalyticsErasureService,
     private readonly eventEmitter: EventEmitter2,
     private readonly s3Service: S3Service,
+    private readonly moderationLog: ModerationLogService,
   ) {}
 
   async deleteAccount(
     userId: number,
     removePublishedGames: boolean,
     requester: DeletionRequester,
+    alongside?: (tx: Prisma.TransactionClient) => Promise<void>,
   ): Promise<void> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -106,7 +114,7 @@ export class AccountDeletionService {
     }
 
     await this.removeOwnedProjects(userId, removePublishedGames);
-    await this.purgeAndAnonymise(userId);
+    await this.purgeAndAnonymise(userId, alongside);
     await this.removeProfileAssets(userId);
     await this.removeReportScreenshots(userId);
 
@@ -119,7 +127,9 @@ export class AccountDeletionService {
     const projects = await this.prisma.project.findMany({
       where: {
         userId,
-        ...(removePublished ? {} : { publishedAt: null }),
+        // A withheld game goes with the drafts: kept, it would stay hidden with nobody to answer
+        // for it.
+        ...(removePublished ? {} : { OR: [{ publishedAt: null }, { hiddenAt: { not: null } }] }),
       },
       select: { id: true },
     });
@@ -133,7 +143,14 @@ export class AccountDeletionService {
     }
   }
 
-  private async purgeAndAnonymise(userId: number): Promise<void> {
+  /**
+   * `alongside` runs last in the transaction, for a caller whose own record of the deletion must
+   * exist exactly when the account is gone.
+   */
+  private async purgeAndAnonymise(
+    userId: number,
+    alongside?: (tx: Prisma.TransactionClient) => Promise<void>,
+  ): Promise<void> {
     const now = new Date();
     // The handle and the email are unique columns anyone may claim, so a tombstone that could be
     // guessed could be taken in advance and make this update fail.
@@ -183,6 +200,9 @@ export class AccountDeletionService {
         },
         select: { id: true },
       });
+      // The moderation record stays, without what it kept of the person: their words and profile.
+      await this.moderationLog.scrubAccount(tx, userId);
+      await alongside?.(tx);
 
       return {
         friendIds: friendships.map((friendship) => friendIdOf(friendship, userId)),

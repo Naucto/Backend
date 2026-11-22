@@ -32,6 +32,7 @@ import {
 import { keepEditTime } from './keep-edit-time';
 import {
   CheckpointLimitException,
+  ProjectHiddenException,
   ProjectNotPublishedException,
   ProjectTooLargeException,
 } from './project.error';
@@ -98,15 +99,21 @@ function releaseContentHash(bytes: Buffer, snapshot: ReleaseSnapshot): string {
 async function lockReleaseState(
   tx: Prisma.TransactionClient,
   projectId: number,
-): Promise<{ published: boolean; contentHash: string | null; revision: number }> {
+): Promise<{ published: boolean; hidden: boolean; contentHash: string | null; revision: number }> {
   const [row] = await tx.$queryRaw<
-    { publishedAt: Date | null; releaseContentHash: string | null; releaseRevision: number }[]
-  >`SELECT "publishedAt", "releaseContentHash", "releaseRevision" FROM "Project" WHERE id = ${projectId} FOR UPDATE`;
+    {
+      publishedAt: Date | null;
+      hiddenAt: Date | null;
+      releaseContentHash: string | null;
+      releaseRevision: number;
+    }[]
+  >`SELECT "publishedAt", "hiddenAt", "releaseContentHash", "releaseRevision" FROM "Project" WHERE id = ${projectId} FOR UPDATE`;
   if (!row) {
     throw new NotFoundException(`Project with ID ${projectId} not found`);
   }
   return {
     published: row.publishedAt !== null,
+    hidden: Boolean(row.hiddenAt),
     contentHash: row.releaseContentHash,
     revision: row.releaseRevision,
   };
@@ -361,6 +368,12 @@ export class ProjectContentService {
 
     await this.prisma.$transaction(async (tx) => {
       const before = await lockReleaseState(tx, projectId);
+      // Hidden between the check of the caller and this lock: the release just uploaded must not
+      // stay where the edge serves it.
+      if (before.hidden) {
+        await this.s3Service.deleteFile({ key: releaseKey });
+        throw new ProjectHiddenException();
+      }
       const type = !before.published
         ? AnalyticsFactType.RELEASE_PUBLISHED
         : before.contentHash !== contentHash
@@ -394,11 +407,15 @@ export class ProjectContentService {
 
   async publish(projectId: number, actorUserId: number): Promise<void> {
     const project = await this.projectService.requireProject(projectId, {
+      hiddenAt: true,
       name: true,
       shortDesc: true,
       longDesc: true,
       tags: true,
     });
+    if (project.hiddenAt) {
+      throw new ProjectHiddenException();
+    }
 
     await this.writeRelease(projectId, project, actorUserId);
   }
@@ -407,6 +424,10 @@ export class ProjectContentService {
     // The row first: a blob nobody points at is harmless, a row pointing at a deleted blob is not.
     await this.prisma.$transaction(async (tx) => {
       const before = await lockReleaseState(tx, projectId);
+      // Its release is held out of reach for a restore to put back: unpublishing now would strand it.
+      if (before.hidden) {
+        throw new ProjectHiddenException();
+      }
       const revision = before.published ? before.revision + 1 : before.revision;
 
       await tx.project.update({
@@ -430,6 +451,7 @@ export class ProjectContentService {
   async updateRelease(projectId: number, actorUserId: number): Promise<void> {
     const project = await this.projectService.requireProject(projectId, {
       publishedAt: true,
+      hiddenAt: true,
       name: true,
       shortDesc: true,
       longDesc: true,
@@ -438,6 +460,9 @@ export class ProjectContentService {
 
     if (!project.publishedAt) {
       throw new ProjectNotPublishedException(projectId);
+    }
+    if (project.hiddenAt) {
+      throw new ProjectHiddenException();
     }
 
     await this.writeRelease(projectId, project, actorUserId);
@@ -472,6 +497,7 @@ export class ProjectContentService {
 
   /** The versioned CDN URL of the release blob, or null when none is stored. */
   async releaseUrl(projectId: number): Promise<string | null> {
+    await this.refuseHidden(projectId);
     const key = projectKeys.release(projectId);
     const head = await this.s3Service.getFileMetadataOrNull(key);
 
@@ -479,6 +505,89 @@ export class ProjectContentService {
   }
 
   async fetchReleaseContent(projectId: number): Promise<DownloadedFile> {
+    await this.refuseHidden(projectId);
     return this.s3Service.downloadFile({ key: projectKeys.release(projectId) });
+  }
+
+  /**
+   * The released build wherever it sits, served or withheld, for staff reviewing the game. Null
+   * when the game has no release. Never behind a public route: this is the one reader that does
+   * not refuse a withheld game.
+   */
+  async fetchReleaseForReview(projectId: number): Promise<DownloadedFile | null> {
+    for (const key of [projectKeys.release(projectId), projectKeys.withheldRelease(projectId)]) {
+      if (await this.s3Service.fileExists(key)) {
+        return this.s3Service.downloadFile({ key });
+      }
+    }
+    return null;
+  }
+
+  /** A game that does not exist is left to answer as a missing file does. */
+  private async refuseHidden(projectId: number): Promise<void> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { hiddenAt: true },
+    });
+    if (project?.hiddenAt) {
+      throw new ProjectHiddenException();
+    }
+  }
+
+  /** Copies one object when it exists, and says whether it did. */
+  private async copy(
+    from: string,
+    target: { key: string; cacheControl?: string; publicRead?: boolean },
+  ): Promise<boolean> {
+    if (!(await this.s3Service.fileExists(from))) {
+      return false;
+    }
+    await this.s3Service.uploadFile({
+      file: await this.s3Service.downloadFile({ key: from }),
+      keyName: target.key,
+      ...(target.cacheControl ? { cacheControl: target.cacheControl } : {}),
+    });
+    if (target.publicRead) {
+      await this.s3Service.setObjectPublicRead(target.key);
+    }
+    return true;
+  }
+
+  /**
+   * Withholding a game is three steps a caller runs in this order around its own transaction: copy
+   * what the edge serves to keys it does not serve, mark the row, then remove the served copies.
+   * A failure between two steps leaves a copy too many and never a game without its release.
+   */
+  async copyToWithheld(projectId: number): Promise<void> {
+    await this.copy(projectKeys.release(projectId), {
+      key: projectKeys.withheldRelease(projectId),
+    });
+    await this.copy(projectKeys.cover(projectId), { key: projectKeys.withheldCover(projectId) });
+  }
+
+  async removeServedCopies(projectId: number): Promise<void> {
+    await this.s3Service.deleteFile({ key: projectKeys.release(projectId) });
+    await this.s3Service.deleteFile({ key: projectKeys.cover(projectId) });
+  }
+
+  /** The reverse, in the same three steps. Answers the address of the cover it put back, if any. */
+  async copyFromWithheld(projectId: number): Promise<{ coverUrl: string | null }> {
+    await this.copy(projectKeys.withheldRelease(projectId), {
+      key: projectKeys.release(projectId),
+      cacheControl: RELEASE_CACHE_CONTROL,
+      publicRead: true,
+    });
+    const cover = projectKeys.cover(projectId);
+    const restored = await this.copy(projectKeys.withheldCover(projectId), {
+      key: cover,
+      cacheControl: 'no-cache',
+      publicRead: true,
+    });
+    return { coverUrl: restored ? this.edgeService.getCDNUrl(cover) : null };
+  }
+
+  async removeWithheldCopies(projectId: number): Promise<void> {
+    await this.s3Service.deleteFile({ key: projectKeys.withheldRelease(projectId) });
+    await this.s3Service.deleteFile({ key: projectKeys.withheldCover(projectId) });
   }
 }

@@ -2,7 +2,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
 
-import { ADMIN, MODERATOR, USER } from '../../auth/access/roles';
+import { ADMIN, USER } from '../../auth/access/roles';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AnalyticsFactService } from '../analytics/analytics-fact.service';
 import { UserService } from './user.service';
@@ -348,47 +348,6 @@ describe('UserService', () => {
       prisma.user.findUnique.mockResolvedValue(null);
 
       await expect(service.getUserRole(42)).rejects.toBeInstanceOf(NotFoundException);
-    });
-  });
-
-  describe('update', () => {
-    it.each([
-      [{ email: 'taken@example.com' }, { id: 2 }, 'EMAIL_TAKEN'],
-      [{ email: 'mine@example.com', username: 'taken' }, { id: 1 }, 'USERNAME_TAKEN'],
-      [{ username: 'taken' }, null, 'USERNAME_TAKEN'],
-    ])('should name the field someone else holds: %j', async (body, emailOwner, code) => {
-      prisma.user.update.mockRejectedValue(uniqueViolation());
-      prisma.user.findUnique.mockResolvedValue(emailOwner);
-
-      const conflict = service.update(1, body);
-
-      await expect(conflict).rejects.toBeInstanceOf(ConflictException);
-      await expect(conflict).rejects.toMatchObject({
-        response: { violations: [expect.objectContaining({ code })] },
-      });
-    });
-
-    it('replaces the role, so an admin can demote', async () => {
-      prisma.user.update.mockResolvedValue({ id: 1, role: MODERATOR });
-
-      await service.update(1, { role: MODERATOR });
-
-      expect(prisma.user.update).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 1 }, data: { role: MODERATOR } }),
-      );
-    });
-
-    it('should answer not found for an unknown id', async () => {
-      prisma.user.update.mockRejectedValue(
-        new Prisma.PrismaClientKnownRequestError('Record not found', {
-          code: 'P2025',
-          clientVersion: 'test',
-        }),
-      );
-
-      await expect(service.update(42, { nickname: 'Ada' })).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
     });
   });
 

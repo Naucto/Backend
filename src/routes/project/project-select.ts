@@ -20,13 +20,17 @@ export const WITH_PEOPLE = {
 export const WITH_PEOPLE_AND_COUNTS = {
   ...WITH_PEOPLE,
   _count: {
-    select: { forks: true, comments: { where: { deleted: false } } },
+    select: { forks: true, comments: { where: { deleted: false, hiddenAt: null } } },
   },
 } satisfies Prisma.ProjectInclude;
 
-// The one test for "on the hub". `status` is what the author calls the game; this is what the
-// hub does with it, and it is set only once the release blob is in place.
-export const PUBLISHED: Prisma.ProjectWhereInput = { publishedAt: { not: null } };
+// Holds a release, whether or not anyone can reach it: set only once the release blob is in place.
+// `status` is what the author calls the game and plays no part.
+export const RELEASED: Prisma.ProjectWhereInput = { publishedAt: { not: null } };
+
+// The one test for "on the hub": released, and not withheld by moderation. Its owner still counts
+// a hidden game among the released ones, which is what `RELEASED` is for.
+export const PUBLISHED: Prisma.ProjectWhereInput = { ...RELEASED, hiddenAt: null };
 
 export const DEFAULT_LIMIT = 24;
 

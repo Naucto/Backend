@@ -56,6 +56,24 @@ describe('WorkSessionService', () => {
     service = module.get<WorkSessionService>(WorkSessionService);
   });
 
+  describe('kickEverywhere', () => {
+    it('takes the account out of each work session it sits in', async () => {
+      prismaMock.workSession.findMany.mockResolvedValue([{ projectId: 5 }, { projectId: 8 }]);
+      const kick = jest.spyOn(service, 'kick').mockResolvedValue(undefined);
+
+      await service.kickEverywhere(7);
+
+      expect(prismaMock.workSession.findMany).toHaveBeenCalledWith({
+        where: { users: { some: { id: 7 } } },
+        select: { projectId: true },
+      });
+      expect(kick.mock.calls).toEqual([
+        [5, 7],
+        [8, 7],
+      ]);
+    });
+  });
+
   describe('join', () => {
     const HOUR_MS = 60 * 60 * 1000;
     const recorded = (hostId: number, age = 0): object => ({

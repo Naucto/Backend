@@ -13,6 +13,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { FriendsService } from '../routes/friends/friends.service';
 import { MultiplayerService } from '../routes/multiplayer/multiplayer.service';
+import { PUBLISHED } from '../routes/project/project-select';
 import { PresenceServerMessage } from './dto/presence-message.dto';
 import {
   CLIENT_PRESENCE_KINDS,
@@ -294,7 +295,7 @@ export class PresenceService implements PresenceSocketHandler {
       kind: 'HOSTING',
       projectId: hosted.projectId,
       // A release shares its project's id; an unpublished project has none.
-      releaseId: hosted.project.publishedAt ? hosted.projectId : null,
+      releaseId: hosted.project.publishedAt && !hosted.project.hiddenAt ? hosted.projectId : null,
       sessionId: hosted.sessionId,
       title: hosted.title || hosted.project.name,
       coverUrl: hosted.project.iconUrl ?? null,
@@ -346,7 +347,7 @@ export class PresenceService implements PresenceSocketHandler {
       releaseId === null
         ? null
         : await this.prisma.project.findFirst({
-            where: { id: releaseId, publishedAt: { not: null } },
+            where: { id: releaseId, ...PUBLISHED },
             select: { publishedName: true, name: true, iconUrl: true },
           });
 

@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 
-import { RequiresRole } from '../../auth/access/access.decorators';
+import { RequiresStaffSession } from '../../auth/access/access.decorators';
 import { ADMIN } from '../../auth/access/roles';
 import { RequestWithUser } from '../../auth/auth.types';
 import {
@@ -23,7 +23,7 @@ import { RecommendationsService } from './recommendations.service';
 
 @ApiTags('admin')
 @Controller('admin/featured-release')
-@RequiresRole(ADMIN)
+@RequiresStaffSession(ADMIN)
 export class AdminFeaturedReleaseController {
   constructor(private readonly recommendationsService: RecommendationsService) {}
 

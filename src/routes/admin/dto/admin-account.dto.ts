@@ -14,8 +14,12 @@ export class AccountSummaryDto {
   @ApiPropertyOptional({ type: String, nullable: true })
   nickname!: string | null;
 
-  @ApiProperty()
-  email!: string;
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'Null for a reader who does not read addresses: anyone but an admin',
+  })
+  email!: string | null;
 
   @ApiProperty({ enum: ROLE_NAMES })
   role!: RoleName;

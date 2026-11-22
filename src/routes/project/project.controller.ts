@@ -28,7 +28,7 @@ import {
 } from '@nestjs/swagger';
 import { Request } from 'express';
 
-import { RequiresAuth } from '../../auth/access/access.decorators';
+import { AllowedWhileSuspended, RequiresAuth } from '../../auth/access/access.decorators';
 import { UserDto } from '../../auth/dto/user.dto';
 import { ProjectCollaboratorGuard, ProjectCreatorGuard } from '../../auth/guards/project.guard';
 import { AddCollaboratorDto, RemoveCollaboratorDto } from './dto/collaborator-project.dto';
@@ -315,6 +315,7 @@ export class ProjectController {
 
   @UseGuards(ProjectCreatorGuard)
   @Delete(':id')
+  @AllowedWhileSuspended()
   @ApiOperation({ summary: 'Delete a project' })
   @ApiParam({
     name: 'id',

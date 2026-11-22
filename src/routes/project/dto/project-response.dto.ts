@@ -106,6 +106,15 @@ export class ProjectResponseDto {
   publishedAt?: Date | null;
 
   @ApiProperty({
+    example: null,
+    description:
+      'Set while moderation withholds the game: it is off the hub and cannot be published',
+    type: String,
+    nullable: true,
+  })
+  hiddenAt?: Date | null;
+
+  @ApiProperty({
     example: 123,
     description: "The number of times players opened this game's play page",
   })

@@ -93,6 +93,7 @@ Create it with `cp config/webrtc.example.json config/webrtc.json`.
 | `src/routes/analytics/`                      | Usage analytics: ingest from browsers, business facts, multiplayer accounting, minute presence sampling, finalization into rollups, account history projection, purge, and the admin and user read APIs (see _Analytics_ below)     |
 | `src/presence/`                              | What friends see each other doing (online, playing, building, hosting), fed by the notifications socket and by domain events (see _Presence_ below)                                                                                 |
 | `src/routes/admin/`                          | The admin console's own sign-in and admin accounts: who holds the role, promoting and revoking (see _Admin console_ below)                                                                                                          |
+| `src/routes/moderation/`                     | Flags from users, the case queue, staff decisions on accounts, games and comments, the log of them and each account's standing (see _Moderation_ below)                                                                             |
 | `src/tasks/`                                 | Scheduled jobs (`@nestjs/schedule` cron)                                                                                                                                                                                            |
 | `src/prisma/`                                | `PrismaService` + module                                                                                                                                                                                                            |
 | `src/common/`                                | Cross-feature DTOs + decorators (pagination, signed-CDN, `@AtLeastOne`), and the domain events (`domain-events.ts`)                                                                                                                 |
@@ -114,7 +115,7 @@ rejects unexpected ones** — so every accepted field needs a validator decorato
 
 **Access control — deny by default.** One global guard (`src/auth/access/access.guard.ts`,
 registered as `APP_GUARD`) decides every route from the access its handler, or failing that its
-controller, declares with exactly one of three decorators (`src/auth/access/access.decorators.ts`):
+controller, declares with exactly one of four decorators (`src/auth/access/access.decorators.ts`):
 
 - `@Public()` — anyone; a valid bearer token still sets `req.user`, a missing or bad one leaves it
   `null` and never refuses.
@@ -123,6 +124,33 @@ controller, declares with exactly one of three decorators (`src/auth/access/acce
   ranked above it (403 otherwise). Roles are a hierarchy, `MODERATOR` < `ADMIN`: an admin is also a
   moderator. The constants live in `src/auth/access/roles.ts` and equal the role rows the
   migrations seed.
+- `@RequiresStaffSession(MODERATOR)` / `@RequiresStaffSession(ADMIN)`: the same role check, on a
+  token the staff sign-in of the admin console issued (`scope: staff`). The token of a site sign-in
+  gets a 401 with the code `STAFF_SESSION_REQUIRED` whatever role its account holds, and a staff
+  token is refused on every other route, so neither ever stands in for the other. Every route
+  under `admin/` uses it except `admin/auth`, which is how the session is opened, and
+  `access-coverage.spec.ts` fails on one that does not.
+
+**The viewer role** observes. It sits between `USER` and `MODERATOR` in rank and its reach is not
+its rank: on a staff route it passes every read, whatever role the route asks of those who act
+there, and no write. So it reads the statistics and the support screens a moderator does not open,
+and changes nothing. The guard grants that to the role by name, so a moderator does not inherit it.
+Outside the admin console a viewer is an ordinary account. Because of this rule **a `GET` under
+`admin/` must never change anything**: a read that writes would be a write a viewer can make.
+Nobody but an admin reads email addresses (`readsAddresses`), viewers included.
+
+**Staff roles are handed out by an admin** through `PUT admin/accounts/:id/role`, and
+`GET admin/accounts/staff` lists whoever holds one (`STAFF_ROLE_NAMES`). A change is written to the
+moderation log as `ROLE_CHANGED` in the transaction of the change, with the role left and the role
+taken in its internal note. Giving an account the role it already holds writes nothing.
+
+**Suspension** is decided by the same guard, from the two `suspended*` columns read through
+`currentSuspension` (`src/auth/access/suspension.ts`), which also lets a dated suspension lapse
+without anything clearing it. A suspended account signs in and reads. Every write that asks for an
+account answers it 403 with the code `ACCOUNT_SUSPENDED`, unless its handler carries
+`@AllowedWhileSuspended()`, and it holds no role at all, staff routes included. A new write is
+therefore closed to suspended accounts by default. Opening one means adding the decorator and the
+handler to the list in `access-coverage.spec.ts`, which fails until both agree.
 
 A route that declares nothing is treated as `@RequiresRole(ADMIN)`, and `access-coverage.spec.ts`
 fails on it anyway: every route states who may call it. Handler metadata overrides the
@@ -200,9 +228,14 @@ at the controller boundary (see `project.controller.ts` catching `S3ObjectNotFou
 
 **Admin console** (`src/routes/admin/`), for the separate Admin-Panel app:
 
-- `admin/auth/*` signs an admin in with a password and an account holding the admin role. It
-  answers an access token and sets the httpOnly `naucto_admin_session` cookie that renews it for
-  eight hours; that cookie is signed with a key of its own, so it never verifies as a bearer token.
+- `admin/auth/*` signs a staff member in with a password and an account holding the moderator or
+  the admin role, not suspended. It answers an access token scoped to staff and sets the httpOnly
+  `naucto_admin_session` cookie that renews it for eight hours; that cookie is signed with a key of
+  its own, so it never verifies as a bearer token. The account is read again at each renewal, so a
+  role change or a suspension takes effect within the fifteen minutes an access token lives.
+- A moderator signs in to the same console and opens only the routes that ask for the moderator
+  role. An account that signs in with Google, GitHub or Microsoft alone has no password to give
+  here and needs to set one first.
 - Wrong passwords per address are limited in memory (`attempt-limiter.ts`), which holds while the
   backend runs as one instance.
 - An admin cannot change their own role, and the last admin cannot be demoted.
@@ -268,6 +301,35 @@ at the controller boundary (see `project.controller.ts` catching `S3ObjectNotFou
   rate limit and never throws. `CrashNotifier` uses it to post a crash to
   `DISCORD_CRASH_WEBHOOK_URL` when it is new, comes back after being resolved, or reaches 10, 100,
   1000 or 10000 occurrences.
+
+**Moderation** (`src/routes/moderation/`), behind the `moderation` flag of `config/features.json`
+on the client side only: the routes answer whatever the flag says.
+
+- "Report" already names feedback (`src/routes/reports/`), so what a person reports about a game, a
+  comment or a profile is a **flag**. The flags on one target read as one **case**, which is what
+  the admin console queues.
+- Every decision is one `ModerationAction` row, written by `ModerationLogService.record` in the
+  transaction of the change it records. A row is never updated or deleted, with one exception in
+  that service: erasing an account takes the copies the record kept of what the person wrote.
+  `moderation-log.append-only.spec.ts` fails on any other.
+- Whether the account a decision bears on sees it in its standing is decided per kind of action
+  (`VISIBLE_TO_SUBJECT`), never by a caller. The standing never carries who decided, the staff
+  note, or who reported.
+- Decisions are taken through `/admin/moderation/*`, so with a staff session only. Moderators hide,
+  restore, warn, suspend, reinstate and clear profiles. Deleting for good is an admin's.
+  `allowedOperations` holds those rules once, and the admin console draws its buttons from what it
+  answers. Staff act only on accounts ranked below their own role, and never on their own account
+  or content.
+- A hidden comment keeps its text stored and is served as a tombstone by the one mapper of the
+  comment service. A hidden game keeps `publishedAt`, and `PUBLISHED` (`project-select.ts`) now
+  means released and not hidden: read the published state through it, or through `RELEASED` for an
+  owner's own shelf, never from `publishedAt` alone.
+- The storage layer cannot take a public grant back, so hiding a game moves its release and cover
+  to `withheld/<id>/`. Copy first, mark the row, then remove the served copies: a failure midway
+  leaves a copy too many, and `repair:publish-state` removes it.
+- Staff read any game through `/moderation/projects/:id/preview`, with the token of a site sign-in
+  because the web app shows it. Those routes write nothing but one log row per look.
+- Moderators never read email addresses: `toAccountRef` gives one to admins only.
 
 ## Conventions (not all enforced by tooling — follow these)
 

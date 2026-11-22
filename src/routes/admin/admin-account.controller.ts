@@ -11,8 +11,8 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
-import { RequiresRole } from '../../auth/access/access.decorators';
-import { ADMIN } from '../../auth/access/roles';
+import { RequiresStaffSession } from '../../auth/access/access.decorators';
+import { ADMIN, parseRole, VIEWER } from '../../auth/access/roles';
 import { RequestWithUser } from '../../auth/auth.types';
 import { AdminAccountService } from './admin-account.service';
 import {
@@ -25,12 +25,13 @@ import {
 
 @ApiTags('admin')
 @Controller('admin/accounts')
-@RequiresRole(ADMIN)
+@RequiresStaffSession(ADMIN)
 export class AdminAccountController {
   constructor(private readonly accounts: AdminAccountService) {}
 
   @Get('me')
-  @ApiOperation({ summary: 'The signed-in admin' })
+  @RequiresStaffSession(VIEWER)
+  @ApiOperation({ summary: 'The signed-in staff member' })
   @ApiResponse({ status: HttpStatus.OK, type: AccountSummaryDto })
   me(@Req() req: RequestWithUser): Promise<AccountSummaryDto> {
     return this.accounts.me(req.user.id);
@@ -39,15 +40,25 @@ export class AdminAccountController {
   @Get('admins')
   @ApiOperation({ summary: 'Every account holding the admin role' })
   @ApiResponse({ status: HttpStatus.OK, type: AdminAccountListDto })
-  admins(): Promise<AdminAccountListDto> {
-    return this.accounts.admins();
+  admins(@Req() req: RequestWithUser): Promise<AdminAccountListDto> {
+    return this.accounts.admins(parseRole(req.user.role));
+  }
+
+  @Get('staff')
+  @ApiOperation({ summary: 'Every account holding a role that signs in to the console' })
+  @ApiResponse({ status: HttpStatus.OK, type: AdminAccountListDto })
+  staff(@Req() req: RequestWithUser): Promise<AdminAccountListDto> {
+    return this.accounts.staff(parseRole(req.user.role));
   }
 
   @Get('search')
   @ApiOperation({ summary: 'Naucto accounts matching part of a handle, display name or email' })
   @ApiResponse({ status: HttpStatus.OK, type: AccountSearchResultDto })
-  search(@Query() query: AccountSearchQueryDto): Promise<AccountSearchResultDto> {
-    return this.accounts.search(query.term);
+  search(
+    @Req() req: RequestWithUser,
+    @Query() query: AccountSearchQueryDto,
+  ): Promise<AccountSearchResultDto> {
+    return this.accounts.search(query.term, parseRole(req.user.role));
   }
 
   @Put(':id/role')

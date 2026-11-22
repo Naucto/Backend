@@ -1,0 +1,114 @@
+// What users tell staff about a game, a comment or an account, and what staff decide. A flag is one
+// user's word about one target. Every decision is one ModerationAction row, written once and never
+// changed, in the transaction of the change it records.
+
+enum ModerationTargetType {
+  USER
+  PROJECT
+  COMMENT
+}
+
+enum ModerationReason {
+  SPAM
+  HARASSMENT
+  HATE
+  SEXUAL_CONTENT
+  VIOLENCE
+  ILLEGAL
+  IMPERSONATION
+  STOLEN_CONTENT
+  OTHER
+}
+
+enum FlagStatus {
+  OPEN
+  ACTIONED
+  DISMISSED
+}
+
+enum ModerationActionType {
+  ACCOUNT_WARNED
+  ACCOUNT_SUSPENDED
+  ACCOUNT_REINSTATED
+  ACCOUNT_DELETED
+  PROFILE_CLEARED
+  ROLE_CHANGED
+  PROJECT_HIDDEN
+  PROJECT_RESTORED
+  PROJECT_DELETED
+  COMMENT_HIDDEN
+  COMMENT_RESTORED
+  COMMENT_DELETED
+  FLAGS_DISMISSED
+  DRAFT_VIEWED
+}
+
+model Flag {
+  id         Int  @id @default(autoincrement())
+  reporter   User @relation("FlagsFiled", fields: [reporterId], references: [id])
+  reporterId Int
+
+  // No foreign key on the target: a flag outlives the game, the comment or the account it is about.
+  targetType ModerationTargetType
+  targetId   Int
+  // Whose content it is: the account itself, the game's creator or the comment's author.
+  targetOwnerId Int?
+
+  reason  ModerationReason
+  details String?
+  // The target as it read when flagged. A comment can be edited afterwards.
+  snapshot Json
+
+  status FlagStatus @default(OPEN)
+  // `<reporterId>:<targetType>:<targetId>` while open and null once resolved, so a reporter holds
+  // one open flag per target.
+  openKey String? @unique
+
+  resolvedBy   User?             @relation("FlagsResolved", fields: [resolvedById], references: [id], onDelete: SetNull)
+  resolvedById Int?
+  resolvedAt   DateTime?
+  resolution   ModerationAction? @relation(fields: [resolutionId], references: [id], onDelete: SetNull)
+  resolutionId Int?
+
+  createdAt DateTime @default(now())
+
+  @@index([status, targetType, targetId])
+  @@index([targetOwnerId, status])
+  @@index([reporterId, createdAt])
+}
+
+model ModerationAction {
+  id     Int                  @id @default(autoincrement())
+  action ModerationActionType
+
+  actor   User @relation("ModerationActionsTaken", fields: [actorId], references: [id])
+  actorId Int
+
+  targetType ModerationTargetType
+  targetId   Int
+  // The account the action bears on: the one warned, or the owner of the content.
+  subject       User? @relation("ModerationRecord", fields: [subjectUserId], references: [id])
+  subjectUserId Int?
+
+  reason ModerationReason?
+  // What the subject is told.
+  publicMessage String?
+  // What only staff read.
+  internalNote String?
+  // The content the action bore on, as it read then.
+  snapshot Json?
+  // When a suspension ends by itself. Null for an indefinite one and for every other action.
+  expiresAt DateTime?
+  // Whether the subject finds the action in their standing. Set from the action type, never by a caller.
+  visibleToSubject Boolean @default(false)
+  // Keeps a repeated event to one row, as with a draft opened twice within the hour.
+  dedupeKey String? @unique
+
+  createdAt     DateTime @default(now())
+  resolvedFlags Flag[]
+
+  @@index([subjectUserId, visibleToSubject, createdAt])
+  @@index([targetType, targetId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+}

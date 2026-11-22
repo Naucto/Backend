@@ -217,10 +217,32 @@ describe('ProjectService', () => {
   });
 
   describe('remove', () => {
+    it('runs what a caller records alongside in the transaction that deletes the project', async () => {
+      prismaMock.project.findUnique.mockResolvedValue(draft);
+      s3ServiceMock.listObjects.mockResolvedValue([]);
+      const alongside = jest.fn();
+
+      await service.remove(1, alongside);
+
+      expect(alongside).toHaveBeenCalledWith(txMock);
+      expect(txMock.project.delete.mock.invocationCallOrder[0]).toBeLessThan(
+        alongside.mock.invocationCallOrder[0]!,
+      );
+    });
+
+    it('keeps the stored content when what was recorded alongside fails', async () => {
+      prismaMock.project.findUnique.mockResolvedValue(draft);
+
+      await expect(
+        service.remove(1, () => Promise.reject(new Error('log is down'))),
+      ).rejects.toThrow('log is down');
+      expect(s3ServiceMock.deleteFile).not.toHaveBeenCalled();
+    });
+
     it('clears the sessions and the project together, then the stored content', async () => {
       const projectId = 1;
       prismaMock.project.findUnique.mockResolvedValue(draft);
-      prismaMock.project.delete.mockResolvedValue(draft);
+      txMock.project.delete.mockResolvedValue(draft);
       s3ServiceMock.deleteFile.mockResolvedValue(undefined);
       s3ServiceMock.listObjects.mockResolvedValue([]);
       s3ServiceMock.deleteFiles.mockResolvedValue(undefined);
@@ -229,20 +251,20 @@ describe('ProjectService', () => {
 
       // Asserted because the foreign keys refuse the delete outright while a session still points
       // at the project.
-      expect(prismaMock.gameSession.deleteMany).toHaveBeenCalledWith({
+      expect(txMock.gameSession.deleteMany).toHaveBeenCalledWith({
         where: { projectId },
       });
-      expect(prismaMock.workSession.deleteMany).toHaveBeenCalledWith({
+      expect(txMock.workSession.deleteMany).toHaveBeenCalledWith({
         where: { projectId },
       });
       expect(prismaMock.$transaction).toHaveBeenCalled();
-      expect(prismaMock.project.delete).toHaveBeenCalledWith({
+      expect(txMock.project.delete).toHaveBeenCalledWith({
         where: { id: projectId },
       });
 
       // The order is the load-bearing part: content dropped before the row would be lost to a
       // delete that then fails.
-      expect(prismaMock.project.delete.mock.invocationCallOrder[0]).toBeLessThan(
+      expect(txMock.project.delete.mock.invocationCallOrder[0]).toBeLessThan(
         s3ServiceMock.deleteFile.mock.invocationCallOrder[0]!,
       );
       expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({
@@ -252,7 +274,7 @@ describe('ProjectService', () => {
 
     it('drops everything the project stored: release, cover, saves and checkpoints', async () => {
       prismaMock.project.findUnique.mockResolvedValue(draft);
-      prismaMock.project.delete.mockResolvedValue(draft);
+      txMock.project.delete.mockResolvedValue(draft);
       s3ServiceMock.deleteFile.mockResolvedValue(undefined);
       s3ServiceMock.deleteFiles.mockResolvedValue([]);
       s3ServiceMock.listObjects.mockImplementation(async ({ prefix }: { prefix: string }) => [
@@ -277,12 +299,12 @@ describe('ProjectService', () => {
     it('still deletes the project when its stored content cannot be reached', async () => {
       const projectId = 1;
       prismaMock.project.findUnique.mockResolvedValue(draft);
-      prismaMock.project.delete.mockResolvedValue(draft);
+      txMock.project.delete.mockResolvedValue(draft);
       s3ServiceMock.deleteFile.mockRejectedValue(new Error('S3 error'));
 
       await expect(service.remove(projectId)).resolves.toBeUndefined();
 
-      expect(prismaMock.project.delete).toHaveBeenCalledWith({
+      expect(txMock.project.delete).toHaveBeenCalledWith({
         where: { id: projectId },
       });
     });

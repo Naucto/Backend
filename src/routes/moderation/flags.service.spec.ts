@@ -1,0 +1,135 @@
+import { ModerationReason, ModerationTargetType, Prisma } from '@prisma/client';
+
+import { PrismaService } from '../../prisma/prisma.service';
+import { FlagNotifier } from './flag-notifier';
+import { FlagsService } from './flags.service';
+import { MODERATION_ERROR } from './moderation.error';
+import { ModerationTargetService, TargetView } from './moderation-target.service';
+
+const REPORT = {
+  targetType: ModerationTargetType.COMMENT,
+  targetId: 31,
+  reason: ModerationReason.SPAM,
+};
+
+describe('FlagsService', () => {
+  const view = (overrides: Partial<TargetView> = {}): TargetView => ({
+    type: ModerationTargetType.COMMENT,
+    id: 31,
+    state: 'VISIBLE',
+    owner: {
+      id: 7,
+      username: 'louis',
+      nickname: null,
+      role: 'whatever',
+      email: 'louis@example.com',
+      deletedAt: null,
+    },
+    content: { title: null, body: 'Buy my thing' },
+    project: { id: 12, name: 'Ferry Click', reachable: true },
+    ...overrides,
+  });
+
+  const prisma = { flag: { create: jest.fn(), count: jest.fn() } };
+  const targets = { view: jest.fn() };
+  const notifier = { caseOpened: jest.fn() };
+  let service: FlagsService;
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+    targets.view.mockResolvedValue(view());
+    prisma.flag.create.mockResolvedValue({ id: 50 });
+    prisma.flag.count.mockResolvedValue(1);
+    service = new FlagsService(
+      prisma as unknown as PrismaService,
+      targets as unknown as ModerationTargetService,
+      notifier as unknown as FlagNotifier,
+    );
+    jest.spyOn(service['logger'], 'warn').mockImplementation();
+  });
+
+  it('keeps the target as it read, whose it is, and one open flag per reporter', async () => {
+    await expect(service.create(3, { ...REPORT, details: 'Third time' })).resolves.toEqual({
+      id: 50,
+    });
+
+    expect(prisma.flag.create).toHaveBeenCalledWith({
+      data: {
+        reporterId: 3,
+        targetType: ModerationTargetType.COMMENT,
+        targetId: 31,
+        targetOwnerId: 7,
+        reason: ModerationReason.SPAM,
+        details: 'Third time',
+        snapshot: { title: null, body: 'Buy my thing' },
+        openKey: '3:COMMENT:31',
+      },
+      select: { id: true },
+    });
+  });
+
+  it('refuses a report on your own content', async () => {
+    await expect(service.create(7, REPORT)).rejects.toMatchObject({
+      code: MODERATION_ERROR.CANNOT_FLAG_OWN_CONTENT,
+    });
+    expect(prisma.flag.create).not.toHaveBeenCalled();
+  });
+
+  it.each<[string, Partial<TargetView>]>([
+    ['is gone', { state: 'GONE', owner: null, content: null, project: null }],
+    ['moderation already hid', { state: 'HIDDEN' }],
+    ['a user deleted', { state: 'DELETED' }],
+    [
+      'sits on a game players cannot reach',
+      { project: { id: 12, name: 'Draft', reachable: false } },
+    ],
+  ])('finds nothing to report in a comment that %s', async (_case, state) => {
+    targets.view.mockResolvedValue(view(state));
+
+    await expect(service.create(3, REPORT)).rejects.toMatchObject({
+      code: MODERATION_ERROR.FLAG_TARGET_NOT_FOUND,
+    });
+    expect(prisma.flag.create).not.toHaveBeenCalled();
+  });
+
+  it('still takes a report on a suspended account, whose profile stays up', async () => {
+    targets.view.mockResolvedValue(
+      view({ type: ModerationTargetType.USER, id: 7, state: 'SUSPENDED', project: null }),
+    );
+
+    await expect(
+      service.create(3, { ...REPORT, targetType: ModerationTargetType.USER, targetId: 7 }),
+    ).resolves.toEqual({ id: 50 });
+  });
+
+  it('says so when the reporter already has a report open on it', async () => {
+    prisma.flag.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('unique', { code: 'P2002', clientVersion: 'test' }),
+    );
+
+    await expect(service.create(3, REPORT)).rejects.toMatchObject({
+      code: MODERATION_ERROR.ALREADY_FLAGGED,
+    });
+    expect(notifier.caseOpened).not.toHaveBeenCalled();
+  });
+
+  it('tells staff when a case opens', async () => {
+    await service.create(3, REPORT);
+
+    expect(notifier.caseOpened).toHaveBeenCalledWith(expect.objectContaining(REPORT));
+  });
+
+  it('does not tell them again for each further report on the same target', async () => {
+    prisma.flag.count.mockResolvedValue(2);
+
+    await service.create(3, REPORT);
+
+    expect(notifier.caseOpened).not.toHaveBeenCalled();
+  });
+
+  it('keeps the report when staff could not be told', async () => {
+    notifier.caseOpened.mockRejectedValue(new Error('discord is down'));
+
+    await expect(service.create(3, REPORT)).resolves.toEqual({ id: 50 });
+  });
+});

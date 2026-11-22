@@ -54,7 +54,12 @@ describe('project controllers', () => {
   let hubService: HubService;
 
   const prisma = {
-    project: { findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
+    project: {
+      findUnique: jest.fn(),
+      findFirst: jest.fn(),
+      update: jest.fn(),
+      count: jest.fn(),
+    },
     user: {},
     workSession: {},
     $connect: jest.fn(),

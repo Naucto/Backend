@@ -45,6 +45,7 @@ export const aProject = (overrides: Partial<ProjectWithPeople> = {}): ProjectWit
   likes: 0,
   updatedAt: new Date(),
   publishedAt: null,
+  hiddenAt: null,
   releaseRevision: 0,
   releaseContentHash: null,
   forkedFromId: null,
@@ -88,6 +89,7 @@ export const encodeGame = (codeLength: number): Buffer => {
 /** The release state a release change reads under its row lock. */
 export interface ReleaseStateRow {
   publishedAt: Date | null;
+  hiddenAt?: Date | null;
   releaseContentHash: string | null;
   releaseRevision: number;
 }
@@ -109,6 +111,13 @@ export class ProjectMocks {
     project: {
       create: jest.fn(),
       update: jest.fn(),
+      delete: jest.fn(),
+    },
+    gameSession: {
+      deleteMany: jest.fn(),
+    },
+    workSession: {
+      deleteMany: jest.fn(),
     },
     releaseView: {
       count: jest.fn(),

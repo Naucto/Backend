@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { pageWindow } from '../../common/page-window';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ProjectHiddenException } from '../project/project.error';
 import { CommentResponseDto, PaginatedCommentsResponseDto } from './dto/comment-response.dto';
 import {
   CommentNestedReplyException,
@@ -32,6 +33,7 @@ type CommentReplyRecord = {
   id: number;
   content: string;
   deleted: boolean;
+  hiddenAt: Date | null;
   createdAt: Date;
   projectId: number;
   author: CommentAuthor;
@@ -40,6 +42,21 @@ type CommentReplyRecord = {
 type CommentRecord = CommentReplyRecord & {
   replies?: CommentReplyRecord[];
 };
+
+/**
+ * What anyone but staff reads of a comment. One that moderation hid keeps its text in the database
+ * for a restore, so the text is withheld here, the one place a comment is turned into an answer.
+ */
+function published(
+  comment: CommentReplyRecord,
+): Pick<CommentResponseDto, 'content' | 'deleted' | 'removedBy'> {
+  if (comment.hiddenAt) {
+    return { content: '', deleted: true, removedBy: 'MODERATION' };
+  }
+  return comment.deleted
+    ? { content: comment.content, deleted: true, removedBy: 'USER' }
+    : { content: comment.content, deleted: false };
+}
 
 @Injectable()
 export class ProjectCommentService {
@@ -56,15 +73,13 @@ export class ProjectCommentService {
   private mapComment(comment: CommentRecord): CommentResponseDto {
     return {
       id: comment.id,
-      content: comment.content,
-      deleted: comment.deleted,
+      ...published(comment),
       createdAt: comment.createdAt,
       projectId: comment.projectId,
       author: comment.author,
       replies: comment.replies?.map((reply) => ({
         id: reply.id,
-        content: reply.content,
-        deleted: reply.deleted,
+        ...published(reply),
         createdAt: reply.createdAt,
         projectId: reply.projectId,
         author: reply.author,
@@ -80,11 +95,14 @@ export class ProjectCommentService {
   ): Promise<PaginatedCommentsResponseDto> {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      select: { publishedAt: true },
+      select: { publishedAt: true, hiddenAt: true },
     });
 
     if (!project?.publishedAt) {
       throw new CommentProjectNotFoundException(projectId);
+    }
+    if (project.hiddenAt) {
+      throw new ProjectHiddenException();
     }
 
     const pagination = pageWindow(page, limit, DEFAULT_COMMENTS_LIMIT);
@@ -127,7 +145,7 @@ export class ProjectCommentService {
   ): Promise<CommentResponseDto> {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      select: { publishedAt: true },
+      select: { publishedAt: true, hiddenAt: true },
     });
 
     if (!project) {
@@ -136,6 +154,9 @@ export class ProjectCommentService {
 
     if (!project.publishedAt) {
       throw new CommentProjectNotPublishedException(projectId);
+    }
+    if (project.hiddenAt) {
+      throw new ProjectHiddenException();
     }
 
     const comment = await this.prisma.comment.create({
@@ -165,7 +186,8 @@ export class ProjectCommentService {
         parentId: true,
         projectId: true,
         deleted: true,
-        project: { select: { publishedAt: true } },
+        hiddenAt: true,
+        project: { select: { publishedAt: true, hiddenAt: true } },
       },
     });
 
@@ -180,12 +202,15 @@ export class ProjectCommentService {
     if (!parentComment.project.publishedAt) {
       throw new CommentProjectNotPublishedException(projectId);
     }
+    if (parentComment.project.hiddenAt) {
+      throw new ProjectHiddenException();
+    }
 
     if (parentComment.parentId !== null) {
       throw new CommentNestedReplyException();
     }
 
-    if (parentComment.deleted) {
+    if (parentComment.deleted || parentComment.hiddenAt) {
       throw new CommentReplyToDeletedException();
     }
 
@@ -212,10 +237,10 @@ export class ProjectCommentService {
   ): Promise<CommentResponseDto> {
     const comment = await this.prisma.comment.findUnique({
       where: { id: commentId },
-      select: { id: true, authorId: true, projectId: true, deleted: true },
+      select: { id: true, authorId: true, projectId: true, deleted: true, hiddenAt: true },
     });
 
-    if (!comment || comment.deleted) {
+    if (!comment || comment.deleted || comment.hiddenAt) {
       throw new CommentNotFoundException(commentId);
     }
 
