@@ -97,7 +97,7 @@ Create it with `cp config/webrtc.example.json config/webrtc.json`.
 | `src/routes/analytics/`                      | Usage analytics: ingest from browsers, business facts, multiplayer accounting, minute presence sampling, finalization into rollups, account history projection, purge, and the admin and user read APIs (see _Analytics_ below)     |
 | `src/presence/`                              | What friends see each other doing (online, playing, building, hosting), fed by the notifications socket and by domain events (see _Presence_ below)                                                                                 |
 | `src/routes/admin/`                          | The admin console's own sign-in and admin accounts: who holds the role, promoting and revoking (see _Admin console_ below)                                                                                                          |
-| `src/routes/moderation/`                     | Flags from users, the case queue, staff decisions on accounts, games and comments, the log of them and each account's standing (see _Moderation_ below)                                                                             |
+| `src/routes/moderation/`                     | Flags from users, the case queue, staff decisions on accounts, games, comments and collections, the log of them and each account's standing (see _Moderation_ below)                                                                |
 | `src/tasks/`                                 | Scheduled jobs (`@nestjs/schedule` cron)                                                                                                                                                                                            |
 | `src/prisma/`                                | `PrismaService` + module                                                                                                                                                                                                            |
 | `src/common/`                                | Cross-feature DTOs + decorators (pagination, signed-CDN, `@AtLeastOne`), and the domain events (`domain-events.ts`)                                                                                                                 |
@@ -353,8 +353,13 @@ order is a property of the key, and nothing an answer relies on:
 on the client side only: the routes answer whatever the flag says.
 
 - "Report" already names feedback (`src/routes/reports/`), so what a person reports about a game, a
-  comment or a profile is a **flag**. The flags on one target read as one **case**, which is what
-  the admin console queues.
+  comment, a collection or a profile is a **flag**. The flags on one target read as one **case**,
+  which is what the admin console queues.
+- A kind of target exists in the places that branch on it and nowhere else: its reader in
+  `ModerationTargetService`, its entry in `FLAGGABLE` and in the nouns of `FlagNotifier`, its
+  decisions in `ContentModerationService` with their admin controller, and its action types in
+  `VISIBLE_TO_SUBJECT`. The case queue, `allowedOperations`, the log and the standing read any
+  target through `TargetView` and name no kind.
 - Every decision is one `ModerationAction` row, written by `ModerationLogService.record` in the
   transaction of the change it records. A row is never updated or deleted, with one exception in
   that service: erasing an account takes the copies the record kept of what the person wrote.
@@ -374,9 +379,21 @@ on the client side only: the routes answer whatever the flag says.
 - The storage layer cannot take a public grant back, so hiding a game moves its release, its cover
   and its clip to `withheld/<id>/`. Copy first, mark the row, then remove the served copies: a
   failure midway leaves a copy too many, and `repair:publish-state` removes it. The row names
-  neither the cover nor the clip meanwhile, and a restore writes both back.
+  neither the cover nor the clip meanwhile, and a restore writes both back. The admin console
+  reads both from wherever they sit (`admin/moderation/projects/:id/cover` and `/clip`).
+- A hidden collection keeps its row as it was, with `hiddenAt` set: nothing of it is stored apart.
+  Who then reads it is decided in `CollectionsService` (see _Collections_). A private collection
+  stands as `UNPUBLISHED`, as a game nobody released does: it cannot be flagged, and staff still
+  decide about one that was flagged before its owner made it private.
+- Staff have no directory of collections. They reach one through the case its flags opened, which
+  shows its title, its description, its owner, who may read it and the games it lists.
+- Clearing a profile bears on the account's own fields: its comments, its games and its collections
+  stay, each moderated on its own. Erasing an account deletes its collections, and the flags on
+  them stay without the words they kept.
 - Staff read any game through `/moderation/projects/:id/preview`, with the token of a site sign-in
-  because the web app shows it. Those routes write nothing but one log row per look.
+  because the web app shows it: its editor loads read-only for staff who do not collaborate on the
+  game, published or not, hidden or not. `siteUrls.edit` is the one address of a game a moderation
+  answer hands out for that (`editUrl`). Those routes write nothing but one log row per look.
 - Moderators never read email addresses: `toAccountRef` gives one to admins only.
 
 **Hub** (`src/routes/recommendations/`), what the hub puts forward:
@@ -399,7 +416,9 @@ on the client side only: the routes answer whatever the flag says.
   pick a game of the week.
 - Nothing personal is stored in a snapshot. "Continue", "your friends play" and "because you
   played" are read per request, from `AnalyticsUserDaily` (rows exist only for an account whose
-  browser consented to analytics) and from the presence friends already see.
+  browser consented to analytics) and from the presence friends already see. "Continue" is the
+  reader's own project, so it may be one moderation withholds: its card then carries `hiddenAt`,
+  which is null on every other card.
 - A card is a `HubGameDto`, built field by field by `toHubGame`: spreading a project row would hand
   out its content size and release hash. Its `coverUrl` and `clipUrl` come from the row
   (`Project.coverVersion`, `Project.clipVersion`, written at upload); a list never asks the store
@@ -409,8 +428,8 @@ on the client side only: the routes answer whatever the flag says.
   disk style (`PATCH /projects/:id/disk`) change the moment a collaborator sets them, take no part
   in the release hash, and reach every answer through `ProjectService.lookOf`. A disk colour is any
   `#rrggbb`; no style means the client derives a colour from the project id. A withheld game takes
-  no new cover or clip and does not give its clip up (`PROJECT_HIDDEN`), and a suspended account
-  sets none of the three.
+  no new cover, clip or disk and does not give its clip up (`PROJECT_HIDDEN`), and a suspended
+  account sets none of the three.
 - `Project.palette` mirrors the palette of the game's content, written by the editor through
   `PUT /projects/:id` as the name and the tags are, so a client can draw with the game's colours
   without the engine. It is live as well, travels with project and release answers but not with
@@ -422,11 +441,18 @@ on the client side only: the routes answer whatever the flag says.
   holds its id, `PRIVATE` by its owner. A private one answers anyone else 404, as an id that names
   nothing does, and only the owner writes. The random bits of its id are all that keep an
   unlisted collection from being guessed.
+- One moderation withholds (`Collection.hiddenAt`) is read by its owner alone, whatever its
+  visibility: it answers anyone else 404, and leaves the public list, the hub's shelf and its
+  owner's profile (`STANDING`, which `LISTED` includes). Its owner reads it with `hiddenAt` set,
+  deletes it and removes games from it. Every other change of theirs (title, description,
+  visibility, a game added, the order) answers 403 with the code `COLLECTION_HIDDEN`, so a restore
+  puts back what staff withheld.
 - A game is added only while it is on the hub (`PUBLISHED`), and shows only while it is. Its row
   stays when it leaves, unpublished by its author or withheld by moderation, so the owner is told
   it is unavailable (`unavailableGameIds`) and can remove it, and it comes back in place once it
   is on the hub again. `gameCount` and the previews count the games on the hub; the 200 limit
-  counts every row.
+  counts every row. Adding a game moderation withholds answers `PROJECT_HIDDEN` to who works on
+  that game and 404 to anyone else.
 - Deleting a project or a collection takes its rows by foreign key. An account is soft-deleted, so
   `AccountDeletionService` deletes its collections itself, whether the person or an admin erases
   the account.
