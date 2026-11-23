@@ -199,10 +199,12 @@ at the controller boundary (see `project.controller.ts` catching `S3ObjectNotFou
   database answers lower case, so an id left as typed names a row without being `===` to the id
   read from it, and a check such as "not your own account" would let it through.
 - **Three integers remain.** `User.playerNumber` is what a game reads as `net.id()`, and published
-  games compute on it: it appears in the `playerId` of a game-table connection, in the game-table
-  ticket and in the game-table messages (`to`, `from`, `userId`), and nowhere else, never in an
-  account, a profile or a roster. The synthetic player of an editor self-join is such a number with
-  no account behind it. `Project.legacyId` is the number a project had while ids were integers,
+  games compute on it: it appears in the `playerId` of a game-table connection, in the `playerId`
+  of each player of `GET /game-sessions/:sessionId/players`, which is how a client tells whose
+  account a number at the table is, in the game-table ticket and in the game-table messages (`to`,
+  `from`, `userId`), and nowhere else, never in an account, a profile or the roster of a session
+  answer. The synthetic player of an editor self-join is such a number with no account behind it.
+  `Project.legacyId` is the number a project had while ids were integers,
   null for any project created since, read only by `GET /projects/legacy/:number`, which
   translates an old public link into the id. A project row is answered as it stands, so every
   query that reads a whole one leaves the number in the database (`omit: WITHOUT_LEGACY_ID`,

@@ -20,6 +20,14 @@ export class SessionPlayerDto {
 
   @ApiProperty({ description: 'Whether this player is hosting', example: false })
   host!: boolean;
+
+  @ApiProperty({
+    type: 'integer',
+    description:
+      "Player number of this player: what the game reads as net.id() and the playerId of that player's connection, never an account id",
+    example: 1042,
+  })
+  playerId!: number;
 }
 
 export class SessionRosterResponseDto {

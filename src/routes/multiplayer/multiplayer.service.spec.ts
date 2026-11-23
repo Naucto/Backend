@@ -44,7 +44,12 @@ function playerNumberOf(account: number): number {
 }
 
 function aPlayer(account: number): Player {
-  return { id: uuidOf(account), username: `player-${account}`, nickname: null };
+  return {
+    id: uuidOf(account),
+    username: `player-${account}`,
+    nickname: null,
+    playerNumber: playerNumberOf(account),
+  };
 }
 
 function makeSession(overrides: Partial<GameSessionEx> = {}): GameSessionEx {
@@ -843,7 +848,7 @@ describe('MultiplayerService', () => {
       return Object.keys((relation as { select: object }).select).sort();
     }
 
-    it('reads only the public face of the host and the members', async () => {
+    it('reads only the public face and the player number of the host and the members', async () => {
       gameSession.findFirst.mockResolvedValueOnce(makeSession());
 
       await service.get('session-uuid', uuidOf(1));
@@ -851,8 +856,8 @@ describe('MultiplayerService', () => {
       const { include } = gameSession.findFirst.mock.calls[0]![0] as {
         include: { host: unknown; otherUsers: unknown };
       };
-      expect(shown(include.host)).toEqual(['id', 'nickname', 'username']);
-      expect(shown(include.otherUsers)).toEqual(['id', 'nickname', 'username']);
+      expect(shown(include.host)).toEqual(['id', 'nickname', 'playerNumber', 'username']);
+      expect(shown(include.otherUsers)).toEqual(['id', 'nickname', 'playerNumber', 'username']);
     });
 
     it('reads only ids when it re-checks membership inside the join', async () => {
@@ -987,19 +992,37 @@ describe('MultiplayerService', () => {
       gameSession.findFirst.mockResolvedValueOnce(
         makeSession({
           hostId: uuidOf(1),
-          host: { id: uuidOf(1), username: 'alice', nickname: 'Ali' },
+          host: { ...aPlayer(1), username: 'alice', nickname: 'Ali' },
           otherUsers: [
-            { id: uuidOf(2), username: 'bob', nickname: null },
-            { id: uuidOf(3), username: 'cleo', nickname: 'Cle' },
+            { ...aPlayer(2), username: 'bob' },
+            { ...aPlayer(3), username: 'cleo', nickname: 'Cle' },
           ],
         }),
       );
 
       await expect(service.roster('session-uuid', uuidOf(2))).resolves.toEqual({
         players: [
-          { userId: uuidOf(1), username: 'alice', nickname: 'Ali', host: true },
-          { userId: uuidOf(2), username: 'bob', nickname: null, host: false },
-          { userId: uuidOf(3), username: 'cleo', nickname: 'Cle', host: false },
+          {
+            userId: uuidOf(1),
+            username: 'alice',
+            nickname: 'Ali',
+            host: true,
+            playerId: playerNumberOf(1),
+          },
+          {
+            userId: uuidOf(2),
+            username: 'bob',
+            nickname: null,
+            host: false,
+            playerId: playerNumberOf(2),
+          },
+          {
+            userId: uuidOf(3),
+            username: 'cleo',
+            nickname: 'Cle',
+            host: false,
+            playerId: playerNumberOf(3),
+          },
         ],
         maxPlayers: 4,
       });

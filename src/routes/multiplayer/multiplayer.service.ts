@@ -43,7 +43,7 @@ import {
 } from './multiplayer.error';
 import { MultiplayerAccountingService } from './multiplayer-accounting.service';
 
-const PLAYER_SELECT = { id: true, username: true, nickname: true } as const;
+const PLAYER_SELECT = { id: true, username: true, nickname: true, playerNumber: true } as const;
 
 const SESSION_RELATIONS = {
   otherUsers: { select: PLAYER_SELECT },
@@ -317,12 +317,14 @@ export class MultiplayerService {
           username: session.host.username,
           nickname: session.host.nickname,
           host: true,
+          playerId: session.host.playerNumber,
         },
         ...session.otherUsers.map((otherUser) => ({
           userId: otherUser.id,
           username: otherUser.username,
           nickname: otherUser.nickname,
           host: false,
+          playerId: otherUser.playerNumber,
         })),
       ],
       maxPlayers: session.maxPlayers,
