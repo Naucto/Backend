@@ -3,11 +3,13 @@
  * and panels that stay hidden on an empty database have rows to draw, 80 days of usage
  * analytics for the admin console (`seed-dev-analytics.ts`), a disk style on a few games,
  * collections of the published games (`seed-dev-collections.ts`), and a month of views, likes, comments and plays for the hub to
- * rank the published games on (`seed-dev-hub.ts`).
+ * rank the published games on (`seed-dev-hub.ts`), and notifications of every kind for the bell
+ * (`seed-dev-notifications.ts`).
  *
- *   npm run seed:dev                         everything
- *   npm run seed:dev -- --no-analytics       everything but the analytics
- *   npm run seed:dev -- --clear-analytics    only removes the analytics it wrote
+ *   npm run seed:dev                              everything
+ *   npm run seed:dev -- --no-analytics            everything but the analytics
+ *   npm run seed:dev -- --clear-analytics         only removes the analytics it wrote
+ *   npm run seed:dev -- --only notifications      only the notifications, on people already seeded
  *
  * Games are seeded separately, by `npm run seed:content` in the Frontend: their content is a Yjs
  * document only the engine can build.
@@ -28,6 +30,7 @@ import { keepEditTime } from '../src/routes/project/keep-edit-time';
 import { clearAnalytics, seedAnalytics } from './seed-dev-analytics';
 import { seedCollections } from './seed-dev-collections';
 import { seedHubSignals } from './seed-dev-hub';
+import { seedNotifications } from './seed-dev-notifications';
 
 const connectionString = databaseUrl();
 if (!connectionString) {
@@ -179,6 +182,18 @@ async function seedUsers(): Promise<Map<string, string>> {
   return ids;
 }
 
+/** The people a previous run seeded, for the parts that must not write them again. */
+async function findSeededUsers(): Promise<Map<string, string>> {
+  const rows = await prisma.user.findMany({
+    where: { email: { in: USERS.map((user) => `${user.username}@naucto.local`) } },
+    select: { id: true, username: true },
+  });
+  if (rows.length < USERS.length) {
+    throw new Error('The people are not all seeded yet: run seed:dev once without --only.');
+  }
+  return new Map(rows.map((row) => [row.username, row.id]));
+}
+
 async function seedSocialGraph(ids: Map<string, string>, alexis: string): Promise<void> {
   for (const name of FRIENDS_OF_ALEXIS) {
     const other = ids.get(name);
@@ -319,6 +334,21 @@ async function main(): Promise<void> {
     console.log(await clearAnalytics(prisma));
     return;
   }
+  if (process.argv.includes('--only')) {
+    const part = process.argv[process.argv.indexOf('--only') + 1];
+    if (part !== 'notifications') {
+      throw new Error(`--only takes "notifications", not "${part ?? ''}".`);
+    }
+    const seeded = await findSeededUsers();
+    const alexisId = seeded.get('alexis');
+    if (alexisId === undefined) {
+      throw new Error('alexis missing from the seeded users');
+    }
+    // The pending requests are what the friend-request notifications point at.
+    await seedSocialGraph(seeded, alexisId);
+    console.log(`notifications: ${await seedNotifications(prisma, seeded)}`);
+    return;
+  }
   const ids = await seedUsers();
   const alexis = ids.get('alexis');
   if (alexis === undefined) {
@@ -349,6 +379,7 @@ async function main(): Promise<void> {
   // signals last: they have the hub of the day drawn again, over the collections too.
   console.log(`collections: ${await seedCollections(prisma, ids)}`);
   console.log(`hub: ${await seedHubSignals(prisma, [...ids.values()])}`);
+  console.log(`notifications: ${await seedNotifications(prisma, ids)}`);
   console.log('next: npm run seed:content in the Frontend, for games with playable content');
 }
 
