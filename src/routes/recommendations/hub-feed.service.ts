@@ -37,6 +37,14 @@ type FriendsGame = { id: number; live: boolean; friends: number; activeMs: bigin
 
 type HeroSource = Pick<HubHeroSlotDto, 'reason' | 'reasonGame'> & { games: HubGameDto[] };
 
+function shelfHead(key: HubShelfKey): Pick<HubShelfDto, 'key' | 'kind' | 'tag'> {
+  return {
+    key: formatShelfKey(key),
+    kind: key.kind,
+    ...(key.kind === 'TAG' ? { tag: key.tag } : {}),
+  };
+}
+
 /**
  * The hub as one reader gets it: the snapshot of the day, and over it what only this reader is
  * shown. Everything personal is read when asked and from two places only: the play history an
@@ -150,15 +158,7 @@ export class HubFeedService {
       return [];
     }
 
-    return [
-      {
-        key: formatShelfKey(key),
-        kind: key.kind,
-        ...(key.kind === 'TAG' ? { tag: key.tag } : {}),
-        total: pool.total,
-        games: shown,
-      },
-    ];
+    return [{ ...shelfHead(key), total: pool.total, games: shown }];
   }
 
   /**
@@ -291,11 +291,7 @@ export class HubFeedService {
     now = new Date(),
   ): Promise<HubShelfPageDto> {
     const key = this.requireKey(rawKey);
-    const shelf = {
-      key: formatShelfKey(key),
-      kind: key.kind,
-      ...(key.kind === 'TAG' ? { tag: key.tag } : {}),
-    };
+    const shelf = shelfHead(key);
     const drawn =
       key.kind === 'POPULAR' || key.kind === 'TAG'
         ? null
