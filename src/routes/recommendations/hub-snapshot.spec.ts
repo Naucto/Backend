@@ -1,4 +1,4 @@
-import { uuidOf } from '../../../test/uuid';
+import { uuidOf, uuidsOf as games } from '../../../test/uuid';
 import { HUB_COLLECTIONS_SIZE, HUB_SHELF_SIZE } from './hub-limits';
 import {
   composeSnapshot,
@@ -9,8 +9,6 @@ import {
 
 const DAY = '2026-11-20';
 const NEXT_DAY = '2026-11-21';
-
-const games = (...numbers: number[]): string[] => numbers.map(uuidOf);
 
 /** A game on the hub with an author of its own, a little activity and no tag. */
 const game = (id: number, overrides: Partial<HubCandidate> = {}): HubCandidate => ({

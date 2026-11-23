@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { HubSnapshot } from '@prisma/client';
 
-import { uuidOf } from '../../../test/uuid';
+import { uuidOf, uuidsOf as games } from '../../../test/uuid';
 import { NO_RELEASE_ID } from '../../common/ids';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CollectionsService } from '../collections/collections.service';
@@ -11,8 +11,6 @@ import { RecommendationsService } from './recommendations.service';
 const NOW = new Date('2026-11-20T00:05:00Z');
 const TODAY = new Date('2026-11-20T00:00:00Z');
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-const games = (...numbers: number[]): string[] => numbers.map(uuidOf);
 
 /** A published game as the catalogue query selects it. */
 const catalogued = (id: number, overrides: object = {}): object => ({

@@ -5,7 +5,7 @@ import { BadRequestException, ForbiddenException, NotFoundException } from '@nes
 import { Collection, CollectionVisibility, Prisma } from '@prisma/client';
 
 import { aProject } from '../../../test/project-mocks';
-import { uuidOf } from '../../../test/uuid';
+import { uuidOf, uuidsOf as games } from '../../../test/uuid';
 import { compareIds } from '../../common/ids';
 import { PrismaService } from '../../prisma/prisma.service';
 import { HubService } from '../project/hub.service';
@@ -40,8 +40,6 @@ type CollectionWhere = {
   visibility?: CollectionVisibility;
   items?: unknown;
 };
-
-const games = (...numbers: number[]): string[] => numbers.map(uuidOf);
 
 const release = (id: string): ReleaseProject => ({
   ...aProject({ id, name: `Game ${id}`, publishedAt: new Date('2026-10-01T00:00:00Z') }),

@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 
 import { aProject } from '../../../test/project-mocks';
-import { uuidOf } from '../../../test/uuid';
+import { uuidOf, uuidsOf as ids } from '../../../test/uuid';
 import { NO_RELEASE_ID } from '../../common/ids';
 import { PresenceService } from '../../presence/presence.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -53,7 +53,6 @@ const collection = (index: number, gameCount = 5): CollectionPreviewDto => ({
 const range = (from: number, to: number): number[] =>
   Array.from({ length: to - from + 1 }, (_, index) => from + index);
 
-const ids = (...numbers: number[]): string[] => numbers.map(uuidOf);
 const idRange = (from: number, to: number): string[] => ids(...range(from, to));
 
 describe('HubFeedService', () => {

@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 
-import { uuidOf } from '../../../test/uuid';
+import { uuidOf, uuidsOf as ids } from '../../../test/uuid';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { HubService } from '../project/hub.service';
@@ -11,8 +11,6 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 /** A Monday, five minutes into the UTC day: when the hub computes its week. */
 const MONDAY = new Date('2026-11-16T00:05:00Z');
 const weeksLater = (weeks: number): Date => new Date(MONDAY.getTime() + weeks * WEEK_MS);
-
-const ids = (...numbers: number[]): string[] => numbers.map(uuidOf);
 
 /** The games a ranking may name, each with an owner and a name of its own. */
 const GAMES = new Map(

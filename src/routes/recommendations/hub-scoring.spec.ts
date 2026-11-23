@@ -1,4 +1,4 @@
-import { uuidOf } from '../../../test/uuid';
+import { uuidOf, uuidsOf as games } from '../../../test/uuid';
 import {
   activity,
   draw,
@@ -11,7 +11,6 @@ import {
 
 const none = { plays: 0, likes: 0, comments: 0, forks: 0 };
 const ids = (items: { id: string }[]): string[] => items.map((item) => item.id);
-const games = (...numbers: number[]): string[] => numbers.map(uuidOf);
 
 describe('hub scoring', () => {
   describe('engagement', () => {
