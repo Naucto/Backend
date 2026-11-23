@@ -22,24 +22,35 @@ from `client/` (see `client/README.md`).
 
 1. **Explore and reuse before writing.** Look for existing services, guards, DTOs, decorators,
    and common helpers first. A feature is a NestJS module — study an existing one end-to-end
-   (`src/routes/project/`) and match its shape.
-2. **The config files are the rule authority** — don't rely on memory for style rules:
+   (`src/routes/collections/` is a small, complete one) and match its shape. Extend the module
+   that owns the notion before creating one, and an existing row before adding a table: ratings,
+   bug reports and crashes are one `Report` told apart by `kind`, because three tables would be
+   three sets of routes, statuses and admin screens to keep alike. The skill
+   `naucto-backend-feature` (`.claude/skills/`) is the order of work for adding or changing a
+   feature.
+2. **Add nothing the change does not need.** No flag around a feature that is simply there
+   (`config/features.json` holds what a deployment has to be able to turn off), no second variant
+   of a route or a method beside the one it could replace, no helper with a single caller that
+   only names its body, no option, constant or export that nothing reads: each is one more thing
+   to keep working. A diff touches what it is about, since an unrelated line reformatted or
+   renamed is a line someone reviews for nothing.
+3. **The config files are the rule authority** — don't rely on memory for style rules:
    - `eslint.config.mjs` — lint rules (import order, explicit return types, the env-access ban,
-     naming, …), not formatting.
+     naming, no bare `Error` and no unsafe raw SQL under `src/`, …), not formatting.
    - `tsconfig.json` — (very) strict TypeScript settings.
    - `.prettierrc` — owns formatting (`npm run format`); `eslint.config.mjs` extends
      `eslint-config-prettier`, so the two never disagree.
    - `package.json` — available scripts and dependencies.
-3. **Run the feedback loop before finishing:** `npm run lint`, `npm run typecheck`, `npm run build`,
+4. **Run the feedback loop before finishing:** `npm run lint`, `npm run typecheck`, `npm run build`,
    and `npm run test`. CI (`.github/workflows/ci.yml`) runs lint (check-only), typecheck, build and
    Jest against a real Postgres on every push/PR to `main` and must pass. A husky pre-commit hook
    runs `eslint --fix` on staged files and `commit-msg` enforces the `[PART] [TYPE] Message` format.
    `.github/workflows/docker.yml` builds the production image on PRs and publishes it to
    `ghcr.io/naucto/backend:{main,sha-<sha>,<tag>}` on `main` / `v*` tags (consumed by the
    Frontend's full e2e run).
-4. **Ask the user when a decision is non-obvious** — especially architectural ones (new
+5. **Ask the user when a decision is non-obvious** — especially architectural ones (new
    dependencies, schema/migration changes, cross-cutting structure). Prefer asking over assuming.
-5. **Never hand-edit generated code** — `swagger.json`, `client/src` + `client/dist` (all three
+6. **Never hand-edit generated code** — `swagger.json`, `client/src` + `client/dist` (all three
    gitignored) are generated (see Gotchas), and so is a migration that only changes the schema. A
    migration that moves data is written by hand, and never changed once it is merged (see
    _Database / Prisma_ below).
@@ -100,23 +111,56 @@ Create it with `cp config/webrtc.example.json config/webrtc.json`.
 | `src/routes/moderation/`                     | Flags from users, the case queue, staff decisions on accounts, games, comments and collections, the log of them and each account's standing (see _Moderation_ below)                                                                |
 | `src/tasks/`                                 | Scheduled jobs (`@nestjs/schedule` cron)                                                                                                                                                                                            |
 | `src/prisma/`                                | `PrismaService` + module                                                                                                                                                                                                            |
-| `src/common/`                                | Cross-feature DTOs + decorators (pagination, signed-CDN, `@AtLeastOne`), and the domain events (`domain-events.ts`)                                                                                                                 |
+| `src/common/`                                | Cross-feature DTOs, decorators and pipes (pagination, signed-CDN, `@AtLeastOne`, `@IsId()`, `ParseIdPipe`), ids (`ids.ts`), `CodedException`, and the domain events (`domain-events.ts`)                                            |
+| `src/config/`                                | The env registry (`env.ts`): every variable the server reads, typed, behind `getEnv` / `getOptionalEnv`                                                                                                                             |
+| `src/discord/`                               | `DiscordService`: posts to any webhook, for whichever feature needs one (crashes, flags)                                                                                                                                            |
 | `src/util/`                                  | Framework-agnostic helpers                                                                                                                                                                                                          |
 | `src/swagger.ts`, `tool/generate-swagger.ts` | OpenAPI document build + emit                                                                                                                                                                                                       |
 | `tool/`                                      | Command-line tools run by hand: the OpenAPI emit, the check of a data migration (`id-migration-check.ts`), the move of stored objects to new keys (`move-storage.ts`)                                                               |
 | `prisma/`                                    | `schema.prisma` + split `models/*.prisma` + `migrations/`                                                                                                                                                                           |
 | `client/`                                    | `@naucto/api-client` package: `package.json`/`tsconfig.json`/`README.md` committed, `src/`+`dist/` **generated** (gitignored)                                                                                                       |
 | `config/`                                    | Runtime config read from the working directory: feature flags (`features.json`), ICE servers (`webrtc.json`, gitignored)                                                                                                            |
-| `test/`                                      | Specs for the code that lives outside `src/`                                                                                                                                                                                        |
+| `test/`                                      | Specs for the code that lives outside `src/`, and what specs share (`env.ts`, `uuid.ts`, `routes.ts`)                                                                                                                               |
 
 **Module pattern:** every feature is a NestJS `@Module` declaring `controllers`, `providers`,
 `imports`, `exports`. Keep **controllers thin** — HTTP + Swagger decorators + guards only; put
-business logic in `@Injectable()` services; reach the database **only** through `PrismaService`.
+business logic in `@Injectable()` services; reach the database **only** through `PrismaService`,
+and never from a controller (`layers.spec.ts` fails on one that does).
+
+**Each layer keeps to its job**, so a rule is written once and holds for every caller:
+
+- A service method takes ids and a shape the service declares, never the request DTO of a
+  controller: a job, a socket or another service calls it too and has no HTTP body to hand over.
+  `ReportsService` is the model (`NewRating`, `NewBugReport`, which its controller fills field by
+  field), and `PageRequest` is a page as a service takes it. A service may answer a response DTO,
+  built field by field from what it read.
+- A shape that crosses a function boundary has a name: an `interface` or a type alias beside the
+  function, a DTO class once it crosses HTTP. An object type written inline in a signature cannot
+  be imported by the next function that needs it, so it gets copied.
+- A route lives in the controller of the resource it serves, and a module is named after that
+  resource (`project-comment`, not `comment`), so nobody has to look for it in two places.
+- What several features need from outside (object storage, a Discord webhook) is a service of its
+  own that they inject (`S3Service`, `DiscordService`), never code written again in each.
+- The backend decides. A rule the web app also applies (the type and size of a file, a limit, who
+  may act) is enforced here whatever the client checked, and a value every client would have to
+  work out (a count, what staff may do to a target) is computed here and answered (`gameCount`,
+  `allowedOperations`), so two clients cannot disagree.
 
 **DTOs + validation:** request/response shapes are classes in `dto/`, decorated with
 `class-validator` (`@IsString`, `@IsOptional`, …) and `@ApiProperty`. The global `ValidationPipe`
 (`whitelist: true, forbidNonWhitelisted: true, transform: true`) **strips unknown fields and
 rejects unexpected ones** — so every accepted field needs a validator decorator, or it is dropped.
+Parsing, trimming and coercing are the DTO's as well (`@Type`, `@Transform`, `@IsId()`), not code
+written by hand in a controller or a service: validation and the contract then read one
+declaration. A value from a closed set is an enum (a Prisma enum, or a `const` array given to
+both `@IsIn` and `@ApiProperty({ enum })`), never a free string checked later.
+
+**Lists:** a list that can grow is paginated from its first version, since adding pages later
+means a second route to keep beside the first. `PaginationQueryDto` carries `?page=&limit=` in (a
+route with another default or cap extends it), the service takes a `PageRequest` and windows it
+with `toSkipTake` (`pageWindow` on a route that corrects a bad `page` or `limit` rather than
+refusing it), and the answer is the rows with `total`, `page` and `limit` (`CollectionsPageDto`).
+A list answered whole is one the code bounds: an account holds 50 collections at most.
 
 **Access control — deny by default.** One global guard (`src/auth/access/access.guard.ts`,
 registered as `APP_GUARD`) decides every route from the access its handler, or failing that its
@@ -183,7 +227,23 @@ Clients never guess the address — they fetch an offer whose signaling URL come
 **Errors:** from services, prefer Nest's built-in `HttpException` subclasses
 (`NotFoundException`, `ForbiddenException`, `BadRequestException`, …) — they map to status codes
 automatically. Domain errors are small classes in `*.error.ts`; translate them to HTTP responses
-at the controller boundary (see `project.controller.ts` catching `S3ObjectNotFoundException`).
+at the controller boundary (see `project-content.controller.ts` catching
+`S3ObjectNotFoundException`). A bare `Error` is refused by lint under `src/`: nothing can tell
+it from any other.
+
+- **An exception raised from a `catch` carries what was caught as its `cause`**
+  (`new NotFoundException('File not found', { cause: error })`; the S3 exceptions take it as an
+  argument), so the log of a failure still shows where it began.
+- **No `catch` makes an error disappear.** One wraps the single call whose failure it expects (a
+  URL that does not parse, a token that does not verify, a unique key already taken), says what
+  that failure means, and rethrows everything else. Around a block of logic it hides the bugs
+  inside it. An unexpected error is left to reach `CrashCaptureFilter`, which records it: a
+  `catch` that only logs and rethrows adds nothing.
+- **A refusal a client answers differently is a `code`** beside the message, and the code is
+  part of the contract: an enum in a response DTO the route documents with `@ApiResponse`
+  (`ProjectHiddenDto`, `CollectionLimitDto`), which the exception's body `satisfies`
+  (`project.error.ts`, `collection.error.ts`). A code named only in a description reaches the
+  generated client as prose, and the frontend then branches on a string nothing checks.
 
 **Ids** — every row is named by a UUID the database draws
 (`@default(dbgenerated("uuidv7()")) @db.Uuid`), and every column that names a row is a
@@ -220,6 +280,9 @@ order is a property of the key, and nothing an answer relies on:
   `max(uuid)` or `min(uuid)`; go through `::text`.
 - **A column without a foreign key outlives its row**: the release ids of analytics, the target of a
   flag or of a moderation action, the game of a report. Such an id may name nothing.
+- **An answer names such a row by its id with, beside it, a name that is `null` once the row is
+  gone** (`AnalyticsPlayedGameDto`). The server builds no label out of an id: a UUID is not a
+  name, and what to show for a game without one is the client's to choose.
 - In the contract an id is a `string` with `format: uuid` (`@ApiProperty({ format: 'uuid' })`,
   `@ApiParam({ name: 'id', type: String, format: 'uuid' })`). In a spec it is `uuidOf(n)` from
   `test/uuid.ts`.
@@ -395,6 +458,10 @@ on the client side only: the routes answer whatever the flag says.
   game, published or not, hidden or not. `siteUrls.edit` is the one address of a game a moderation
   answer hands out for that (`editUrl`). Those routes write nothing but one log row per look.
 - Moderators never read email addresses: `toAccountRef` gives one to admins only.
+- Anything a person writes that someone else can read comes with its moderation: a kind of target
+  staff can be told about, hide, restore and delete (the places listed above), and a fate when
+  its author's account is erased, decided in `USER_RELATION_FATES` (`account-deletion.service.ts`),
+  which does not compile while a relation of `User` has none. Collections show all of it.
 
 **Hub** (`src/routes/recommendations/`), what the hub puts forward:
 
@@ -473,7 +540,16 @@ Ordering is `simple-import-sort`'s, applied by `npm run lint`.
 
 **Naming** — no one-letter names (`id-length`) beyond indexes `i`/`j`/`k`, coordinates `x`/`y`,
 a comparator's `a`/`b`, an ignored `_` and the `Y` namespace of Yjs: `error`, not `e`;
-`project`, not `p`.
+`project`, not `p`. A method, a type or a file is named for what it is or does (`findAll`,
+`search`), never for who calls it (`…ForModeration`, `…ForAdmin`): the second caller would make
+the name false. A value of the contract is a word a reader understands without the code
+(`CONSENTED`, not `C`). A number or a string that means something is a named constant, in
+`UPPER_SNAKE_CASE` at the top of its module.
+
+**Comments** — in English, and about why: a constraint, an invariant, what a caller may rely on.
+One that restates the line under it, or tells how the code came to be, is removed. The same holds
+for what the contract shows: a Swagger summary says what the route does for its caller, and an
+`example` is a value the field could really hold.
 
 **Formatting** — Prettier owns it (`npm run format`), with the same `.prettierrc` as the
 Frontend; ESLint only adds `curly: all`, so every `if`/`for` body is a braced block. Use the
@@ -493,8 +569,14 @@ including `Promise<T>` and `void`.
 
 **Configuration** — read environment variables with `getEnv(key)` (throws when unset) or
 `getOptionalEnv(key, fallback)` from `src/config/env.ts`; the key is typed and the value comes back
-parsed (numbers, flags). A new variable is declared in that registry and in `.env.example`. Specs set
-values with `withEnv({...})` from `test/env.ts`, restored after each test.
+parsed (numbers, flags). A new variable is declared in that registry and in `.env.example`
+(`env.spec.ts` fails on one the example leaves out). Read it where the class is built, in a field
+initializer or the constructor, so an unset variable stops the boot rather than the first request
+that needs it. What a development setup can run without (an OAuth provider, a Discord webhook,
+the GeoIP database) is read with `getOptionalEnv` and turns itself off when unset, so nobody
+needs a third party's key to start the server. Nothing that differs between two environments is
+written in the code. Specs set values with `withEnv({...})` from `test/env.ts`, restored after
+each test.
 
 **Logging** — use Nest's `Logger` (`private readonly logger = new Logger(MyClass.name)`).
 `console.*` trips `no-console` (warn) — avoid it in app code (`prisma/` seeds and `tool/` scripts
@@ -513,12 +595,24 @@ are exempted in `eslint.config.mjs`).
 (`Test.createTestingModule`) with mocked providers (`useValue`). Add or extend specs for new
 services, controllers, and business logic. Specs for code outside `src/` go in `test/`.
 
+A rule about the structure of the code is a spec that fails when the rule is broken, rather than
+a sentence here: `access-coverage.spec.ts` (every route states who may call it),
+`contract-coverage.spec.ts` (every route has a summary, a tag and a declared answer),
+`layers.spec.ts` (no controller reaches the database), `moderation-log.append-only.spec.ts`,
+`account-deletion.service.spec.ts` (every relation of `User` has a fate when the account is
+erased), `test/ids.spec.ts`. When one fails, what it lists is a decision to take, not a line to
+edit until it passes.
+
 **Database / Prisma** — edit the schema in `prisma/models/*.prisma`, then create a migration
 with `npx prisma migrate dev --name <desc>` and run `npx prisma generate`. A migration that only
 changes the schema stays as Prisma generated it. One that has to move, backfill or rewrite rows is
 created with `--create-only` and its SQL written by hand: the skill `naucto-data-migration`
 (`.claude/skills/`) is the method. **Never edit a migration that has been merged**: a deployed
 database has already run it. Access the DB only via `PrismaService`.
+
+Development data has one way in, `npm run seed:dev` (`prisma/seed-dev.ts`). What a new feature
+needs in order to be tried locally is added there, or in a `seed-dev-<part>.ts` it calls, never
+as a script of its own that the next person has to know about.
 
 **Commits / branches** — see `CONTRIBUTING.md` (branch = Jira key; commit = `[PART] [TYPE] Message`).
 
@@ -532,14 +626,25 @@ See `SECURITY.md` for the disclosure policy. Rules for agents and contributors:
   the local MinIO defaults.
 - **Validate all input.** Every controller input is a DTO with `class-validator` decorators and
   the global `ValidationPipe` rejects unknown fields — don't bypass it with an untyped `@Body()`
-  or by disabling `whitelist`/`forbidNonWhitelisted`.
+  or by disabling `whitelist`/`forbidNonWhitelisted`. A check the web app already makes is made
+  again here: the API is called by more than the web app.
 - **Auth/secrets handling.** Access tokens are JWT bearer tokens (`passport-jwt`); refresh tokens
   are encrypted (AES-256-GCM, `auth/refresh-cookie.crypto.ts`) and delivered as httpOnly cookies;
   passwords are hashed with `bcryptjs`. Don't log tokens/passwords, never return password hashes
   (use response DTOs / Prisma `select`), and keep routes behind access control — `@Public()` must be a
   deliberate choice.
-- **Database.** Use Prisma's query builder (parameterized). Avoid `$queryRawUnsafe` or
-  string-interpolated SQL.
+- **Database.** Use Prisma's query builder. Where it cannot say the query (the analytics
+  rollups, the hub's ranking, an advisory lock), write a tagged `$queryRaw` / `$executeRaw` or
+  `Prisma.sql`, which send every value as a parameter; `Prisma.raw` takes a constant of the code
+  and nothing a request carries. `$queryRawUnsafe` and `$executeRawUnsafe` are refused by lint
+  under `src/`.
+- **A limit or a uniqueness is held by the write itself**: a unique key, a conditional update
+  whose count says who won, or the read and the write under one lock. A count read before the
+  write lets every parallel request through.
+- **What a request can make the server do is bounded.** A public write carries a `@Throttle` per
+  identity, as the analytics ingest and the crash report do, and so does a write an account can
+  repeat at will (a flag, a rating, a bug report). Whatever a body can make the server fetch,
+  loop over or store is capped (`StackResolver`).
 - **CORS** is locked to `FRONTEND_URL` with credentials — don't widen it to `*`.
 - **File uploads** go through `ParseFilePipeBuilder` (size/type validators). Keep limits and
   allowed types when adding upload endpoints.
@@ -555,7 +660,8 @@ See `SECURITY.md` for the disclosure policy. Rules for agents and contributors:
   `api-client/vX.Y.Z` → `latest`, `main` → `next`, PRs → `pr-N`). Bump `client/package.json`
   `version` when the contract changes. The API contract is defined by controllers + DTOs + Swagger
   decorators; the frontend consumes `@naucto/api-client`. **Annotate new/changed endpoints**
-  (`@ApiTags`, `@ApiOperation`, `@ApiResponse`, typed DTOs) or the generated client will be wrong.
+  (`@ApiTags`, `@ApiOperation`, `@ApiResponse`, typed DTOs) or the generated client will be wrong;
+  `contract-coverage.spec.ts` fails on a route that has no summary, tag or declared answer.
 - Swagger generation runs with a **stubbed env** (`tool/generate-swagger.ts`) so it works without
   real secrets. If generation breaks after adding a module that reads new env at construction
   time, add a stub there.
@@ -580,3 +686,12 @@ These are tracked cleanups; avoid partial migrations that make them worse.
 
 - **Data model:** `prisma/models/user.prisma` carries a `// FIXME` to rename the
   `workSession`/`hostingSession` relations to `joined*`/`hosting*` after a merge.
+- **Not every file follows the rules above yet**, and those that do not are not a model: service
+  methods that take the request DTO of their controller (analytics, moderation, project,
+  collections), object types spelled inline in a signature, `catch` blocks that raise without a
+  `cause`, the codes of moderation and of the access guard (`MODERATION_ERROR`,
+  `ACCOUNT_SUSPENDED`, `STAFF_SESSION_REQUIRED`) that no response DTO declares, the friends list
+  and the profile shelves answered as bare arrays, `EDGE_ENDPOINT` and `S3_BUCKET_NAME` read on
+  first use, the two counts of a collection read before the write, the sign-in routes without a
+  throttle, and the `:sessionId` of the game-session routes taken without `ParseIdPipe`. Follow
+  the rule in new code; converting one of these is a change of its own.
