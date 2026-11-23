@@ -40,7 +40,9 @@ from `client/` (see `client/README.md`).
 4. **Ask the user when a decision is non-obvious** — especially architectural ones (new
    dependencies, schema/migration changes, cross-cutting structure). Prefer asking over assuming.
 5. **Never hand-edit generated code** — `swagger.json`, `client/src` + `client/dist` (all three
-   gitignored), and `prisma/migrations/` are generated (see Gotchas).
+   gitignored) are generated (see Gotchas), and so is a migration that only changes the schema. A
+   migration that moves data is written by hand, and never changed once it is merged (see
+   _Database / Prisma_ below).
 
 ## Commands
 
@@ -63,6 +65,8 @@ from `client/` (see `client/README.md`).
 | `npm run seed:dev`                                                                  | Seed a local database with people, friendships, pending requests, shared game sessions, 80 days of coherent analytics up to now (`-- --no-analytics` skips them, `-- --clear-analytics` removes them), collections of the published games and a month of views, likes, comments and plays for the hub to rank on. Refuses non-local hosts |
 | `npm run analytics:acceptance`                                                      | Run the analytics acceptance scenarios against a scratch copy of the local database, over two connections; by hand, never in CI                                                                                                   |
 | `npm run repair:release-view-keys`                                                  | Delete the release view keys once derived from readers' addresses (one-off)                                                                                                                                                       |
+| `npm run migration:check -- --before <file>` / `--after <file>`                     | Fingerprint a database before the ids become UUIDs, then compare the migrated one with it by natural keys; reads only                                                                                                             |
+| `npm run storage:move` (`-- --apply`, `--check`, `--purge-old`)                     | Copy the stored objects from their integer keys to their UUID keys; a dry run without a flag. `npm run storage:move:build` bundles it for the runtime image                                                                       |
 | `docker compose -f docker-compose.yml -f docker-compose.dev.yml up --watch backend` | Dev stack: Postgres, MinIO, and the API with hot reload                                                                                                                                                                           |
 | `./dev.sh`                                                                          | The line above with a `build` first — the shorthand, and the usual way in                                                                                                                                                         |
 
@@ -99,6 +103,7 @@ Create it with `cp config/webrtc.example.json config/webrtc.json`.
 | `src/common/`                                | Cross-feature DTOs + decorators (pagination, signed-CDN, `@AtLeastOne`), and the domain events (`domain-events.ts`)                                                                                                                 |
 | `src/util/`                                  | Framework-agnostic helpers                                                                                                                                                                                                          |
 | `src/swagger.ts`, `tool/generate-swagger.ts` | OpenAPI document build + emit                                                                                                                                                                                                       |
+| `tool/`                                      | Command-line tools run by hand: the OpenAPI emit, the check of a data migration (`id-migration-check.ts`), the move of stored objects to new keys (`move-storage.ts`)                                                               |
 | `prisma/`                                    | `schema.prisma` + split `models/*.prisma` + `migrations/`                                                                                                                                                                           |
 | `client/`                                    | `@naucto/api-client` package: `package.json`/`tsconfig.json`/`README.md` committed, `src/`+`dist/` **generated** (gitignored)                                                                                                       |
 | `config/`                                    | Runtime config read from the working directory: feature flags (`features.json`), ICE servers (`webrtc.json`, gitignored)                                                                                                            |
@@ -179,6 +184,42 @@ Clients never guess the address — they fetch an offer whose signaling URL come
 (`NotFoundException`, `ForbiddenException`, `BadRequestException`, …) — they map to status codes
 automatically. Domain errors are small classes in `*.error.ts`; translate them to HTTP responses
 at the controller boundary (see `project.controller.ts` catching `S3ObjectNotFoundException`).
+
+**Ids** — every row is named by a UUID the database draws
+(`@default(dbgenerated("gen_random_uuid()")) @db.Uuid`), and every column that names a row is a
+`@db.Uuid`:
+
+- **An id is opaque.** It is never ordered to mean older or newer, and never computed on. Order by a
+  date, with the id as a tiebreak after it at most. Where two ids need a stable order (the pair of a
+  friendship, a tiebreak in memory), `compareIds` (`src/common/ids.ts`) orders them as Postgres
+  orders `uuid`; `localeCompare` and subtraction do not.
+- **An id from a request is lower-cased where it enters**: a route parameter through
+  `ParseIdPipe`, a body or query field through `@IsId()` (with `@IsArray()` for a list), anything
+  parsed by hand through `isUUID` and `toLowerCase()`. A UUID reads the same in either case and the
+  database answers lower case, so an id left as typed names a row without being `===` to the id
+  read from it, and a check such as "not your own account" would let it through.
+- **Three integers remain.** `User.playerNumber` is what a game reads as `net.id()`, and published
+  games compute on it: it appears in the `playerId` of a game-table connection, in the game-table
+  ticket and in the game-table messages (`to`, `from`, `userId`), and nowhere else, never in an
+  account, a profile or a roster. The synthetic player of an editor self-join is such a number with
+  no account behind it. `Project.legacyId` is the number a project had while ids were integers,
+  null for any project created since, read only by `GET /projects/legacy/:number`, which
+  translates an old public link into the id. `AnalyticsFact.id` is the sequence of the journal and
+  is never handed out.
+- **"No game" is the nil UUID** where a release id is part of a primary key
+  (`AnalyticsAnonTally`, `AnalyticsUserDaily`), since a key cannot hold a null. It is written once,
+  as `NO_RELEASE_ID` in `src/common/ids.ts`; raw SQL takes it as a parameter, and
+  `test/ids.spec.ts` fails if a schema default spells anything else.
+- **Raw SQL is not type-checked**: cast an id parameter (`${id}::uuid`, `::uuid[]`). Postgres has no
+  `max(uuid)` or `min(uuid)`; go through `::text`.
+- **A column without a foreign key outlives its row**: the release ids of analytics, the target of a
+  flag or of a moderation action, the game of a report. Such an id may name nothing.
+- In the contract an id is a `string` with `format: uuid` (`@ApiProperty({ format: 'uuid' })`,
+  `@ApiParam({ name: 'id', type: String, format: 'uuid' })`). In a spec it is `uuidOf(n)` from
+  `test/uuid.ts`.
+- `LegacyIdMap` says which UUID each integer id became. It is temporary: `tool/move-storage.ts`
+  reads it to copy the stored objects to their new keys, and it goes once the old keys are purged.
+  Nothing else may read it.
 
 **Analytics** (`src/routes/analytics/`), behind the `analytics` flag of `config/features.json`:
 
@@ -441,8 +482,11 @@ are exempted in `eslint.config.mjs`).
 services, controllers, and business logic. Specs for code outside `src/` go in `test/`.
 
 **Database / Prisma** — edit the schema in `prisma/models/*.prisma`, then create a migration
-with `npx prisma migrate dev --name <desc>` and run `npx prisma generate`. **Never hand-edit
-files under `prisma/migrations/`.** Access the DB only via `PrismaService`.
+with `npx prisma migrate dev --name <desc>` and run `npx prisma generate`. A migration that only
+changes the schema stays as Prisma generated it. One that has to move, backfill or rewrite rows is
+created with `--create-only` and its SQL written by hand: the skill `naucto-data-migration`
+(`.claude/skills/`) is the method. **Never edit a migration that has been merged**: a deployed
+database has already run it. Access the DB only via `PrismaService`.
 
 **Commits / branches** — see `CONTRIBUTING.md` (branch = Jira key; commit = `[PART] [TYPE] Message`).
 
@@ -484,7 +528,11 @@ See `SECURITY.md` for the disclosure policy. Rules for agents and contributors:
   real secrets. If generation breaks after adding a module that reads new env at construction
   time, add a stub there.
 - The Prisma schema is **split** across `prisma/schema.prisma` + `prisma/models/*.prisma`. Edit
-  the model files; let Prisma generate the migrations.
+  the model files; let Prisma generate the migrations, except one that moves data (see _Database /
+  Prisma_).
+- The dev container applies pending migrations each time it starts (`prisma migrate deploy` over
+  the bind-mounted tree), so starting it on a branch that carries a new migration migrates the
+  local database.
 - `npm run lint` runs ESLint with `--fix` (it **modifies files**); the pre-commit hook only lints
   staged files — still run typecheck / build / test yourself before pushing.
 - Country lookups read an IP-to-country database in MMDB format from `GEOIP_DB_PATH`. Mount it;
