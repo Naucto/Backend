@@ -136,6 +136,20 @@ describe('MultiplayerService', () => {
     return jwtService.sign.mock.calls[0]![0] as SyncedGameTableTicketPayload;
   }
 
+  /** What a seat hands out: to the game its player number, to the room server the account too. */
+  function expectSeatOf(
+    result: { playerId: number },
+    account: number,
+    role: SyncedGameTableTicketPayload['role'],
+  ): void {
+    expect(result.playerId).toBe(playerNumberOf(account));
+    expect(mintedPayload()).toMatchObject({
+      playerNumber: playerNumberOf(account),
+      userId: uuidOf(account),
+      role,
+    });
+  }
+
   /** The room server the service built, and what the service handed it. */
   function gameTable(): {
     server: jest.Mocked<SyncedGameTableWebRTCServer>;
@@ -288,12 +302,7 @@ describe('MultiplayerService', () => {
 
       expect(result.sessionUuid).toBe('session-uuid');
       expect(result.connectionTicket).toBe('signed.ticket');
-      expect(result.playerId).toBe(playerNumberOf(1));
-      expect(mintedPayload()).toMatchObject({
-        playerNumber: playerNumberOf(1),
-        userId: uuidOf(1),
-        role: 'host',
-      });
+      expectSeatOf(result, 1, 'host');
       expect(user.findUnique).toHaveBeenCalledWith({
         where: { id: uuidOf(1) },
         select: { playerNumber: true },
@@ -716,12 +725,7 @@ describe('MultiplayerService', () => {
 
       const result = await service.join('session-uuid', uuidOf(2));
 
-      expect(result.playerId).toBe(playerNumberOf(2));
-      expect(mintedPayload()).toMatchObject({
-        playerNumber: playerNumberOf(2),
-        userId: uuidOf(2),
-        role: 'slave',
-      });
+      expectSeatOf(result, 2, 'slave');
       expect($transaction).not.toHaveBeenCalled();
     });
 
@@ -828,12 +832,7 @@ describe('MultiplayerService', () => {
 
       const result = await service.join('session-uuid', uuidOf(2), undefined, true);
 
-      expect(result.playerId).toBe(playerNumberOf(2));
-      expect(mintedPayload()).toMatchObject({
-        playerNumber: playerNumberOf(2),
-        userId: uuidOf(2),
-        role: 'slave',
-      });
+      expectSeatOf(result, 2, 'slave');
     });
   });
 
@@ -1275,12 +1274,7 @@ describe('MultiplayerService', () => {
 
       const result = await service.refreshTicket('session-uuid', uuidOf(2));
 
-      expect(result.playerId).toBe(playerNumberOf(2));
-      expect(mintedPayload()).toMatchObject({
-        playerNumber: playerNumberOf(2),
-        userId: uuidOf(2),
-        role: 'slave',
-      });
+      expectSeatOf(result, 2, 'slave');
     });
 
     it('rejects a non-member', async () => {
@@ -1331,12 +1325,7 @@ describe('MultiplayerService', () => {
 
       const result = await service.refreshTicket('session-uuid', uuidOf(1), 'member.ticket');
 
-      expect(result.playerId).toBe(playerNumberOf(1));
-      expect(mintedPayload()).toMatchObject({
-        playerNumber: playerNumberOf(1),
-        userId: uuidOf(1),
-        role: 'host',
-      });
+      expectSeatOf(result, 1, 'host');
     });
 
     it('mints from the account when no ticket is given', async () => {
@@ -1345,12 +1334,7 @@ describe('MultiplayerService', () => {
       const result = await service.refreshTicket('session-uuid', uuidOf(1));
 
       expect(jwtService.verify).not.toHaveBeenCalled();
-      expect(result.playerId).toBe(playerNumberOf(1));
-      expect(mintedPayload()).toMatchObject({
-        playerNumber: playerNumberOf(1),
-        userId: uuidOf(1),
-        role: 'host',
-      });
+      expectSeatOf(result, 1, 'host');
     });
 
     it('ignores a ticket minted for another session', async () => {
@@ -1362,12 +1346,7 @@ describe('MultiplayerService', () => {
 
       const result = await service.refreshTicket('session-uuid', uuidOf(1), 'old.ticket');
 
-      expect(result.playerId).toBe(playerNumberOf(1));
-      expect(mintedPayload()).toMatchObject({
-        playerNumber: playerNumberOf(1),
-        userId: uuidOf(1),
-        role: 'host',
-      });
+      expectSeatOf(result, 1, 'host');
     });
 
     it('ignores a ticket it cannot verify', async () => {
@@ -1378,12 +1357,7 @@ describe('MultiplayerService', () => {
 
       const result = await service.refreshTicket('session-uuid', uuidOf(1), 'forged');
 
-      expect(result.playerId).toBe(playerNumberOf(1));
-      expect(mintedPayload()).toMatchObject({
-        playerNumber: playerNumberOf(1),
-        userId: uuidOf(1),
-        role: 'host',
-      });
+      expectSeatOf(result, 1, 'host');
     });
 
     it("does not hand a member the host's seat for presenting the host's ticket", async () => {
@@ -1399,12 +1373,7 @@ describe('MultiplayerService', () => {
 
       const result = await service.refreshTicket('session-uuid', uuidOf(2), 'host.ticket');
 
-      expect(result.playerId).toBe(playerNumberOf(2));
-      expect(mintedPayload()).toMatchObject({
-        playerNumber: playerNumberOf(2),
-        userId: uuidOf(2),
-        role: 'slave',
-      });
+      expectSeatOf(result, 2, 'slave');
     });
 
     it("does not hand a member another member's seat", async () => {
@@ -1422,12 +1391,7 @@ describe('MultiplayerService', () => {
 
       const result = await service.refreshTicket('session-uuid', uuidOf(2), 'other.ticket');
 
-      expect(result.playerId).toBe(playerNumberOf(2));
-      expect(mintedPayload()).toMatchObject({
-        playerNumber: playerNumberOf(2),
-        userId: uuidOf(2),
-        role: 'slave',
-      });
+      expectSeatOf(result, 2, 'slave');
     });
 
     it('still rejects a non-member holding a ticket', async () => {
