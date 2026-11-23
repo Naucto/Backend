@@ -296,6 +296,12 @@ export class ProjectService {
 
   /** Sets the disk of a project whole, or clears it with null. */
   async setDisk(id: string, disk: DiskStyleDto | null): Promise<DiskStyleDto | null> {
+    const project = await this.requireProject(id, { hiddenAt: true });
+    // The disk is how the hub draws the game: a restore puts back the game staff withheld.
+    if (project.hiddenAt) {
+      throw new ProjectHiddenException();
+    }
+
     const updated = await this.prisma.project.update({
       where: { id },
       data: {

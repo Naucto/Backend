@@ -41,6 +41,7 @@ import { LegacyProjectDto } from './dto/legacy-project.dto';
 import { ProjectActionResponseDto } from './dto/project-action-response.dto';
 import { ProjectClipDto } from './dto/project-clip.dto';
 import { PROJECT_CLIP_MAX_BYTES, PROJECT_CLIP_TYPES } from './dto/project-field-limits';
+import { ProjectHiddenDto } from './dto/project-hidden.dto';
 import {
   PaginatedProjectsResponseDto,
   ProjectExResponseDto,
@@ -238,7 +239,12 @@ export class ProjectController {
   @ApiBody({ type: ProjectDiskDto })
   @ApiResponse({ status: 200, description: 'The disk as stored', type: ProjectDiskDto })
   @ApiResponse({ status: 400, description: 'A colour, finish or direction the disk cannot take' })
-  @ApiResponse({ status: 403, description: 'Forbidden' })
+  @ApiResponse({
+    status: 403,
+    description:
+      'Not a collaborator of the project (no `code`), or the game is withheld by moderation',
+    type: ProjectHiddenDto,
+  })
   @ApiResponse({ status: 404, description: 'Project not found' })
   async setDisk(@ProjectId() id: string, @Body() dto: ProjectDiskDto): Promise<ProjectDiskDto> {
     return { disk: await this.projectService.setDisk(id, dto.disk) };

@@ -224,7 +224,25 @@ describe('ProjectService', () => {
     const columns = { diskColor: true, diskFinish: true, diskColor2: true, diskGradDir: true };
 
     beforeEach(() => {
+      prismaMock.project.findUnique.mockResolvedValue({ hiddenAt: null });
       prismaMock.project.update.mockImplementation(async ({ data }: { data: object }) => data);
+    });
+
+    it('refuses a game moderation withholds, whose look stays as it was withheld', async () => {
+      prismaMock.project.findUnique.mockResolvedValue({ hiddenAt: new Date() });
+
+      const refused = service.setDisk(uuidOf(4), { color: '#16171a', finish: 'holo' });
+
+      await expect(refused).rejects.toBeInstanceOf(ProjectHiddenException);
+      await expect(service.setDisk(uuidOf(4), null)).rejects.toBeInstanceOf(ProjectHiddenException);
+      expect(prismaMock.project.update).not.toHaveBeenCalled();
+    });
+
+    it('finds no project to style where there is none', async () => {
+      prismaMock.project.findUnique.mockResolvedValue(null);
+
+      await expect(service.setDisk(uuidOf(4), null)).rejects.toThrow(NotFoundException);
+      expect(prismaMock.project.update).not.toHaveBeenCalled();
     });
 
     it('writes the style whole, leaving out what it does not name', async () => {

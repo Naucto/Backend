@@ -1,6 +1,7 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
 
 import { ContentSizeBreakdown } from './content-size';
+import type { ProjectHiddenDto } from './dto/project-hidden.dto';
 import type { CheckpointLimitDto, ProjectTooLargeDto } from './dto/project-size.dto';
 
 export const PROJECT_NOT_PUBLISHED_CODE = 'PROJECT_NOT_PUBLISHED';
@@ -35,7 +36,7 @@ export class ProjectHiddenException extends HttpException {
         error: 'Forbidden',
         code: PROJECT_HIDDEN_CODE,
         message: 'This game is unavailable',
-      },
+      } satisfies ProjectHiddenDto,
       HttpStatus.FORBIDDEN,
     );
   }
