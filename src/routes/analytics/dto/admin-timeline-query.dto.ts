@@ -8,7 +8,6 @@ import {
   IsISO8601,
   IsOptional,
   IsString,
-  IsUUID,
   Matches,
   Max,
   MaxLength,
@@ -112,16 +111,11 @@ export class AnalyticsReleasesQueryDto {
   })
   @IsOptional()
   @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string'
-      ? value
-          .toLowerCase()
-          .split(',')
-          .filter((id) => id !== '')
-      : value,
+    typeof value === 'string' ? value.split(',').filter((id) => id !== '') : value,
   )
   @IsArray()
   @ArrayMaxSize(50)
-  @IsUUID(undefined, { each: true })
+  @IsId({ each: true })
   ids?: string[];
 
   @ApiPropertyOptional({ default: 10, minimum: 1, maximum: 50 })
