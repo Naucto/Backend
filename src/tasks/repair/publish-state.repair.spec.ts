@@ -81,4 +81,17 @@ describe('PublishStateRepair', () => {
 
     expect(s3Mock.deleteFile.mock.calls).toEqual([[{ key: 'release/7' }]]);
   });
+
+  it('asks about the release, the cover and the clip of a withheld game', async () => {
+    rows([], [{ id: 7 }]);
+    s3Mock.fileExists.mockResolvedValue(false);
+
+    await repair.run();
+
+    expect(s3Mock.fileExists.mock.calls).toEqual([
+      ['release/7'],
+      ['projects/7/image'],
+      ['projects/7/clip'],
+    ]);
+  });
 });

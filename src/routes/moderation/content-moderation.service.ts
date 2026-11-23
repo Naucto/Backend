@@ -89,7 +89,7 @@ export class ContentModerationService {
       // The condition settles two staff members hiding the same game at once.
       const { count } = await tx.project.updateMany({
         where: { id: project.id, hiddenAt: null },
-        data: { hiddenAt: new Date(), iconUrl: null },
+        data: { hiddenAt: new Date(), iconUrl: null, clipVersion: null },
       });
       if (count === 0) {
         throw this.alreadyHidden();
@@ -141,14 +141,18 @@ export class ContentModerationService {
       throw this.notHidden();
     }
 
-    const { coverUrl } = await this.content.copyFromWithheld(project.id);
+    const { coverUrl, clipVersion } = await this.content.copyFromWithheld(project.id);
 
     let row: ActionRow;
     try {
       row = await this.prisma.$transaction(async (tx) => {
         const { count } = await tx.project.updateMany({
           where: { id: project.id, hiddenAt: { not: null } },
-          data: { hiddenAt: null, ...(coverUrl ? { iconUrl: coverUrl } : {}) },
+          data: {
+            hiddenAt: null,
+            ...(coverUrl ? { iconUrl: coverUrl } : {}),
+            ...(clipVersion ? { clipVersion } : {}),
+          },
         });
         if (count === 0) {
           throw this.notHidden();

@@ -568,15 +568,22 @@ export class ProjectContentService {
       key: projectKeys.withheldRelease(projectId),
     });
     await this.copy(projectKeys.cover(projectId), { key: projectKeys.withheldCover(projectId) });
+    await this.copy(projectKeys.clip(projectId), { key: projectKeys.withheldClip(projectId) });
   }
 
   async removeServedCopies(projectId: number): Promise<void> {
     await this.s3Service.deleteFile({ key: projectKeys.release(projectId) });
     await this.s3Service.deleteFile({ key: projectKeys.cover(projectId) });
+    await this.s3Service.deleteFile({ key: projectKeys.clip(projectId) });
   }
 
-  /** The reverse, in the same three steps. Answers the address of the cover it put back, if any. */
-  async copyFromWithheld(projectId: number): Promise<{ coverUrl: string | null }> {
+  /**
+   * The reverse, in the same three steps. Answers the address of the cover and the version of the
+   * clip it put back, if any: the row names neither while the game is withheld.
+   */
+  async copyFromWithheld(
+    projectId: number,
+  ): Promise<{ coverUrl: string | null; clipVersion: string | null }> {
     await this.copy(projectKeys.withheldRelease(projectId), {
       key: projectKeys.release(projectId),
       cacheControl: RELEASE_CACHE_CONTROL,
@@ -588,11 +595,26 @@ export class ProjectContentService {
       cacheControl: 'no-cache',
       publicRead: true,
     });
-    return { coverUrl: restored ? this.edgeService.getCDNUrl(cover) : null };
+    const clip = projectKeys.clip(projectId);
+    const clipRestored = await this.copy(projectKeys.withheldClip(projectId), {
+      key: clip,
+      cacheControl: 'no-cache',
+      publicRead: true,
+    });
+
+    return {
+      coverUrl: restored ? this.edgeService.getCDNUrl(cover) : null,
+      // The version is all the row keeps of a clip: when the store gives none, the time stands in,
+      // or the clip just put back would read as absent.
+      clipVersion: clipRestored
+        ? ((await this.s3Service.getFileMetadataOrNull(clip))?.ETag ?? Date.now().toString())
+        : null,
+    };
   }
 
   async removeWithheldCopies(projectId: number): Promise<void> {
     await this.s3Service.deleteFile({ key: projectKeys.withheldRelease(projectId) });
     await this.s3Service.deleteFile({ key: projectKeys.withheldCover(projectId) });
+    await this.s3Service.deleteFile({ key: projectKeys.withheldClip(projectId) });
   }
 }

@@ -209,7 +209,7 @@ describe('ContentModerationService', () => {
       expect(order).toEqual([...order].sort((a, b) => a - b));
       expect(tx.project.updateMany).toHaveBeenCalledWith({
         where: { id: 12, hiddenAt: null },
-        data: { hiddenAt: expect.any(Date), iconUrl: null },
+        data: { hiddenAt: expect.any(Date), iconUrl: null, clipVersion: null },
       });
     });
 
@@ -283,6 +283,7 @@ describe('ContentModerationService', () => {
       prisma.project.findUnique.mockResolvedValue(game({ hiddenAt: new Date() }));
       content.copyFromWithheld.mockResolvedValue({
         coverUrl: 'https://cdn.test/projects/12/image',
+        clipVersion: '"c11p"',
       });
       log.record.mockResolvedValue({
         ...(recorded(ModerationActionType.PROJECT_RESTORED) as object),
@@ -300,15 +301,30 @@ describe('ContentModerationService', () => {
       expect(content.copyFromWithheld).not.toHaveBeenCalled();
     });
 
-    it('puts the release and the cover back, then drops the withheld copies', async () => {
+    it('puts the release, the cover and the clip back, then drops the withheld copies', async () => {
       await service.restoreProject(MOD, 12, {});
 
       expect(tx.project.updateMany).toHaveBeenCalledWith({
         where: { id: 12, hiddenAt: { not: null } },
-        data: { hiddenAt: null, iconUrl: 'https://cdn.test/projects/12/image' },
+        data: {
+          hiddenAt: null,
+          iconUrl: 'https://cdn.test/projects/12/image',
+          clipVersion: '"c11p"',
+        },
       });
       expect(content.removeWithheldCopies).toHaveBeenCalledWith(12);
       expect(content.removeServedCopies).not.toHaveBeenCalled();
+    });
+
+    it('names no cover and no clip on the row of a game that had none', async () => {
+      content.copyFromWithheld.mockResolvedValue({ coverUrl: null, clipVersion: null });
+
+      await service.restoreProject(MOD, 12, {});
+
+      expect(tx.project.updateMany).toHaveBeenCalledWith({
+        where: { id: 12, hiddenAt: { not: null } },
+        data: { hiddenAt: null },
+      });
     });
 
     it('takes the release back out of reach when the row could not be cleared', async () => {

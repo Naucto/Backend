@@ -4,6 +4,7 @@ import { TestingModule } from '@nestjs/testing';
 import { withEnv } from '../../../test/env';
 import { draft, ProjectMocks, released } from '../../../test/project-mocks';
 import { PROJECT_CHANGED, ProjectChangedEvent } from '../../common/domain-events';
+import { ProjectHiddenException } from './project.error';
 import { ProjectService } from './project.service';
 import { COLLABORATOR_SELECT, CREATOR_SELECT } from './project-select';
 
@@ -404,6 +405,19 @@ describe('ProjectService', () => {
         PROJECT_CHANGED,
         new ProjectChangedEvent(1),
       );
+    });
+
+    it.each([
+      ['a new clip', (): Promise<unknown> => service.uploadClip(1, file, 7)],
+      ['the removal of its clip', (): Promise<unknown> => service.removeClip(1)],
+    ])('refuses %s while moderation withholds the game', async (_case, act) => {
+      prismaMock.project.findUnique.mockResolvedValue({ hiddenAt: new Date() });
+
+      await expect(act()).rejects.toBeInstanceOf(ProjectHiddenException);
+
+      expect(s3ServiceMock.uploadFile).not.toHaveBeenCalled();
+      expect(s3ServiceMock.deleteFile).not.toHaveBeenCalled();
+      expect(prismaMock.project.update).not.toHaveBeenCalled();
     });
   });
 

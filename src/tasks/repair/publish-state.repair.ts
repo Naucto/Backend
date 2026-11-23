@@ -64,7 +64,7 @@ export class PublishStateRepair {
     });
 
     for (const { id } of hidden) {
-      for (const key of [projectKeys.release(id), projectKeys.cover(id)]) {
+      for (const key of [projectKeys.release(id), projectKeys.cover(id), projectKeys.clip(id)]) {
         if (await this.s3.fileExists(key)) {
           this.logger.warn(`Project ${id} is hidden but ${key} was still served, removing it`);
           await this.s3.deleteFile({ key });

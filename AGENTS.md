@@ -324,9 +324,10 @@ on the client side only: the routes answer whatever the flag says.
   comment service. A hidden game keeps `publishedAt`, and `PUBLISHED` (`project-select.ts`) now
   means released and not hidden: read the published state through it, or through `RELEASED` for an
   owner's own shelf, never from `publishedAt` alone.
-- The storage layer cannot take a public grant back, so hiding a game moves its release and cover
-  to `withheld/<id>/`. Copy first, mark the row, then remove the served copies: a failure midway
-  leaves a copy too many, and `repair:publish-state` removes it.
+- The storage layer cannot take a public grant back, so hiding a game moves its release, its cover
+  and its clip to `withheld/<id>/`. Copy first, mark the row, then remove the served copies: a
+  failure midway leaves a copy too many, and `repair:publish-state` removes it. The row names
+  neither the cover nor the clip meanwhile, and a restore writes both back.
 - Staff read any game through `/moderation/projects/:id/preview`, with the token of a site sign-in
   because the web app shows it. Those routes write nothing but one log row per look.
 - Moderators never read email addresses: `toAccountRef` gives one to admins only.
@@ -360,7 +361,9 @@ on the client side only: the routes answer whatever the flag says.
   /projects/:id/clip`, WebM or MP4 by declared type and by content, 4 MiB, public-read) and the
   disk style (`PATCH /projects/:id/disk`) change the moment a collaborator sets them, take no part
   in the release hash, and reach every answer through `ProjectService.lookOf`. A disk colour is any
-  `#rrggbb`; no style means the client derives a colour from the project id.
+  `#rrggbb`; no style means the client derives a colour from the project id. A withheld game takes
+  no new cover or clip and does not give its clip up (`PROJECT_HIDDEN`), and a suspended account
+  sets none of the three.
 - `Project.palette` mirrors the palette of the game's content, written by the editor through
   `PUT /projects/:id` as the name and the tags are, so a client can draw with the game's colours
   without the engine. It is live as well, travels with project and release answers but not with

@@ -553,7 +553,7 @@ describe('ProjectContentService', () => {
       expect(s3ServiceMock.downloadFile).not.toHaveBeenCalled();
     });
 
-    it('copies the release and the cover to keys the edge does not serve', async () => {
+    it('copies the release, the cover and the clip to keys the edge does not serve', async () => {
       s3ServiceMock.fileExists.mockResolvedValue(true);
       s3ServiceMock.downloadFile.mockResolvedValue({ body: Readable.from('x') });
 
@@ -562,11 +562,12 @@ describe('ProjectContentService', () => {
       expect(s3ServiceMock.uploadFile.mock.calls.map(([upload]) => upload.keyName)).toEqual([
         'withheld/1/release',
         'withheld/1/cover',
+        'withheld/1/clip',
       ]);
       expect(s3ServiceMock.setObjectPublicRead).not.toHaveBeenCalled();
     });
 
-    it('has nothing to copy for a game with no release and no cover', async () => {
+    it('has nothing to copy for a game with no release, no cover and no clip', async () => {
       s3ServiceMock.fileExists.mockResolvedValue(false);
 
       await service.copyToWithheld(1);
@@ -574,12 +575,14 @@ describe('ProjectContentService', () => {
       expect(s3ServiceMock.uploadFile).not.toHaveBeenCalled();
     });
 
-    it('puts both back where the edge serves them, readable again', async () => {
+    it('puts them back where the edge serves them, readable again', async () => {
       s3ServiceMock.fileExists.mockResolvedValue(true);
       s3ServiceMock.downloadFile.mockResolvedValue({ body: Readable.from('x') });
+      s3ServiceMock.getFileMetadataOrNull.mockResolvedValue({ ETag: '"c11p"' });
 
       await expect(service.copyFromWithheld(1)).resolves.toEqual({
         coverUrl: 'https://cdn.test/projects/1/image',
+        clipVersion: '"c11p"',
       });
 
       expect(s3ServiceMock.uploadFile).toHaveBeenCalledWith(
@@ -588,6 +591,32 @@ describe('ProjectContentService', () => {
       expect(s3ServiceMock.setObjectPublicRead.mock.calls).toEqual([
         ['release/1'],
         ['projects/1/image'],
+        ['projects/1/clip'],
+      ]);
+      expect(s3ServiceMock.getFileMetadataOrNull).toHaveBeenCalledWith('projects/1/clip');
+    });
+
+    it('still names a clip put back that the store gave no version for', async () => {
+      s3ServiceMock.fileExists.mockResolvedValue(true);
+      s3ServiceMock.downloadFile.mockResolvedValue({ body: Readable.from('x') });
+      s3ServiceMock.getFileMetadataOrNull.mockResolvedValue(null);
+
+      await expect(service.copyFromWithheld(1)).resolves.toMatchObject({
+        clipVersion: expect.stringMatching(/^\d+$/),
+      });
+    });
+
+    it('removes the three served copies, and the three withheld ones', async () => {
+      await service.removeServedCopies(1);
+      await service.removeWithheldCopies(1);
+
+      expect(s3ServiceMock.deleteFile.mock.calls.map(([{ key }]) => key)).toEqual([
+        'release/1',
+        'projects/1/image',
+        'projects/1/clip',
+        'withheld/1/release',
+        'withheld/1/cover',
+        'withheld/1/clip',
       ]);
     });
 
@@ -610,13 +639,16 @@ describe('ProjectContentService', () => {
       await expect(service.fetchReleaseForReview(1)).resolves.toBeNull();
     });
 
-    it('reports no cover when none was withheld', async () => {
+    it('reports no cover and no clip when none was withheld', async () => {
       s3ServiceMock.fileExists.mockImplementation((key: string) =>
         Promise.resolve(key === 'withheld/1/release'),
       );
       s3ServiceMock.downloadFile.mockResolvedValue({ body: Readable.from('x') });
 
-      await expect(service.copyFromWithheld(1)).resolves.toEqual({ coverUrl: null });
+      await expect(service.copyFromWithheld(1)).resolves.toEqual({
+        coverUrl: null,
+        clipVersion: null,
+      });
     });
   });
 

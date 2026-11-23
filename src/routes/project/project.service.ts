@@ -369,6 +369,12 @@ export class ProjectService {
 
   /** Stores the clip of a project over the one it has, and answers its address. */
   async uploadClip(id: number, file: Express.Multer.File, uploaderId: number): Promise<string> {
+    const project = await this.requireProject(id, { hiddenAt: true });
+    // A clip is public the moment it is stored, which is what withholding a game takes away.
+    if (project.hiddenAt) {
+      throw new ProjectHiddenException();
+    }
+
     return this.storeClip(id, file, {
       uploadedBy: uploaderId.toString(),
       projectId: id.toString(),
@@ -388,6 +394,12 @@ export class ProjectService {
    * next clip, while a row still naming a deleted object would hand out an address that fails.
    */
   async removeClip(id: number): Promise<void> {
+    const project = await this.requireProject(id, { hiddenAt: true });
+    // Its clip is held out of reach for a restore to put back, where this removal would not find it.
+    if (project.hiddenAt) {
+      throw new ProjectHiddenException();
+    }
+
     await this.prisma.project.update({ where: { id }, data: { clipVersion: null } });
     await this.s3Service.deleteFile({ key: projectKeys.clip(id) });
     this.eventEmitter.emit(PROJECT_CHANGED, new ProjectChangedEvent(id));

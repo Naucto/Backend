@@ -20,11 +20,12 @@ export const projectKeys = {
   clip: (projectId: number): string => `projects/${projectId}/clip`,
 
   /**
-   * Where the release and the cover of a game sit while moderation withholds it. Never made
-   * public-read, so the edge stops serving them the moment they are moved here.
+   * Where the release, the cover and the clip of a game sit while moderation withholds it. Never
+   * made public-read, so the edge stops serving them the moment they are moved here.
    */
   withheldRelease: (projectId: number): string => `withheld/${projectId}/release`,
   withheldCover: (projectId: number): string => `withheld/${projectId}/cover`,
+  withheldClip: (projectId: number): string => `withheld/${projectId}/clip`,
 
   /**
    * Everything the project owns in the bucket, as single keys and as prefixes to list. A new kind
@@ -37,6 +38,7 @@ export const projectKeys = {
       projectKeys.clip(projectId),
       projectKeys.withheldRelease(projectId),
       projectKeys.withheldCover(projectId),
+      projectKeys.withheldClip(projectId),
     ],
     prefixes: [projectKeys.checkpoints(projectId), projectKeys.saves(projectId)],
   }),
