@@ -97,7 +97,7 @@ export class AdminModerationProjectController {
   @ApiResponse({ status: HttpStatus.OK, description: 'The image' })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No cover' })
   async cover(@Param('id', ParseIdPipe) id: string, @Res() res: Response): Promise<void> {
-    await this.send(res, await this.directory.projectCover(id), 'Cover');
+    await this.send(res, await this.directory.projectFile(id, 'cover'), 'Cover');
   }
 
   @Get(':id/clip')
@@ -107,7 +107,7 @@ export class AdminModerationProjectController {
   @ApiResponse({ status: HttpStatus.OK, description: 'The video' })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No clip' })
   async clip(@Param('id', ParseIdPipe) id: string, @Res() res: Response): Promise<void> {
-    await this.send(res, await this.directory.projectClip(id), 'Clip');
+    await this.send(res, await this.directory.projectFile(id, 'clip'), 'Clip');
   }
 
   @Post(':id/hide')

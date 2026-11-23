@@ -89,6 +89,12 @@ function suspendedNow(now: Date): Prisma.UserWhereInput {
   };
 }
 
+/** Where the store may hold a file of a game: where it is served, then where it is withheld. */
+const STORED_AT = {
+  cover: (id: string): string[] => [projectKeys.cover(id), projectKeys.withheldCover(id)],
+  clip: (id: string): string[] => [projectKeys.clip(id), projectKeys.withheldClip(id)],
+};
+
 const WARNED: Prisma.UserWhereInput = {
   moderationRecord: { some: { action: ModerationActionType.ACCOUNT_WARNED } },
 };
@@ -284,8 +290,8 @@ export class ModerationDirectoryService {
       tags: row.tags,
       collaborators: row.collaborators.map((collaborator) => toAccountRef(collaborator, staff)),
       forkedFromId: row.forkedFromId,
-      hasCover: (await this.coverKey(row.id)) !== null,
-      hasClip: (await this.clipKey(row.id)) !== null,
+      hasCover: (await this.storedKey(STORED_AT.cover(row.id))) !== null,
+      hasClip: (await this.storedKey(STORED_AT.clip(row.id))) !== null,
       allowedActions: allowedOperations(staff, {
         type: ModerationTargetType.PROJECT,
         state: targetState[state],
@@ -295,20 +301,11 @@ export class ModerationDirectoryService {
     };
   }
 
-  /** The cover of a game, from wherever it is kept while the game is withheld. */
-  async projectCover(projectId: string): Promise<DownloadedFile> {
-    const key = await this.coverKey(projectId);
+  /** The cover or the clip of a game, from wherever it is kept while the game is withheld. */
+  async projectFile(projectId: string, what: keyof typeof STORED_AT): Promise<DownloadedFile> {
+    const key = await this.storedKey(STORED_AT[what](projectId));
     if (!key) {
-      throw new NotFoundException('This game has no cover');
-    }
-    return this.s3Service.downloadFile({ key });
-  }
-
-  /** The clip of a game, from wherever it is kept while the game is withheld. */
-  async projectClip(projectId: string): Promise<DownloadedFile> {
-    const key = await this.clipKey(projectId);
-    if (!key) {
-      throw new NotFoundException('This game has no clip');
+      throw new NotFoundException(`This game has no ${what}`);
     }
     return this.s3Service.downloadFile({ key });
   }
@@ -410,7 +407,7 @@ export class ModerationDirectoryService {
     };
   }
 
-  /** The first of `keys` the store holds: where an object is served, then where it is withheld. */
+  /** The first of `keys` the store holds. */
   private async storedKey(keys: string[]): Promise<string | null> {
     for (const key of keys) {
       if (await this.s3Service.fileExists(key)) {
@@ -418,14 +415,6 @@ export class ModerationDirectoryService {
       }
     }
     return null;
-  }
-
-  private coverKey(projectId: string): Promise<string | null> {
-    return this.storedKey([projectKeys.cover(projectId), projectKeys.withheldCover(projectId)]);
-  }
-
-  private clipKey(projectId: string): Promise<string | null> {
-    return this.storedKey([projectKeys.clip(projectId), projectKeys.withheldClip(projectId)]);
   }
 
   /** Open flags per target of one kind. */

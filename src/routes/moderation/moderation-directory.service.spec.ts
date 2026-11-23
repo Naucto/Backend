@@ -231,43 +231,26 @@ describe('ModerationDirectoryService', () => {
     });
   });
 
-  describe('projectCover', () => {
+  describe.each([
+    ['cover', `projects/${uuidOf(12)}/image`, `withheld/${uuidOf(12)}/cover`],
+    ['clip', `projects/${uuidOf(12)}/clip`, `withheld/${uuidOf(12)}/clip`],
+  ] as const)('projectFile, the %s', (what, served, withheld) => {
     it.each([
-      ['served', `projects/${uuidOf(12)}/image`],
-      ['withheld with its game', `withheld/${uuidOf(12)}/cover`],
-    ])('serves the cover when it is %s', async (_case, key) => {
+      ['served', served],
+      ['withheld with its game', withheld],
+    ])('serves it when it is %s', async (_case, key) => {
       s3.fileExists.mockImplementation((asked: string) => Promise.resolve(asked === key));
       s3.downloadFile.mockResolvedValue({ body: Readable.from('x') });
 
-      await service.projectCover(uuidOf(12));
+      await service.projectFile(uuidOf(12), what);
 
       expect(s3.downloadFile).toHaveBeenCalledWith({ key });
     });
 
-    it('finds no cover for a game without one', async () => {
+    it('finds none for a game without one', async () => {
       s3.fileExists.mockResolvedValue(false);
 
-      await expect(service.projectCover(uuidOf(12))).rejects.toBeInstanceOf(NotFoundException);
-    });
-  });
-
-  describe('projectClip', () => {
-    it.each([
-      ['served', `projects/${uuidOf(12)}/clip`],
-      ['withheld with its game', `withheld/${uuidOf(12)}/clip`],
-    ])('serves the clip when it is %s', async (_case, key) => {
-      s3.fileExists.mockImplementation((asked: string) => Promise.resolve(asked === key));
-      s3.downloadFile.mockResolvedValue({ body: Readable.from('x') });
-
-      await service.projectClip(uuidOf(12));
-
-      expect(s3.downloadFile).toHaveBeenCalledWith({ key });
-    });
-
-    it('finds no clip for a game without one', async () => {
-      s3.fileExists.mockResolvedValue(false);
-
-      await expect(service.projectClip(uuidOf(12))).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.projectFile(uuidOf(12), what)).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
