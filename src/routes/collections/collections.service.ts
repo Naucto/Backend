@@ -71,7 +71,8 @@ const LISTED_ORDER: Record<CollectionSort, Prisma.Sql> = {
 
 /** A term typed in the search box, found in the title or the description, whatever its case. */
 const matchingTerm = (term: string): Prisma.CollectionWhereInput => {
-  const contains = { contains: term, mode: 'insensitive' } as const;
+  // Prisma hands `contains` to LIKE as it is, so the wildcards of the term are escaped to be text.
+  const contains = { contains: term.replace(/[\\%_]/g, '\\$&'), mode: 'insensitive' } as const;
 
   return { OR: [{ title: contains }, { description: contains }] };
 };

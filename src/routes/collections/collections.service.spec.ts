@@ -741,6 +741,17 @@ describe('CollectionsService', () => {
       expect(await totalFor('absent')).toBe(0);
     });
 
+    it('counts a wildcard of LIKE as the text it is, as the ranked page reads it', async () => {
+      titled('plain', 'Couch');
+
+      await service.listPublic({ search: '50%_\\' });
+      const { where } = prisma.collection.count.mock.lastCall?.[0] as {
+        where: { OR: { title: { contains: string } }[] };
+      };
+
+      expect(where.OR[0]?.title.contains).toBe('50\\%\\_\\\\');
+    });
+
     it('never lists a private, an unlisted, a withheld or a gameless collection', async () => {
       titled('listed', 'Match');
       add('private', 'PRIVATE', games(2));
