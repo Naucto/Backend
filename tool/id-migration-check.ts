@@ -70,6 +70,26 @@ const ID_COLUMNS: Record<string, string[]> = {
   AnalyticsMarker: ['id', 'releaseId'],
 };
 
+/** The column that says when a row was made, for each table whose rows the migration names. */
+const CREATION_COLUMNS: Record<string, string> = {
+  User: 'createdAt',
+  FriendRequest: 'createdAt',
+  Friendship: 'createdAt',
+  Project: 'createdAt',
+  Comment: 'createdAt',
+  Like: 'createdAt',
+  ReleaseView: 'createdAt',
+  FeaturedRelease: 'createdAt',
+  Notification: 'createdAt',
+  Report: 'createdAt',
+  ReportOccurrence: 'createdAt',
+  GameSession: 'startedAt',
+  WorkSession: 'startedAt',
+  Flag: 'createdAt',
+  ModerationAction: 'createdAt',
+  AnalyticsMarker: 'createdAt',
+};
+
 /** Columns whose text or JSON embeds an id, and the two integers that keep the old ids. */
 const REWRITTEN_COLUMNS: Record<string, string[]> = {
   User: ['playerNumber'],
@@ -630,6 +650,49 @@ async function migratedStateProblems(db: Client, before: Fingerprint): Promise<s
     problems.push(
       `${String(mismatched)} accounts or projects do not carry the number LegacyIdMap gives them`,
     );
+  }
+
+  // An id is a version 7 UUID dated at its row's creation, so ids follow the order the rows were
+  // made in. An id column that names another row may also hold the nil UUID or the derived id,
+  // shaped as a version 3, of a row that is gone.
+  for (const [table, made] of Object.entries(CREATION_COLUMNS)) {
+    if (before.columns[table]?.includes(made) !== true) {
+      continue;
+    }
+    const otherVersion = await count(
+      `SELECT count(*) AS count FROM "${table}" WHERE uuid_extract_version("id") IS DISTINCT FROM 7`,
+    );
+    if (otherVersion > 0) {
+      problems.push(`${table}: ${String(otherVersion)} ids are not version 7`);
+    }
+    const outOfOrder = await count(
+      `SELECT count(*) AS count FROM (
+         SELECT "${made}" AS made, lag("${made}") OVER (ORDER BY "id") AS previous FROM "${table}"
+       ) AS ordered WHERE ordered.made < ordered.previous`,
+    );
+    if (outOfOrder > 0) {
+      problems.push(
+        `${table}: ${String(outOfOrder)} rows come after a row made later, in the order of their ids`,
+      );
+    }
+    if (otherVersion === 0 && outOfOrder === 0) {
+      console.log(`  in order  ${table}: version 7 ids follow ${made}`);
+    }
+  }
+
+  for (const [table, columns] of Object.entries(ID_COLUMNS)) {
+    for (const column of columns.filter((name) => name !== 'id')) {
+      const otherVersion = await count(
+        `SELECT count(*) AS count FROM "${table}"
+         WHERE "${column}" <> $1::uuid AND COALESCE(uuid_extract_version("${column}"), 0) NOT IN (3, 7)`,
+        [NO_RELEASE_ID],
+      );
+      if (otherVersion > 0) {
+        problems.push(
+          `${table}.${column}: ${String(otherVersion)} ids are neither version 7 nor derived`,
+        );
+      }
+    }
   }
 
   return problems;
