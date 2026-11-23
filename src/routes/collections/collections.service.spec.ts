@@ -143,6 +143,27 @@ describe('CollectionsService', () => {
     itemsMatching({ collectionId: id }).map((item) => item.projectId);
 
   /** What moderation does to a collection, and undoes. */
+  /** What a stranger is answered for `id` is, to the letter, what an id that names nothing gets. */
+  const expectAGap = async (id: string): Promise<void> => {
+    const refusal = (asked: string): Promise<unknown> =>
+      service.findOne(asked, OTHER).catch((error: NotFoundException) => error.getResponse());
+    const missing = '44444444-4444-4444-8444-444444444444';
+
+    expect(
+      JSON.stringify(await refusal(id))
+        .split(id)
+        .join(missing),
+    ).toBe(JSON.stringify(await refusal(missing)));
+  };
+
+  const writes: [string, (id: string, userId: string) => Promise<unknown>][] = [
+    ['update', (id, userId) => service.update(id, userId, { title: 'Mine now' })],
+    ['remove', (id, userId) => service.remove(id, userId)],
+    ['addGame', (id, userId) => service.addGame(id, userId, uuidOf(9))],
+    ['removeGame', (id, userId) => service.removeGame(id, userId, uuidOf(3))],
+    ['reorder', (id, userId) => service.reorder(id, userId, [])],
+  ];
+
   const hide = (id: string, hiddenAt: Date | null = new Date('2026-11-01T00:00:00Z')): void => {
     rows.set(id, { ...(rows.get(id) as Collection), hiddenAt });
   };
@@ -259,15 +280,7 @@ describe('CollectionsService', () => {
     });
 
     it('answers a private one of someone else exactly as an id that names nothing', async () => {
-      const refusal = (id: string): Promise<unknown> =>
-        service.findOne(id, OTHER).catch((error: NotFoundException) => error.getResponse());
-      const missing = '44444444-4444-4444-8444-444444444444';
-
-      expect(
-        JSON.stringify(await refusal(PRIVATE_ID))
-          .split(PRIVATE_ID)
-          .join(missing),
-      ).toBe(JSON.stringify(await refusal(missing)));
+      await expectAGap(PRIVATE_ID);
     });
 
     it('lists to its owner every collection of theirs, to a profile only the public ones', async () => {
@@ -293,14 +306,6 @@ describe('CollectionsService', () => {
   });
 
   describe('who changes a collection', () => {
-    const writes: [string, (id: string, userId: string) => Promise<unknown>][] = [
-      ['update', (id, userId) => service.update(id, userId, { title: 'Mine now' })],
-      ['remove', (id, userId) => service.remove(id, userId)],
-      ['addGame', (id, userId) => service.addGame(id, userId, uuidOf(9))],
-      ['removeGame', (id, userId) => service.removeGame(id, userId, uuidOf(3))],
-      ['reorder', (id, userId) => service.reorder(id, userId, [])],
-    ];
-
     it.each(writes)('%s is refused to someone who can only read it', async (_name, write) => {
       await expect(write(PUBLIC_ID, OTHER)).rejects.toBeInstanceOf(ForbiddenException);
       await expect(write(UNLISTED_ID, OTHER)).rejects.toBeInstanceOf(ForbiddenException);
@@ -571,15 +576,7 @@ describe('CollectionsService', () => {
     });
 
     it('answers anyone else exactly as an id that names nothing', async () => {
-      const refusal = (id: string): Promise<unknown> =>
-        service.findOne(id, OTHER).catch((error: NotFoundException) => error.getResponse());
-      const missing = '44444444-4444-4444-8444-444444444444';
-
-      expect(
-        JSON.stringify(await refusal(PUBLIC_ID))
-          .split(PUBLIC_ID)
-          .join(missing),
-      ).toBe(JSON.stringify(await refusal(missing)));
+      await expectAGap(PUBLIC_ID);
     });
 
     it('says of a collection still standing that it is not withheld', async () => {
@@ -645,15 +642,9 @@ describe('CollectionsService', () => {
       expect(rows.has(PUBLIC_ID)).toBe(false);
     });
 
-    it.each<[string, (id: string) => Promise<unknown>]>([
-      ['update', (id): Promise<unknown> => service.update(id, OTHER, { title: 'Mine now' })],
-      ['remove', (id): Promise<unknown> => service.remove(id, OTHER)],
-      ['addGame', (id): Promise<unknown> => service.addGame(id, OTHER, uuidOf(9))],
-      ['removeGame', (id): Promise<unknown> => service.removeGame(id, OTHER, uuidOf(3))],
-      ['reorder', (id): Promise<unknown> => service.reorder(id, OTHER, [])],
-    ])('%s by someone else finds nothing', async (_name, write) => {
-      await expect(write(PUBLIC_ID)).rejects.toBeInstanceOf(NotFoundException);
-      await expect(write(UNLISTED_ID)).rejects.toBeInstanceOf(NotFoundException);
+    it.each(writes)('%s by someone else finds nothing', async (_name, write) => {
+      await expect(write(PUBLIC_ID, OTHER)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(write(UNLISTED_ID, OTHER)).rejects.toBeInstanceOf(NotFoundException);
 
       expect(gamesOf(PUBLIC_ID)).toEqual(games(3, 1, 2));
     });
