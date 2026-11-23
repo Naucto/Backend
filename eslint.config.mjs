@@ -18,6 +18,16 @@ const roleLiteralSyntax = {
   message: 'Refer to a role through the constants of src/auth/access/roles.ts.',
 };
 
+const bareErrorSyntax = {
+  selector: 'ThrowStatement > NewExpression[callee.name="Error"]',
+  message: 'Throw an error of its own class (see the *.error.ts files), so a caller can tell it.',
+};
+
+const unsafeSqlSyntax = {
+  selector: 'MemberExpression[property.name=/^\\$(queryRaw|executeRaw)Unsafe$/]',
+  message: 'Use the tagged $queryRaw / $executeRaw, which send every value as a parameter.',
+};
+
 const styleRules = {
   'no-console': 'warn',
   'no-var': 'error',
@@ -120,6 +130,20 @@ export default defineConfig([
     ignores: ['src/auth/access/roles.ts', 'prisma/**'],
     rules: {
       'no-restricted-syntax': ['error', privateFieldSyntax, roleLiteralSyntax],
+    },
+  },
+  {
+    // The server's own code; seeds, tools and specs are scripts and keep the plain forms.
+    files: ['src/**/*.ts'],
+    ignores: ['**/*.spec.ts', 'src/auth/access/roles.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        privateFieldSyntax,
+        roleLiteralSyntax,
+        bareErrorSyntax,
+        unsafeSqlSyntax,
+      ],
     },
   },
   prettier,
