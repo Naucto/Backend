@@ -81,28 +81,16 @@ export class ProjectService {
     return project as Prisma.ProjectGetPayload<{ select: S }>;
   }
 
-  /**
-   * The cover's address from the row alone, for a list that cannot afford a storage lookup per
-   * game. A cover stored before its version was kept gets the bare address, which the store
-   * serves `no-cache`.
-   */
-  storedCoverUrl(project: Pick<Project, 'id' | 'iconUrl' | 'coverVersion'>): string | null {
-    if (!project.iconUrl) {
-      return null;
-    }
-    const url = this.edgeService.getCDNUrl(projectKeys.cover(project.id));
-
-    return project.coverVersion ? versionedUrl(url, project.coverVersion) : url;
-  }
-
   /** Where the edge serves a version of the clip: another address each time the clip changes. */
   private clipUrlAt(projectId: number, version: string): string {
     return versionedUrl(this.edgeService.getCDNUrl(projectKeys.clip(projectId)), version);
   }
 
   /**
-   * How the row says the game is drawn, for an answer that lists or opens it. Like the cover's,
-   * the clip's address comes from the row alone.
+   * How the row says the game is drawn, for an answer that lists or opens it. The addresses of the
+   * cover and of the clip come from the row alone: a list cannot afford a storage lookup per game.
+   * A cover stored before its version was kept gets the bare address, which the store serves
+   * `no-cache`.
    */
   lookOf(
     project: Pick<
@@ -117,8 +105,12 @@ export class ProjectService {
       | 'diskGradDir'
     >,
   ): ProjectLook {
+    const cover = project.iconUrl
+      ? this.edgeService.getCDNUrl(projectKeys.cover(project.id))
+      : null;
+
     return {
-      coverUrl: this.storedCoverUrl(project),
+      coverUrl: cover && project.coverVersion ? versionedUrl(cover, project.coverVersion) : cover,
       clipUrl: project.clipVersion ? this.clipUrlAt(project.id, project.clipVersion) : null,
       disk: diskOf(project),
     };
