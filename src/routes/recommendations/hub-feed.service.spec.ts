@@ -330,6 +330,16 @@ describe('HubFeedService', () => {
       expect(hubService.fetchLastEdited).toHaveBeenCalledWith(ME);
     });
 
+    it('says of that project that moderation withholds it, rather than leaving it out', async () => {
+      const hiddenAt = new Date('2026-11-10T00:00:00Z');
+      hubService.fetchLastEdited.mockResolvedValue(release(77, { hiddenAt, coverUrl: null }));
+
+      const { hero } = await service.feed(ME, NOW);
+
+      expect(hero[1]).toMatchObject({ reason: 'CONTINUE', game: { id: uuidOf(77), hiddenAt } });
+      expect(hero[0]?.game.hiddenAt).toBeNull();
+    });
+
     it('puts what friends play fourth and on a shelf of its own, the most shared first', async () => {
       friendsService.friendIdsOf.mockResolvedValue(ids(2, 3, 4));
       friendsPlayed([12, 2], [14, 2], [14, 3], [14, 4], [12, 3], [16, 4, 999_000n]);

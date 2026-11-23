@@ -85,6 +85,7 @@ export function toHubGame(release: ReleaseProject): HubGameDto {
     createdAt: release.createdAt,
     updatedAt: release.updatedAt,
     publishedAt: release.publishedAt,
+    hiddenAt: release.hiddenAt,
     viewCount: release.viewCount,
     uniquePlayers: release.uniquePlayers,
     likes: release.likes,
