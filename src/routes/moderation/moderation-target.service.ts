@@ -5,7 +5,7 @@ import { currentSuspension } from '../../auth/access/suspension';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ITEM_ORDER } from '../collections/collections.service';
 import { hubName } from '../project/hub-fields';
-import { TargetState, TargetVisibility } from './dto/case.dto';
+import { CaseListedGameDto, TargetState, TargetVisibility } from './dto/case.dto';
 import { TargetContentDto } from './dto/moderation-action.dto';
 import { ACCOUNT_REF_SELECT, AccountRefRow } from './moderation-mappers';
 
@@ -22,7 +22,7 @@ export interface TargetView {
   /** Who its owner lets read it. Null for a target whose owner has no such choice. */
   visibility: TargetVisibility | null;
   /** The games it lists, in its order. Empty for a target that lists none. */
-  games: { id: string; name: string }[];
+  games: CaseListedGameDto[];
 }
 
 const PROJECT_SELECT = {
