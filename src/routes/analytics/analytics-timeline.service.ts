@@ -40,6 +40,7 @@ import {
   AnalyticsActivityDto,
   AnalyticsActivityItemDto,
   AnalyticsArrivalsDto,
+  AnalyticsPlayedGameDto,
   AnalyticsReleasesDto,
   AnalyticsSourcesDto,
   AnalyticsTimelineDto,
@@ -756,14 +757,14 @@ export class AnalyticsTimelineService {
     return new Date(Math.floor(cutoff / DAY_MS) * DAY_MS);
   }
 
-  private mostPlayed(releases: string[], names: Map<string, string>): string[] {
+  private mostPlayed(releases: string[], names: Map<string, string>): AnalyticsPlayedGameDto[] {
     const counts = new Map<string, number>();
     for (const releaseId of releases) {
       counts.set(releaseId, (counts.get(releaseId) ?? 0) + 1);
     }
     return [...counts.entries()]
       .sort((a, b) => b[1] - a[1])
-      .map(([releaseId]) => names.get(releaseId) ?? `#${releaseId}`);
+      .map(([releaseId]) => ({ releaseId, name: names.get(releaseId) ?? null }));
   }
 
   private async namesOf(releaseIds: (string | null)[]): Promise<Map<string, string>> {

@@ -361,7 +361,38 @@ describe('AnalyticsTimelineService', () => {
         { releaseId: uuidOf(9), name: 'Orbs', players: 1, plays: 2, anonymousPlays: 5 },
       ]);
       expect(arrivals.visitors.map((row) => row.account)).toEqual(['NEW', 'EXISTING']);
+      expect(arrivals.visitors[0]?.games).toEqual([{ releaseId: uuidOf(9), name: 'Orbs' }]);
       expect(arrivals.visitors[1]?.signedUpAt).toBeNull();
+    });
+
+    it('names a game since deleted by its id alone, most played first', async () => {
+      const firstSeenAt = new Date('2026-10-21T10:00:00Z');
+      prisma.analyticsVisitor.findMany.mockResolvedValue([
+        { id: 'a', firstSeenAt, lastSeenAt: firstSeenAt, userId: null },
+      ]);
+      mockedFirstSessions.mockResolvedValue(new Map());
+      prisma.analyticsSession.groupBy.mockResolvedValue([]);
+      const play = { continued: false, session: { visitorId: 'a' } };
+      prisma.analyticsPlay.findMany.mockResolvedValue([
+        { ...play, startedAt: new Date('2026-10-21T10:05:00Z'), releaseId: uuidOf(9) },
+        { ...play, startedAt: new Date('2026-10-21T10:06:00Z'), releaseId: uuidOf(8) },
+        { ...play, startedAt: new Date('2026-10-21T10:07:00Z'), releaseId: uuidOf(8) },
+      ]);
+      prisma.analyticsFact.findMany.mockResolvedValue([]);
+      prisma.analyticsAnonTally.groupBy.mockResolvedValue([]);
+      prisma.project.findMany.mockResolvedValue([
+        { id: uuidOf(9), name: 'draft', publishedName: 'Orbs' },
+      ]);
+
+      const arrivals = await service.arrivals({
+        from: '2026-10-21T09:00:00Z',
+        to: '2026-10-21T12:00:00Z',
+      });
+
+      expect(arrivals.visitors[0]?.games).toEqual([
+        { releaseId: uuidOf(8), name: null },
+        { releaseId: uuidOf(9), name: 'Orbs' },
+      ]);
     });
 
     it('keeps only the newcomers whose first session came from the source', async () => {
