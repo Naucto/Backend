@@ -56,6 +56,10 @@ trust a list someone handed you:
   every column, string and JSON key through the same function, so two places can never disagree.
   A value that names a row which no longer exists gets a new value **derived** from the old one,
   the same wherever it appears.
+- **A new id is dated at its row's creation.** A row that is given a UUID takes a version 7
+  shifted to the column that says when the row was made (`pg_temp.id_made_at` in the worked
+  example), so migrated ids fall in the order of their rows, as the ids the database draws do.
+  The derived id of a row that no longer exists has no date and stays as derived.
 - **Keep what a later tool needs.** If objects outside the database are keyed by the old value,
   the migration leaves a table saying what each became. Say in the schema that it is temporary.
 - **It must run on an empty database too**: CI and the analytics acceptance harness replay every
@@ -109,7 +113,8 @@ of the database (`tool/id-migration-check.ts`):
   being changed. Any other change shows.
 - Count the nulls of every reference before and after: a reference must not be lost on the way.
 - After the migration, ask what only the new shape can answer: every column has its new type, no
-  rewritten string still carries the old form, what had to be emptied is empty.
+  rewritten string still carries the old form, what had to be emptied is empty, the new ids are in
+  the order their rows were made in.
 - It runs on production data: assume nothing the seed happens to guarantee.
 - **Test the check itself.** On a migrated copy, break one thing at a time (a row given to another
   owner, a reference moved, a key left in the old form, an untouched value changed) and see each

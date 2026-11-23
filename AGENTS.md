@@ -186,8 +186,10 @@ automatically. Domain errors are small classes in `*.error.ts`; translate them t
 at the controller boundary (see `project.controller.ts` catching `S3ObjectNotFoundException`).
 
 **Ids** — every row is named by a UUID the database draws
-(`@default(dbgenerated("gen_random_uuid()")) @db.Uuid`), and every column that names a row is a
-`@db.Uuid`:
+(`@default(dbgenerated("uuidv7()")) @db.Uuid`), and every column that names a row is a
+`@db.Uuid`. It draws a version 7, which begins with the time: ids follow the order rows are made
+in, so a tiebreak by id after a date falls in creation order and an index fills at its end. That
+order is a property of the key, and nothing an answer relies on:
 
 - **An id is opaque.** It is never ordered to mean older or newer, and never computed on. Order by a
   date, with the id as a tiebreak after it at most. Where two ids need a stable order (the pair of a
@@ -418,8 +420,8 @@ on the client side only: the routes answer whatever the flag says.
 
 - Who reads one is decided in `CollectionsService` alone: `PUBLIC` by anyone, `UNLISTED` by whoever
   holds its id, `PRIVATE` by its owner. A private one answers anyone else 404, as an id that names
-  nothing does, and only the owner writes. The id is a random UUID because an unlisted collection
-  has nothing else to keep it from being walked.
+  nothing does, and only the owner writes. The random bits of its id are all that keep an
+  unlisted collection from being guessed.
 - A game is added only while it is on the hub (`PUBLISHED`), and shows only while it is. Its row
   stays when it leaves, unpublished by its author or withheld by moderation, so the owner is told
   it is unavailable (`unavailableGameIds`) and can remove it, and it comes back in place once it
