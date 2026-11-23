@@ -341,6 +341,8 @@ on the client side only: the routes answer whatever the flag says.
   a fixed day sees the shelves a visitor would.
 - "On the hub" is one test, `PUBLISHED` in `project-select.ts` (`PUBLISHED_SQL` in a raw query).
   **A hub query that spells the test itself misses the next condition added there.**
+- A comment that counts is one test as well, `LIVE_COMMENT` (`LIVE_COMMENT_SQL` in a raw query):
+  neither deleted by its author nor hidden by moderation.
 - The same run picks the game of the week, once per UTC week: the best trending game that was not
   picked in the last eight weeks. Nobody picks by hand; `FeaturedRelease` keeps the history. A
   pick whose game moderation withholds ends the next time it is read.

@@ -17,10 +17,16 @@ export const WITH_PEOPLE = {
   creator: { select: CREATOR_SELECT },
 } satisfies Prisma.ProjectInclude;
 
+/** A comment still standing: neither deleted by its author nor hidden by moderation. */
+export const LIVE_COMMENT = { deleted: false, hiddenAt: null } satisfies Prisma.CommentWhereInput;
+
+/** The same test for a raw query, as a condition on "Comment". */
+export const LIVE_COMMENT_SQL = Prisma.sql`NOT "Comment"."deleted" AND "Comment"."hiddenAt" IS NULL`;
+
 export const WITH_PEOPLE_AND_COUNTS = {
   ...WITH_PEOPLE,
   _count: {
-    select: { forks: true, comments: { where: { deleted: false, hiddenAt: null } } },
+    select: { forks: true, comments: { where: LIVE_COMMENT } },
   },
 } satisfies Prisma.ProjectInclude;
 

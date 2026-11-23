@@ -512,7 +512,11 @@ describe('HubService', () => {
 
       expect(prismaMock.comment.groupBy).toHaveBeenCalledWith({
         by: ['projectId'],
-        where: { deleted: false, project: { publishedAt: { not: null }, hiddenAt: null } },
+        where: {
+          deleted: false,
+          hiddenAt: null,
+          project: { publishedAt: { not: null }, hiddenAt: null },
+        },
         orderBy: [{ _count: { projectId: 'desc' } }, { projectId: 'desc' }],
         skip: 0,
         take: 3,
@@ -521,7 +525,7 @@ describe('HubService', () => {
         where: {
           AND: [
             { publishedAt: { not: null }, hiddenAt: null },
-            { comments: { none: { deleted: false } } },
+            { comments: { none: { deleted: false, hiddenAt: null } } },
           ],
         },
         select: { id: true },

@@ -12,6 +12,7 @@ import { ProjectService } from './project.service';
 import { ProjectContentService } from './project-content.service';
 import {
   DEFAULT_LIMIT,
+  LIVE_COMMENT,
   PaginatedProjectsResult,
   ProjectEx,
   ProjectWithCounts,
@@ -50,8 +51,6 @@ const RELEASE_ORDER_BY: Record<
   liked: [{ likes: 'desc' }, { id: 'desc' }],
   name: [{ publishedName: 'asc' }, { name: 'asc' }, { id: 'asc' }],
 };
-
-const LIVE_COMMENT = { deleted: false } satisfies Prisma.CommentWhereInput;
 
 export type PublishedProjectFilters = {
   search?: string;

@@ -113,8 +113,9 @@ describe('HubSnapshotService', () => {
     it('reads only the seven whole days before the day it computes', async () => {
       await service.refresh(new Date('2026-11-20T18:00:00Z'));
 
-      const [, ...bound] = prisma.$queryRaw.mock.calls[0] as [unknown, ...Date[]];
-      expect(new Set(bound.map((value) => value.toISOString()))).toEqual(
+      const [, ...bound] = prisma.$queryRaw.mock.calls[0] as [unknown, ...unknown[]];
+      const days = bound.filter((value) => value instanceof Date);
+      expect(new Set(days.map((value) => value.toISOString()))).toEqual(
         new Set(['2026-11-20T00:00:00.000Z', '2026-11-13T00:00:00.000Z']),
       );
     });

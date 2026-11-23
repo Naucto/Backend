@@ -4,7 +4,7 @@ import { HubSnapshot, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { hubTags } from '../project/hub-fields';
-import { PUBLISHED } from '../project/project-select';
+import { LIVE_COMMENT, LIVE_COMMENT_SQL, PUBLISHED } from '../project/project-select';
 import { activity, DailySignals, engagement, TRENDING_WINDOW_DAYS } from './hub-scoring';
 import { composeSnapshot, HubCandidate, HubSnapshotPayload } from './hub-snapshot';
 import { RecommendationsService } from './recommendations.service';
@@ -76,7 +76,7 @@ export class HubSnapshotService implements OnApplicationBootstrap, OnApplication
           likes: true,
           publishedAt: true,
           firstPublishedAt: true,
-          _count: { select: { forks: true, comments: { where: { deleted: false } } } },
+          _count: { select: { forks: true, comments: { where: LIVE_COMMENT } } },
         },
       }),
       // A play is a dated view of a consenting browser or a play started by one that declined;
@@ -106,7 +106,7 @@ export class HubSnapshotService implements OnApplicationBootstrap, OnApplication
           UNION ALL
           SELECT "projectId", "createdAt"::date, 0, 0, COUNT(*), 0
           FROM "Comment"
-          WHERE NOT "deleted" AND "createdAt" >= ${from} AND "createdAt" < ${day}
+          WHERE ${LIVE_COMMENT_SQL} AND "createdAt" >= ${from} AND "createdAt" < ${day}
           GROUP BY 1, 2
           UNION ALL
           SELECT "forked_from_id", "createdAt"::date, 0, 0, 0, COUNT(*)
