@@ -87,13 +87,10 @@ export interface StoredObject {
   etag: string;
 }
 
-/** The part of the object store the tool needs. */
+/** The part of the object store a plan and a check ask. */
 export interface ObjectStore {
   /** Whether anyone can read the object without credentials. */
   isPublic(key: string): Promise<boolean>;
-  /** Copies content, content type and metadata within the store; the copy is public or private. */
-  copy(from: string, to: string, publicRead: boolean): Promise<void>;
-  delete(key: string): Promise<void>;
 }
 
 export type IdMap = Map<string, string>;
@@ -280,21 +277,17 @@ export async function ownershipProblemsOf(
 // ---- the store and the database ---------------------------------------------------------------
 
 class S3ObjectStore implements ObjectStore {
-  private readonly s3: S3Client;
   private readonly bucket = getEnv('S3_BUCKET_NAME');
   private readonly endpoint = getEnv('S3_ENDPOINT').replace(/\/+$/, '');
-
-  constructor() {
-    this.s3 = new S3Client({
-      region: getEnv('S3_REGION'),
-      endpoint: this.endpoint,
-      credentials: {
-        accessKeyId: getEnv('S3_ACCESS_KEY_ID'),
-        secretAccessKey: getEnv('S3_SECRET_ACCESS_KEY'),
-      },
-      forcePathStyle: true,
-    });
-  }
+  private readonly s3 = new S3Client({
+    region: getEnv('S3_REGION'),
+    endpoint: this.endpoint,
+    credentials: {
+      accessKeyId: getEnv('S3_ACCESS_KEY_ID'),
+      secretAccessKey: getEnv('S3_SECRET_ACCESS_KEY'),
+    },
+    forcePathStyle: true,
+  });
 
   describe(): string {
     return `bucket ${this.bucket} at ${this.endpoint}`;
@@ -338,6 +331,7 @@ class S3ObjectStore implements ObjectStore {
     throw new Error(`Reading ${key} without credentials answered ${String(response.status)}`);
   }
 
+  /** Copies content, content type and metadata within the store; the copy is public or private. */
   async copy(from: string, to: string, publicRead: boolean): Promise<void> {
     await this.s3.send(
       new CopyObjectCommand({

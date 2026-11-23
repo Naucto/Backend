@@ -22,18 +22,9 @@ const IDS: IdMap = new Map([
   ['User:5', PERSON],
 ]);
 
-function storeOf(publicKeys: string[] = []): ObjectStore & { copies: string[] } {
-  const copies: string[] = [];
-  return {
-    copies,
-    isPublic: (key) => Promise.resolve(publicKeys.includes(key)),
-    copy: (from, to, publicRead) => {
-      copies.push(`${from} -> ${to} ${publicRead ? 'public' : 'private'}`);
-      return Promise.resolve();
-    },
-    delete: () => Promise.resolve(),
-  };
-}
+const storeOf = (publicKeys: string[] = []): ObjectStore => ({
+  isPublic: (key) => Promise.resolve(publicKeys.includes(key)),
+});
 
 const objectsOf = (...keys: string[]): StoredObject[] =>
   keys.map((key) => ({ key, etag: `"etag of ${key.replace(GAME, '7')}"` }));
