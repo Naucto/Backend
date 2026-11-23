@@ -1,5 +1,6 @@
 -- Every integer primary key becomes a UUID, and every column that names one follows, with the rows
--- in place. Written by hand: the generated migration dropped and recreated each column.
+-- in place. A row's UUID is a version 7 dated at the row's creation, so ids keep the order the
+-- rows were made in. Written by hand: the generated migration dropped and recreated each column.
 --
 -- Three integers stay: "User"."playerNumber" (the old id, with its sequence), "Project"."legacyId"
 -- (the old id, no default) and "AnalyticsFact"."id".
@@ -36,23 +37,47 @@ CREATE TABLE "LegacyIdMap" (
 TRUNCATE "RefreshToken";
 TRUNCATE "HubSnapshot";
 
+-- A version 7 UUID dated at `made`, a timestamp in UTC as every date column holds. `uuidv7` reads
+-- the clock itself and takes how far to shift it. The shift is counted in seconds: an interval
+-- that holds days is added in the time zone of the session, an hour off across a clock change.
+-- The clock is read twice, here and in `uuidv7`, so a draw whose date is not `made` to the
+-- millisecond is drawn again. A date no version 7 can hold (before 1970) fails the migration.
+CREATE FUNCTION pg_temp.id_made_at(made TIMESTAMP) RETURNS UUID
+LANGUAGE plpgsql VOLATILE STRICT AS $$
+DECLARE
+    instant CONSTANT TIMESTAMPTZ := date_trunc('milliseconds', made AT TIME ZONE 'UTC');
+    id UUID;
+BEGIN
+    FOR attempt IN 1..100 LOOP
+        id := uuidv7(make_interval(
+            secs => EXTRACT(EPOCH FROM instant) - EXTRACT(EPOCH FROM clock_timestamp())
+        ));
+        IF uuid_extract_timestamp(id) = instant THEN
+            RETURN id;
+        END IF;
+    END LOOP;
+    RAISE EXCEPTION 'No version 7 UUID could be dated %.', made;
+END
+$$;
+
+-- "startedAt" is when a session row is made; every other table says it in "createdAt".
 INSERT INTO "LegacyIdMap" ("model", "legacyId", "id")
-          SELECT 'User',             "id", gen_random_uuid() FROM "User"
-UNION ALL SELECT 'FriendRequest',    "id", gen_random_uuid() FROM "FriendRequest"
-UNION ALL SELECT 'Friendship',       "id", gen_random_uuid() FROM "Friendship"
-UNION ALL SELECT 'Project',          "id", gen_random_uuid() FROM "Project"
-UNION ALL SELECT 'Comment',          "id", gen_random_uuid() FROM "Comment"
-UNION ALL SELECT 'Like',             "id", gen_random_uuid() FROM "Like"
-UNION ALL SELECT 'ReleaseView',      "id", gen_random_uuid() FROM "ReleaseView"
-UNION ALL SELECT 'FeaturedRelease',  "id", gen_random_uuid() FROM "FeaturedRelease"
-UNION ALL SELECT 'Notification',     "id", gen_random_uuid() FROM "Notification"
-UNION ALL SELECT 'Report',           "id", gen_random_uuid() FROM "Report"
-UNION ALL SELECT 'ReportOccurrence', "id", gen_random_uuid() FROM "ReportOccurrence"
-UNION ALL SELECT 'GameSession',      "id", gen_random_uuid() FROM "GameSession"
-UNION ALL SELECT 'WorkSession',      "id", gen_random_uuid() FROM "WorkSession"
-UNION ALL SELECT 'AnalyticsMarker',  "id", gen_random_uuid() FROM "AnalyticsMarker"
-UNION ALL SELECT 'Flag',             "id", gen_random_uuid() FROM "Flag"
-UNION ALL SELECT 'ModerationAction', "id", gen_random_uuid() FROM "ModerationAction";
+          SELECT 'User',             "id", pg_temp.id_made_at("createdAt") FROM "User"
+UNION ALL SELECT 'FriendRequest',    "id", pg_temp.id_made_at("createdAt") FROM "FriendRequest"
+UNION ALL SELECT 'Friendship',       "id", pg_temp.id_made_at("createdAt") FROM "Friendship"
+UNION ALL SELECT 'Project',          "id", pg_temp.id_made_at("createdAt") FROM "Project"
+UNION ALL SELECT 'Comment',          "id", pg_temp.id_made_at("createdAt") FROM "Comment"
+UNION ALL SELECT 'Like',             "id", pg_temp.id_made_at("createdAt") FROM "Like"
+UNION ALL SELECT 'ReleaseView',      "id", pg_temp.id_made_at("createdAt") FROM "ReleaseView"
+UNION ALL SELECT 'FeaturedRelease',  "id", pg_temp.id_made_at("createdAt") FROM "FeaturedRelease"
+UNION ALL SELECT 'Notification',     "id", pg_temp.id_made_at("createdAt") FROM "Notification"
+UNION ALL SELECT 'Report',           "id", pg_temp.id_made_at("createdAt") FROM "Report"
+UNION ALL SELECT 'ReportOccurrence', "id", pg_temp.id_made_at("createdAt") FROM "ReportOccurrence"
+UNION ALL SELECT 'GameSession',      "id", pg_temp.id_made_at("startedAt") FROM "GameSession"
+UNION ALL SELECT 'WorkSession',      "id", pg_temp.id_made_at("startedAt") FROM "WorkSession"
+UNION ALL SELECT 'AnalyticsMarker',  "id", pg_temp.id_made_at("createdAt") FROM "AnalyticsMarker"
+UNION ALL SELECT 'Flag',             "id", pg_temp.id_made_at("createdAt") FROM "Flag"
+UNION ALL SELECT 'ModerationAction', "id", pg_temp.id_made_at("createdAt") FROM "ModerationAction";
 
 -- The id of a row that no longer exists: the analytics of a deleted game, a flag on a deleted
 -- comment. Derived from its model and number, so every fact about one deleted thing still carries
@@ -154,7 +179,7 @@ ALTER TABLE "User" ADD COLUMN "id" UUID;
 UPDATE "User" SET "id" = pg_temp.new_id('User', "playerNumber");
 ALTER TABLE "User"
     ALTER COLUMN "id" SET NOT NULL,
-    ALTER COLUMN "id" SET DEFAULT gen_random_uuid(),
+    ALTER COLUMN "id" SET DEFAULT uuidv7(),
     ADD CONSTRAINT "User_pkey" PRIMARY KEY ("id");
 CREATE UNIQUE INDEX "User_playerNumber_key" ON "User"("playerNumber");
 
@@ -171,7 +196,7 @@ CREATE UNIQUE INDEX "Project_legacyId_key" ON "Project"("legacyId");
 ALTER TABLE "Project"
     ALTER COLUMN "id" DROP DEFAULT,
     ALTER COLUMN "id" TYPE UUID USING pg_temp.new_id('Project', "id"),
-    ALTER COLUMN "id" SET DEFAULT gen_random_uuid(),
+    ALTER COLUMN "id" SET DEFAULT uuidv7(),
     ALTER COLUMN "userId" TYPE UUID USING pg_temp.new_id('User', "userId"),
     ALTER COLUMN "forked_from_id" TYPE UUID USING pg_temp.new_id('Project', "forked_from_id");
 DROP SEQUENCE "Project_id_seq";
@@ -179,14 +204,14 @@ DROP SEQUENCE "Project_id_seq";
 ALTER TABLE "RefreshToken"
     ALTER COLUMN "id" DROP DEFAULT,
     ALTER COLUMN "id" TYPE UUID USING pg_temp.new_id('RefreshToken', "id"),
-    ALTER COLUMN "id" SET DEFAULT gen_random_uuid(),
+    ALTER COLUMN "id" SET DEFAULT uuidv7(),
     ALTER COLUMN "userId" TYPE UUID USING pg_temp.new_id('User', "userId");
 DROP SEQUENCE "RefreshToken_id_seq";
 
 ALTER TABLE "FriendRequest"
     ALTER COLUMN "id" DROP DEFAULT,
     ALTER COLUMN "id" TYPE UUID USING pg_temp.new_id('FriendRequest', "id"),
-    ALTER COLUMN "id" SET DEFAULT gen_random_uuid(),
+    ALTER COLUMN "id" SET DEFAULT uuidv7(),
     ALTER COLUMN "fromId" TYPE UUID USING pg_temp.new_id('User', "fromId"),
     ALTER COLUMN "toId" TYPE UUID USING pg_temp.new_id('User', "toId");
 DROP SEQUENCE "FriendRequest_id_seq";
@@ -194,7 +219,7 @@ DROP SEQUENCE "FriendRequest_id_seq";
 ALTER TABLE "Friendship"
     ALTER COLUMN "id" DROP DEFAULT,
     ALTER COLUMN "id" TYPE UUID USING pg_temp.new_id('Friendship', "id"),
-    ALTER COLUMN "id" SET DEFAULT gen_random_uuid(),
+    ALTER COLUMN "id" SET DEFAULT uuidv7(),
     ALTER COLUMN "userAId" TYPE UUID USING pg_temp.new_id('User', "userAId"),
     ALTER COLUMN "userBId" TYPE UUID USING pg_temp.new_id('User', "userBId");
 DROP SEQUENCE "Friendship_id_seq";
@@ -202,7 +227,7 @@ DROP SEQUENCE "Friendship_id_seq";
 ALTER TABLE "Comment"
     ALTER COLUMN "id" DROP DEFAULT,
     ALTER COLUMN "id" TYPE UUID USING pg_temp.new_id('Comment', "id"),
-    ALTER COLUMN "id" SET DEFAULT gen_random_uuid(),
+    ALTER COLUMN "id" SET DEFAULT uuidv7(),
     ALTER COLUMN "authorId" TYPE UUID USING pg_temp.new_id('User', "authorId"),
     ALTER COLUMN "projectId" TYPE UUID USING pg_temp.new_id('Project', "projectId"),
     ALTER COLUMN "parentId" TYPE UUID USING pg_temp.new_id('Comment', "parentId");
@@ -211,7 +236,7 @@ DROP SEQUENCE "Comment_id_seq";
 ALTER TABLE "Like"
     ALTER COLUMN "id" DROP DEFAULT,
     ALTER COLUMN "id" TYPE UUID USING pg_temp.new_id('Like', "id"),
-    ALTER COLUMN "id" SET DEFAULT gen_random_uuid(),
+    ALTER COLUMN "id" SET DEFAULT uuidv7(),
     ALTER COLUMN "userId" TYPE UUID USING pg_temp.new_id('User', "userId"),
     ALTER COLUMN "projectId" TYPE UUID USING pg_temp.new_id('Project', "projectId");
 DROP SEQUENCE "Like_id_seq";
@@ -219,14 +244,14 @@ DROP SEQUENCE "Like_id_seq";
 ALTER TABLE "ReleaseView"
     ALTER COLUMN "id" DROP DEFAULT,
     ALTER COLUMN "id" TYPE UUID USING pg_temp.new_id('ReleaseView', "id"),
-    ALTER COLUMN "id" SET DEFAULT gen_random_uuid(),
+    ALTER COLUMN "id" SET DEFAULT uuidv7(),
     ALTER COLUMN "projectId" TYPE UUID USING pg_temp.new_id('Project', "projectId");
 DROP SEQUENCE "ReleaseView_id_seq";
 
 ALTER TABLE "FeaturedRelease"
     ALTER COLUMN "id" DROP DEFAULT,
     ALTER COLUMN "id" TYPE UUID USING pg_temp.new_id('FeaturedRelease', "id"),
-    ALTER COLUMN "id" SET DEFAULT gen_random_uuid(),
+    ALTER COLUMN "id" SET DEFAULT uuidv7(),
     ALTER COLUMN "projectId" TYPE UUID USING pg_temp.new_id('Project', "projectId"),
     ALTER COLUMN "featuredById" TYPE UUID USING pg_temp.new_id('User', "featuredById");
 DROP SEQUENCE "FeaturedRelease_id_seq";
@@ -234,7 +259,7 @@ DROP SEQUENCE "FeaturedRelease_id_seq";
 ALTER TABLE "Notification"
     ALTER COLUMN "id" DROP DEFAULT,
     ALTER COLUMN "id" TYPE UUID USING pg_temp.new_id('Notification', "id"),
-    ALTER COLUMN "id" SET DEFAULT gen_random_uuid(),
+    ALTER COLUMN "id" SET DEFAULT uuidv7(),
     ALTER COLUMN "userId" TYPE UUID USING pg_temp.new_id('User', "userId");
 DROP SEQUENCE "Notification_id_seq";
 
@@ -242,7 +267,7 @@ DROP SEQUENCE "Notification_id_seq";
 ALTER TABLE "Report"
     ALTER COLUMN "id" DROP DEFAULT,
     ALTER COLUMN "id" TYPE UUID USING pg_temp.new_id('Report', "id"),
-    ALTER COLUMN "id" SET DEFAULT gen_random_uuid(),
+    ALTER COLUMN "id" SET DEFAULT uuidv7(),
     ALTER COLUMN "userId" TYPE UUID USING pg_temp.new_id('User', "userId"),
     ALTER COLUMN "releaseId" TYPE UUID USING pg_temp.new_id('Project', "releaseId"),
     ALTER COLUMN "projectId" TYPE UUID USING pg_temp.new_id('Project', "projectId"),
@@ -252,7 +277,7 @@ DROP SEQUENCE "Report_id_seq";
 ALTER TABLE "ReportOccurrence"
     ALTER COLUMN "id" DROP DEFAULT,
     ALTER COLUMN "id" TYPE UUID USING pg_temp.new_id('ReportOccurrence', "id"),
-    ALTER COLUMN "id" SET DEFAULT gen_random_uuid(),
+    ALTER COLUMN "id" SET DEFAULT uuidv7(),
     ALTER COLUMN "reportId" TYPE UUID USING pg_temp.new_id('Report', "reportId");
 DROP SEQUENCE "ReportOccurrence_id_seq";
 
@@ -262,7 +287,7 @@ ALTER TABLE "FeedbackPrompt"
 ALTER TABLE "GameSession"
     ALTER COLUMN "id" DROP DEFAULT,
     ALTER COLUMN "id" TYPE UUID USING pg_temp.new_id('GameSession', "id"),
-    ALTER COLUMN "id" SET DEFAULT gen_random_uuid(),
+    ALTER COLUMN "id" SET DEFAULT uuidv7(),
     ALTER COLUMN "hostId" TYPE UUID USING pg_temp.new_id('User', "hostId"),
     ALTER COLUMN "projectId" TYPE UUID USING pg_temp.new_id('Project', "projectId");
 DROP SEQUENCE "GameSession_id_seq";
@@ -270,7 +295,7 @@ DROP SEQUENCE "GameSession_id_seq";
 ALTER TABLE "WorkSession"
     ALTER COLUMN "id" DROP DEFAULT,
     ALTER COLUMN "id" TYPE UUID USING pg_temp.new_id('WorkSession', "id"),
-    ALTER COLUMN "id" SET DEFAULT gen_random_uuid(),
+    ALTER COLUMN "id" SET DEFAULT uuidv7(),
     ALTER COLUMN "hostId" TYPE UUID USING pg_temp.new_id('User', "hostId"),
     ALTER COLUMN "projectId" TYPE UUID USING pg_temp.new_id('Project', "projectId");
 DROP SEQUENCE "WorkSession_id_seq";
@@ -279,7 +304,7 @@ DROP SEQUENCE "WorkSession_id_seq";
 ALTER TABLE "Flag"
     ALTER COLUMN "id" DROP DEFAULT,
     ALTER COLUMN "id" TYPE UUID USING pg_temp.new_id('Flag', "id"),
-    ALTER COLUMN "id" SET DEFAULT gen_random_uuid(),
+    ALTER COLUMN "id" SET DEFAULT uuidv7(),
     ALTER COLUMN "reporterId" TYPE UUID USING pg_temp.new_id('User', "reporterId"),
     ALTER COLUMN "targetId" TYPE UUID USING pg_temp.new_id(pg_temp.target_model("targetType"), "targetId"),
     ALTER COLUMN "targetOwnerId" TYPE UUID USING pg_temp.new_id('User', "targetOwnerId"),
@@ -290,13 +315,15 @@ DROP SEQUENCE "Flag_id_seq";
 ALTER TABLE "ModerationAction"
     ALTER COLUMN "id" DROP DEFAULT,
     ALTER COLUMN "id" TYPE UUID USING pg_temp.new_id('ModerationAction', "id"),
-    ALTER COLUMN "id" SET DEFAULT gen_random_uuid(),
+    ALTER COLUMN "id" SET DEFAULT uuidv7(),
     ALTER COLUMN "actorId" TYPE UUID USING pg_temp.new_id('User', "actorId"),
     ALTER COLUMN "targetId" TYPE UUID USING pg_temp.new_id(pg_temp.target_model("targetType"), "targetId"),
     ALTER COLUMN "subjectUserId" TYPE UUID USING pg_temp.new_id('User', "subjectUserId");
 DROP SEQUENCE "ModerationAction_id_seq";
 
+-- A collection keeps its id: it was a UUID already, and is in the links people shared.
 ALTER TABLE "Collection"
+    ALTER COLUMN "id" SET DEFAULT uuidv7(),
     ALTER COLUMN "ownerId" TYPE UUID USING pg_temp.new_id('User', "ownerId");
 
 ALTER TABLE "CollectionItem"
@@ -350,7 +377,7 @@ ALTER TABLE "AnalyticsMpSession"
 ALTER TABLE "AnalyticsMarker"
     ALTER COLUMN "id" DROP DEFAULT,
     ALTER COLUMN "id" TYPE UUID USING pg_temp.new_id('AnalyticsMarker', "id"),
-    ALTER COLUMN "id" SET DEFAULT gen_random_uuid(),
+    ALTER COLUMN "id" SET DEFAULT uuidv7(),
     ALTER COLUMN "releaseId" TYPE UUID USING pg_temp.new_id('Project', "releaseId");
 DROP SEQUENCE "AnalyticsMarker_id_seq";
 

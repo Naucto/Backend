@@ -44,7 +44,7 @@ enum ModerationActionType {
 }
 
 model Flag {
-  id      String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id      String  @id @default(dbgenerated("uuidv7()")) @db.Uuid
   reporter   User @relation("FlagsFiled", fields: [reporterId], references: [id])
   reporterId String @db.Uuid
 
@@ -78,7 +78,7 @@ model Flag {
 }
 
 model ModerationAction {
-  id            String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id            String @id @default(dbgenerated("uuidv7()")) @db.Uuid
   action ModerationActionType
 
   actor   User @relation("ModerationActionsTaken", fields: [actorId], references: [id])

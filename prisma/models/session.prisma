@@ -5,7 +5,7 @@ enum GameSessionVisibility {
 }
 
 model GameSession {
-  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id        String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
   host      User      @relation("UserHostedGameSessions", fields: [hostId], references: [id])
   hostId    String    @db.Uuid
   project   Project   @relation(fields: [projectId], references: [id])
@@ -27,7 +27,7 @@ model GameSession {
 }
 
 model WorkSession {
-  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id           String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   users        User[]   @relation("WorkSessionUsers")
   host         User     @relation("WorkSessionHost", fields: [hostId], references: [id])
   hostId       String   @db.Uuid

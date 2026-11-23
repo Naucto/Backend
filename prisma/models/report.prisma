@@ -61,7 +61,7 @@ enum FeedbackPromptStatus {
 }
 
 model Report {
-  id         String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id         String       @id @default(dbgenerated("uuidv7()")) @db.Uuid
   kind       ReportKind
   status     ReportStatus @default(NEW)
   user       User?        @relation(fields: [userId], references: [id])
@@ -120,7 +120,7 @@ model Report {
 
 // The latest occurrences of a crash, pruned to a few per report as new ones arrive.
 model ReportOccurrence {
-  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id         String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   report     Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
   reportId   String   @db.Uuid
   createdAt  DateTime @default(now())

@@ -346,7 +346,7 @@ enum AnalyticsMarkerAudience {
 // A moment an admin wants to read the charts against, such as a post or a video going out. Not
 // derived from any visitor or account.
 model AnalyticsMarker {
-  id        String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id        String                  @id @default(dbgenerated("uuidv7()")) @db.Uuid
   at        DateTime
   label     String                  @db.VarChar(120)
   // Where it went out, as `YouTube` or `Reddit`.

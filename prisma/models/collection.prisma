@@ -4,10 +4,10 @@ enum CollectionVisibility {
   PRIVATE
 }
 
-// A person's list of games. The id is a random UUID because holding it is what opens an UNLISTED
-// collection: a sequential id could be walked.
+// A person's list of games. Holding the id is what opens an UNLISTED collection: the random bits
+// of a UUID keep it from being guessed, where a sequential id could be walked.
 model Collection {
-  id          String               @id @default(uuid()) @db.Uuid
+  id          String               @id @default(dbgenerated("uuidv7()")) @db.Uuid
   owner       User                 @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   ownerId     String               @db.Uuid
   title       String

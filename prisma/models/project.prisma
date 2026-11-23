@@ -11,7 +11,7 @@ enum ProjectStatus {
 }
 
 model Project {
-  id           String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id           String            @id @default(dbgenerated("uuidv7()")) @db.Uuid
   // The number a project was known by while ids were integers, kept to translate the public links
   // written then. Null for every project created since; nothing else reads it.
   legacyId     Int?              @unique
@@ -81,7 +81,7 @@ model Project {
 }
 
 model Comment {
-  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id        String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
   author    User      @relation(fields: [authorId], references: [id])
   authorId  String    @db.Uuid
   project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -101,7 +101,7 @@ model Comment {
 }
 
 model Like {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   user      User     @relation(fields: [userId], references: [id])
   userId    String   @db.Uuid
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -115,7 +115,7 @@ model Like {
 // One row per viewer per UTC day on a release; viewCount moves only when a row lands, so a
 // reload is not a view. viewerKey is the user's id, or a keyed hash of the address when anonymous.
 model ReleaseView {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   projectId String   @db.Uuid
   viewerKey String

@@ -16,7 +16,7 @@ enum NotificationKind {
 }
 
 model Notification {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   userId    String   @db.Uuid
   title     String
   message   String
