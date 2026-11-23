@@ -214,7 +214,20 @@ describe('ModerationDirectoryService', () => {
 
       expect(asModerator.allowedActions).not.toContain('DELETE');
       expect(asAdmin.allowedActions).toContain('DELETE');
-      expect(asModerator).toMatchObject({ hasCover: false, tags: ['Action'] });
+      expect(asModerator).toMatchObject({ hasCover: false, hasClip: false, tags: ['Action'] });
+    });
+
+    it.each([
+      ['served', `projects/${uuidOf(12)}/clip`],
+      ['withheld with its game', `withheld/${uuidOf(12)}/clip`],
+    ])('says a game has a clip when it is %s', async (_case, key) => {
+      prisma.project.findUnique.mockResolvedValue(game());
+      s3.fileExists.mockImplementation((asked: string) => Promise.resolve(asked === key));
+
+      await expect(service.project(MOD, uuidOf(12))).resolves.toMatchObject({
+        hasCover: false,
+        hasClip: true,
+      });
     });
   });
 
@@ -235,6 +248,26 @@ describe('ModerationDirectoryService', () => {
       s3.fileExists.mockResolvedValue(false);
 
       await expect(service.projectCover(uuidOf(12))).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('projectClip', () => {
+    it.each([
+      ['served', `projects/${uuidOf(12)}/clip`],
+      ['withheld with its game', `withheld/${uuidOf(12)}/clip`],
+    ])('serves the clip when it is %s', async (_case, key) => {
+      s3.fileExists.mockImplementation((asked: string) => Promise.resolve(asked === key));
+      s3.downloadFile.mockResolvedValue({ body: Readable.from('x') });
+
+      await service.projectClip(uuidOf(12));
+
+      expect(s3.downloadFile).toHaveBeenCalledWith({ key });
+    });
+
+    it('finds no clip for a game without one', async () => {
+      s3.fileExists.mockResolvedValue(false);
+
+      await expect(service.projectClip(uuidOf(12))).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 

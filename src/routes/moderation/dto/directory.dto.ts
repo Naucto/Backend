@@ -150,6 +150,9 @@ export class ModerationProjectDetailDto extends ModerationProjectDto {
   @ApiProperty({ description: 'Whether the cover route has an image to serve' })
   hasCover!: boolean;
 
+  @ApiProperty({ description: 'Whether the clip route has a video to serve' })
+  hasClip!: boolean;
+
   @ApiProperty({ enum: MODERATION_OPERATIONS, enumName: 'ModerationOperation', isArray: true })
   allowedActions!: ModerationOperation[];
 }

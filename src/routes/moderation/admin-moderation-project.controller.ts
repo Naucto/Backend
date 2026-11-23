@@ -27,6 +27,7 @@ import { RequiresStaffSession } from '../../auth/access/access.decorators';
 import { ADMIN, MODERATOR } from '../../auth/access/roles';
 import { RequestWithUser } from '../../auth/auth.types';
 import { ParseIdPipe } from '../../common/pipes/parse-id.pipe';
+import { DownloadedFile } from '../s3/s3.interface';
 import { ContentModerationService } from './content-moderation.service';
 import {
   ModerationProjectDetailDto,
@@ -49,6 +50,23 @@ export class AdminModerationProjectController {
     private readonly directory: ModerationDirectoryService,
     private readonly content: ContentModerationService,
   ) {}
+
+  /** Streams an object staff alone may read: never cached, never read as another type. */
+  private async send(res: Response, file: DownloadedFile, what: string): Promise<void> {
+    res.set({
+      'Content-Type': file.contentType ?? 'application/octet-stream',
+      ...(file.contentLength !== undefined ? { 'Content-Length': String(file.contentLength) } : {}),
+      'Cache-Control': 'private, no-store',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    try {
+      await pipeline(file.body, res);
+    } catch (error) {
+      this.logger.warn(
+        `${what} download interrupted: ${error instanceof Error ? error.message : 'unknown error'}`,
+      );
+    }
+  }
 
   @Get()
   @ApiOperation({ summary: 'Every game by name, published, unpublished or hidden' })
@@ -79,20 +97,17 @@ export class AdminModerationProjectController {
   @ApiResponse({ status: HttpStatus.OK, description: 'The image' })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No cover' })
   async cover(@Param('id', ParseIdPipe) id: string, @Res() res: Response): Promise<void> {
-    const file = await this.directory.projectCover(id);
-    res.set({
-      'Content-Type': file.contentType ?? 'application/octet-stream',
-      ...(file.contentLength !== undefined ? { 'Content-Length': String(file.contentLength) } : {}),
-      'Cache-Control': 'private, no-store',
-      'X-Content-Type-Options': 'nosniff',
-    });
-    try {
-      await pipeline(file.body, res);
-    } catch (error) {
-      this.logger.warn(
-        `Cover download interrupted: ${error instanceof Error ? error.message : 'unknown error'}`,
-      );
-    }
+    await this.send(res, await this.directory.projectCover(id), 'Cover');
+  }
+
+  @Get(':id/clip')
+  @ApiOperation({ summary: 'The clip of a game, served privately even while it is hidden' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiProduces('video/webm', 'video/mp4')
+  @ApiResponse({ status: HttpStatus.OK, description: 'The video' })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No clip' })
+  async clip(@Param('id', ParseIdPipe) id: string, @Res() res: Response): Promise<void> {
+    await this.send(res, await this.directory.projectClip(id), 'Clip');
   }
 
   @Post(':id/hide')

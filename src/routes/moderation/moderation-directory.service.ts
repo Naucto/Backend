@@ -285,6 +285,7 @@ export class ModerationDirectoryService {
       collaborators: row.collaborators.map((collaborator) => toAccountRef(collaborator, staff)),
       forkedFromId: row.forkedFromId,
       hasCover: (await this.coverKey(row.id)) !== null,
+      hasClip: (await this.clipKey(row.id)) !== null,
       allowedActions: allowedOperations(staff, {
         type: ModerationTargetType.PROJECT,
         state: targetState[state],
@@ -299,6 +300,15 @@ export class ModerationDirectoryService {
     const key = await this.coverKey(projectId);
     if (!key) {
       throw new NotFoundException('This game has no cover');
+    }
+    return this.s3Service.downloadFile({ key });
+  }
+
+  /** The clip of a game, from wherever it is kept while the game is withheld. */
+  async projectClip(projectId: string): Promise<DownloadedFile> {
+    const key = await this.clipKey(projectId);
+    if (!key) {
+      throw new NotFoundException('This game has no clip');
     }
     return this.s3Service.downloadFile({ key });
   }
@@ -400,13 +410,22 @@ export class ModerationDirectoryService {
     };
   }
 
-  private async coverKey(projectId: string): Promise<string | null> {
-    for (const key of [projectKeys.cover(projectId), projectKeys.withheldCover(projectId)]) {
+  /** The first of `keys` the store holds: where an object is served, then where it is withheld. */
+  private async storedKey(keys: string[]): Promise<string | null> {
+    for (const key of keys) {
       if (await this.s3Service.fileExists(key)) {
         return key;
       }
     }
     return null;
+  }
+
+  private coverKey(projectId: string): Promise<string | null> {
+    return this.storedKey([projectKeys.cover(projectId), projectKeys.withheldCover(projectId)]);
+  }
+
+  private clipKey(projectId: string): Promise<string | null> {
+    return this.storedKey([projectKeys.clip(projectId), projectKeys.withheldClip(projectId)]);
   }
 
   /** Open flags per target of one kind. */
