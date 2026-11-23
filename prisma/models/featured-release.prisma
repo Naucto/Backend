@@ -2,11 +2,11 @@
 // A row with a null endsAt is the current pick; older rows form the history.
 // The hub picks it every week; featuredBy and note are set only on the picks a curator once made.
 model FeaturedRelease {
-  id           Int       @id @default(autoincrement())
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  projectId    Int
+  projectId    String    @db.Uuid
   featuredBy   User?     @relation("FeaturedReleaseCurator", fields: [featuredById], references: [id], onDelete: SetNull)
-  featuredById Int?
+  featuredById String?   @db.Uuid
   note         String?
   startsAt     DateTime  @default(now())
   endsAt       DateTime?

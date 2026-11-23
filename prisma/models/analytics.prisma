@@ -48,7 +48,7 @@ enum AnalyticsRetentionKind {
 model AnalyticsVisitor {
   id               String             @id @db.Uuid
   user             User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId           Int?
+  userId           String?            @db.Uuid
   linkedAt         DateTime?
   // Last UTC day copied into AnalyticsUserDaily; null for a linked visitor means nothing is yet.
   projectedThrough DateTime?          @db.Date
@@ -127,7 +127,7 @@ model AnalyticsPlay {
   session    AnalyticsSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   sessionId  String           @db.Uuid
   // No foreign key: deleting a project must not rewrite the history of its plays.
-  releaseId  Int
+  releaseId  String           @db.Uuid
   // A play reopened after a consent, identity or session change; never counted as a new play.
   continued  Boolean
   startedAt  DateTime
@@ -160,7 +160,7 @@ model AnalyticsLiveMinute {
   minute    DateTime
   visitorId String             @db.Uuid
   state     AnalyticsLiveState
-  releaseId Int?
+  releaseId String?            @db.Uuid
 
   @@id([minute, visitorId])
   @@index([minute])
@@ -171,8 +171,8 @@ model AnalyticsAnonTally {
   minute       DateTime
   state        AnalyticsLiveState
   signedIn     Boolean
-  // 0 when the tab was not on a game.
-  releaseId    Int                  @default(0)
+  // The nil UUID when the tab was not on a game (NO_RELEASE_ID in src/common/ids.ts).
+  releaseId    String               @default(dbgenerated("'00000000-0000-0000-0000-000000000000'::uuid")) @db.Uuid
   consent      AnalyticsAnonConsent @default(UNKNOWN)
   beats        Int                  @default(0)
   playsStarted Int                  @default(0)
@@ -190,8 +190,8 @@ model AnalyticsFact {
   at          DateTime          @default(now())
   type        AnalyticsFactType
   // No foreign key: nulled when the account is deleted or its analytics erased.
-  actorUserId Int?
-  projectId   Int?
+  actorUserId String?           @db.Uuid
+  projectId   String?           @db.Uuid
 
   @@index([type, at])
   @@index([actorUserId])
@@ -201,7 +201,7 @@ model AnalyticsFact {
 model AnalyticsMpSession {
   // GameSession.sessionId.
   id               String    @id @db.Uuid
-  projectId        Int
+  projectId        String    @db.Uuid
   createdAt        DateTime  @default(now())
   editorTest       Boolean   @default(false)
   // Set at the first connection; the classification never changes afterwards.
@@ -243,7 +243,7 @@ model AnalyticsMpDay {
 model AnalyticsProjectionWork {
   visitorId     String    @id @db.Uuid
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId        Int
+  userId        String    @db.Uuid
   enqueuedAt    DateTime  @default(now())
   attempts      Int       @default(0)
   nextAttemptAt DateTime  @default(now())
@@ -323,11 +323,11 @@ model AnalyticsCohort {
 // the visitor, so it outlives the raw data it was built from.
 model AnalyticsUserDaily {
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId        Int
+  userId        String   @db.Uuid
   visitorId     String   @db.Uuid
   day           DateTime @db.Date
-  // 0 for activity outside a game.
-  releaseId     Int      @default(0)
+  // The nil UUID for activity outside a game (NO_RELEASE_ID in src/common/ids.ts).
+  releaseId     String   @default(dbgenerated("'00000000-0000-0000-0000-000000000000'::uuid")) @db.Uuid
   plays         Int      @default(0)
   activeMs      BigInt   @default(0)
   activeMinutes Int      @default(0)
@@ -346,7 +346,7 @@ enum AnalyticsMarkerAudience {
 // A moment an admin wants to read the charts against, such as a post or a video going out. Not
 // derived from any visitor or account.
 model AnalyticsMarker {
-  id        Int                     @id @default(autoincrement())
+  id        String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   at        DateTime
   label     String                  @db.VarChar(120)
   // Where it went out, as `YouTube` or `Reddit`.
@@ -355,7 +355,7 @@ model AnalyticsMarker {
   audience  AnalyticsMarkerAudience @default(EVERYONE)
   // The published project it is about: the game to play, or for creators the game to fork. No
   // foreign key, so it outlives the project.
-  releaseId Int?
+  releaseId String?                 @db.Uuid
   createdAt DateTime                @default(now())
   updatedAt DateTime                @updatedAt
 

@@ -1,0 +1,10 @@
+// Temporary: where each row that had an integer id went when ids became UUIDs. The tool that
+// moves the stored objects to their new keys reads it; the table is dropped once the old keys are
+// purged. Build nothing on it: a public link is translated through `Project.legacyId`.
+model LegacyIdMap {
+  model    String
+  legacyId Int
+  id       String @db.Uuid
+
+  @@id([model, legacyId])
+}

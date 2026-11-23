@@ -44,15 +44,15 @@ enum ModerationActionType {
 }
 
 model Flag {
-  id         Int  @id @default(autoincrement())
+  id      String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   reporter   User @relation("FlagsFiled", fields: [reporterId], references: [id])
-  reporterId Int
+  reporterId String @db.Uuid
 
   // No foreign key on the target: a flag outlives the game, the comment or the account it is about.
   targetType ModerationTargetType
-  targetId   Int
+  targetId String @db.Uuid
   // Whose content it is: the account itself, the game's creator or the comment's author.
-  targetOwnerId Int?
+  targetOwnerId String? @db.Uuid
 
   reason  ModerationReason
   details String?
@@ -65,10 +65,10 @@ model Flag {
   openKey String? @unique
 
   resolvedBy   User?             @relation("FlagsResolved", fields: [resolvedById], references: [id], onDelete: SetNull)
-  resolvedById Int?
+  resolvedById String? @db.Uuid
   resolvedAt   DateTime?
   resolution   ModerationAction? @relation(fields: [resolutionId], references: [id], onDelete: SetNull)
-  resolutionId Int?
+  resolutionId String? @db.Uuid
 
   createdAt DateTime @default(now())
 
@@ -78,17 +78,17 @@ model Flag {
 }
 
 model ModerationAction {
-  id     Int                  @id @default(autoincrement())
+  id            String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   action ModerationActionType
 
   actor   User @relation("ModerationActionsTaken", fields: [actorId], references: [id])
-  actorId Int
+  actorId       String @db.Uuid
 
   targetType ModerationTargetType
-  targetId   Int
+  targetId      String @db.Uuid
   // The account the action bears on: the one warned, or the owner of the content.
   subject       User? @relation("ModerationRecord", fields: [subjectUserId], references: [id])
-  subjectUserId Int?
+  subjectUserId String? @db.Uuid
 
   reason ModerationReason?
   // What the subject is told.
