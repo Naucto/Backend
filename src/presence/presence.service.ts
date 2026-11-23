@@ -31,7 +31,7 @@ type Entry = {
   state: PresenceState | null;
 };
 
-export type PresenceFanOut = (userId: number, message: PresenceServerMessage) => void;
+export type PresenceFanOut = (userId: string, message: PresenceServerMessage) => void;
 
 export const PRESENCE_RESYNC_AFTER_MS = 2 * 60 * 1000;
 export const PRESENCE_RESYNC_TICK_MS = 10 * 1000;
@@ -55,7 +55,7 @@ function samePresence(a: PresenceState, b: PresenceState): boolean {
 @Injectable()
 export class PresenceService implements PresenceSocketHandler {
   private readonly logger = new Logger(PresenceService.name);
-  private readonly entries = new Map<number, Entry>();
+  private readonly entries = new Map<string, Entry>();
   private fanOut: PresenceFanOut = () => undefined;
 
   constructor(
@@ -69,7 +69,7 @@ export class PresenceService implements PresenceSocketHandler {
     this.fanOut = fanOut;
   }
 
-  async onSocketOpen(userId: number, connectionId: number): Promise<PresenceState[]> {
+  async onSocketOpen(userId: string, connectionId: number): Promise<PresenceState[]> {
     const existing = this.entries.get(userId);
 
     if (existing) {
@@ -89,7 +89,7 @@ export class PresenceService implements PresenceSocketHandler {
     return this.friendsPresence(userId);
   }
 
-  async onSocketClose(userId: number, connectionId: number): Promise<void> {
+  async onSocketClose(userId: string, connectionId: number): Promise<void> {
     const entry = this.entries.get(userId);
     if (!entry?.connections.delete(connectionId)) {
       return;
@@ -106,7 +106,7 @@ export class PresenceService implements PresenceSocketHandler {
     }
   }
 
-  async onSet(userId: number, connectionId: number, input: PresenceSetInput): Promise<void> {
+  async onSet(userId: string, connectionId: number, input: PresenceSetInput): Promise<void> {
     const entry = this.entries.get(userId);
     if (!entry?.connections.has(connectionId)) {
       return;
@@ -178,7 +178,7 @@ export class PresenceService implements PresenceSocketHandler {
     }
   }
 
-  get(userId: number): PresenceState | null {
+  get(userId: string): PresenceState | null {
     return this.entries.get(userId)?.state ?? null;
   }
 
@@ -191,13 +191,13 @@ export class PresenceService implements PresenceSocketHandler {
     return counts;
   }
 
-  async friendsPresence(userId: number): Promise<PresenceState[]> {
+  async friendsPresence(userId: string): Promise<PresenceState[]> {
     const friendIds = await this.friendsService.friendIdsOf(userId);
 
     return friendIds.map((friendId) => this.get(friendId)).filter((state) => state !== null);
   }
 
-  async presenceOf(viewerId: number, userId: number): Promise<PresenceState> {
+  async presenceOf(viewerId: string, userId: string): Promise<PresenceState> {
     const state = this.get(userId);
 
     // A stranger gets the answer an offline user gives, so the route does not tell who is online.
@@ -211,7 +211,7 @@ export class PresenceService implements PresenceSocketHandler {
     return state;
   }
 
-  private async refresh(userId: number, entry: Entry): Promise<void> {
+  private async refresh(userId: string, entry: Entry): Promise<void> {
     const generation = ++entry.generation;
     entry.refreshedAt = Date.now();
     const next = await this.derive(userId, this.latestDeclaration(entry));
@@ -255,7 +255,7 @@ export class PresenceService implements PresenceSocketHandler {
 
   // Builds the effective state: a live hosted game session wins, then a work
   // session the user is part of, then whatever the client declared.
-  private async derive(userId: number, input: PresenceSetInput): Promise<PresenceState> {
+  private async derive(userId: string, input: PresenceSetInput): Promise<PresenceState> {
     const who = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { username: true, nickname: true },
@@ -361,7 +361,7 @@ export class PresenceService implements PresenceSocketHandler {
     };
   }
 
-  private async onlineFriendIds(userId: number): Promise<number[]> {
+  private async onlineFriendIds(userId: string): Promise<string[]> {
     try {
       const friendIds = await this.friendsService.friendIdsOf(userId);
       return friendIds.filter((id) => this.entries.has(id));

@@ -28,7 +28,7 @@ export class StaffPreviewService {
   ) {}
 
   /** The game as its own collaborators read it, draft fields and all. */
-  async preview(staff: StaffActor, projectId: number): Promise<ProjectPreviewDto> {
+  async preview(staff: StaffActor, projectId: string): Promise<ProjectPreviewDto> {
     const project = await this.projects.findOne(projectId);
     await this.noteViewed(staff, project);
     return { ...project, hasRelease: project.publishedAt !== null };
@@ -37,7 +37,7 @@ export class StaffPreviewService {
   /** Null when the game holds nothing for that source yet. */
   async content(
     staff: StaffActor,
-    projectId: number,
+    projectId: string,
     source: PreviewSource,
   ): Promise<DownloadedFile | null> {
     const project = await this.projects.findOne(projectId);
@@ -67,11 +67,11 @@ export class StaffPreviewService {
           subjectUserId: project.userId,
           snapshot: { title: hubName(project), body: null },
         },
-        `view:${String(staff.id)}:${String(project.id)}:${String(hour)}`,
+        `view:${staff.id}:${project.id}:${String(hour)}`,
       );
     } catch (error) {
       this.logger.error(
-        `Could not note that staff ${String(staff.id)} previewed game ${String(project.id)}: ${
+        `Could not note that staff ${staff.id} previewed game ${project.id}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );

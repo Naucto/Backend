@@ -36,7 +36,7 @@ export class UserService {
   private static readonly BCRYPT_SALT_ROUNDS = 10;
   private static readonly FRIEND_CODE_MAX_RETRIES = 5;
 
-  async getMe(userId: number): Promise<MeDto> {
+  async getMe(userId: string): Promise<MeDto> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { friendCode: true, sessionJoinPolicy: true, password: true },
@@ -56,7 +56,7 @@ export class UserService {
     };
   }
 
-  async updateMe(userId: number, data: { sessionJoinPolicy?: SessionJoinPolicy }): Promise<MeDto> {
+  async updateMe(userId: string, data: { sessionJoinPolicy?: SessionJoinPolicy }): Promise<MeDto> {
     if (data.sessionJoinPolicy !== undefined) {
       await this.prisma.user.update({
         where: { id: userId },
@@ -68,13 +68,13 @@ export class UserService {
     return this.getMe(userId);
   }
 
-  async regenerateFriendCode(userId: number): Promise<MeDto> {
+  async regenerateFriendCode(userId: string): Promise<MeDto> {
     await this.assignFreshFriendCode(userId);
     return this.getMe(userId);
   }
 
   // Resolve a user-typed friend code to a live (non-deleted) user id.
-  async findIdByFriendCode(rawCode: string): Promise<number | null> {
+  async findIdByFriendCode(rawCode: string): Promise<string | null> {
     const friendCode = normalizeFriendCode(rawCode);
     if (!friendCode) {
       return null;
@@ -90,7 +90,7 @@ export class UserService {
 
   // Retries on a unique-constraint violation (P2002) so two users minting the
   // same random code don't surface an error.
-  private async assignFreshFriendCode(userId: number): Promise<string> {
+  private async assignFreshFriendCode(userId: string): Promise<string> {
     for (let attempt = 0; attempt < UserService.FRIEND_CODE_MAX_RETRIES; attempt++) {
       const friendCode = generateFriendCode();
 
@@ -111,7 +111,7 @@ export class UserService {
     throw new ConflictException('Failed to generate a unique friend code');
   }
 
-  async findPublicProfile(id: number): Promise<PublicProfile> {
+  async findPublicProfile(id: string): Promise<PublicProfile> {
     const user = await this.prisma.user.findUnique({
       where: { id },
       select: PUBLIC_PROFILE_SELECT,
@@ -175,7 +175,7 @@ export class UserService {
 
   /** Writes the profile fields their owner edits: an absent field is left as it is, `null` clears it. */
   async updateMyProfile(
-    id: number,
+    id: string,
     data: {
       description?: string | null;
       nickname?: string | null;
@@ -203,7 +203,7 @@ export class UserService {
     }
   }
 
-  async getUserRole(userId: number): Promise<RoleName> {
+  async getUserRole(userId: string): Promise<RoleName> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { role: true },
@@ -246,7 +246,7 @@ export class UserService {
     });
   }
 
-  private recordSignup(tx: Prisma.TransactionClient, userId: number): Promise<void> {
+  private recordSignup(tx: Prisma.TransactionClient, userId: string): Promise<void> {
     return this.facts.record(tx, {
       type: AnalyticsFactType.SIGNUP,
       dedupeKey: signupFactKey(),
@@ -255,7 +255,7 @@ export class UserService {
   }
 
   async updatePassword(
-    userId: number,
+    userId: string,
     plainPassword: string,
     db: Prisma.TransactionClient = this.prisma,
   ): Promise<void> {
@@ -289,7 +289,7 @@ export class UserService {
     return this.prisma.user.findMany(query);
   }
 
-  async findOne(id: number): Promise<User> {
+  async findOne(id: string): Promise<User> {
     const user = await this.prisma.user.findUnique({ where: { id } });
 
     if (!user) {

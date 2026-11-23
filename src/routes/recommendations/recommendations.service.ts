@@ -87,7 +87,7 @@ export class RecommendationsService {
    * running pick nor was picked in the last `WINNER_REST_WEEKS` weeks. The running pick ends
    * either way. A week nobody qualifies for has no pick, and a later call that week tries again.
    */
-  async electGameOfTheWeek(bestFirst: number[], now: Date): Promise<void> {
+  async electGameOfTheWeek(bestFirst: string[], now: Date): Promise<void> {
     const weekStart = startOfWeek(now);
     const recent = await this.prisma.featuredRelease.findMany({
       where: {

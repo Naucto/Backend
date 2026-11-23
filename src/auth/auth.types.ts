@@ -7,7 +7,7 @@ import { UserDto } from './dto/user.dto';
 export const STAFF_SCOPE = 'staff';
 
 export interface JwtPayload {
-  sub: number;
+  sub: string;
   email: string;
   scope?: typeof STAFF_SCOPE;
 }

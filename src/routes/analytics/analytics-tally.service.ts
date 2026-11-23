@@ -17,7 +17,7 @@ interface PingTally {
   state: AnalyticsLiveState;
   signedIn: boolean;
   consent: AnalyticsAnonConsent;
-  releaseId: number;
+  releaseId: string;
   beats: number;
   playsStarted: number;
   playMs: number;
@@ -30,8 +30,8 @@ export interface PingInput {
   state: AnalyticsLiveState;
   signedIn: boolean;
   consent: AnalyticsAnonConsent;
-  /** 0 when the tab is not on a published game. */
-  releaseId: number;
+  /** `NO_RELEASE_ID` when the tab is not on a published game. */
+  releaseId: string;
   playMs: number;
 }
 
@@ -51,7 +51,7 @@ export class AnalyticsTallyService implements OnApplicationShutdown {
 
   recordPing(ping: PingInput, at = new Date()): void {
     const minute = minuteStart(at);
-    const key = `${minute.toISOString()}|${ping.state}|${String(ping.signedIn)}|${String(ping.releaseId)}|${ping.consent}`;
+    const key = `${minute.toISOString()}|${ping.state}|${String(ping.signedIn)}|${ping.releaseId}|${ping.consent}`;
     let tally = this.pings.get(key);
     if (!tally) {
       tally = {
@@ -120,7 +120,7 @@ export class AnalyticsTallyService implements OnApplicationShutdown {
   private addPings(tally: PingTally): Prisma.PrismaPromise<number> {
     return this.prisma.$executeRaw`
       INSERT INTO "AnalyticsAnonTally" ("minute", "state", "signedIn", "releaseId", "consent", "beats", "playsStarted", "playMs")
-      VALUES (${tally.minute}, ${tally.state}::"AnalyticsLiveState", ${tally.signedIn}, ${tally.releaseId},
+      VALUES (${tally.minute}, ${tally.state}::"AnalyticsLiveState", ${tally.signedIn}, ${tally.releaseId}::uuid,
               ${tally.consent}::"AnalyticsAnonConsent", ${tally.beats}, ${tally.playsStarted}, ${tally.playMs}::bigint)
       ON CONFLICT ("minute", "state", "signedIn", "releaseId", "consent") DO UPDATE
       SET "beats" = "AnalyticsAnonTally"."beats" + EXCLUDED."beats",

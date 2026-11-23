@@ -1,28 +1,32 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsArray, IsDate, IsNumber, IsString } from 'class-validator';
+import { IsArray, IsDate, IsString, IsUUID } from 'class-validator';
 
 export class FetchWorkSessionDto {
   @ApiProperty({
-    type: [Number],
+    type: [String],
+    format: 'uuid',
     description: 'IDs of the users present in the work session',
-    example: [1, 2, 3],
+    example: ['3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b'],
   })
   @IsArray()
-  users!: number[];
+  @IsUUID(undefined, { each: true })
+  users!: string[];
 
   @ApiProperty({
     description: "The ID of the session's host",
-    example: 1,
+    format: 'uuid',
+    example: '3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b',
   })
-  @IsNumber()
-  hostId!: number;
+  @IsUUID()
+  hostId!: string;
 
   @ApiProperty({
     description: 'The ID of the project this work session belongs to',
-    example: 1,
+    format: 'uuid',
+    example: '8c5d2a7e-41b3-4f6a-9e0d-2b7c6a5f4e3d',
   })
-  @IsNumber()
-  project!: number;
+  @IsUUID()
+  project!: string;
 
   @ApiProperty({
     description: 'The date and time when the work session started',

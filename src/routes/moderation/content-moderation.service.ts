@@ -75,7 +75,7 @@ export class ContentModerationService {
 
   async hideProject(
     staff: StaffActor,
-    projectId: number,
+    projectId: string,
     input: ContentDecisionDto,
   ): Promise<ModerationActionDto> {
     const project = await this.project(staff, projectId);
@@ -118,7 +118,7 @@ export class ContentModerationService {
     });
 
     // The game is hidden from here on, whatever happens below: every route refuses it by its row.
-    await this.afterCommit(`unserve game ${String(project.id)}`, async () => {
+    await this.afterCommit(`unserve game ${project.id}`, async () => {
       await this.content.removeServedCopies(project.id);
       await this.multiplayer.endSessionsOfProject(project.id);
     });
@@ -133,7 +133,7 @@ export class ContentModerationService {
 
   async restoreProject(
     staff: StaffActor,
-    projectId: number,
+    projectId: string,
     input: ModerationNoteDto,
   ): Promise<ModerationActionDto> {
     const project = await this.project(staff, projectId);
@@ -170,13 +170,13 @@ export class ContentModerationService {
       });
     } catch (error) {
       // Still hidden: what was just put back where the edge serves it comes away again.
-      await this.afterCommit(`unserve game ${String(project.id)} again`, () =>
+      await this.afterCommit(`unserve game ${project.id} again`, () =>
         this.content.removeServedCopies(project.id),
       );
       throw error;
     }
 
-    await this.afterCommit(`drop the withheld copies of game ${String(project.id)}`, () =>
+    await this.afterCommit(`drop the withheld copies of game ${project.id}`, () =>
       this.content.removeWithheldCopies(project.id),
     );
     this.eventEmitter.emit(PROJECT_CHANGED, new ProjectChangedEvent(project.id));
@@ -190,7 +190,7 @@ export class ContentModerationService {
 
   async removeProject(
     staff: StaffActor,
-    projectId: number,
+    projectId: string,
     input: ContentDecisionDto,
   ): Promise<ModerationActionDto> {
     const project = await this.project(staff, projectId);
@@ -226,7 +226,7 @@ export class ContentModerationService {
 
   async hideComment(
     staff: StaffActor,
-    commentId: number,
+    commentId: string,
     input: ContentDecisionDto,
   ): Promise<ModerationActionDto> {
     const comment = await this.comment(staff, commentId);
@@ -280,7 +280,7 @@ export class ContentModerationService {
 
   async restoreComment(
     staff: StaffActor,
-    commentId: number,
+    commentId: string,
     input: ModerationNoteDto,
   ): Promise<ModerationActionDto> {
     const comment = await this.comment(staff, commentId);
@@ -316,7 +316,7 @@ export class ContentModerationService {
 
   async removeComment(
     staff: StaffActor,
-    commentId: number,
+    commentId: string,
     input: ContentDecisionDto,
   ): Promise<ModerationActionDto> {
     const comment = await this.comment(staff, commentId);
@@ -375,7 +375,7 @@ export class ContentModerationService {
   }
 
   /** The game a decision bears on. Staff never decide about a game they created. */
-  private async project(staff: StaffActor, projectId: number): Promise<ProjectRow> {
+  private async project(staff: StaffActor, projectId: string): Promise<ProjectRow> {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
       select: PROJECT_SELECT,
@@ -424,7 +424,7 @@ export class ContentModerationService {
   }
 
   /** The comment a decision bears on. Staff never decide about what they wrote themselves. */
-  private async comment(staff: StaffActor, commentId: number): Promise<CommentRow> {
+  private async comment(staff: StaffActor, commentId: string): Promise<CommentRow> {
     const comment = await this.prisma.comment.findUnique({
       where: { id: commentId },
       select: COMMENT_SELECT,

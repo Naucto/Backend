@@ -7,7 +7,7 @@ export const PROJECT_NOT_PUBLISHED_CODE = 'PROJECT_NOT_PUBLISHED';
 
 /** Raised when a release is asked of a project that has none on the hub. */
 export class ProjectNotPublishedException extends HttpException {
-  constructor(projectId: number) {
+  constructor(projectId: string) {
     super(
       {
         statusCode: HttpStatus.BAD_REQUEST,

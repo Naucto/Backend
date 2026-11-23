@@ -57,7 +57,7 @@ export type PublishedProjectFilters = {
   tags?: string[];
   releaseWindow?: ReleaseWindow;
   /** Narrows to these games; not something a query string can ask for. */
-  ids?: number[];
+  ids?: string[];
 };
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -90,7 +90,7 @@ export class HubService {
   }
 
   /** What a game that is not on the hub answers: withheld says so, a draft reads as a gap. */
-  private async notOnHub(id: number): Promise<ProjectHiddenException | NotFoundException> {
+  private async notOnHub(id: string): Promise<ProjectHiddenException | NotFoundException> {
     const withheld = await this.prisma.project.count({
       where: { id, ...RELEASED, hiddenAt: { not: null } },
     });
@@ -105,7 +105,7 @@ export class HubService {
    * 403 for a withheld game.
    */
   private async requirePublished<S extends Prisma.ProjectSelect>(
-    id: number,
+    id: string,
     select: S,
   ): Promise<Prisma.ProjectGetPayload<{ select: S }>> {
     const project = await this.prisma.project.findFirst({ where: { id, ...PUBLISHED }, select });
@@ -193,14 +193,14 @@ export class HubService {
   }
 
   /** The cover of a project on the hub; a 404 for a draft, null when it has no cover. */
-  async publishedCoverUrl(projectId: number): Promise<string | null> {
+  async publishedCoverUrl(projectId: string): Promise<string | null> {
     await this.requirePublished(projectId, { id: true });
 
     return this.projectService.coverUrl(projectId);
   }
 
   /** The games on the hub among `ids`, in the order given. */
-  async fetchReleasesByIds(ids: number[]): Promise<ReleaseProject[]> {
+  async fetchReleasesByIds(ids: string[]): Promise<ReleaseProject[]> {
     const projects = await this.prisma.project.findMany({
       where: { id: { in: ids }, ...PUBLISHED },
       include: WITH_PEOPLE_AND_COUNTS,
@@ -214,7 +214,7 @@ export class HubService {
    * A game on the hub; a 404 for a draft as for a gap, so nothing says a draft exists, and a 403
    * for a withheld game.
    */
-  async fetchRelease(projectId: number): Promise<ReleaseProject> {
+  async fetchRelease(projectId: string): Promise<ReleaseProject> {
     const [release] = await this.fetchReleasesByIds([projectId]);
 
     if (!release) {
@@ -225,7 +225,7 @@ export class HubService {
   }
 
   /** The project this person last worked on, released or not, as the hub would show it. */
-  async fetchLastEdited(userId: number): Promise<ReleaseProject | null> {
+  async fetchLastEdited(userId: string): Promise<ReleaseProject | null> {
     const project = await this.prisma.project.findFirst({
       where: { collaborators: { some: { id: userId } } },
       orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
@@ -243,7 +243,7 @@ export class HubService {
     where: Prisma.ProjectWhereInput,
     skip: number,
     take: number,
-  ): Promise<number[]> {
+  ): Promise<string[]> {
     const discussed = await this.prisma.comment.groupBy({
       by: ['projectId'],
       where: { ...LIVE_COMMENT, project: where },
@@ -262,7 +262,7 @@ export class HubService {
     const silent = await this.prisma.project.findMany({
       where: { AND: [where, { comments: { none: LIVE_COMMENT } }] },
       select: { id: true },
-      orderBy: { id: 'desc' },
+      orderBy: RELEASE_ORDER_BY.fresh,
       skip: Math.max(0, skip - discussedTotal),
       take: take - ids.length,
     });
@@ -339,7 +339,7 @@ export class HubService {
   }
 
   async fetchPublishedGamesByUser(
-    userId: number,
+    userId: string,
     page?: number,
     limit?: number,
     ownedOnly = false,
@@ -365,7 +365,7 @@ export class HubService {
 
   /** Published games this person collaborates on without owning them. */
   async fetchCollaborationsByUser(
-    userId: number,
+    userId: string,
     page?: number,
     limit?: number,
   ): Promise<ReleaseProject[]> {
@@ -382,7 +382,7 @@ export class HubService {
 
   /** Published games other people forked from one of this person's. */
   async fetchRemixesOfUser(
-    userId: number,
+    userId: string,
     page?: number,
     limit?: number,
   ): Promise<ReleaseProject[]> {
@@ -430,7 +430,7 @@ export class HubService {
 
   /** Totals over every published game the user owns. */
   async fetchUserTotals(
-    userId: number,
+    userId: string,
   ): Promise<{ gameCount: number; totalPlays: number; totalLikes: number }> {
     const where: Prisma.ProjectWhereInput = { ...PUBLISHED, userId };
     const [gameCount, sums] = await this.prisma.$transaction([
@@ -446,7 +446,7 @@ export class HubService {
   }
 
   async fetchLikedPublishedGamesByUser(
-    userId: number,
+    userId: string,
     page?: number,
     limit?: number,
   ): Promise<ReleaseProject[]> {
@@ -472,7 +472,7 @@ export class HubService {
    * play, keyed by nothing, within the limits of its address.
    */
   async registerReleaseView(
-    projectId: number,
+    projectId: string,
     viewer: { visitorId: string | null; address: string },
     now = new Date(),
   ): Promise<{ viewCount: number }> {
@@ -518,7 +518,7 @@ export class HubService {
   }
 
   /** A like moves the counter only when its row was created, so a repeated request counts once. */
-  async likeProject(projectId: number, userId: number): Promise<{ likes: number; liked: boolean }> {
+  async likeProject(projectId: string, userId: string): Promise<{ likes: number; liked: boolean }> {
     const project = await this.requirePublished(projectId, { likes: true, updatedAt: true });
 
     let updated: { likes: number };
@@ -544,8 +544,8 @@ export class HubService {
 
   /** Withdrawing stays possible after an unpublish, and moves the counter only when a row went. */
   async unlikeProject(
-    projectId: number,
-    userId: number,
+    projectId: string,
+    userId: string,
   ): Promise<{ likes: number; liked: boolean }> {
     const project = await this.projectService.requireProject(projectId, {
       likes: true,
@@ -576,8 +576,8 @@ export class HubService {
   }
 
   async getLikeStatus(
-    projectId: number,
-    userId: number,
+    projectId: string,
+    userId: string,
   ): Promise<{ likes: number; liked: boolean }> {
     const project = await this.projectService.requireProject(projectId, { likes: true });
 
@@ -590,7 +590,7 @@ export class HubService {
     return { likes: project.likes, liked: !!existingLike };
   }
 
-  async fork(sourceProjectId: number, userId: number): Promise<ProjectEx> {
+  async fork(sourceProjectId: string, userId: string): Promise<ProjectEx> {
     const sourceProject = await this.projectService.requireProject(sourceProjectId, {
       publishedAt: true,
       hiddenAt: true,

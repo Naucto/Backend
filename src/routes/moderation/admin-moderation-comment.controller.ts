@@ -1,20 +1,10 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  HttpStatus,
-  Param,
-  ParseIntPipe,
-  Post,
-  Query,
-  Req,
-} from '@nestjs/common';
-import { ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Delete, Get, HttpStatus, Param, Post, Query, Req } from '@nestjs/common';
+import { ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { RequiresStaffSession } from '../../auth/access/access.decorators';
 import { ADMIN, MODERATOR } from '../../auth/access/roles';
 import { RequestWithUser } from '../../auth/auth.types';
+import { ParseIdPipe } from '../../common/pipes/parse-id.pipe';
 import { ContentModerationService } from './content-moderation.service';
 import { CommentDirectoryQueryDto, ModerationCommentListDto } from './dto/directory.dto';
 import { ModerationActionDto } from './dto/moderation-action.dto';
@@ -44,6 +34,7 @@ export class AdminModerationCommentController {
 
   @Post(':id/hide')
   @ApiOperation({ summary: 'Remove a comment from view, keeping its text for a restore' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: HttpStatus.CREATED, type: ModerationActionDto })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No such comment' })
   @ApiResponse({
@@ -52,7 +43,7 @@ export class AdminModerationCommentController {
   })
   hide(
     @Req() req: RequestWithUser,
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
     @Body() dto: ContentDecisionDto,
   ): Promise<ModerationActionDto> {
     return this.content.hideComment(staffOf(req), id, dto);
@@ -60,6 +51,7 @@ export class AdminModerationCommentController {
 
   @Post(':id/restore')
   @ApiOperation({ summary: 'Put a hidden comment back as it was' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: HttpStatus.CREATED, type: ModerationActionDto })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No such comment' })
   @ApiResponse({
@@ -68,7 +60,7 @@ export class AdminModerationCommentController {
   })
   restore(
     @Req() req: RequestWithUser,
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
     @Body() dto: ModerationNoteDto,
   ): Promise<ModerationActionDto> {
     return this.content.restoreComment(staffOf(req), id, dto);
@@ -77,12 +69,13 @@ export class AdminModerationCommentController {
   @Delete(':id')
   @RequiresStaffSession(ADMIN)
   @ApiOperation({ summary: 'Delete a comment for good' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiBody({ type: ContentDecisionDto })
   @ApiResponse({ status: HttpStatus.OK, type: ModerationActionDto })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No such comment' })
   remove(
     @Req() req: RequestWithUser,
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
     @Body() dto: ContentDecisionDto,
   ): Promise<ModerationActionDto> {
     return this.content.removeComment(staffOf(req), id, dto);

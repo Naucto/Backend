@@ -5,8 +5,8 @@ import { ROLE_NAMES, RoleName } from '../../../auth/access/roles';
 
 /** An account as the admin console lists it. */
 export class AccountSummaryDto {
-  @ApiProperty()
-  id!: number;
+  @ApiProperty({ format: 'uuid', example: '3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b' })
+  id!: string;
 
   @ApiProperty()
   username!: string;

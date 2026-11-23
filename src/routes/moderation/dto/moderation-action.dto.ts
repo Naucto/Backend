@@ -1,16 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ModerationActionType, ModerationReason, ModerationTargetType } from '@prisma/client';
-import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, Matches, Min } from 'class-validator';
+import { IsEnum, IsOptional, Matches } from 'class-validator';
 
 import { ROLE_NAMES, RoleName } from '../../../auth/access/roles';
+import { IsId } from '../../../common/decorators/is-id';
 import { PaginationQueryDto } from '../../../common/dto/pagination-query.dto';
 import { DAY_PATTERN } from '../../analytics/dto/admin-analytics-query.dto';
 
 /** An account as a moderation screen names it. */
 export class ModerationAccountRefDto {
-  @ApiProperty()
-  id!: number;
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
 
   @ApiProperty()
   username!: string;
@@ -58,8 +58,8 @@ export class TargetContentDto {
 
 /** One row of the moderation log, as staff read it. */
 export class ModerationActionDto {
-  @ApiProperty()
-  id!: number;
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
 
   @ApiProperty({ enum: ModerationActionType, enumName: 'ModerationActionType' })
   action!: ModerationActionType;
@@ -70,8 +70,8 @@ export class ModerationActionDto {
   @ApiProperty({ enum: ModerationTargetType, enumName: 'ModerationTargetType' })
   targetType!: ModerationTargetType;
 
-  @ApiProperty()
-  targetId!: number;
+  @ApiProperty({ format: 'uuid' })
+  targetId!: string;
 
   @ApiPropertyOptional({
     type: String,
@@ -130,31 +130,31 @@ export class LogQueryDto extends PaginationQueryDto {
   @IsEnum(ModerationActionType)
   action?: ModerationActionType;
 
-  @ApiPropertyOptional({ description: 'Only the actions of this staff member' })
+  @ApiPropertyOptional({ format: 'uuid', description: 'Only the actions of this staff member' })
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  actorId?: number;
+  @IsId()
+  actorId?: string;
 
-  @ApiPropertyOptional({ description: 'Only the actions that bore on this account' })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Only the actions that bore on this account',
+  })
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  subjectUserId?: number;
+  @IsId()
+  subjectUserId?: string;
 
   @ApiPropertyOptional({ enum: ModerationTargetType, enumName: 'ModerationTargetType' })
   @IsOptional()
   @IsEnum(ModerationTargetType)
   targetType?: ModerationTargetType;
 
-  @ApiPropertyOptional({ description: 'With targetType, the history of one target' })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'With targetType, the history of one target',
+  })
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  targetId?: number;
+  @IsId()
+  targetId?: string;
 
   @ApiPropertyOptional({ description: 'First day, UTC, as YYYY-MM-DD' })
   @IsOptional()

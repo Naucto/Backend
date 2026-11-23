@@ -116,7 +116,7 @@ function commentState(comment: Pick<CommentRow, 'deleted' | 'hiddenAt'>): Commen
 }
 
 function operationOwner(owner: Owner): {
-  id: number;
+  id: string;
   role: string;
   deleted: boolean;
   suspended: boolean;
@@ -190,7 +190,7 @@ export class ModerationDirectoryService {
     };
   }
 
-  async account(staff: StaffActor, accountId: number): Promise<ModerationAccountDetailDto> {
+  async account(staff: StaffActor, accountId: string): Promise<ModerationAccountDetailDto> {
     const row = await this.prisma.user.findUnique({
       where: { id: accountId },
       select: ACCOUNT_SELECT,
@@ -259,7 +259,7 @@ export class ModerationDirectoryService {
     };
   }
 
-  async project(staff: StaffActor, projectId: number): Promise<ModerationProjectDetailDto> {
+  async project(staff: StaffActor, projectId: string): Promise<ModerationProjectDetailDto> {
     const row = await this.prisma.project.findUnique({
       where: { id: projectId },
       select: {
@@ -295,7 +295,7 @@ export class ModerationDirectoryService {
   }
 
   /** The cover of a game, from wherever it is kept while the game is withheld. */
-  async projectCover(projectId: number): Promise<DownloadedFile> {
+  async projectCover(projectId: string): Promise<DownloadedFile> {
     const key = await this.coverKey(projectId);
     if (!key) {
       throw new NotFoundException('This game has no cover');
@@ -401,7 +401,7 @@ export class ModerationDirectoryService {
     };
   }
 
-  private async coverKey(projectId: number): Promise<string | null> {
+  private async coverKey(projectId: string): Promise<string | null> {
     for (const key of [projectKeys.cover(projectId), projectKeys.withheldCover(projectId)]) {
       if (await this.s3Service.fileExists(key)) {
         return key;
@@ -411,7 +411,7 @@ export class ModerationDirectoryService {
   }
 
   /** Open flags per target of one kind. */
-  private async openFlags(type: ModerationTargetType, ids: number[]): Promise<Map<number, number>> {
+  private async openFlags(type: ModerationTargetType, ids: string[]): Promise<Map<string, number>> {
     if (ids.length === 0) {
       return new Map();
     }
@@ -424,7 +424,7 @@ export class ModerationDirectoryService {
   }
 
   /** Open flags per account, on its profile and on everything it wrote or made. */
-  private async flagsAbout(accountIds: number[]): Promise<Map<number, number>> {
+  private async flagsAbout(accountIds: string[]): Promise<Map<string, number>> {
     if (accountIds.length === 0) {
       return new Map();
     }
@@ -440,7 +440,7 @@ export class ModerationDirectoryService {
     );
   }
 
-  private async warnings(accountIds: number[]): Promise<Map<number, number>> {
+  private async warnings(accountIds: string[]): Promise<Map<string, number>> {
     if (accountIds.length === 0) {
       return new Map();
     }

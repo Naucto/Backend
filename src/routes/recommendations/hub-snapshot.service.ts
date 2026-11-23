@@ -2,6 +2,7 @@ import { Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown } fro
 import { Cron } from '@nestjs/schedule';
 import { HubSnapshot, Prisma } from '@prisma/client';
 
+import { compareIds, NO_RELEASE_ID } from '../../common/ids';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CollectionsService } from '../collections/collections.service';
 import { hubTags } from '../project/hub-fields';
@@ -18,7 +19,7 @@ const RETENTION_DAYS = 60;
 /** Lets the server finish starting before a day without a snapshot is computed. */
 const CATCH_UP_DELAY_MS = 10_000;
 
-type SignalRow = DailySignals & { projectId: number };
+type SignalRow = DailySignals & { projectId: string };
 
 /** The UTC day of an instant, at its midnight. */
 function utcDay(at: Date): Date {
@@ -105,7 +106,7 @@ export class HubSnapshotService implements OnApplicationBootstrap, OnApplication
           UNION ALL
           SELECT "releaseId", "minute"::date, SUM("playsStarted"), 0, 0, 0
           FROM "AnalyticsAnonTally"
-          WHERE "minute" >= ${from} AND "minute" < ${day} AND "releaseId" <> 0
+          WHERE "minute" >= ${from} AND "minute" < ${day} AND "releaseId" <> ${NO_RELEASE_ID}::uuid
           GROUP BY 1, 2
           UNION ALL
           SELECT "projectId", "createdAt"::date, 0, COUNT(*), 0, 0
@@ -126,7 +127,7 @@ export class HubSnapshotService implements OnApplicationBootstrap, OnApplication
         GROUP BY 1, 2`,
     ]);
 
-    const days = new Map<number, DailySignals[]>();
+    const days = new Map<string, DailySignals[]>();
     for (const { projectId, ...signal } of signals) {
       days.set(projectId, [...(days.get(projectId) ?? []), signal]);
     }
@@ -157,7 +158,9 @@ export class HubSnapshotService implements OnApplicationBootstrap, OnApplication
     // The best trending game of the days just read, then the most played, lead the vote.
     await this.recommendations.electGameOfTheWeek(
       [...candidates]
-        .sort((a, b) => b.activity - a.activity || b.lifetime - a.lifetime || a.id - b.id)
+        .sort(
+          (a, b) => b.activity - a.activity || b.lifetime - a.lifetime || compareIds(a.id, b.id),
+        )
         .map((game) => game.id),
       now,
     );

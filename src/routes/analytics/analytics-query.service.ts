@@ -5,7 +5,9 @@ import {
   AnalyticsLiveState,
   AnalyticsRetentionKind,
 } from '@prisma/client';
+import { isUUID } from 'class-validator';
 
+import { NO_RELEASE_ID } from '../../common/ids';
 import { PresenceService } from '../../presence/presence.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { metricsOf, truncateDimensions } from './analytics-finalize.service';
@@ -258,7 +260,7 @@ export class AnalyticsQueryService {
     };
 
     const games = await this.prisma.$queryRaw<
-      { releaseId: number; browsers: number; anonTabs: number }[]
+      { releaseId: string; browsers: number; anonTabs: number }[]
     >`
       SELECT "releaseId", sum(browsers)::int AS browsers, sum(anon)::int AS "anonTabs" FROM (
         SELECT "releaseId", count(DISTINCT "visitorId") AS browsers, 0 AS anon
@@ -267,7 +269,7 @@ export class AnalyticsQueryService {
         GROUP BY "releaseId"
         UNION ALL
         SELECT "releaseId", 0, sum("beats") FROM "AnalyticsAnonTally"
-        WHERE "minute" IN (${minute}, ${previous}) AND "releaseId" <> 0 AND "state" = 'PLAYING'
+        WHERE "minute" IN (${minute}, ${previous}) AND "releaseId" <> ${NO_RELEASE_ID}::uuid AND "state" = 'PLAYING'
         GROUP BY "releaseId"
       ) AS playing GROUP BY "releaseId" ORDER BY sum(browsers) + sum(anon) DESC LIMIT 20`;
     const names = await this.namesOf(games.map((game) => game.releaseId));
@@ -431,11 +433,10 @@ export class AnalyticsQueryService {
       players: players.status === 'unavailable' ? null : 0,
       mpSessions: 0,
     });
-    const games = new Map<number, GameTotals>();
+    const games = new Map<string, GameTotals>();
     for (const [key, split] of Object.entries({ plays, playtimeMs, players, mpSessions })) {
-      for (const [release, value] of split.values) {
-        const releaseId = Number(release);
-        if (!Number.isInteger(releaseId)) {
+      for (const [releaseId, value] of split.values) {
+        if (!isUUID(releaseId)) {
           continue;
         }
         const game = games.get(releaseId) ?? blank();
@@ -729,7 +730,7 @@ export class AnalyticsQueryService {
     }
   }
 
-  private async namesOf(releaseIds: number[]): Promise<Map<number, string>> {
+  private async namesOf(releaseIds: string[]): Promise<Map<string, string>> {
     if (releaseIds.length === 0) {
       return new Map();
     }

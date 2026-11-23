@@ -66,7 +66,7 @@ export class AuthService {
   }
 
   private async generateTokens(
-    user: { id: number; email: string },
+    user: { id: string; email: string },
     db: Prisma.TransactionClient = this.prisma,
   ): Promise<AuthResponseDto> {
     const payload: JwtPayload = { sub: user.id, email: user.email };
@@ -94,7 +94,7 @@ export class AuthService {
     return { access_token, refresh_token };
   }
 
-  private replaceSessions(user: { id: number; email: string }): Promise<AuthResponseDto> {
+  private replaceSessions(user: { id: string; email: string }): Promise<AuthResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       await tx.refreshToken.deleteMany({ where: { userId: user.id } });
 
@@ -215,7 +215,7 @@ export class AuthService {
   }
 
   /** Ends every session of the user: each tab or device holding a refresh token is signed out. */
-  async revokeAllRefreshTokens(userId: number): Promise<void> {
+  async revokeAllRefreshTokens(userId: string): Promise<void> {
     await this.prisma.refreshToken.deleteMany({ where: { userId } });
   }
 
@@ -224,7 +224,7 @@ export class AuthService {
    * way to stay signed in.
    */
   async changePassword(
-    userId: number,
+    userId: string,
     newPassword: string,
     currentPassword?: string,
   ): Promise<AuthResponseDto> {

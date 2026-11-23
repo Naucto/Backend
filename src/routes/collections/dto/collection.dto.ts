@@ -17,6 +17,7 @@ import {
   Min,
 } from 'class-validator';
 
+import { IsId } from '../../../common/decorators/is-id';
 import { MAX_PAGE_SIZE, PaginationQueryDto } from '../../../common/dto/pagination-query.dto';
 import { HubGameDto } from '../../project/dto/hub-game.dto';
 import { UserBasicInfoDto } from '../../project/dto/project-response.dto';
@@ -66,29 +67,29 @@ export class UpdateCollectionDto extends PartialType(CreateCollectionDto) {}
 
 export class ReorderCollectionDto {
   @ApiProperty({
-    type: [Number],
+    type: [String],
+    format: 'uuid',
     description:
       'Games of the collection in their new order. One left out keeps its place after those listed',
-    example: [12, 4, 31],
+    example: ['7c9e6679-7425-40de-944b-e07fc1f90ae7', 'c1a5f0de-3b7a-4f2e-9d6c-8e4b2a1f0c3d'],
     maxItems: COLLECTION_GAMES_MAX,
   })
   @IsArray()
   @ArrayMaxSize(COLLECTION_GAMES_MAX)
   @ArrayUnique()
-  @IsInt({ each: true })
-  projectIds!: number[];
+  @IsId({ each: true })
+  projectIds!: string[];
 }
 
 export class MyCollectionsQueryDto {
   @ApiPropertyOptional({
     description: 'A game: each collection then says whether it lists it',
-    example: 12,
+    format: 'uuid',
+    example: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
   })
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  projectId?: number;
+  @IsId()
+  projectId?: string;
 }
 
 export class CollectionsQueryDto extends PaginationQueryDto {
@@ -170,12 +171,13 @@ export class CollectionDto extends CollectionHeaderDto {
   games!: HubGameDto[];
 
   @ApiProperty({
-    type: [Number],
+    type: [String],
+    format: 'uuid',
     description:
       'Games it lists that left the hub, for its owner to remove. Always empty for anyone else',
-    example: [57],
+    example: ['c1a5f0de-3b7a-4f2e-9d6c-8e4b2a1f0c3d'],
   })
-  unavailableGameIds!: number[];
+  unavailableGameIds!: string[];
 }
 
 export class CollectionsPageDto {

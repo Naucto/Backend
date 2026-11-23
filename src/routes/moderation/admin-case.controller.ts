@@ -6,7 +6,6 @@ import {
   HttpStatus,
   Param,
   ParseEnumPipe,
-  ParseIntPipe,
   Post,
   Query,
   Req,
@@ -17,6 +16,7 @@ import { ModerationTargetType } from '@prisma/client';
 import { RequiresStaffSession } from '../../auth/access/access.decorators';
 import { MODERATOR } from '../../auth/access/roles';
 import { RequestWithUser } from '../../auth/auth.types';
+import { ParseIdPipe } from '../../common/pipes/parse-id.pipe';
 import { CaseService } from './case.service';
 import { CaseDetailDto, CaseListDto, CaseQueryDto, OpenCaseCountDto } from './dto/case.dto';
 import { InternalNoteDto } from './dto/moderation-decision.dto';
@@ -47,13 +47,14 @@ export class AdminCaseController {
 
   @Get(':targetType/:targetId')
   @ApiOperation({ summary: 'One case in full: the target, its flags and what was done about it' })
+  @ApiParam({ name: 'targetId', type: String, format: 'uuid' })
   @ApiParam({ name: 'targetType', enum: ModerationTargetType, enumName: 'ModerationTargetType' })
   @ApiResponse({ status: HttpStatus.OK, type: CaseDetailDto })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'Nothing was ever flagged there' })
   detail(
     @Req() req: RequestWithUser,
     @Param('targetType', TARGET_TYPE) targetType: ModerationTargetType,
-    @Param('targetId', ParseIntPipe) targetId: number,
+    @Param('targetId', ParseIdPipe) targetId: string,
   ): Promise<CaseDetailDto> {
     return this.cases.detail(staffOf(req), targetType, targetId);
   }
@@ -61,6 +62,7 @@ export class AdminCaseController {
   @Post(':targetType/:targetId/dismiss')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Close the open flags of a case without acting on its target' })
+  @ApiParam({ name: 'targetId', type: String, format: 'uuid' })
   @ApiParam({ name: 'targetType', enum: ModerationTargetType, enumName: 'ModerationTargetType' })
   @ApiResponse({ status: HttpStatus.OK, type: CaseDetailDto })
   @ApiResponse({
@@ -74,7 +76,7 @@ export class AdminCaseController {
   dismiss(
     @Req() req: RequestWithUser,
     @Param('targetType', TARGET_TYPE) targetType: ModerationTargetType,
-    @Param('targetId', ParseIntPipe) targetId: number,
+    @Param('targetId', ParseIdPipe) targetId: string,
     @Body() dto: InternalNoteDto,
   ): Promise<CaseDetailDto> {
     return this.cases.dismiss(staffOf(req), targetType, targetId, dto);

@@ -37,10 +37,10 @@ export const VISIBLE_TO_SUBJECT: Record<ModerationActionType, boolean> = {
 
 export interface RecordedAction {
   action: ModerationActionType;
-  actorId: number;
+  actorId: string;
   targetType: ModerationTargetType;
-  targetId: number;
-  subjectUserId?: number | undefined;
+  targetId: string;
+  subjectUserId?: string | undefined;
   reason?: ModerationReason | undefined;
   publicMessage?: string | undefined;
   internalNote?: string | undefined;
@@ -103,7 +103,7 @@ export class ModerationLogService {
    * The one change the record ever takes: erasing an account removes what the record kept of the
    * person, their words and their profile as they read. Who decided what, when and why stays.
    */
-  async scrubAccount(tx: Prisma.TransactionClient, userId: number): Promise<void> {
+  async scrubAccount(tx: Prisma.TransactionClient, userId: string): Promise<void> {
     await tx.moderationAction.updateMany({
       where: { subjectUserId: userId },
       data: { snapshot: Prisma.DbNull },

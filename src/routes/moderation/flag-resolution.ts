@@ -2,11 +2,11 @@ import { FlagStatus, ModerationTargetType, Prisma } from '@prisma/client';
 
 export interface FlagResolution {
   targetType: ModerationTargetType;
-  targetId: number;
+  targetId: string;
   status: Exclude<FlagStatus, 'OPEN'>;
-  resolvedById: number;
+  resolvedById: string;
   /** The log row of the decision that settles them. */
-  resolutionId: number;
+  resolutionId: string;
 }
 
 /**

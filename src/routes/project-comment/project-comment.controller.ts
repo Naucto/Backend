@@ -6,7 +6,6 @@ import {
   HttpCode,
   HttpStatus,
   Param,
-  ParseIntPipe,
   Post,
   Put,
   Query,
@@ -16,6 +15,7 @@ import { ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from 
 
 import { AllowedWhileSuspended, Public, RequiresAuth } from '../../auth/access/access.decorators';
 import { RequestWithUser } from '../../auth/auth.types';
+import { ParseIdPipe } from '../../common/pipes/parse-id.pipe';
 import { CommentResponseDto, PaginatedCommentsResponseDto } from './dto/comment-response.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { ProjectCommentService } from './project-comment.service';
@@ -29,7 +29,7 @@ export class ProjectCommentController {
   @Public()
   @Get()
   @ApiOperation({ summary: 'Get comments for a project' })
-  @ApiParam({ name: 'projectId', type: 'number' })
+  @ApiParam({ name: 'projectId', type: String, format: 'uuid' })
   @ApiQuery({ name: 'page', type: 'number', required: false })
   @ApiQuery({ name: 'limit', type: 'number', required: false })
   @ApiQuery({
@@ -43,7 +43,7 @@ export class ProjectCommentController {
     type: PaginatedCommentsResponseDto,
   })
   async getComments(
-    @Param('projectId', ParseIntPipe) projectId: number,
+    @Param('projectId', ParseIdPipe) projectId: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('sort') sort?: 'newest' | 'oldest',
@@ -58,7 +58,7 @@ export class ProjectCommentController {
 
   @Post()
   @ApiOperation({ summary: 'Create a comment on a project' })
-  @ApiParam({ name: 'projectId', type: 'number' })
+  @ApiParam({ name: 'projectId', type: String, format: 'uuid' })
   @ApiBody({ type: CreateCommentDto })
   @ApiResponse({
     status: 201,
@@ -66,7 +66,7 @@ export class ProjectCommentController {
     type: CommentResponseDto,
   })
   async createComment(
-    @Param('projectId', ParseIntPipe) projectId: number,
+    @Param('projectId', ParseIdPipe) projectId: string,
     @Body() createCommentDto: CreateCommentDto,
     @Req() req: RequestWithUser,
   ): Promise<CommentResponseDto> {
@@ -79,8 +79,8 @@ export class ProjectCommentController {
 
   @Post(':commentId/reply')
   @ApiOperation({ summary: 'Reply to a comment' })
-  @ApiParam({ name: 'projectId', type: 'number' })
-  @ApiParam({ name: 'commentId', type: 'number' })
+  @ApiParam({ name: 'projectId', type: String, format: 'uuid' })
+  @ApiParam({ name: 'commentId', type: String, format: 'uuid' })
   @ApiBody({ type: CreateCommentDto })
   @ApiResponse({
     status: 201,
@@ -88,8 +88,8 @@ export class ProjectCommentController {
     type: CommentResponseDto,
   })
   async createReply(
-    @Param('projectId', ParseIntPipe) projectId: number,
-    @Param('commentId', ParseIntPipe) commentId: number,
+    @Param('projectId', ParseIdPipe) projectId: string,
+    @Param('commentId', ParseIdPipe) commentId: string,
     @Body() createCommentDto: CreateCommentDto,
     @Req() req: RequestWithUser,
   ): Promise<CommentResponseDto> {
@@ -103,8 +103,8 @@ export class ProjectCommentController {
 
   @Put(':commentId')
   @ApiOperation({ summary: 'Edit a comment' })
-  @ApiParam({ name: 'projectId', type: 'number' })
-  @ApiParam({ name: 'commentId', type: 'number' })
+  @ApiParam({ name: 'projectId', type: String, format: 'uuid' })
+  @ApiParam({ name: 'commentId', type: String, format: 'uuid' })
   @ApiBody({ type: CreateCommentDto })
   @ApiResponse({
     status: 200,
@@ -112,8 +112,8 @@ export class ProjectCommentController {
     type: CommentResponseDto,
   })
   async updateComment(
-    @Param('projectId', ParseIntPipe) projectId: number,
-    @Param('commentId', ParseIntPipe) commentId: number,
+    @Param('projectId', ParseIdPipe) projectId: string,
+    @Param('commentId', ParseIdPipe) commentId: string,
     @Body() createCommentDto: CreateCommentDto,
     @Req() req: RequestWithUser,
   ): Promise<CommentResponseDto> {
@@ -128,13 +128,13 @@ export class ProjectCommentController {
   @Delete(':commentId')
   @AllowedWhileSuspended()
   @ApiOperation({ summary: 'Delete a comment' })
-  @ApiParam({ name: 'projectId', type: 'number' })
-  @ApiParam({ name: 'commentId', type: 'number' })
+  @ApiParam({ name: 'projectId', type: String, format: 'uuid' })
+  @ApiParam({ name: 'commentId', type: String, format: 'uuid' })
   @ApiResponse({ status: 204, description: 'Comment deleted' })
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteComment(
-    @Param('projectId', ParseIntPipe) projectId: number,
-    @Param('commentId', ParseIntPipe) commentId: number,
+    @Param('projectId', ParseIdPipe) projectId: string,
+    @Param('commentId', ParseIdPipe) commentId: string,
     @Req() req: RequestWithUser,
   ): Promise<void> {
     return this.projectCommentService.deleteComment(projectId, commentId, req.user.id);

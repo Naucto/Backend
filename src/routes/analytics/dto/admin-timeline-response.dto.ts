@@ -85,7 +85,7 @@ export class AnalyticsActivityItemDto {
       'A short code standing for one consenting browser, the same in every answer while the backend runs and never its cookie. Null when no consenting browser is involved',
   })
   journey!: string | null;
-  @ApiProperty({ type: Number, nullable: true }) releaseId!: number | null;
+  @ApiProperty({ type: String, format: 'uuid', nullable: true }) releaseId!: string | null;
   @ApiProperty({ type: String, nullable: true }) game!: string | null;
   @ApiProperty({
     type: String,
@@ -114,7 +114,7 @@ export class AnalyticsActivityDto {
 }
 
 export class AnalyticsArrivalGameDto {
-  @ApiProperty() releaseId!: number;
+  @ApiProperty({ format: 'uuid' }) releaseId!: string;
   @ApiProperty({ type: String, nullable: true }) name!: string | null;
   @ApiProperty({ description: 'Browsers of the population that played it' }) players!: number;
   @ApiProperty({ description: 'Plays of the population, until now' }) plays!: number;
@@ -182,7 +182,7 @@ export class AnalyticsArrivalsDto {
 }
 
 export class AnalyticsReleaseDto {
-  @ApiProperty() releaseId!: number;
+  @ApiProperty({ format: 'uuid' }) releaseId!: string;
   @ApiProperty() name!: string;
   @ApiProperty({ type: String, nullable: true, description: 'Null for a project not published' })
   publishedAt!: string | null;

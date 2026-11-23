@@ -5,10 +5,11 @@ import { DiskStyleDto } from './disk-style.dto';
 
 export class UserBasicInfoDto {
   @ApiProperty({
-    example: 1,
+    format: 'uuid',
+    example: '3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b',
     description: 'The unique identifier of the user',
   })
-  id!: number;
+  id!: string;
 
   @ApiProperty({
     example: 'john_doe',
@@ -19,10 +20,11 @@ export class UserBasicInfoDto {
 
 export class ProjectResponseDto {
   @ApiProperty({
-    example: 1,
+    format: 'uuid',
+    example: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
     description: 'The unique identifier of the project',
   })
-  id!: number;
+  id!: string;
 
   @ApiProperty({
     description: 'The name of the project',
@@ -70,7 +72,8 @@ export class ProjectResponseDto {
   @ApiProperty({
     description:
       'Address of the cover, usable as is: it changes when the cover does. Null without a cover. Absent from answers that neither list nor open a project',
-    example: 'https://cdn.example.com/projects/1/image?v=5d41402abc4b2a76b9719d911017c592',
+    example:
+      'https://cdn.example.com/projects/7c9e6679-7425-40de-944b-e07fc1f90ae7/image?v=5d41402abc4b2a76b9719d911017c592',
     type: String,
     nullable: true,
     required: false,
@@ -80,7 +83,8 @@ export class ProjectResponseDto {
   @ApiProperty({
     description:
       'Address of the short gameplay clip, usable as is: it changes when the clip does. Null without a clip. Absent from answers that neither list nor open a project',
-    example: 'https://cdn.example.com/projects/1/clip?v=5d41402abc4b2a76b9719d911017c592',
+    example:
+      'https://cdn.example.com/projects/7c9e6679-7425-40de-944b-e07fc1f90ae7/clip?v=5d41402abc4b2a76b9719d911017c592',
     type: String,
     nullable: true,
     required: false,
@@ -119,10 +123,11 @@ export class ProjectResponseDto {
   price?: number | null;
 
   @ApiProperty({
-    example: 1,
+    format: 'uuid',
+    example: '3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b',
     description: 'The ID of the user who owns this project',
   })
-  userId!: number;
+  userId!: string;
 
   @ApiProperty({
     example: '2023-04-15T12:00:00Z',
@@ -186,13 +191,14 @@ export class ProjectResponseDto {
   forkCount?: number;
 
   @ApiProperty({
-    example: 42,
+    format: 'uuid',
+    example: 'c1a5f0de-3b7a-4f2e-9d6c-8e4b2a1f0c3d',
     description: 'The ID of the project this was forked from, if any',
-    type: Number,
+    type: String,
     nullable: true,
     required: false,
   })
-  forkedFromId?: number | null;
+  forkedFromId?: string | null;
 }
 
 export class ProjectExResponseDto extends ProjectResponseDto {
@@ -247,7 +253,7 @@ export class ForkProjectResponseDto extends ProjectExResponseDto {}
 
 export class SignedUrlResponseDto {
   @ApiProperty({
-    example: 'https://cdn.example.com/release/123?v=abc123',
+    example: 'https://cdn.example.com/release/7c9e6679-7425-40de-944b-e07fc1f90ae7?v=abc123',
     description: 'The CDN URL of the file',
   })
   signedUrl!: string;

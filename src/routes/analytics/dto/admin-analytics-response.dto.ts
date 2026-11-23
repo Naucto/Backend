@@ -112,7 +112,7 @@ export class AnalyticsPresenceSampleDto {
 }
 
 export class AnalyticsGameNowDto {
-  @ApiProperty() releaseId!: number;
+  @ApiProperty({ format: 'uuid' }) releaseId!: string;
   @ApiProperty({ type: String, nullable: true }) name!: string | null;
   @ApiProperty({ description: 'Consenting browsers playing it in the last minute' })
   browsers!: number;
@@ -186,7 +186,7 @@ export class AnalyticsFunnelDto {
 }
 
 export class AnalyticsGameDto {
-  @ApiProperty() releaseId!: number;
+  @ApiProperty({ format: 'uuid' }) releaseId!: string;
   @ApiProperty({ type: String, nullable: true, description: 'Null for a game since deleted' })
   name!: string | null;
   @ApiProperty() plays!: number;

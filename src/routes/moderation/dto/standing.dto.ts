@@ -14,8 +14,8 @@ export class StandingSuspensionDto extends SuspensionDto {
 
 /** One moderation action as the account it bore on reads it: never who took it, nor who reported. */
 export class StandingEntryDto {
-  @ApiProperty()
-  id!: number;
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
 
   @ApiProperty({ enum: ModerationActionType, enumName: 'ModerationActionType' })
   action!: ModerationActionType;
@@ -23,8 +23,8 @@ export class StandingEntryDto {
   @ApiProperty({ enum: ModerationTargetType, enumName: 'ModerationTargetType' })
   targetType!: ModerationTargetType;
 
-  @ApiProperty()
-  targetId!: number;
+  @ApiProperty({ format: 'uuid' })
+  targetId!: string;
 
   @ApiPropertyOptional({
     type: String,

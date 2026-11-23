@@ -6,9 +6,13 @@ import { DiskStyleDto } from '../../project/dto/disk-style.dto';
 import { SESSION_ROSTER_PREVIEW } from './game-session-limits';
 
 export class GameSessionRosterEntryDto {
-  @ApiProperty({ description: 'User ID', example: 42 })
-  @IsInt()
-  id!: number;
+  @ApiProperty({
+    description: 'User ID',
+    format: 'uuid',
+    example: '3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b',
+  })
+  @IsUUID()
+  id!: string;
 
   @ApiProperty({ example: 'alice' })
   @IsString()
@@ -33,9 +37,13 @@ export class GameSessionResponseDto {
   @IsEnum(GameSessionVisibility)
   visibility!: GameSessionVisibility;
 
-  @ApiProperty({ description: 'ID of the host user' })
-  @IsInt()
-  hostId!: number;
+  @ApiProperty({
+    description: 'ID of the host user',
+    format: 'uuid',
+    example: '3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b',
+  })
+  @IsUUID()
+  hostId!: string;
 
   @ApiProperty({ description: 'Username of the host' })
   @IsString()
@@ -46,9 +54,13 @@ export class GameSessionResponseDto {
   @IsString()
   hostNickname?: string;
 
-  @ApiProperty({ description: 'ID of the game (project) being played' })
-  @IsInt()
-  projectId!: number;
+  @ApiProperty({
+    description: 'ID of the game (project) being played',
+    format: 'uuid',
+    example: '8c5d2a7e-41b3-4f6a-9e0d-2b7c6a5f4e3d',
+  })
+  @IsUUID()
+  projectId!: string;
 
   @ApiProperty({ description: 'Name of the game (project) being played' })
   @IsString()

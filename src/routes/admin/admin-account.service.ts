@@ -26,7 +26,7 @@ export class AdminAccountService {
     private readonly log: ModerationLogService,
   ) {}
 
-  async me(userId: number): Promise<AccountSummaryDto> {
+  async me(userId: string): Promise<AccountSummaryDto> {
     return toAccountSummary(await this.liveAccount(userId));
   }
 
@@ -75,7 +75,7 @@ export class AdminAccountService {
    * last admin always stays one. A change is written to the moderation log with the role it left
    * and the role it took.
    */
-  async setRole(actorId: number, targetId: number, role: RoleName): Promise<AccountSummaryDto> {
+  async setRole(actorId: string, targetId: string, role: RoleName): Promise<AccountSummaryDto> {
     if (actorId === targetId) {
       throw new BadRequestException('You cannot change your own role');
     }
@@ -108,7 +108,7 @@ export class AdminAccountService {
     return toAccountSummary(updated);
   }
 
-  private async liveAccount(userId: number): Promise<AdminAccountRow> {
+  private async liveAccount(userId: string): Promise<AdminAccountRow> {
     const account = await this.prisma.user.findUnique({
       where: { id: userId },
       select: ADMIN_ACCOUNT_SELECT,

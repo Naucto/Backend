@@ -25,15 +25,19 @@ export async function lockPurgeGate(tx: Prisma.TransactionClient, mode: LockMode
   }
 }
 
+/**
+ * Keyed by a hash of the id as the database spells it; two accounts sharing a hash share a lock,
+ * which only waits more.
+ */
 export async function lockAccount(
   tx: Prisma.TransactionClient,
-  userId: number,
+  userId: string,
   mode: LockMode,
 ): Promise<void> {
   if (mode === 'shared') {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock_shared(${ACCOUNT_LOCK_CLASS}::int, ${userId}::int)`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock_shared(${ACCOUNT_LOCK_CLASS}::int, hashtext(${userId}::uuid::text))`;
   } else {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${ACCOUNT_LOCK_CLASS}::int, ${userId}::int)`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${ACCOUNT_LOCK_CLASS}::int, hashtext(${userId}::uuid::text))`;
   }
 }
 

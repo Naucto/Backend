@@ -29,8 +29,8 @@ export class ReportAccountDto extends AccountSummaryDto {
 }
 
 export class ReportReleaseDto {
-  @ApiProperty()
-  id!: number;
+  @ApiProperty({ format: 'uuid', example: '3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b' })
+  id!: string;
 
   @ApiProperty()
   name!: string;
@@ -38,8 +38,8 @@ export class ReportReleaseDto {
 
 /** One report as a list shows it. The fields of the other kinds are null. */
 export class AdminReportDto {
-  @ApiProperty()
-  id!: number;
+  @ApiProperty({ format: 'uuid', example: '3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b' })
+  id!: string;
 
   @ApiProperty({ enum: ReportKind, enumName: 'ReportKind' })
   kind!: ReportKind;
@@ -59,7 +59,11 @@ export class AdminReportDto {
   @ApiPropertyOptional({ enum: ReportRole, enumName: 'ReportRole', nullable: true })
   role!: ReportRole | null;
 
-  @ApiPropertyOptional({ type: String, nullable: true, example: '/play/42' })
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '/play/3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b',
+  })
   route!: string | null;
 
   @ApiPropertyOptional({ type: ReportReleaseDto, nullable: true })
@@ -89,14 +93,23 @@ export class AdminReportDto {
   @ApiPropertyOptional({ enum: RatingOrigin, enumName: 'RatingOrigin', nullable: true })
   origin!: RatingOrigin | null;
 
-  @ApiProperty({ type: [Number], description: 'Bug reports opened from this rating' })
-  followUpIds!: number[];
+  @ApiProperty({
+    type: [String],
+    format: 'uuid',
+    description: 'Bug reports opened from this rating',
+  })
+  followUpIds!: string[];
 
   @ApiPropertyOptional({ enum: BugCategory, enumName: 'BugCategory', nullable: true })
   category!: BugCategory | null;
 
-  @ApiPropertyOptional({ type: Number, nullable: true, description: 'The rating a bug followed' })
-  ratingId!: number | null;
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description: 'The rating a bug followed',
+  })
+  ratingId!: string | null;
 
   @ApiProperty()
   hasScreenshot!: boolean;
@@ -133,8 +146,8 @@ export class AdminReportListDto {
 }
 
 export class LinkedRatingDto {
-  @ApiProperty()
-  id!: number;
+  @ApiProperty({ format: 'uuid', example: '3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b' })
+  id!: string;
 
   @ApiProperty()
   score!: number;
@@ -155,8 +168,8 @@ export class ScreenshotInfoDto {
 }
 
 export class ReportOccurrenceDto {
-  @ApiProperty()
-  id!: number;
+  @ApiProperty({ format: 'uuid', example: '3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b' })
+  id!: string;
 
   @ApiProperty()
   createdAt!: Date;
@@ -184,8 +197,8 @@ export class AdminReportDetailDto extends AdminReportDto {
   @ApiPropertyOptional({ type: String, nullable: true })
   adminNote!: string | null;
 
-  @ApiPropertyOptional({ type: Number, nullable: true })
-  projectId!: number | null;
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
+  projectId!: string | null;
 
   @ApiPropertyOptional({
     type: 'object',

@@ -41,7 +41,7 @@ export class MultiplayerAccountingService implements SyncedGameTableObserver {
   constructor(private readonly prisma: PrismaService) {}
 
   /** Records a room the API created, classified as an editor test when the editor asked. */
-  async roomCreated(sessionId: string, projectId: number, editorTest: boolean): Promise<void> {
+  async roomCreated(sessionId: string, projectId: string, editorTest: boolean): Promise<void> {
     try {
       await this.prisma.analyticsMpSession.createMany({
         data: [{ id: sessionId, projectId, editorTest }],

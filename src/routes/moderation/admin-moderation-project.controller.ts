@@ -8,18 +8,25 @@ import {
   HttpStatus,
   Logger,
   Param,
-  ParseIntPipe,
   Post,
   Query,
   Req,
   Res,
 } from '@nestjs/common';
-import { ApiBody, ApiOperation, ApiProduces, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBody,
+  ApiOperation,
+  ApiParam,
+  ApiProduces,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { Response } from 'express';
 
 import { RequiresStaffSession } from '../../auth/access/access.decorators';
 import { ADMIN, MODERATOR } from '../../auth/access/roles';
 import { RequestWithUser } from '../../auth/auth.types';
+import { ParseIdPipe } from '../../common/pipes/parse-id.pipe';
 import { ContentModerationService } from './content-moderation.service';
 import {
   ModerationProjectDetailDto,
@@ -55,21 +62,23 @@ export class AdminModerationProjectController {
 
   @Get(':id')
   @ApiOperation({ summary: 'One game, with what the caller may do about it' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: HttpStatus.OK, type: ModerationProjectDetailDto })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No such game' })
   detail(
     @Req() req: RequestWithUser,
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
   ): Promise<ModerationProjectDetailDto> {
     return this.directory.project(staffOf(req), id);
   }
 
   @Get(':id/cover')
   @ApiOperation({ summary: 'The cover of a game, served privately even while it is hidden' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiProduces('image/png', 'image/jpeg', 'image/webp')
   @ApiResponse({ status: HttpStatus.OK, description: 'The image' })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No cover' })
-  async cover(@Param('id', ParseIntPipe) id: number, @Res() res: Response): Promise<void> {
+  async cover(@Param('id', ParseIdPipe) id: string, @Res() res: Response): Promise<void> {
     const file = await this.directory.projectCover(id);
     res.set({
       'Content-Type': file.contentType ?? 'application/octet-stream',
@@ -88,6 +97,7 @@ export class AdminModerationProjectController {
 
   @Post(':id/hide')
   @ApiOperation({ summary: 'Take a game off the hub and stop serving its release' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: HttpStatus.CREATED, type: ModerationActionDto })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No such game' })
   @ApiResponse({
@@ -96,7 +106,7 @@ export class AdminModerationProjectController {
   })
   hide(
     @Req() req: RequestWithUser,
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
     @Body() dto: ContentDecisionDto,
   ): Promise<ModerationActionDto> {
     return this.content.hideProject(staffOf(req), id, dto);
@@ -104,6 +114,7 @@ export class AdminModerationProjectController {
 
   @Post(':id/restore')
   @ApiOperation({ summary: 'Put a hidden game back as it was' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: HttpStatus.CREATED, type: ModerationActionDto })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No such game' })
   @ApiResponse({
@@ -112,7 +123,7 @@ export class AdminModerationProjectController {
   })
   restore(
     @Req() req: RequestWithUser,
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
     @Body() dto: ModerationNoteDto,
   ): Promise<ModerationActionDto> {
     return this.content.restoreProject(staffOf(req), id, dto);
@@ -121,12 +132,13 @@ export class AdminModerationProjectController {
   @Delete(':id')
   @RequiresStaffSession(ADMIN)
   @ApiOperation({ summary: 'Delete a game for good, with its saves, release and comments' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiBody({ type: ContentDecisionDto })
   @ApiResponse({ status: HttpStatus.OK, type: ModerationActionDto })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No such game' })
   remove(
     @Req() req: RequestWithUser,
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
     @Body() dto: ContentDecisionDto,
   ): Promise<ModerationActionDto> {
     return this.content.removeProject(staffOf(req), id, dto);

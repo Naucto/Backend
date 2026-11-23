@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsInt, IsString, Length, Matches, Min, ValidateIf } from 'class-validator';
+import { IsString, Length, Matches, ValidateIf } from 'class-validator';
 
 import {
   HANDLE_MAX,
@@ -7,14 +7,14 @@ import {
   HANDLE_PATTERN,
   HANDLE_PATTERN_MESSAGE,
 } from '../../../auth/handle-policy';
+import { IsId } from '../../../common/decorators/is-id';
 import { FRIEND_CODE_INPUT_MAX, FRIEND_CODE_LENGTH } from '../../user/friend-code.util';
 
 export class SendFriendRequestDto {
-  @ApiPropertyOptional({ description: 'ID of the user to befriend' })
+  @ApiPropertyOptional({ format: 'uuid', description: 'ID of the user to befriend' })
   @ValidateIf((_object, value) => value !== undefined)
-  @IsInt()
-  @Min(1)
-  userId?: number;
+  @IsId()
+  userId?: string;
 
   @ApiPropertyOptional({
     description: 'Handle of the person to befriend — what the profile shows after the @',

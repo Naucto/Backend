@@ -37,7 +37,8 @@ export class AnalyticsSeriesQueryDto extends AnalyticsRangeQueryDto {
   grain!: AnalyticsGrain;
 
   @ApiPropertyOptional({
-    description: 'One value of a dimension of the metric, as `release:42`; the total when absent',
+    description:
+      'One value of a dimension of the metric, as `release:3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b`; the total when absent',
   })
   @IsOptional()
   @IsString()

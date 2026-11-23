@@ -1,3 +1,4 @@
+import { compareIds } from '../../common/ids';
 import { HUB_COLLECTION_MIN_GAMES, HUB_COLLECTIONS_SIZE, HUB_SHELF_SIZE } from './hub-limits';
 import {
   keepApart,
@@ -21,8 +22,8 @@ const TAG_SHELVES_MAX = 60;
 
 /** What the engine knows of a game on the hub when it composes a day. */
 export interface HubCandidate {
-  id: number;
-  authorId: number;
+  id: string;
+  authorId: string;
   tags: string[];
   /** Engagement since the game was released. */
   lifetime: number;
@@ -35,15 +36,15 @@ export interface HubCandidate {
 /** What the engine knows of a collection of the public list. */
 export interface HubCollectionCandidate {
   id: string;
-  ownerId: number;
+  ownerId: string;
   /** Its games on the hub. */
-  games: number[];
+  games: string[];
 }
 
 /** A shelf as a snapshot keeps it: the day's order of its pool, and how many games it lists. */
 export interface ShelfPool {
   total: number;
-  games: number[];
+  games: string[];
 }
 
 /** One UTC day of the hub, as project ids. */
@@ -51,7 +52,7 @@ export interface HubSnapshotPayload {
   popular: ShelfPool;
   trending: ShelfPool;
   /** New and rising, which only the hero draws from. */
-  rising: number[];
+  rising: string[];
   /** The tag shelves of the day, in the order the page offers them. */
   tags: (ShelfPool & { tag: string })[];
   /**
@@ -61,7 +62,7 @@ export interface HubSnapshotPayload {
   collections: { total: number; ids: string[] };
 }
 
-type Scored = { id: number; authorId: number; score: number };
+type Scored = { id: string; authorId: string; score: number };
 
 /**
  * The day's order of one shelf: its best pages by score, drawn by weight, the game that opened
@@ -71,11 +72,11 @@ type Scored = { id: number; authorId: number; score: number };
 function drawPool(
   candidates: Scored[],
   seed: string,
-  yesterdayOpener: number | undefined,
+  yesterdayOpener: string | undefined,
 ): Scored[] {
   const size = POOL_PAGES * HUB_SHELF_SIZE;
   const pool = spreadAuthors(
-    [...candidates].sort((a, b) => b.score - a.score || a.id - b.id),
+    [...candidates].sort((a, b) => b.score - a.score || compareIds(a.id, b.id)),
     size,
     POOL_PAGES * MAX_GAMES_PER_AUTHOR,
   ).slice(0, size);
@@ -99,7 +100,7 @@ export function composeSnapshot(
   yesterday: HubSnapshotPayload | null,
 ): HubSnapshotPayload {
   const seed = (shelf: string): string => `${day}:${shelf}`;
-  const paged = (ordered: Scored[]): number[] =>
+  const paged = (ordered: Scored[]): string[] =>
     spreadAuthors(ordered, HUB_SHELF_SIZE, MAX_GAMES_PER_AUTHOR).map((game) => game.id);
 
   const popular = paged(
@@ -165,7 +166,7 @@ export function composeSnapshot(
     }));
 
   const activityOf = new Map(games.map((game) => [game.id, game.activity]));
-  const owners = new Set<number>();
+  const owners = new Set<string>();
   const putForward = weightedOrder(
     collections.filter((collection) => collection.games.length >= HUB_COLLECTION_MIN_GAMES),
     seed('collections'),

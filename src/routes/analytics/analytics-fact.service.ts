@@ -8,14 +8,14 @@ export interface AnalyticsFactInput {
   type: AnalyticsFactType;
   /** Unique per business transition and never derived from an account id. */
   dedupeKey: string;
-  actorUserId: number | null;
-  projectId?: number;
+  actorUserId: string | null;
+  projectId?: string;
 }
 
 export const signupFactKey = (): string => `signup:${randomUUID()}`;
-export const projectCreatedFactKey = (projectId: number): string => `project:${String(projectId)}`;
-export const releaseFactKey = (projectId: number, revision: number): string =>
-  `release:${String(projectId)}:${String(revision)}`;
+export const projectCreatedFactKey = (projectId: string): string => `project:${projectId}`;
+export const releaseFactKey = (projectId: string, revision: number): string =>
+  `release:${projectId}:${String(revision)}`;
 
 /** Records business transitions in the transaction that performs them. */
 @Injectable()

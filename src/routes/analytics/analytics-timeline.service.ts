@@ -1,7 +1,9 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { AnalyticsAnonConsent, AnalyticsFactType } from '@prisma/client';
+import { isUUID } from 'class-validator';
 import { createHmac, randomBytes } from 'crypto';
 
+import { NO_RELEASE_ID } from '../../common/ids';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RAW_RETENTION_DAYS } from './analytics-purge.service';
 import { DAY_MS } from './analytics-time';
@@ -58,7 +60,7 @@ interface ActivityRow {
   at: Date;
   kind: ActivityKind;
   visitorId: string | null;
-  releaseId: number | null;
+  releaseId: string | null;
   referrer: string | null;
   utmSource: string | null;
   utmCampaign: string | null;
@@ -94,7 +96,7 @@ interface ArrivalRow {
   sessions: number;
   plays: number;
   firstPlayAt: Date | null;
-  releases: number[];
+  releases: string[];
   linked: boolean;
   signedUpAt: Date | null;
   projectCreatedAt: Date | null;
@@ -320,14 +322,14 @@ export class AnalyticsTimelineService {
       }),
       this.prisma.analyticsAnonTally.groupBy({
         by: ['minute', 'releaseId', 'signedIn', 'consent'],
-        where: { minute: within, playsStarted: { gt: 0 }, releaseId: { not: 0 } },
+        where: { minute: within, playsStarted: { gt: 0 }, releaseId: { not: NO_RELEASE_ID } },
         _sum: { playsStarted: true },
         orderBy: { minute: 'desc' },
         take: limit + 1,
       }),
     ]);
 
-    const firstOfVisitor = new Map<string, { at: Date; releaseId: number }>();
+    const firstOfVisitor = new Map<string, { at: Date; releaseId: string }>();
     for (const play of plays) {
       if (!firstOfVisitor.has(play.session.visitorId)) {
         firstOfVisitor.set(play.session.visitorId, {
@@ -352,7 +354,7 @@ export class AnalyticsTimelineService {
       this.prisma,
       visitors.map((visitor) => visitor.id),
     );
-    const linked = new Map<number, string>();
+    const linked = new Map<string, string>();
     for (const visitor of await linkedVisitors(
       this.prisma,
       facts.flatMap((one) => (one.actorUserId === null ? [] : [one.actorUserId])),
@@ -495,12 +497,12 @@ export class AnalyticsTimelineService {
         }),
         this.prisma.analyticsAnonTally.groupBy({
           by: ['consent', 'signedIn'],
-          where: { minute: within, releaseId: { not: 0 } },
+          where: { minute: within, releaseId: { not: NO_RELEASE_ID } },
           _sum: { playsStarted: true },
         }),
         this.prisma.analyticsAnonTally.groupBy({
           by: ['releaseId'],
-          where: { minute: within, releaseId: { not: 0 }, playsStarted: { gt: 0 } },
+          where: { minute: within, releaseId: { not: NO_RELEASE_ID }, playsStarted: { gt: 0 } },
           _sum: { playsStarted: true },
         }),
         TIMELINE_READERS.signups_unlinked(this.prisma, { from, to }, {}),
@@ -511,7 +513,7 @@ export class AnalyticsTimelineService {
     for (const play of plays) {
       playsOf.set(play.session.visitorId, [...(playsOf.get(play.session.visitorId) ?? []), play]);
     }
-    const factsOf = new Map<number, typeof facts>();
+    const factsOf = new Map<string, typeof facts>();
     for (const one of facts) {
       if (one.actorUserId !== null) {
         factsOf.set(one.actorUserId, [...(factsOf.get(one.actorUserId) ?? []), one]);
@@ -555,9 +557,9 @@ export class AnalyticsTimelineService {
 
     const isNew = (row: ArrivalRow): boolean =>
       row.signedUpAt !== null && row.signedUpAt >= row.firstSeenAt;
-    const games = new Map<number, { players: number; plays: number; anonymousPlays: number }>();
+    const games = new Map<string, { players: number; plays: number; anonymousPlays: number }>();
     const gameOf = (
-      releaseId: number,
+      releaseId: string,
     ): { players: number; plays: number; anonymousPlays: number } => {
       const game = games.get(releaseId) ?? { players: 0, plays: 0, anonymousPlays: 0 };
       games.set(releaseId, game);
@@ -640,7 +642,8 @@ export class AnalyticsTimelineService {
       });
     } else {
       const text = query.query?.trim() ?? '';
-      const asId = /^#?(\d{1,9})$/.exec(text)?.[1];
+      const candidate = text.replace(/^#/, '').toLowerCase();
+      const asId = isUUID(candidate) ? candidate : undefined;
       projects = await this.prisma.project.findMany({
         where: {
           publishedAt: { not: null },
@@ -650,7 +653,7 @@ export class AnalyticsTimelineService {
                 OR: [
                   { publishedName: { contains: text, mode: 'insensitive' } },
                   { name: { contains: text, mode: 'insensitive' } },
-                  ...(asId === undefined ? [] : [{ id: Number(asId) }]),
+                  ...(asId === undefined ? [] : [{ id: asId }]),
                 ],
               }),
         },
@@ -659,7 +662,7 @@ export class AnalyticsTimelineService {
         take: limit,
       });
       if (asId !== undefined) {
-        const exact = projects.findIndex((project) => project.id === Number(asId));
+        const exact = projects.findIndex((project) => project.id === asId);
         if (exact > 0) {
           projects.unshift(...projects.splice(exact, 1));
         }
@@ -753,18 +756,18 @@ export class AnalyticsTimelineService {
     return new Date(Math.floor(cutoff / DAY_MS) * DAY_MS);
   }
 
-  private mostPlayed(releases: number[], names: Map<number, string>): string[] {
-    const counts = new Map<number, number>();
+  private mostPlayed(releases: string[], names: Map<string, string>): string[] {
+    const counts = new Map<string, number>();
     for (const releaseId of releases) {
       counts.set(releaseId, (counts.get(releaseId) ?? 0) + 1);
     }
     return [...counts.entries()]
       .sort((a, b) => b[1] - a[1])
-      .map(([releaseId]) => names.get(releaseId) ?? `#${String(releaseId)}`);
+      .map(([releaseId]) => names.get(releaseId) ?? `#${releaseId}`);
   }
 
-  private async namesOf(releaseIds: (number | null)[]): Promise<Map<number, string>> {
-    const ids = [...new Set(releaseIds.filter((id): id is number => id !== null))];
+  private async namesOf(releaseIds: (string | null)[]): Promise<Map<string, string>> {
+    const ids = [...new Set(releaseIds.filter((id): id is string => id !== null))];
     if (ids.length === 0) {
       return new Map();
     }

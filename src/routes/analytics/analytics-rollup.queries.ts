@@ -1,5 +1,6 @@
 import { AnalyticsFactType, Prisma } from '@prisma/client';
 
+import { NO_RELEASE_ID } from '../../common/ids';
 import { MetricName } from './analytics-metrics';
 
 /**
@@ -64,13 +65,13 @@ export async function activityMetrics(tx: Tx, range: DayRange): Promise<MetricVa
     FROM "AnalyticsSessionDay" WHERE ${inDays(Prisma.sql`"day"`, range)}`;
   values.push(total('active_minutes', minutes.active), total('build_minutes', minutes.build));
 
-  const plays = await tx.$queryRaw<{ key: number; value: number }[]>`
+  const plays = await tx.$queryRaw<{ key: string; value: number }[]>`
     SELECT key, sum(n)::float8 AS value FROM (
       SELECT "releaseId" AS key, count(*) AS n FROM "AnalyticsPlay"
       WHERE NOT "continued" AND ${inDays(Prisma.sql`"startedAt"`, range)} GROUP BY 1
       UNION ALL
       SELECT "releaseId", sum("playsStarted") FROM "AnalyticsAnonTally"
-      WHERE "releaseId" <> 0 AND ${inDays(Prisma.sql`"minute"`, range)} GROUP BY 1
+      WHERE "releaseId" <> ${NO_RELEASE_ID}::uuid AND ${inDays(Prisma.sql`"minute"`, range)} GROUP BY 1
     ) AS counted GROUP BY key`;
   values.push(
     total(
@@ -80,14 +81,14 @@ export async function activityMetrics(tx: Tx, range: DayRange): Promise<MetricVa
   );
   values.push(...split('plays', 'release', plays));
 
-  const playtime = await tx.$queryRaw<{ key: number; value: number }[]>`
+  const playtime = await tx.$queryRaw<{ key: string; value: number }[]>`
     SELECT key, sum(ms)::float8 AS value FROM (
       SELECT p."releaseId" AS key, sum(d."activeMs") AS ms
       FROM "AnalyticsPlayDay" d JOIN "AnalyticsPlay" p ON p.id = d."playId"
       WHERE ${inDays(Prisma.sql`d."day"`, range)} GROUP BY 1
       UNION ALL
       SELECT "releaseId", sum("playMs") FROM "AnalyticsAnonTally"
-      WHERE "releaseId" <> 0 AND ${inDays(Prisma.sql`"minute"`, range)} GROUP BY 1
+      WHERE "releaseId" <> ${NO_RELEASE_ID}::uuid AND ${inDays(Prisma.sql`"minute"`, range)} GROUP BY 1
     ) AS credited GROUP BY key`;
   values.push(
     total(
@@ -117,7 +118,7 @@ export async function activityMetrics(tx: Tx, range: DayRange): Promise<MetricVa
     total('accounts_active', visitors.accounts),
   );
 
-  const players = await tx.$queryRaw<{ key: number | null; value: number }[]>`
+  const players = await tx.$queryRaw<{ key: string | null; value: number }[]>`
     WITH played AS (
       SELECT s."visitorId", p."releaseId" FROM "AnalyticsPlay" p
       JOIN "AnalyticsSession" s ON s.id = p."sessionId"
@@ -248,7 +249,7 @@ export async function multiplayerMetrics(tx: Tx, range: DayRange): Promise<Metri
         JOIN "AnalyticsMpSession" m ON m.id = d."sessionId"
         WHERE NOT m."editorTest" AND ${inDays(Prisma.sql`d."day"`, range)})::float8 / 60000 AS "playerMinutes"`;
 
-  const sessions = await tx.$queryRaw<{ key: number; value: number }[]>`
+  const sessions = await tx.$queryRaw<{ key: string; value: number }[]>`
     SELECT "projectId" AS key, count(*)::float8 AS value FROM "AnalyticsMpSession"
     WHERE NOT "editorTest" AND ${inDays(Prisma.sql`"reachedMultiAt"`, range)} GROUP BY "projectId"`;
 

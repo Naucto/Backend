@@ -6,8 +6,6 @@ import {
   HttpCode,
   HttpStatus,
   Param,
-  ParseIntPipe,
-  ParseUUIDPipe,
   Patch,
   Post,
   Put,
@@ -18,6 +16,7 @@ import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { Public, RequiresAuth } from '../../auth/access/access.decorators';
 import { RequestWithOptionalUser, RequestWithUser } from '../../auth/auth.types';
+import { ParseIdPipe } from '../../common/pipes/parse-id.pipe';
 import { CollectionsService } from './collections.service';
 import {
   CollectionDto,
@@ -68,25 +67,25 @@ export class CollectionsController {
   @Public()
   @Get(':id')
   @ApiOperation({ summary: 'A collection and its games' })
-  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: HttpStatus.OK, type: CollectionDto })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: NOT_FOUND })
   async findOne(
     @Req() req: RequestWithOptionalUser,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParseIdPipe) id: string,
   ): Promise<CollectionDto> {
     return this.collections.findOne(id, req.user?.id ?? null);
   }
 
   @Patch(':id')
   @ApiOperation({ summary: 'Change the title, the description or who may read a collection' })
-  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: HttpStatus.OK, type: CollectionDto })
   @ApiResponse({ status: HttpStatus.FORBIDDEN, description: NOT_OWNER })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: NOT_FOUND })
   async update(
     @Req() req: RequestWithUser,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParseIdPipe) id: string,
     @Body() dto: UpdateCollectionDto,
   ): Promise<CollectionDto> {
     return this.collections.update(id, req.user.id, dto);
@@ -95,25 +94,25 @@ export class CollectionsController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete a collection' })
-  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: HttpStatus.NO_CONTENT })
   @ApiResponse({ status: HttpStatus.FORBIDDEN, description: NOT_OWNER })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: NOT_FOUND })
-  async remove(@Req() req: RequestWithUser, @Param('id', ParseUUIDPipe) id: string): Promise<void> {
+  async remove(@Req() req: RequestWithUser, @Param('id', ParseIdPipe) id: string): Promise<void> {
     await this.collections.remove(id, req.user.id);
   }
 
   @Put(':id/games')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Reorder the games of a collection' })
-  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: HttpStatus.NO_CONTENT })
   @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: 'A game named is not in it' })
   @ApiResponse({ status: HttpStatus.FORBIDDEN, description: NOT_OWNER })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: NOT_FOUND })
   async reorder(
     @Req() req: RequestWithUser,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParseIdPipe) id: string,
     @Body() dto: ReorderCollectionDto,
   ): Promise<void> {
     await this.collections.reorder(id, req.user.id, dto.projectIds);
@@ -122,8 +121,8 @@ export class CollectionsController {
   @Put(':id/games/:projectId')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Add a published game to a collection, last; no-op when it is there' })
-  @ApiParam({ name: 'id', format: 'uuid' })
-  @ApiParam({ name: 'projectId', type: 'number' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiParam({ name: 'projectId', type: String, format: 'uuid' })
   @ApiResponse({ status: HttpStatus.NO_CONTENT })
   @ApiResponse({
     status: HttpStatus.BAD_REQUEST,
@@ -137,8 +136,8 @@ export class CollectionsController {
   })
   async addGame(
     @Req() req: RequestWithUser,
-    @Param('id', ParseUUIDPipe) id: string,
-    @Param('projectId', ParseIntPipe) projectId: number,
+    @Param('id', ParseIdPipe) id: string,
+    @Param('projectId', ParseIdPipe) projectId: string,
   ): Promise<void> {
     await this.collections.addGame(id, req.user.id, projectId);
   }
@@ -146,15 +145,15 @@ export class CollectionsController {
   @Delete(':id/games/:projectId')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Remove a game from a collection; no-op when it is not there' })
-  @ApiParam({ name: 'id', format: 'uuid' })
-  @ApiParam({ name: 'projectId', type: 'number' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiParam({ name: 'projectId', type: String, format: 'uuid' })
   @ApiResponse({ status: HttpStatus.NO_CONTENT })
   @ApiResponse({ status: HttpStatus.FORBIDDEN, description: NOT_OWNER })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: NOT_FOUND })
   async removeGame(
     @Req() req: RequestWithUser,
-    @Param('id', ParseUUIDPipe) id: string,
-    @Param('projectId', ParseIntPipe) projectId: number,
+    @Param('id', ParseIdPipe) id: string,
+    @Param('projectId', ParseIdPipe) projectId: string,
   ): Promise<void> {
     await this.collections.removeGame(id, req.user.id, projectId);
   }
@@ -179,9 +178,9 @@ export class UserCollectionsController {
   @Public()
   @Get('public/:id/collections')
   @ApiOperation({ summary: "A user's public collections" })
-  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid', description: 'User ID' })
   @ApiResponse({ status: HttpStatus.OK, type: [CollectionPreviewDto] })
-  async publicOf(@Param('id', ParseIntPipe) id: number): Promise<CollectionPreviewDto[]> {
+  async publicOf(@Param('id', ParseIdPipe) id: string): Promise<CollectionPreviewDto[]> {
     return this.collections.listPublicOf(id);
   }
 }

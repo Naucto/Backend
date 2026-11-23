@@ -4,6 +4,7 @@ import { WorkSession } from '@prisma/client';
 
 import { UserDto } from '../../auth/dto/user.dto';
 import { ACTIVITY_CHANGED, ActivityChangedEvent } from '../../common/domain-events';
+import { compareIds } from '../../common/ids';
 import { isUniqueViolation, PrismaService } from '../../prisma/prisma.service';
 import { YjsWebRTCServer } from '../../webrtc/server/webrtc.server.yjs';
 import { WebRTCService } from '../../webrtc/webrtc.service';
@@ -24,10 +25,11 @@ export class WorkSessionService {
   }
 
   /**
-   * The host is always somebody present. When the recorded one has gone, the present member with
-   * the lowest id takes over: deterministic, so two peers reporting the same drop agree on who.
+   * The host is always somebody present. When the recorded one has gone, the present member whose
+   * id sorts first takes over: arbitrary but deterministic, so two peers reporting the same drop
+   * agree on who.
    */
-  private async electHost(sessionId: number): Promise<number> {
+  private async electHost(sessionId: string): Promise<string> {
     const session = await this.prismaService.workSession.findUnique({
       where: { id: sessionId },
       include: { users: { select: { id: true } } },
@@ -39,7 +41,7 @@ export class WorkSessionService {
       return session.hostId;
     }
 
-    const next = session.users.map((user) => user.id).sort((a, b) => a - b)[0];
+    const next = session.users.map((user) => user.id).sort(compareIds)[0];
     if (next === undefined) {
       return session.hostId;
     }
@@ -53,7 +55,7 @@ export class WorkSessionService {
     return next;
   }
 
-  async join(projectId: number, user: UserDto): Promise<JoinWorkSessionDto> {
+  async join(projectId: string, user: UserDto): Promise<JoinWorkSessionDto> {
     const joinExisting = (): Promise<WorkSession> =>
       this.prismaService.workSession.update({
         where: { projectId },
@@ -106,7 +108,7 @@ export class WorkSessionService {
     return response;
   }
 
-  async kick(projectId: number, userId: number): Promise<void> {
+  async kick(projectId: string, userId: string): Promise<void> {
     const workSession = await this.prismaService.workSession.findFirst({
       where: { projectId: projectId },
     });
@@ -130,7 +132,7 @@ export class WorkSessionService {
   }
 
   /** Takes an account out of every work session it sits in. */
-  async kickEverywhere(userId: number): Promise<void> {
+  async kickEverywhere(userId: string): Promise<void> {
     const sessions = await this.prismaService.workSession.findMany({
       where: { users: { some: { id: userId } } },
       select: { projectId: true },
@@ -164,11 +166,11 @@ export class WorkSessionService {
     }
   }
 
-  async leave(projectId: number, user: UserDto): Promise<void> {
+  async leave(projectId: string, user: UserDto): Promise<void> {
     await this.kick(projectId, user.id);
   }
 
-  async getInfo(projectId: number): Promise<FetchWorkSessionDto> {
+  async getInfo(projectId: string): Promise<FetchWorkSessionDto> {
     const workSession = await this.prismaService.workSession.findFirst({
       where: { projectId },
       include: { users: { select: { id: true } } },

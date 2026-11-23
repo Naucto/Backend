@@ -18,6 +18,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 
+import { IsId } from '../../../common/decorators/is-id';
 import { DAY_MS } from '../analytics-time';
 
 /** A route template as the app's router declares it, without a leading slash: `play/:id`. */
@@ -134,10 +135,9 @@ export class AnalyticsPlayReportDto {
   @IsUUID('4')
   playId!: string;
 
-  @ApiProperty({ description: 'The published project being played' })
-  @IsInt()
-  @Min(1)
-  releaseId!: number;
+  @ApiProperty({ format: 'uuid', description: 'The published project being played' })
+  @IsId()
+  releaseId!: string;
 
   @ApiProperty({
     description: 'Reopened after a consent, identity or session change: never counted as a play',
@@ -180,11 +180,13 @@ export class AnalyticsBeatDto extends AnalyticsIdentityDto {
   @IsEnum(AnalyticsLiveState)
   state!: AnalyticsLiveState;
 
-  @ApiPropertyOptional({ description: 'The published project on screen, if any' })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'The published project on screen, if any',
+  })
   @IsOptional()
-  @IsInt()
-  @Min(1)
-  releaseId?: number;
+  @IsId()
+  releaseId?: string;
 
   @ApiPropertyOptional({ type: AnalyticsPlayReportDto })
   @IsOptional()
@@ -215,11 +217,10 @@ export class AnalyticsPingDto {
   @IsIn(PING_CONSENTS)
   consent?: PingConsent;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()
-  @IsInt()
-  @Min(1)
-  releaseId?: number;
+  @IsId()
+  releaseId?: string;
 
   @ApiPropertyOptional({
     description: 'Running time since the previous ping of this tab, sent once and never retried',

@@ -2,8 +2,12 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PersonalColour } from '@prisma/client';
 
 export class PublicUserProfileDto {
-  @ApiProperty({ description: 'User ID', example: 1 })
-  id!: number;
+  @ApiProperty({
+    description: 'User ID',
+    format: 'uuid',
+    example: '3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b',
+  })
+  id!: string;
 
   @ApiProperty({ description: 'Username', example: 'xX_DarkGamer_Xx' })
   username!: string;
@@ -26,7 +30,7 @@ export class PublicUserProfileDto {
 
   @ApiPropertyOptional({
     description: 'Public CDN URL of the profile image (if any)',
-    example: 'https://cdn.example.com/users/1/profile?v=abc123',
+    example: 'https://cdn.example.com/users/3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b/profile?v=abc123',
     type: String,
     nullable: true,
   })
@@ -34,7 +38,8 @@ export class PublicUserProfileDto {
 
   @ApiPropertyOptional({
     description: 'Public CDN URL of the profile background image (if any)',
-    example: 'https://cdn.example.com/users/1/background?v=abc123',
+    example:
+      'https://cdn.example.com/users/3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b/background?v=abc123',
     type: String,
     nullable: true,
   })

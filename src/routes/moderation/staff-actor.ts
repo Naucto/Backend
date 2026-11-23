@@ -3,7 +3,7 @@ import { RequestWithUser } from '../../auth/auth.types';
 
 /** The staff member a moderation route acts for. */
 export interface StaffActor {
-  id: number;
+  id: string;
   role: RoleName;
 }
 

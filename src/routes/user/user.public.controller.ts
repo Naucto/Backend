@@ -1,8 +1,9 @@
-import { Controller, Get, HttpStatus, Param, ParseIntPipe, Query } from '@nestjs/common';
+import { Controller, Get, HttpStatus, Param, Query } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { Public } from '../../auth/access/access.decorators';
 import { DEFAULT_PAGE_SIZE } from '../../common/dto/pagination-query.dto';
+import { ParseIdPipe } from '../../common/pipes/parse-id.pipe';
 import { ProjectExResponseDto } from '../project/dto/project-response.dto';
 import { HubService } from '../project/hub.service';
 import { PublicUserProfileResponseDto } from './dto/public-user-profile-response.dto';
@@ -76,7 +77,7 @@ export class UserPublicController {
   @Public()
   @Get(':id/profile')
   @ApiOperation({ summary: 'Get a public user profile by ID' })
-  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid', description: 'User ID' })
   @ApiResponse({
     status: HttpStatus.OK,
     description: 'Returns the public user profile',
@@ -84,7 +85,7 @@ export class UserPublicController {
   })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'User not found' })
   async getPublicProfile(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
   ): Promise<PublicUserProfileResponseDto> {
     return this.toProfileResponse(await this.userService.findPublicProfile(id));
   }
@@ -108,7 +109,7 @@ export class UserPublicController {
   @Public()
   @Get(':id/likes')
   @ApiOperation({ summary: "Get a user's liked published games" })
-  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid', description: 'User ID' })
   @ApiQuery({
     name: 'page',
     type: 'number',
@@ -125,7 +126,7 @@ export class UserPublicController {
     type: [ProjectExResponseDto],
   })
   async getLikedGames(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ): Promise<ProjectExResponseDto[]> {
@@ -139,7 +140,7 @@ export class UserPublicController {
   @Public()
   @Get(':id/published-games')
   @ApiOperation({ summary: "Get a user's published games" })
-  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid', description: 'User ID' })
   @ApiQuery({
     name: 'page',
     type: 'number',
@@ -162,7 +163,7 @@ export class UserPublicController {
     type: [ProjectExResponseDto],
   })
   async getPublishedGames(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('ownedOnly') ownedOnly?: string,
@@ -178,7 +179,7 @@ export class UserPublicController {
   @Public()
   @Get(':id/collaborations')
   @ApiOperation({ summary: 'Get published games the user collaborated on' })
-  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid', description: 'User ID' })
   @ApiQuery({ name: 'page', type: 'number', required: false })
   @ApiQuery({ name: 'limit', type: 'number', required: false })
   @ApiResponse({
@@ -187,7 +188,7 @@ export class UserPublicController {
     type: [ProjectExResponseDto],
   })
   async getCollaborations(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ): Promise<ProjectExResponseDto[]> {
@@ -201,7 +202,7 @@ export class UserPublicController {
   @Public()
   @Get(':id/remixes')
   @ApiOperation({ summary: "Get published games remixed from this user's" })
-  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid', description: 'User ID' })
   @ApiQuery({ name: 'page', type: 'number', required: false })
   @ApiQuery({ name: 'limit', type: 'number', required: false })
   @ApiResponse({
@@ -210,7 +211,7 @@ export class UserPublicController {
     type: [ProjectExResponseDto],
   })
   async getRemixes(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ): Promise<ProjectExResponseDto[]> {

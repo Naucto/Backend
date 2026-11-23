@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, Interval } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
 
+import { NO_RELEASE_ID } from '../../common/ids';
 import { PrismaService } from '../../prisma/prisma.service';
 import { METRICS } from './analytics-metrics';
 import { MINUTE_MS } from './analytics-time';
@@ -97,7 +98,7 @@ export class AnalyticsProjectionService {
    * watermark and drops the work. Holds the account lock shared, so it waits for an erasure and
    * then finds nothing to project.
    */
-  async project(visitorId: string, userId: number): Promise<Outcome> {
+  async project(visitorId: string, userId: string): Promise<Outcome> {
     return this.prisma.$transaction(
       async (tx): Promise<Outcome> => {
         await lockAccount(tx, userId, 'shared');
@@ -127,10 +128,10 @@ export class AnalyticsProjectionService {
         });
         await tx.$executeRaw`
           INSERT INTO "AnalyticsUserDaily" ("userId", "visitorId", "day", "releaseId", "plays", "activeMs", "activeMinutes")
-          SELECT ${userId}, ${visitorId}::uuid, day, release,
+          SELECT ${userId}::uuid, ${visitorId}::uuid, day, release,
                  sum(plays)::int, sum(ms)::bigint, sum(minutes)::int
           FROM (
-            SELECT d."day" AS day, 0 AS release, 0 AS plays, 0::bigint AS ms,
+            SELECT d."day" AS day, ${NO_RELEASE_ID}::uuid AS release, 0 AS plays, 0::bigint AS ms,
                    bit_count(d."activeBits") AS minutes
             FROM "AnalyticsSessionDay" d JOIN "AnalyticsSession" s ON s.id = d."sessionId"
             WHERE s."visitorId" = ${visitorId}::uuid

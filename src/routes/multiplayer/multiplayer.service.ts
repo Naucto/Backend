@@ -92,6 +92,9 @@ export type HostedSession = Omit<
 /** Attempts at a write that collided (a lost race, a join code already taken) before giving up. */
 export const MAX_DB_RETRIES = 5;
 
+/** Who a connection seats, as its ticket says it. */
+type Seat = Pick<SyncedGameTableTicket, 'playerNumber' | 'userId'>;
+
 @Injectable()
 export class MultiplayerService {
   private static readonly JOIN_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -135,7 +138,7 @@ export class MultiplayerService {
   }
 
   async create(
-    userId: number,
+    userId: string,
     dto: CreateGameSessionDto,
   ): Promise<GameSessionConnectionResponseDto> {
     const project = await this._projectService.findOne(dto.projectId);
@@ -191,7 +194,7 @@ export class MultiplayerService {
 
     this._eventEmitter.emit(ACTIVITY_CHANGED, new ActivityChangedEvent(userId));
 
-    return this._buildConnection(created, userId, 'host');
+    return this._buildConnection(created, await this._seatOf(userId), 'host');
   }
 
   /**
@@ -200,8 +203,8 @@ export class MultiplayerService {
    * the hub, without the rooms an editor opened to test. A withheld game lists none.
    */
   async list(
-    projectId: number | undefined,
-    userId: number,
+    projectId: string | undefined,
+    userId: string,
     search?: string,
   ): Promise<GameSessionEx[]> {
     const term = search?.trim();
@@ -260,7 +263,7 @@ export class MultiplayerService {
   }
 
   /** A session as someone who may see it does: its members, whoever it is listed to, and whoever holds its join code. */
-  async get(sessionId: string, userId: number, joinCode?: string): Promise<GameSessionEx> {
+  async get(sessionId: string, userId: string, joinCode?: string): Promise<GameSessionEx> {
     const session = await this._findSessionOrThrow(sessionId);
 
     const visible =
@@ -280,7 +283,7 @@ export class MultiplayerService {
   }
 
   /** The live session the user hosts, the latest when there are several. */
-  async hostedSession(hostId: number): Promise<HostedSession | null> {
+  async hostedSession(hostId: string): Promise<HostedSession | null> {
     const hosted = await this._prismaService.gameSession.findFirst({
       where: { hostId, endedAt: null },
       orderBy: { startedAt: 'desc' },
@@ -304,7 +307,7 @@ export class MultiplayerService {
    * Who is in the session, host first. Reuses `get`, so the same visibility rule applies: a
    * non-member of a non-discoverable session gets a 404, not a roster.
    */
-  async roster(sessionId: string, userId: number): Promise<SessionRosterResponseDto> {
+  async roster(sessionId: string, userId: string): Promise<SessionRosterResponseDto> {
     const session = await this.get(sessionId, userId);
 
     return {
@@ -327,7 +330,7 @@ export class MultiplayerService {
   }
 
   /** Notifies the invitee that the host invited them to the session. */
-  async invite(sessionId: string, hostId: number, inviteeId: number): Promise<void> {
+  async invite(sessionId: string, hostId: string, inviteeId: string): Promise<void> {
     const session = await this._findSessionOrThrow(sessionId);
 
     this._assertHost(session, hostId);
@@ -377,7 +380,7 @@ export class MultiplayerService {
     });
   }
 
-  async update(sessionId: string, userId: number, dto: UpdateGameSessionDto): Promise<GameSession> {
+  async update(sessionId: string, userId: string, dto: UpdateGameSessionDto): Promise<GameSession> {
     const session = await this._findSessionOrThrow(sessionId);
 
     this._assertHost(session, userId);
@@ -419,7 +422,7 @@ export class MultiplayerService {
     return updated;
   }
 
-  async delete(sessionId: string, userId: number): Promise<void> {
+  async delete(sessionId: string, userId: string): Promise<void> {
     const session = await this._findSessionOrThrow(sessionId);
 
     this._assertHost(session, userId);
@@ -442,7 +445,7 @@ export class MultiplayerService {
    * Takes an account out of multiplayer: the sessions it hosts end and their rooms close, and it
    * gives up its seat in the sessions of others.
    */
-  async removeAccount(userId: number): Promise<void> {
+  async removeAccount(userId: string): Promise<void> {
     const hosted = await this._prismaService.gameSession.findMany({
       where: { hostId: userId, endedAt: null },
       select: { sessionId: true },
@@ -466,7 +469,7 @@ export class MultiplayerService {
   }
 
   /** Ends every live session of a game, whoever hosts it. */
-  async endSessionsOfProject(projectId: number): Promise<void> {
+  async endSessionsOfProject(projectId: string): Promise<void> {
     const live = await this._prismaService.gameSession.findMany({
       where: { projectId, endedAt: null },
       select: { sessionId: true },
@@ -511,7 +514,7 @@ export class MultiplayerService {
 
   async join(
     sessionId: string,
-    userId: number,
+    userId: string,
     joinCode?: string,
     editorTest = false,
   ): Promise<GameSessionConnectionResponseDto> {
@@ -520,13 +523,17 @@ export class MultiplayerService {
     if (this._isMember(session, userId)) {
       // Membership outlives a connection, so a member who comes back is handed a new one for the seat they already hold.
       if (session.hostId !== userId) {
-        return this._buildConnection(session, userId, 'slave');
+        return this._buildConnection(session, await this._seatOf(userId), 'slave');
       }
 
       // Host only: any other member could mint synthetic players without limit and fill the session against real ones.
       if (editorTest) {
         await this._accounting.editorJoined(sessionId);
-        return this._buildConnection(session, this._syntheticSlaveId(), 'slave');
+        return this._buildConnection(
+          session,
+          { playerNumber: this._syntheticPlayerNumber(), userId: null },
+          'slave',
+        );
       }
 
       throw new MultiplayerUserAlreadyJoinedError('User is the host of this game session');
@@ -546,13 +553,13 @@ export class MultiplayerService {
     await this._claimSeat(sessionId, userId);
     this._eventEmitter.emit(ACTIVITY_CHANGED, new ActivityChangedEvent(session.hostId));
 
-    return this._buildConnection(session, userId, 'slave');
+    return this._buildConnection(session, await this._seatOf(userId), 'slave');
   }
 
   // Lets a player in without knowing the session UUID, which a hidden session never reveals.
   async joinByCode(
     joinCode: string,
-    userId: number,
+    userId: string,
     editorTest = false,
   ): Promise<GameSessionConnectionResponseDto> {
     const session = await this._prismaService.gameSession.findFirst({
@@ -566,12 +573,12 @@ export class MultiplayerService {
     return this.join(session.sessionId, userId, joinCode, editorTest);
   }
 
-  // The host's editor self-join plays under a synthetic id that no account lookup can recover, so that seat alone is
-  // carried over from the ticket being replaced; every other seat is minted from the caller's account, whichever ticket
-  // is presented.
+  // The host's editor self-join plays under a synthetic player number that no account lookup can recover, so that seat
+  // alone is carried over from the ticket being replaced; every other seat is minted from the caller's account,
+  // whichever ticket is presented.
   async refreshTicket(
     sessionId: string,
-    userId: number,
+    userId: string,
     ticket?: string,
   ): Promise<GameSessionConnectionResponseDto> {
     const session = await this._findSessionOrThrow(sessionId);
@@ -582,15 +589,15 @@ export class MultiplayerService {
       previous &&
       accountRole === 'host' &&
       previous.role === 'slave' &&
-      !this._isMember(session, previous.userId)
+      previous.userId === null
     ) {
-      return this._buildConnection(session, previous.userId, previous.role);
+      return this._buildConnection(session, previous, previous.role);
     }
 
-    return this._buildConnection(session, userId, accountRole);
+    return this._buildConnection(session, await this._seatOf(userId), accountRole);
   }
 
-  async leave(sessionId: string, userId: number): Promise<void> {
+  async leave(sessionId: string, userId: string): Promise<void> {
     const session = await this._findSessionOrThrow(sessionId);
 
     if (session.hostId === userId) {
@@ -613,7 +620,7 @@ export class MultiplayerService {
    * Re-checks the capacity and takes the seat in one Serializable transaction: a read then a write
    * would let two joiners both see the last seat free. Taking a seat already held is a no-op.
    */
-  private async _claimSeat(sessionId: string, userId: number): Promise<void> {
+  private async _claimSeat(sessionId: string, userId: string): Promise<void> {
     await this._retry(
       () =>
         this._prismaService.$transaction(
@@ -674,17 +681,31 @@ export class MultiplayerService {
     return session;
   }
 
-  // A random positive 31-bit id for an editor self-join. The wide range makes a
-  // clash with a real (small, auto-increment) user id — or another self-join —
+  // A random positive 31-bit player number for an editor self-join. The wide range makes a
+  // clash with an account's (small, auto-increment) player number — or another self-join —
   // negligible. It is never persisted (no User row): it only keys the WebRTC room
   // and surfaces as net.id().
-  private _syntheticSlaveId(): number {
+  private _syntheticPlayerNumber(): number {
     return randomBytes(4).readUInt32BE(0) & 0x7fffffff || 1;
+  }
+
+  /** The seat an account takes: its own player number, the same at every table. */
+  private async _seatOf(userId: string): Promise<Seat> {
+    const account = await this._prismaService.user.findUnique({
+      where: { id: userId },
+      select: { playerNumber: true },
+    });
+
+    if (!account) {
+      throw new MultiplayerUserNotFoundError(`No user found for ID ${userId}`);
+    }
+
+    return { playerNumber: account.playerNumber, userId };
   }
 
   // The host's account-level join policy is a floor on session visibility; a stricter per-session choice is kept.
   private async _applyHostPolicy(
-    hostId: number,
+    hostId: string,
     requested: GameSessionVisibility,
   ): Promise<GameSessionVisibility> {
     const host = await this._prismaService.user.findUnique({
@@ -701,17 +722,17 @@ export class MultiplayerService {
       : floor;
   }
 
-  private _isMember(session: GameSessionEx, userId: number): boolean {
+  private _isMember(session: GameSessionEx, userId: string): boolean {
     return session.hostId === userId || session.otherUsers.some((user) => user.id === userId);
   }
 
-  private _assertHost(session: GameSession, userId: number): void {
+  private _assertHost(session: GameSession, userId: string): void {
     if (session.hostId !== userId) {
       throw new MultiplayerForbiddenError('Only the host can perform this action');
     }
   }
 
-  private _roleOf(session: GameSessionEx, userId: number): SyncedGameTableRole {
+  private _roleOf(session: GameSessionEx, userId: string): SyncedGameTableRole {
     if (session.hostId === userId) {
       return 'host';
     }
@@ -724,20 +745,25 @@ export class MultiplayerService {
 
   private _buildConnection(
     session: GameSession,
-    userId: number,
+    seat: Seat,
     role: SyncedGameTableRole,
   ): GameSessionConnectionResponseDto {
     const response = new GameSessionConnectionResponseDto();
+    const ticket: SyncedGameTableTicketPayload = {
+      kind: SYNCED_GAME_TABLE_TICKET_KIND,
+      sessionId: session.sessionId,
+      playerNumber: seat.playerNumber,
+      userId: seat.userId,
+      role,
+      maxPlayers: session.maxPlayers,
+    };
 
     response.sessionUuid = session.sessionId;
-    response.playerId = userId;
+    response.playerId = seat.playerNumber;
     response.webrtcConfig = this._webrtcService.buildOffer(this._syncServer);
-    response.connectionTicket = this._mintTicket(
-      session.sessionId,
-      userId,
-      role,
-      session.maxPlayers,
-    );
+    response.connectionTicket = this._jwtService.sign(ticket, {
+      expiresIn: MultiplayerService.TICKET_TTL,
+    });
 
     if (
       role === 'host' &&
@@ -748,25 +774,6 @@ export class MultiplayerService {
     }
 
     return response;
-  }
-
-  private _mintTicket(
-    sessionId: string,
-    userId: number,
-    role: SyncedGameTableRole,
-    maxPlayers: number,
-  ): string {
-    const payload: SyncedGameTableTicketPayload = {
-      kind: SYNCED_GAME_TABLE_TICKET_KIND,
-      sessionId,
-      userId,
-      role,
-      maxPlayers,
-    };
-
-    return this._jwtService.sign(payload, {
-      expiresIn: MultiplayerService.TICKET_TTL,
-    });
   }
 
   // Expiry is what a refresh is for, so only the signature and the session are
@@ -790,6 +797,7 @@ export class MultiplayerService {
 
     return {
       sessionId: payload.sessionId,
+      playerNumber: payload.playerNumber,
       userId: payload.userId,
       role: payload.role,
       maxPlayers: payload.maxPlayers,

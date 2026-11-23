@@ -46,8 +46,8 @@ export const PUBLISHED_SQL = Prisma.sql`"Project"."publishedAt" IS NOT NULL AND 
 export const DEFAULT_LIMIT = 24;
 
 export type ProjectEx = Project & {
-  collaborators: Array<{ id: number; username: string }>;
-  creator: { id: number; username: string };
+  collaborators: Array<{ id: string; username: string }>;
+  creator: { id: string; username: string };
 };
 
 export type ProjectWithCounts = ProjectEx & {

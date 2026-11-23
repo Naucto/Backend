@@ -6,6 +6,7 @@
  * what it wrote, and has the hub of the day drawn again. Run by `seed:dev`.
  */
 import { Prisma, PrismaClient } from '@prisma/client';
+import { createHash } from 'crypto';
 
 import { keepEditTime } from '../src/routes/project/keep-edit-time';
 import { PUBLISHED } from '../src/routes/project/project-select';
@@ -33,17 +34,17 @@ const COMMENTS = [
 interface SignalPlan {
   /** Distinct viewers on each of the days before today, `daysAgo` from 1. */
   views: { daysAgo: number; viewers: number }[];
-  likes: { userId: number; daysAgo: number }[];
-  comments: { authorId: number; content: string; daysAgo: number }[];
+  likes: { userId: string; daysAgo: number }[];
+  comments: { authorId: string; content: string; daysAgo: number }[];
   /** Who played it lately, for the play history of an account. */
-  plays: { userId: number; daysAgo: number; minutes: number }[];
+  plays: { userId: string; daysAgo: number; minutes: number }[];
 }
 
 /**
  * What one game gets. Its own draw decides how much it is played and whether that is rising or
  * fading, so some games trend, some are only popular and some are neither.
  */
-export function planSignals(gameId: number, ownerId: number, people: number[]): SignalPlan {
+export function planSignals(gameId: string, ownerId: string, people: string[]): SignalPlan {
   const roll = (what: string): number => draw('seed-dev-hub', `${gameId}:${what}`);
   const others = people.filter((userId) => userId !== ownerId);
   const heat = 0.3 + 2.7 * roll('heat');
@@ -66,8 +67,8 @@ export function planSignals(gameId: number, ownerId: number, people: number[]): 
       others.length === 0
         ? []
         : Array.from({ length: Math.round(heat * 2 * roll('comments')) }, (_, index) => ({
-            authorId: others[Math.floor(roll(`author:${index}`) * others.length)] as number,
-            content: COMMENTS[(gameId + index) % COMMENTS.length] as string,
+            authorId: others[Math.floor(roll(`author:${index}`) * others.length)] as string,
+            content: COMMENTS[Math.floor(roll(`comment:${index}`) * COMMENTS.length)] as string,
             daysAgo: daysAgo(`commented:${index}`),
           })),
     plays: people
@@ -81,21 +82,27 @@ export function planSignals(gameId: number, ownerId: number, people: number[]): 
   };
 }
 
+/** Every synthetic browser sits in this block of ids, which no real visitor cookie falls in. */
+const SEED_VISITORS = {
+  gte: '5eedf00d-0000-4000-8000-000000000000',
+  lte: '5eedf00d-0000-4000-8000-ffffffffffff',
+};
+
 /** The synthetic browser a seeded person's play history is filed under. */
-const seedVisitor = (userId: number): string =>
-  `5eedf00d-0000-4000-8000-${userId.toString(16).padStart(12, '0')}`;
+const seedVisitor = (userId: string): string =>
+  `5eedf00d-0000-4000-8000-${createHash('sha256').update(userId).digest('hex').slice(0, 12)}`;
 
 /** Views and distinct viewers the seed holds on each game. */
 async function seededViews(
   prisma: PrismaClient,
-): Promise<Map<number, { views: number; players: number }>> {
+): Promise<Map<string, { views: number; players: number }>> {
   const perViewer = await prisma.releaseView.groupBy({
     by: ['projectId', 'viewerKey'],
     where: { viewerKey: { startsWith: VIEWER_PREFIX } },
     _count: { _all: true },
   });
 
-  const tally = new Map<number, { views: number; players: number }>();
+  const tally = new Map<string, { views: number; players: number }>();
   for (const row of perViewer) {
     const game = tally.get(row.projectId) ?? { views: 0, players: 0 };
     tally.set(row.projectId, { views: game.views + row._count._all, players: game.players + 1 });
@@ -106,13 +113,13 @@ async function seededViews(
 /** Writes the signals and answers what it wrote, in one line. */
 export async function seedHubSignals(
   prisma: PrismaClient,
-  people: number[],
+  people: string[],
   now = new Date(),
 ): Promise<string> {
   const games = await prisma.project.findMany({
     where: PUBLISHED,
     select: { id: true, userId: true, updatedAt: true },
-    orderBy: { id: 'asc' },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
   });
   if (games.length === 0) {
     return 'no published game yet, so nothing to rank — run seed:content, then this again';
@@ -166,7 +173,7 @@ export async function seedHubSignals(
   });
 
   await prisma.analyticsUserDaily.deleteMany({
-    where: { visitorId: { in: people.map(seedVisitor) } },
+    where: { userId: { in: people }, visitorId: SEED_VISITORS },
   });
   await prisma.analyticsUserDaily.createMany({
     data: plans.flatMap(({ game, plan }) =>

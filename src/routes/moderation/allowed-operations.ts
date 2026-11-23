@@ -8,7 +8,7 @@ export interface OperationContext {
   type: ModerationTargetType;
   state: TargetState;
   /** The account itself, or who owns the content. Null when nobody is left to act on. */
-  owner: { id: number; role: string; deleted: boolean; suspended: boolean } | null;
+  owner: { id: string; role: string; deleted: boolean; suspended: boolean } | null;
   openFlags: number;
 }
 

@@ -44,7 +44,7 @@ export function risingScore(activityScore: number, daysOut: number): number {
  * A number strictly between 0 and 1, fixed by the seed and the key: every run of a day, on any
  * instance, draws the same one, and no draw depends on the order the others were made in.
  */
-export function draw(seed: string, key: string | number): number {
+export function draw(seed: string, key: string): number {
   const digest = createHash('sha256').update(`${seed}\n${key}`).digest();
 
   return (digest.readUIntBE(0, 6) + 1) / (2 ** 48 + 1);
@@ -58,7 +58,7 @@ export function draw(seed: string, key: string | number): number {
 export function weightedOrder<T>(
   items: T[],
   seed: string,
-  keyOf: (item: T) => string | number,
+  keyOf: (item: T) => string,
   weightOf: (item: T) => number,
 ): T[] {
   return items
@@ -77,7 +77,7 @@ export function weightedOrder<T>(
  * the next page with room. A page the catalogue cannot fill that way is completed with what
  * waits, in order, rather than left short.
  */
-export function spreadAuthors<T extends { authorId: number }>(
+export function spreadAuthors<T extends { authorId: string }>(
   items: T[],
   pageSize: number,
   maxPerAuthor: number,
@@ -86,7 +86,7 @@ export function spreadAuthors<T extends { authorId: number }>(
   let waiting = items;
 
   while (waiting.length > 0) {
-    const held = new Map<number, number>();
+    const held = new Map<string, number>();
     const page: T[] = [];
     const deferred: T[] = [];
 
@@ -113,9 +113,9 @@ export function spreadAuthors<T extends { authorId: number }>(
  * first page avoids their first pages; without one, only its opener avoids theirs, so a small
  * catalogue still opens each shelf on a different game without burying its best ones.
  */
-export function keepApart<T extends { id: number }>(
+export function keepApart<T extends { id: string }>(
   ordered: T[],
-  taken: { firstPages: ReadonlySet<number>; openers: ReadonlySet<number> },
+  taken: { firstPages: ReadonlySet<string>; openers: ReadonlySet<string> },
   pageSize: number,
 ): T[] {
   const unseen = ordered.filter((item) => !taken.firstPages.has(item.id));

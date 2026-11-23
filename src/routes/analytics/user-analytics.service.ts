@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
+import { NO_RELEASE_ID } from '../../common/ids';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   AnalyticsErasureService,
@@ -16,7 +17,7 @@ import {
 const TOP_GAMES = 5;
 
 interface GameTotal {
-  releaseId: number;
+  releaseId: string;
   plays: number;
   playtimeMs: number;
 }
@@ -33,7 +34,7 @@ export class UserAnalyticsService {
     private readonly erasure: AnalyticsErasureService,
   ) {}
 
-  async summary(userId: number, now = new Date()): Promise<UserAnalyticsSummaryDto> {
+  async summary(userId: string, now = new Date()): Promise<UserAnalyticsSummaryDto> {
     const monthStart = `${utcDay(now).slice(0, 8)}01`;
     const visitors = await this.prisma.analyticsVisitor.findMany({
       where: { userId },
@@ -46,19 +47,19 @@ export class UserAnalyticsService {
     >`
       WITH history AS (
         SELECT "releaseId", "day", "plays", "activeMs" FROM "AnalyticsUserDaily"
-        WHERE "userId" = ${userId} AND "releaseId" <> 0
+        WHERE "userId" = ${userId}::uuid AND "releaseId" <> ${NO_RELEASE_ID}::uuid
         UNION ALL
         SELECT p."releaseId", p."startedAt"::date, 1, 0 FROM "AnalyticsPlay" p
         JOIN "AnalyticsSession" s ON s.id = p."sessionId"
         JOIN "AnalyticsVisitor" v ON v.id = s."visitorId"
-        WHERE v."userId" = ${userId} AND NOT p."continued"
+        WHERE v."userId" = ${userId}::uuid AND NOT p."continued"
           AND p."startedAt"::date > COALESCE(v."projectedThrough", '1970-01-01'::date)
         UNION ALL
         SELECT p."releaseId", d."day", 0, d."activeMs" FROM "AnalyticsPlayDay" d
         JOIN "AnalyticsPlay" p ON p.id = d."playId"
         JOIN "AnalyticsSession" s ON s.id = p."sessionId"
         JOIN "AnalyticsVisitor" v ON v.id = s."visitorId"
-        WHERE v."userId" = ${userId}
+        WHERE v."userId" = ${userId}::uuid
           AND d."day" > COALESCE(v."projectedThrough", '1970-01-01'::date)
       )
       SELECT "releaseId",
@@ -70,7 +71,7 @@ export class UserAnalyticsService {
 
     const [lastRaw] = await this.prisma.$queryRaw<[{ at: Date | null }]>`
       SELECT max(s."lastSeenAt") AS at FROM "AnalyticsSession" s
-      JOIN "AnalyticsVisitor" v ON v.id = s."visitorId" WHERE v."userId" = ${userId}`;
+      JOIN "AnalyticsVisitor" v ON v.id = s."visitorId" WHERE v."userId" = ${userId}::uuid`;
     const lastProjected = lastRaw.at
       ? null
       : await this.prisma.analyticsUserDaily.findFirst({
@@ -104,7 +105,7 @@ export class UserAnalyticsService {
     };
   }
 
-  async export(userId: number, now = new Date()): Promise<UserAnalyticsExportDto> {
+  async export(userId: string, now = new Date()): Promise<UserAnalyticsExportDto> {
     const visitors = await this.prisma.analyticsVisitor.findMany({
       where: { userId },
       select: { id: true, firstSeenAt: true, lastSeenAt: true, linkedAt: true },
@@ -221,11 +222,11 @@ export class UserAnalyticsService {
     };
   }
 
-  async erase(userId: number): Promise<UserAnalyticsEraseResponseDto> {
+  async erase(userId: string): Promise<UserAnalyticsEraseResponseDto> {
     return { erasedBrowsers: await this.erasure.erase(userId) };
   }
 
-  private async namesOf(releaseIds: number[]): Promise<Map<number, string>> {
+  private async namesOf(releaseIds: string[]): Promise<Map<string, string>> {
     if (releaseIds.length === 0) {
       return new Map();
     }

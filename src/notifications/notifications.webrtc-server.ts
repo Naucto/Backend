@@ -1,4 +1,5 @@
 import { JwtService } from '@nestjs/jwt';
+import { isUUID } from 'class-validator';
 
 import { JwtPayload } from '../auth/auth.types';
 import { PresenceSocketHandler } from '../presence/presence.types';
@@ -28,12 +29,12 @@ import type { NotificationsService } from './notifications.service';
 import { NotificationPayload } from './notifications.types';
 
 type NotificationClientSocket = WebRTCClientSocket<{
-  userId: number | null;
+  userId: string | null;
   connectionId: number;
 }>;
 
 type NotificationServerSocket = WebRTCServerSocket<{
-  privateClients: Map<number, Set<NotificationClientSocket>>;
+  privateClients: Map<string, Set<NotificationClientSocket>>;
 }>;
 
 export class NotificationWebRTCServerOptions extends EventBasedWebRTCServerOptions {
@@ -62,7 +63,7 @@ export class NotificationWebRTCServer extends EventBasedWebRTCServer<
 
     const serverSocket = this.wss<NotificationServerSocket>();
 
-    serverSocket.privateClients = new Map<number, Set<NotificationClientSocket>>();
+    serverSocket.privateClients = new Map<string, Set<NotificationClientSocket>>();
   }
 
   @WebRTCServerEvent('connection')
@@ -119,11 +120,11 @@ export class NotificationWebRTCServer extends EventBasedWebRTCServer<
     this.presenceHandler = handler;
   }
 
-  public sendToUser(userId: number, payload: NotificationPayload): void {
+  public sendToUser(userId: string, payload: NotificationPayload): void {
     this.sendMessageToUser(userId, { type: 'notification', payload });
   }
 
-  public sendMessageToUser(userId: number, message: NotificationServerMessage): void {
+  public sendMessageToUser(userId: string, message: NotificationServerMessage): void {
     const clients = this.wss<NotificationServerSocket>().privateClients.get(userId);
     if (!clients) {
       return;
@@ -135,17 +136,17 @@ export class NotificationWebRTCServer extends EventBasedWebRTCServer<
   }
 
   private async authenticate(socket: NotificationClientSocket, token: string): Promise<void> {
-    let userId: number | undefined;
+    let userId: unknown;
 
     try {
-      const payload = this.jwtService.verify<JwtPayload>(token);
-      userId = payload.sub;
+      userId = this.jwtService.verify<JwtPayload>(token).sub;
     } catch {
       socket.close();
       return;
     }
 
-    if (!Number.isInteger(userId)) {
+    // The signature vouches for who signed the token, not for what it carries.
+    if (typeof userId !== 'string' || !isUUID(userId)) {
       socket.close();
       return;
     }
@@ -180,7 +181,7 @@ export class NotificationWebRTCServer extends EventBasedWebRTCServer<
 
   private async sendPresenceSnapshot(
     socket: NotificationClientSocket,
-    userId: number,
+    userId: string,
   ): Promise<void> {
     if (!this.presenceHandler) {
       return;
@@ -197,7 +198,7 @@ export class NotificationWebRTCServer extends EventBasedWebRTCServer<
     }
   }
 
-  private registerClient(socket: NotificationClientSocket, userId: number): void {
+  private registerClient(socket: NotificationClientSocket, userId: string): void {
     const serverSocket = this.wss<NotificationServerSocket>();
 
     this.removeClient(socket);
@@ -235,7 +236,7 @@ export class NotificationWebRTCServer extends EventBasedWebRTCServer<
 
   private async sendInitialNotifications(
     socket: NotificationClientSocket,
-    userId: number,
+    userId: string,
   ): Promise<void> {
     try {
       const notifications = await this.notificationsService.getUserNotifications(userId);

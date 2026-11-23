@@ -34,7 +34,7 @@ const WITH_OWNER = { owner: { select: CREATOR_SELECT } } satisfies Prisma.Collec
 
 type CollectionRow = Prisma.CollectionGetPayload<{ include: typeof WITH_OWNER }>;
 
-type Viewer = number | null;
+type Viewer = string | null;
 
 /** A game added twice at one position, by two requests at once, still has one place. */
 const ITEM_ORDER: Prisma.CollectionItemOrderByWithRelationInput[] = [
@@ -98,7 +98,7 @@ export class CollectionsService {
     return row;
   }
 
-  private async requireOwned(id: string, userId: number): Promise<CollectionRow> {
+  private async requireOwned(id: string, userId: string): Promise<CollectionRow> {
     const row = await this.requireReadable(id, userId);
 
     if (row.ownerId !== userId) {
@@ -136,14 +136,14 @@ export class CollectionsService {
       select: { collectionId: true, projectId: true },
       orderBy: ITEM_ORDER,
     });
-    const held = new Map<string, number[]>();
+    const held = new Map<string, string[]>();
     for (const { collectionId, projectId } of items) {
       const games = held.get(collectionId) ?? [];
       games.push(projectId);
       held.set(collectionId, games);
     }
 
-    const shown = (id: string): number[] => (held.get(id) ?? []).slice(0, COLLECTION_PREVIEW_GAMES);
+    const shown = (id: string): string[] => (held.get(id) ?? []).slice(0, COLLECTION_PREVIEW_GAMES);
     const releases = await this.hubService.fetchReleasesByIds([
       ...new Set(rows.flatMap((row) => shown(row.id))),
     ]);
@@ -155,7 +155,7 @@ export class CollectionsService {
     }));
   }
 
-  async create(ownerId: number, dto: CreateCollectionDto): Promise<CollectionDto> {
+  async create(ownerId: string, dto: CreateCollectionDto): Promise<CollectionDto> {
     if ((await this.prisma.collection.count({ where: { ownerId } })) >= COLLECTIONS_PER_USER_MAX) {
       throw new CollectionLimitException('COLLECTIONS_LIMIT');
     }
@@ -177,7 +177,7 @@ export class CollectionsService {
     return this.toDetail(await this.requireReadable(id, viewer), viewer);
   }
 
-  async update(id: string, userId: number, dto: UpdateCollectionDto): Promise<CollectionDto> {
+  async update(id: string, userId: string, dto: UpdateCollectionDto): Promise<CollectionDto> {
     await this.requireOwned(id, userId);
 
     const row = await this.prisma.collection.update({
@@ -193,13 +193,13 @@ export class CollectionsService {
     return this.toDetail(row, userId);
   }
 
-  async remove(id: string, userId: number): Promise<void> {
+  async remove(id: string, userId: string): Promise<void> {
     await this.requireOwned(id, userId);
     await this.prisma.collection.delete({ where: { id } });
   }
 
   /** Lists a game of the hub last; a game already listed keeps its place. */
-  async addGame(id: string, userId: number, projectId: number): Promise<void> {
+  async addGame(id: string, userId: string, projectId: string): Promise<void> {
     await this.requireOwned(id, userId);
     if ((await this.prisma.project.count({ where: { id: projectId, ...PUBLISHED } })) === 0) {
       throw new NotFoundException(`Published project with ID ${projectId} not found`);
@@ -227,7 +227,7 @@ export class CollectionsService {
   }
 
   /** Works on a game that left the hub too: that is how its owner clears it. */
-  async removeGame(id: string, userId: number, projectId: number): Promise<void> {
+  async removeGame(id: string, userId: string, projectId: string): Promise<void> {
     await this.requireOwned(id, userId);
     await this.prisma.$transaction([
       this.prisma.collectionItem.deleteMany({ where: { collectionId: id, projectId } }),
@@ -239,7 +239,7 @@ export class CollectionsService {
    * Puts the games named first, in that order. A game the caller did not name (one that left the
    * hub, one added meanwhile from another tab) follows them in the order it had.
    */
-  async reorder(id: string, userId: number, projectIds: number[]): Promise<void> {
+  async reorder(id: string, userId: string, projectIds: string[]): Promise<void> {
     await this.requireOwned(id, userId);
 
     const items = await this.prisma.collectionItem.findMany({
@@ -267,7 +267,7 @@ export class CollectionsService {
   }
 
   /** A person's own collections, newest first, each saying whether it lists `projectId`. */
-  async listMine(userId: number, projectId?: number): Promise<MyCollectionDto[]> {
+  async listMine(userId: string, projectId?: string): Promise<MyCollectionDto[]> {
     const previews = await this.toPreviews(
       await this.prisma.collection.findMany({
         where: { ownerId: userId },
@@ -292,7 +292,7 @@ export class CollectionsService {
   }
 
   /** What a profile shows of a person's collections: the public ones, empty ones included. */
-  async listPublicOf(ownerId: number): Promise<CollectionPreviewDto[]> {
+  async listPublicOf(ownerId: string): Promise<CollectionPreviewDto[]> {
     return this.toPreviews(
       await this.prisma.collection.findMany({
         where: { ownerId, visibility: CollectionVisibility.PUBLIC },
@@ -337,7 +337,7 @@ export class CollectionsService {
   }
 
   /** Every collection of the public list, with the games of it that are on the hub. */
-  async listedWithGames(): Promise<{ id: string; ownerId: number; games: number[] }[]> {
+  async listedWithGames(): Promise<{ id: string; ownerId: string; games: string[] }[]> {
     const rows = await this.prisma.collection.findMany({
       where: LISTED,
       select: {

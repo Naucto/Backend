@@ -11,13 +11,13 @@ import { ACCOUNT_REF_SELECT, AccountRefRow } from './moderation-mappers';
 /** A game, a comment or an account as moderation looks at it now. */
 export interface TargetView {
   type: ModerationTargetType;
-  id: number;
+  id: string;
   state: TargetState;
   /** The account itself, the creator of the game or the author of the comment. */
   owner: AccountRefRow | null;
   content: TargetContentDto | null;
   /** The game itself, or the game a comment is on. */
-  project: { id: number; name: string; reachable: boolean } | null;
+  project: { id: string; name: string; reachable: boolean } | null;
 }
 
 const PROJECT_SELECT = {
@@ -38,7 +38,7 @@ const PROJECT_SELECT = {
 export class ModerationTargetService {
   constructor(private readonly prisma: PrismaService) {}
 
-  view(type: ModerationTargetType, id: number): Promise<TargetView> {
+  view(type: ModerationTargetType, id: string): Promise<TargetView> {
     switch (type) {
       case ModerationTargetType.USER:
         return this.account(id);
@@ -49,11 +49,11 @@ export class ModerationTargetService {
     }
   }
 
-  private gone(type: ModerationTargetType, id: number): TargetView {
+  private gone(type: ModerationTargetType, id: string): TargetView {
     return { type, id, state: 'GONE', owner: null, content: null, project: null };
   }
 
-  private async account(id: number): Promise<TargetView> {
+  private async account(id: string): Promise<TargetView> {
     const account = await this.prisma.user.findUnique({
       where: { id },
       select: {
@@ -81,7 +81,7 @@ export class ModerationTargetService {
     };
   }
 
-  private async game(id: number): Promise<TargetView> {
+  private async game(id: string): Promise<TargetView> {
     const game = await this.prisma.project.findUnique({ where: { id }, select: PROJECT_SELECT });
     if (!game) {
       return this.gone(ModerationTargetType.PROJECT, id);
@@ -107,7 +107,7 @@ export class ModerationTargetService {
     };
   }
 
-  private async comment(id: number): Promise<TargetView> {
+  private async comment(id: string): Promise<TargetView> {
     const comment = await this.prisma.comment.findUnique({
       where: { id },
       select: {

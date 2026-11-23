@@ -87,7 +87,7 @@ export class ProjectContentController {
   @ApiOperation({
     summary: 'Get project release version',
   })
-  @ApiParam({ name: 'id', type: 'string' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({
     status: 200,
     description: 'Project release file',
@@ -97,7 +97,7 @@ export class ProjectContentController {
       },
     },
   })
-  async getReleaseContent(@ProjectId() id: number, @Res() res: Response): Promise<void> {
+  async getReleaseContent(@ProjectId() id: string, @Res() res: Response): Promise<void> {
     await this.sendFile(res, () => this.contentService.fetchReleaseContent(id));
   }
 
@@ -106,13 +106,13 @@ export class ProjectContentController {
   @ApiOperation({
     summary: 'Get the CDN URL of a release',
   })
-  @ApiParam({ name: 'id', type: 'string' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({
     status: 200,
     description: 'CDN URL of the release, versioned by upload',
     type: SignedUrlResponseDto,
   })
-  async getReleaseContentUrl(@ProjectId() id: number): Promise<SignedUrlResponseDto> {
+  async getReleaseContentUrl(@ProjectId() id: string): Promise<SignedUrlResponseDto> {
     const url = await this.contentService.releaseUrl(id);
     if (!url) {
       throw new NotFoundException('Release not found');
@@ -143,7 +143,7 @@ export class ProjectContentController {
       'Logical content size per category (code, sprites, flags, map, sound, palette) ' +
       'computed from the decoded game document, compared against the publishing budget.',
   })
-  @ApiParam({ name: 'id', type: 'number' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({
     status: 200,
     description: 'Size breakdown',
@@ -151,7 +151,7 @@ export class ProjectContentController {
   })
   @ApiResponse({ status: 403, description: 'Forbidden' })
   @ApiResponse({ status: 404, description: 'Project not found' })
-  async getSize(@ProjectId() id: number): Promise<ProjectSizeDto> {
+  async getSize(@ProjectId() id: string): Promise<ProjectSizeDto> {
     return this.contentService.getContentSize(id);
   }
 
@@ -173,7 +173,7 @@ export class ProjectContentController {
       },
     },
   })
-  @ApiParam({ name: 'id', type: 'number' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({
     status: 201,
     description: 'File uploaded successfully',
@@ -182,7 +182,7 @@ export class ProjectContentController {
   @ApiResponse({ status: 403, description: 'Forbidden' })
   @HttpCode(HttpStatus.CREATED)
   async saveProjectContent(
-    @ProjectId() id: number,
+    @ProjectId() id: string,
     @UploadedFile(REQUIRED_GAME_BLOB) file: Express.Multer.File,
   ): Promise<ProjectActionResponseDto> {
     await this.contentService.save(id, file);
@@ -195,7 +195,7 @@ export class ProjectContentController {
   @ApiOperation({
     summary: "Fetch project's content",
   })
-  @ApiParam({ name: 'id', type: 'string' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({
     status: 200,
     description: 'File fetched successfully',
@@ -207,7 +207,7 @@ export class ProjectContentController {
   })
   @ApiResponse({ status: 403, description: 'Forbidden' })
   @ApiResponse({ status: 404, description: 'File not found' })
-  async fetchProjectContent(@ProjectId() id: number, @Res() res: Response): Promise<void> {
+  async fetchProjectContent(@ProjectId() id: string, @Res() res: Response): Promise<void> {
     await this.sendFile(res, () => this.contentService.fetchLastVersion(id));
   }
 
@@ -228,7 +228,7 @@ export class ProjectContentController {
       },
     },
   })
-  @ApiParam({ name: 'id', type: 'string' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiParam({ name: 'name', type: 'string' })
   @ApiResponse({
     status: 201,
@@ -243,7 +243,7 @@ export class ProjectContentController {
   @ApiResponse({ status: 403, description: 'Forbidden' })
   @HttpCode(HttpStatus.CREATED)
   async saveCheckpoint(
-    @ProjectId() id: number,
+    @ProjectId() id: string,
     @Param('name') name: string,
     @UploadedFile(REQUIRED_GAME_BLOB) file: Express.Multer.File,
   ): Promise<ProjectActionResponseDto> {
@@ -258,7 +258,7 @@ export class ProjectContentController {
   @ApiOperation({
     summary: "Delete project's checkpoint",
   })
-  @ApiParam({ name: 'id', type: 'string' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiParam({ name: 'name', type: 'string' })
   @ApiResponse({
     status: 200,
@@ -267,7 +267,7 @@ export class ProjectContentController {
   })
   @ApiResponse({ status: 403, description: 'Forbidden' })
   async deleteCheckpoint(
-    @ProjectId() id: number,
+    @ProjectId() id: string,
     @Param('name') name: string,
   ): Promise<ProjectActionResponseDto> {
     await this.contentService.removeCheckpoint(id, name);
@@ -278,7 +278,7 @@ export class ProjectContentController {
   @Post(':id/publish')
   @UseGuards(ProjectCollaboratorGuard)
   @ApiOperation({ summary: 'Publish project' })
-  @ApiParam({ name: 'id', type: 'string' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({
     status: 201,
     description: 'Project published successfully',
@@ -292,7 +292,7 @@ export class ProjectContentController {
   })
   @HttpCode(HttpStatus.CREATED)
   async publish(
-    @ProjectId() id: number,
+    @ProjectId() id: string,
     @Req() req: RequestWithUser,
   ): Promise<ProjectActionResponseDto> {
     await this.contentService.publish(id, req.user.id);
@@ -304,7 +304,7 @@ export class ProjectContentController {
   @AllowedWhileSuspended()
   @UseGuards(ProjectCollaboratorGuard)
   @ApiOperation({ summary: 'Unpublish project' })
-  @ApiParam({ name: 'id', type: 'string' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({
     status: 201,
     description: 'Project unpublished successfully',
@@ -313,7 +313,7 @@ export class ProjectContentController {
   @ApiResponse({ status: 403, description: 'Forbidden' })
   @HttpCode(HttpStatus.CREATED)
   async unpublish(
-    @ProjectId() id: number,
+    @ProjectId() id: string,
     @Req() req: RequestWithUser,
   ): Promise<ProjectActionResponseDto> {
     await this.contentService.unpublish(id, req.user.id);
@@ -324,14 +324,14 @@ export class ProjectContentController {
   @Get(':id/versions')
   @UseGuards(ProjectCollaboratorGuard)
   @ApiOperation({ summary: 'Get project versions' })
-  @ApiParam({ name: 'id', type: 'string' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({
     status: 200,
     description: 'Project versions retrieved successfully',
     type: ProjectVersionsResponseDto,
   })
   @ApiResponse({ status: 403, description: 'Forbidden' })
-  async getVersions(@ProjectId() id: number): Promise<ProjectVersionsResponseDto> {
+  async getVersions(@ProjectId() id: string): Promise<ProjectVersionsResponseDto> {
     const versions = await this.contentService.listVersions(id);
 
     return { versions };
@@ -342,14 +342,14 @@ export class ProjectContentController {
   @ApiOperation({
     summary: 'Get project checkpoints',
   })
-  @ApiParam({ name: 'id', type: 'string' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({
     status: 200,
     description: 'Project checkpoints retrieved successfully',
     type: ProjectCheckpointsResponseDto,
   })
   @ApiResponse({ status: 403, description: 'Forbidden' })
-  async getCheckpoints(@ProjectId() id: number): Promise<ProjectCheckpointsResponseDto> {
+  async getCheckpoints(@ProjectId() id: string): Promise<ProjectCheckpointsResponseDto> {
     const checkpoints = await this.contentService.listCheckpoints(id);
 
     return { checkpoints };
@@ -360,7 +360,7 @@ export class ProjectContentController {
   @ApiOperation({
     summary: 'Delete a project autosave',
   })
-  @ApiParam({ name: 'id', type: 'string' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiParam({ name: 'version', type: 'string' })
   @ApiResponse({
     status: 200,
@@ -370,7 +370,7 @@ export class ProjectContentController {
   @ApiResponse({ status: 403, description: 'Forbidden' })
   @ApiResponse({ status: 404, description: 'No such version' })
   async deleteVersion(
-    @ProjectId() id: number,
+    @ProjectId() id: string,
     @Param('version') version: string,
   ): Promise<VersionDeletedResponseDto> {
     await this.contentService.deleteVersion(id, version);
@@ -381,7 +381,7 @@ export class ProjectContentController {
   @Get(':id/versions/:version')
   @UseGuards(ProjectCollaboratorGuard)
   @ApiOperation({ summary: 'Fetch a project version' })
-  @ApiParam({ name: 'id', type: 'string' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiParam({ name: 'version', type: 'string' })
   @ApiResponse({
     status: 200,
@@ -394,7 +394,7 @@ export class ProjectContentController {
   })
   @ApiResponse({ status: 403, description: 'Forbidden' })
   async getVersion(
-    @ProjectId() id: number,
+    @ProjectId() id: string,
     @Param('version') version: string,
     @Res() res: Response,
   ): Promise<void> {
@@ -406,7 +406,7 @@ export class ProjectContentController {
   @ApiOperation({
     summary: 'Fetch a project checkpoint',
   })
-  @ApiParam({ name: 'id', type: 'string' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiParam({ name: 'name', type: 'string' })
   @ApiResponse({
     status: 200,
@@ -419,7 +419,7 @@ export class ProjectContentController {
   })
   @ApiResponse({ status: 403, description: 'Forbidden' })
   async getCheckpoint(
-    @ProjectId() id: number,
+    @ProjectId() id: string,
     @Param('name') name: string,
     @Res() res: Response,
   ): Promise<void> {
@@ -445,7 +445,7 @@ export class ProjectContentController {
   @ApiOperation({
     summary: "Update an already published project's release content",
   })
-  @ApiParam({ name: 'id', type: 'string' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({
     status: 200,
     description: 'Release updated successfully',
@@ -460,7 +460,7 @@ export class ProjectContentController {
   })
   @HttpCode(HttpStatus.OK)
   async updateRelease(
-    @ProjectId() id: number,
+    @ProjectId() id: string,
     @Req() req: RequestWithUser,
   ): Promise<ProjectActionResponseDto> {
     await this.contentService.updateRelease(id, req.user.id);

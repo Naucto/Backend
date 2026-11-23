@@ -9,7 +9,7 @@ export type CrashNoticeKind = 'new' | 'regressed' | 'milestone';
 
 export interface CrashNotice {
   kind: CrashNoticeKind;
-  reportId: number;
+  reportId: string;
   source: CrashSource;
   name: string;
   message: string;
@@ -72,7 +72,7 @@ export class CrashNotifier {
             { name: 'Route', value: codeBlock(notice.route || '/') },
             ...(stack ? [{ name: 'Stack', value: codeBlock(stack) }] : []),
           ],
-          footer: { text: `Report #${String(notice.reportId)}` },
+          footer: { text: `Report ${notice.reportId}` },
           timestamp: new Date().toISOString(),
           ...(this.adminUrl ? { url: `${this.adminUrl.replace(/\/+$/, '')}/crashes` } : {}),
         },

@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 
+import { compareIds, NO_RELEASE_ID } from '../../common/ids';
 import { pageWindow } from '../../common/page-window';
 import { PresenceService } from '../../presence/presence.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -32,9 +33,9 @@ const OWN_PLAYS_WINDOW_DAYS = 30;
 /** New and rising games read for the hero: enough for its slots not to repeat a game. */
 const HERO_RISING_DEPTH = 8;
 
-type Viewer = number | null;
+type Viewer = string | null;
 
-type FriendsGame = { id: number; live: boolean; friends: number; activeMs: bigint };
+type FriendsGame = { id: string; live: boolean; friends: number; activeMs: bigint };
 
 type HeroSource = Pick<HubHeroSlotDto, 'reason' | 'reasonGame'> & { games: HubGameDto[] };
 
@@ -73,7 +74,7 @@ export class HubFeedService {
     return key;
   }
 
-  private async gamesById(ids: number[]): Promise<Map<number, HubGameDto>> {
+  private async gamesById(ids: string[]): Promise<Map<string, HubGameDto>> {
     const releases = await this.hubService.fetchReleasesByIds([...new Set(ids)]);
 
     return new Map(releases.map((release) => [release.id, toHubGame(release)]));
@@ -83,7 +84,7 @@ export class HubFeedService {
    * Games the reader's friends are in right now, then those they played lately: the more friends
    * on a game, the earlier it comes.
    */
-  private async friendsPool(userId: number, now: Date): Promise<ShelfPool> {
+  private async friendsPool(userId: string, now: Date): Promise<ShelfPool> {
     const friendIds = await this.friendsService.friendIdsOf(userId);
     if (friendIds.length === 0) {
       return { total: 0, games: [] };
@@ -93,14 +94,14 @@ export class HubFeedService {
       by: ['releaseId', 'userId'],
       where: {
         userId: { in: friendIds },
-        releaseId: { not: 0 },
+        releaseId: { not: NO_RELEASE_ID },
         day: { gte: new Date(now.getTime() - FRIENDS_WINDOW_DAYS * DAY_MS) },
       },
       _sum: { activeMs: true },
     });
 
-    const ranked = new Map<number, FriendsGame>();
-    const entry = (id: number): FriendsGame => {
+    const ranked = new Map<string, FriendsGame>();
+    const entry = (id: string): FriendsGame => {
       const game = ranked.get(id) ?? { id, live: false, friends: 0, activeMs: 0n };
       ranked.set(id, game);
       return game;
@@ -123,7 +124,7 @@ export class HubFeedService {
           Number(b.live) - Number(a.live) ||
           b.friends - a.friends ||
           Number(b.activeMs - a.activeMs) ||
-          a.id - b.id,
+          compareIds(a.id, b.id),
       )
       .map((game) => game.id);
 
@@ -153,7 +154,7 @@ export class HubFeedService {
   private toShelf(
     key: HubShelfKey,
     pool: ShelfPool,
-    games: Map<number, HubGameDto>,
+    games: Map<string, HubGameDto>,
   ): HubShelfDto[] {
     const shown = pool.games.slice(0, HUB_SHELF_SIZE).flatMap((id) => games.get(id) ?? []);
     if (shown.length === 0) {
@@ -165,7 +166,7 @@ export class HubFeedService {
 
   /** The trending games carrying a tag of `source` that this reader never opened. */
   private async becauseYouPlayed(
-    userId: number,
+    userId: string,
     source: HubGameDto,
     trending: HubGameDto[],
   ): Promise<HeroSource> {
@@ -201,7 +202,7 @@ export class HubFeedService {
             by: ['releaseId'],
             where: {
               userId: viewer,
-              releaseId: { not: 0 },
+              releaseId: { not: NO_RELEASE_ID },
               day: { gte: new Date(now.getTime() - OWN_PLAYS_WINDOW_DAYS * DAY_MS) },
             },
             _sum: { activeMs: true },
@@ -220,7 +221,7 @@ export class HubFeedService {
       ...friends.games.slice(0, HUB_SHELF_SIZE),
       ...(mostPlayed ? [mostPlayed.releaseId] : []),
     ]);
-    const listed = (ids: number[]): HubGameDto[] => ids.flatMap((id) => games.get(id) ?? []);
+    const listed = (ids: string[]): HubGameDto[] => ids.flatMap((id) => games.get(id) ?? []);
 
     const trending: HeroSource = { reason: 'TRENDING', games: listed(payload.trending.games) };
     const rising: HeroSource = { reason: 'NEW_AND_RISING', games: listed(payload.rising) };
@@ -246,7 +247,7 @@ export class HubFeedService {
         trending,
       ],
     ];
-    const taken = new Set<number>();
+    const taken = new Set<string>();
     const hero = slots.flatMap((sources): HubHeroSlotDto[] => {
       for (const { reason, reasonGame, games: candidates } of sources) {
         const game = candidates.find((candidate) => !taken.has(candidate.id));

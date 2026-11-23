@@ -54,8 +54,8 @@ export class CaseTargetDto {
   @ApiProperty({ enum: ModerationTargetType, enumName: 'ModerationTargetType' })
   type!: ModerationTargetType;
 
-  @ApiProperty()
-  id!: number;
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
 
   @ApiProperty({ enum: TARGET_STATES, enumName: 'ModerationTargetState' })
   state!: TargetState;
@@ -74,8 +74,13 @@ export class CaseTargetDto {
   })
   owner!: ModerationAccountRefDto | null;
 
-  @ApiPropertyOptional({ type: Number, nullable: true, description: 'The game a comment is on' })
-  projectId!: number | null;
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description: 'The game a comment is on',
+  })
+  projectId!: string | null;
 
   @ApiPropertyOptional({ type: String, nullable: true })
   projectName!: string | null;
@@ -172,8 +177,8 @@ export class CaseQueryDto extends PaginationQueryDto {
 }
 
 export class CaseFlagDto {
-  @ApiProperty()
-  id!: number;
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
 
   @ApiProperty({ type: ModerationAccountRefDto })
   reporter!: ModerationAccountRefDto;

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Prisma } from '@prisma/client';
 
@@ -40,7 +40,7 @@ export class NotificationsService {
     this.notificationServer.setPresenceHandler(handler);
   }
 
-  sendPresenceToUser(userId: number, message: PresenceServerMessage): void {
+  sendPresenceToUser(userId: string, message: PresenceServerMessage): void {
     this.notificationServer.sendMessageToUser(userId, message);
   }
 
@@ -49,7 +49,7 @@ export class NotificationsService {
   }
 
   /** False for a soft-deleted account, whose row and still-valid tokens outlive it. */
-  async isActiveUser(userId: number): Promise<boolean> {
+  async isActiveUser(userId: string): Promise<boolean> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { deletedAt: true },
@@ -58,7 +58,7 @@ export class NotificationsService {
     return user !== null && user.deletedAt === null;
   }
 
-  async getUserNotifications(userId: number): Promise<NotificationPayload[]> {
+  async getUserNotifications(userId: string): Promise<NotificationPayload[]> {
     const notifications = await this.prisma.notification.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
@@ -120,12 +120,7 @@ export class NotificationsService {
     return payload;
   }
 
-  async markAsRead(userId: number, notificationIdRaw: string): Promise<NotificationPayload> {
-    const notificationId = Number(notificationIdRaw);
-    if (!Number.isInteger(notificationId)) {
-      throw new BadRequestException('Invalid notification id');
-    }
-
+  async markAsRead(userId: string, notificationId: string): Promise<NotificationPayload> {
     const result = await this.prisma.notification.updateMany({
       where: { id: notificationId, userId },
       data: { read: true },
@@ -143,7 +138,7 @@ export class NotificationsService {
     return this.toPayload(updated);
   }
 
-  async markAllAsRead(userId: number): Promise<number> {
+  async markAllAsRead(userId: string): Promise<number> {
     const result = await this.prisma.notification.updateMany({
       where: {
         userId,
@@ -164,8 +159,8 @@ export class NotificationsService {
   }
 
   private toPayload(notification: {
-    id: number;
-    userId: number;
+    id: string;
+    userId: string;
     title: string;
     message: string;
     type: NotificationType;
@@ -175,7 +170,7 @@ export class NotificationsService {
     createdAt: Date;
   }): NotificationPayload {
     return {
-      id: notification.id.toString(),
+      id: notification.id,
       userId: notification.userId,
       title: notification.title,
       message: notification.message,

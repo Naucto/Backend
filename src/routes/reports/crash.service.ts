@@ -45,7 +45,7 @@ export interface CrashInput {
 }
 
 interface CountedCrash {
-  id: number;
+  id: string;
   count: number;
   notice: CrashNoticeKind | null;
 }
@@ -193,7 +193,7 @@ export class CrashService {
       now: Date;
     },
   ): Promise<CountedCrash> {
-    const upsert = (): Promise<{ id: number; status: ReportStatus; count: number }> =>
+    const upsert = (): Promise<{ id: string; status: ReportStatus; count: number }> =>
       this.prisma.report.upsert({
         where: { kind_groupKey: { kind: 'CRASH', groupKey } },
         create: {
@@ -217,7 +217,7 @@ export class CrashService {
         select: { id: true, status: true, count: true },
       });
 
-    let crash: { id: number; status: ReportStatus; count: number };
+    let crash: { id: string; status: ReportStatus; count: number };
     try {
       crash = await upsert();
     } catch (error) {
@@ -249,7 +249,7 @@ export class CrashService {
     return { ...counted, notice: CRASH_MILESTONES.has(crash.count) ? 'milestone' : null };
   }
 
-  private async prune(reportId: number): Promise<void> {
+  private async prune(reportId: string): Promise<void> {
     const stale = await this.prisma.reportOccurrence.findMany({
       where: { reportId },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],

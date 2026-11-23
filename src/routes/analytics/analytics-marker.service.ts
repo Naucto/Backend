@@ -43,7 +43,7 @@ export class AnalyticsMarkerService {
     return this.toDto(marker, await this.namesOf([marker]));
   }
 
-  async update(id: number, dto: UpdateAnalyticsMarkerDto): Promise<AnalyticsMarkerDto> {
+  async update(id: string, dto: UpdateAnalyticsMarkerDto): Promise<AnalyticsMarkerDto> {
     const data: Prisma.AnalyticsMarkerUpdateInput = {
       ...(dto.at ? { at: new Date(dto.at) } : {}),
       ...(dto.label ? { label: dto.label.trim() } : {}),
@@ -60,7 +60,7 @@ export class AnalyticsMarkerService {
     }
   }
 
-  async remove(id: number): Promise<void> {
+  async remove(id: string): Promise<void> {
     try {
       await this.prisma.analyticsMarker.delete({ where: { id } });
     } catch (error) {
@@ -74,7 +74,7 @@ export class AnalyticsMarkerService {
       : error;
   }
 
-  private toDto(marker: AnalyticsMarker, names: Map<number, string>): AnalyticsMarkerDto {
+  private toDto(marker: AnalyticsMarker, names: Map<string, string>): AnalyticsMarkerDto {
     return {
       id: marker.id,
       at: marker.at.toISOString(),
@@ -89,7 +89,7 @@ export class AnalyticsMarkerService {
     };
   }
 
-  private async namesOf(markers: AnalyticsMarker[]): Promise<Map<number, string>> {
+  private async namesOf(markers: AnalyticsMarker[]): Promise<Map<string, string>> {
     const ids = [...new Set(markers.map((marker) => marker.releaseId).filter((id) => id !== null))];
     if (ids.length === 0) {
       return new Map();

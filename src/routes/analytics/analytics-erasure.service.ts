@@ -5,7 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { lockAccount, lockVisitors } from './identity-locks';
 
 /** The keys `registerView` stores for a viewer, so erasure can find them again. */
-export const releaseViewKeyOfUser = (userId: number): string => `u:${String(userId)}`;
+export const releaseViewKeyOfUser = (userId: string): string => `u:${userId}`;
 export const releaseViewKeyOfVisitor = (visitorId: string): string => `v:${visitorId}`;
 
 /**
@@ -16,7 +16,7 @@ export const releaseViewKeyOfVisitor = (visitorId: string): string => `v:${visit
 export class AnalyticsErasureService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async erase(userId: number): Promise<number> {
+  async erase(userId: string): Promise<number> {
     return this.prisma.$transaction((tx) => this.eraseWithin(tx, userId));
   }
 
@@ -26,7 +26,7 @@ export class AnalyticsErasureService {
    *
    * @returns how many visitors were erased.
    */
-  async eraseWithin(tx: Prisma.TransactionClient, userId: number): Promise<number> {
+  async eraseWithin(tx: Prisma.TransactionClient, userId: string): Promise<number> {
     await lockAccount(tx, userId, 'exclusive');
 
     const visitors = await tx.analyticsVisitor.findMany({

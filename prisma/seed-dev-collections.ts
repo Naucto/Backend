@@ -63,12 +63,12 @@ export const seedCollectionId = (index: number): string =>
 /** Writes the collections and answers what it wrote, in one line. */
 export async function seedCollections(
   prisma: PrismaClient,
-  people: Map<string, number>,
+  people: Map<string, string>,
 ): Promise<string> {
   const published = await prisma.project.findMany({
     where: PUBLISHED,
     select: { id: true },
-    orderBy: { id: 'asc' },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
   });
   if (published.length === 0) {
     return 'no published game yet, so nothing to collect — run seed:content, then this again';

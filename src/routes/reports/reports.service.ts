@@ -18,7 +18,7 @@ export interface NewRating {
   reasons: RatingReason[];
   liked?: string | undefined;
   improve?: string | undefined;
-  releaseId?: number | undefined;
+  releaseId?: string | undefined;
 }
 
 export interface NewBugReport {
@@ -27,9 +27,9 @@ export interface NewBugReport {
   description: string;
   route: string;
   role?: ReportRole | undefined;
-  releaseId?: number | undefined;
-  projectId?: number | undefined;
-  ratingId?: number | undefined;
+  releaseId?: string | undefined;
+  projectId?: string | undefined;
+  ratingId?: string | undefined;
   appRelease?: string | undefined;
   context?: BugContext | undefined;
 }
@@ -52,7 +52,7 @@ export class ReportsService {
     private readonly s3Service: S3Service,
   ) {}
 
-  async promptState(userId: number, now: Date = new Date()): Promise<FeedbackPromptDto> {
+  async promptState(userId: string, now: Date = new Date()): Promise<FeedbackPromptDto> {
     const prompt = await this.prisma.feedbackPrompt.findUnique({
       where: { userId },
       select: { status: true, snoozedUntil: true },
@@ -66,7 +66,7 @@ export class ReportsService {
   }
 
   async updatePrompt(
-    userId: number,
+    userId: string,
     action: PromptAction,
     now: Date = new Date(),
   ): Promise<FeedbackPromptDto> {
@@ -99,7 +99,7 @@ export class ReportsService {
     return this.promptState(userId, now);
   }
 
-  async createRating(userId: number, rating: NewRating): Promise<CreatedReportDto> {
+  async createRating(userId: string, rating: NewRating): Promise<CreatedReportDto> {
     return this.prisma.$transaction(async (tx) => {
       const created = await tx.report.create({
         data: {
@@ -130,7 +130,7 @@ export class ReportsService {
   }
 
   async createBugReport(
-    userId: number,
+    userId: string,
     bug: NewBugReport,
     userAgent: string | undefined,
   ): Promise<CreatedReportDto> {
@@ -165,8 +165,8 @@ export class ReportsService {
 
   /** Attaches the screenshot of a bug report its author just sent. */
   async attachScreenshot(
-    userId: number,
-    reportId: number,
+    userId: string,
+    reportId: string,
     file: Express.Multer.File,
     now: Date = new Date(),
   ): Promise<void> {

@@ -69,7 +69,7 @@ export class ProjectService {
 
   /** The project's row narrowed to `select`, or a 404. */
   async requireProject<S extends Prisma.ProjectSelect>(
-    id: number,
+    id: string,
     select: S,
   ): Promise<Prisma.ProjectGetPayload<{ select: S }>> {
     const project = await this.prisma.project.findUnique({ where: { id }, select });
@@ -82,7 +82,7 @@ export class ProjectService {
   }
 
   /** Where the edge serves a version of the clip: another address each time the clip changes. */
-  private clipUrlAt(projectId: number, version: string): string {
+  private clipUrlAt(projectId: string, version: string): string {
     return versionedUrl(this.edgeService.getCDNUrl(projectKeys.clip(projectId)), version);
   }
 
@@ -117,7 +117,7 @@ export class ProjectService {
   }
 
   private buildUserProjectsWhere(
-    userId: number,
+    userId: string,
     filters: UserProjectFilters = {},
   ): Prisma.ProjectWhereInput {
     const where: Prisma.ProjectWhereInput = {
@@ -163,7 +163,7 @@ export class ProjectService {
   }
 
   async findAll(
-    userId: number,
+    userId: string,
     page?: number,
     limit?: number,
   ): Promise<PaginatedProjectsResult<ProjectEx & ProjectLook>> {
@@ -191,13 +191,13 @@ export class ProjectService {
     };
   }
 
-  async countUserProjects(userId: number, filters: UserProjectFilters = {}): Promise<number> {
+  async countUserProjects(userId: string, filters: UserProjectFilters = {}): Promise<number> {
     return this.prisma.project.count({
       where: this.buildUserProjectsWhere(userId, filters),
     });
   }
 
-  async findOne(id: number): Promise<ProjectEx & ProjectLook> {
+  async findOne(id: string): Promise<ProjectEx & ProjectLook> {
     const project = await this.prisma.project.findUnique({
       where: { id },
       include: WITH_PEOPLE,
@@ -210,7 +210,26 @@ export class ProjectService {
     return { ...project, ...this.lookOf(project) };
   }
 
-  async create(createProjectDto: CreateProjectDto, userId: number): Promise<Project> {
+  /**
+   * The id of the project a link written with its old number names. Any project answers, a draft
+   * included: the id opens nothing by itself.
+   */
+  async idOfLegacy(legacyId: number): Promise<string> {
+    // The column is a 32-bit integer: a number outside it names no project, and the database would
+    // refuse the query rather than find nothing.
+    const project =
+      legacyId < 1 || legacyId > 2 ** 31 - 1
+        ? null
+        : await this.prisma.project.findUnique({ where: { legacyId }, select: { id: true } });
+
+    if (!project) {
+      throw new NotFoundException(`No project was numbered ${legacyId}`);
+    }
+
+    return project.id;
+  }
+
+  async create(createProjectDto: CreateProjectDto, userId: string): Promise<Project> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { id: true },
@@ -240,8 +259,8 @@ export class ProjectService {
   /** Called by every path that creates a project, once the project is there to stay. */
   async recordProjectCreated(
     tx: Prisma.TransactionClient,
-    projectId: number,
-    userId: number,
+    projectId: string,
+    userId: string,
   ): Promise<void> {
     await this.facts.record(tx, {
       type: AnalyticsFactType.PROJECT_CREATED,
@@ -251,7 +270,7 @@ export class ProjectService {
     });
   }
 
-  async update(id: number, updateProjectDto: UpdateProjectDto): Promise<Project> {
+  async update(id: string, updateProjectDto: UpdateProjectDto): Promise<Project> {
     await this.findOne(id);
 
     const updated = await this.prisma.project.update({
@@ -270,7 +289,7 @@ export class ProjectService {
   }
 
   /** Sets the disk of a project whole, or clears it with null. */
-  async setDisk(id: number, disk: DiskStyleDto | null): Promise<DiskStyleDto | null> {
+  async setDisk(id: string, disk: DiskStyleDto | null): Promise<DiskStyleDto | null> {
     const updated = await this.prisma.project.update({
       where: { id },
       data: {
@@ -303,7 +322,7 @@ export class ProjectService {
   }
 
   private async storeCover(
-    projectId: number,
+    projectId: string,
     file: Express.Multer.File | DownloadedFile,
     metadata: Record<string, string> = {},
   ): Promise<void> {
@@ -320,7 +339,7 @@ export class ProjectService {
   }
 
   private async storeClip(
-    projectId: number,
+    projectId: string,
     file: Express.Multer.File | DownloadedFile,
     metadata: Record<string, string> = {},
   ): Promise<string> {
@@ -336,20 +355,20 @@ export class ProjectService {
     return this.clipUrlAt(projectId, clipVersion);
   }
 
-  async uploadImage(id: number, file: Express.Multer.File, uploaderId: number): Promise<void> {
+  async uploadImage(id: string, file: Express.Multer.File, uploaderId: string): Promise<void> {
     const project = await this.findOne(id);
     // A cover is public the moment it is stored, which is what withholding a game takes away.
     if (project.hiddenAt) {
       throw new ProjectHiddenException();
     }
     await this.storeCover(id, file, {
-      uploadedBy: uploaderId.toString(),
-      projectId: id.toString(),
+      uploadedBy: uploaderId,
+      projectId: id,
     });
   }
 
   /** Gives `targetProjectId` the cover of `sourceProjectId`, when the source has one. */
-  async copyCover(sourceProjectId: number, targetProjectId: number): Promise<void> {
+  async copyCover(sourceProjectId: string, targetProjectId: string): Promise<void> {
     const sourceCover = projectKeys.cover(sourceProjectId);
     if (await this.s3Service.fileExists(sourceCover)) {
       await this.storeCover(
@@ -360,7 +379,7 @@ export class ProjectService {
   }
 
   /** Stores the clip of a project over the one it has, and answers its address. */
-  async uploadClip(id: number, file: Express.Multer.File, uploaderId: number): Promise<string> {
+  async uploadClip(id: string, file: Express.Multer.File, uploaderId: string): Promise<string> {
     const project = await this.requireProject(id, { hiddenAt: true });
     // A clip is public the moment it is stored, which is what withholding a game takes away.
     if (project.hiddenAt) {
@@ -368,13 +387,13 @@ export class ProjectService {
     }
 
     return this.storeClip(id, file, {
-      uploadedBy: uploaderId.toString(),
-      projectId: id.toString(),
+      uploadedBy: uploaderId,
+      projectId: id,
     });
   }
 
   /** Gives `targetProjectId` the clip of `sourceProjectId`, when the source has one. */
-  async copyClip(sourceProjectId: number, targetProjectId: number): Promise<void> {
+  async copyClip(sourceProjectId: string, targetProjectId: string): Promise<void> {
     const sourceClip = projectKeys.clip(sourceProjectId);
     if (await this.s3Service.fileExists(sourceClip)) {
       await this.storeClip(targetProjectId, await this.s3Service.downloadFile({ key: sourceClip }));
@@ -385,7 +404,7 @@ export class ProjectService {
    * The row first: an object left in the store is dropped with the project or replaced by the
    * next clip, while a row still naming a deleted object would hand out an address that fails.
    */
-  async removeClip(id: number): Promise<void> {
+  async removeClip(id: string): Promise<void> {
     const project = await this.requireProject(id, { hiddenAt: true });
     // Its clip is held out of reach for a restore to put back, where this removal would not find it.
     if (project.hiddenAt) {
@@ -398,14 +417,14 @@ export class ProjectService {
   }
 
   /** The versioned CDN URL of the cover, or null when the project has none. */
-  async coverUrl(projectId: number): Promise<string | null> {
+  async coverUrl(projectId: string): Promise<string | null> {
     const key = projectKeys.cover(projectId);
     const head = await this.s3Service.getFileMetadataOrNull(key);
 
     return head ? versionedUrl(this.edgeService.getCDNUrl(key), head.ETag) : null;
   }
 
-  private async removeStoredContent(id: number): Promise<void> {
+  private async removeStoredContent(id: string): Promise<void> {
     try {
       const { keys, prefixes } = projectKeys.owned(id);
       for (const key of keys) {
@@ -432,7 +451,7 @@ export class ProjectService {
    * the deletion must exist exactly when the project is gone.
    */
   async remove(
-    id: number,
+    id: string,
     alongside?: (tx: Prisma.TransactionClient) => Promise<void>,
   ): Promise<void> {
     await this.findOne(id);
@@ -453,12 +472,12 @@ export class ProjectService {
 
   private async findUserByIdentifier(
     dto: AddCollaboratorDto | RemoveCollaboratorDto,
-  ): Promise<{ id: number }> {
-    let user: { id: number } | null = null;
+  ): Promise<{ id: string }> {
+    let user: { id: string } | null = null;
     let identifier: string;
 
     if (dto.userId) {
-      identifier = dto.userId.toString();
+      identifier = dto.userId;
       user = await this.prisma.user.findUnique({
         where: { id: dto.userId },
         select: { id: true },
@@ -486,7 +505,7 @@ export class ProjectService {
     return user;
   }
 
-  async addCollaborator(id: number, addCollaboratorDto: AddCollaboratorDto): Promise<ProjectEx> {
+  async addCollaborator(id: string, addCollaboratorDto: AddCollaboratorDto): Promise<ProjectEx> {
     const user = await this.findUserByIdentifier(addCollaboratorDto);
     const project = await this.findOne(id);
 
@@ -517,7 +536,7 @@ export class ProjectService {
   }
 
   async removeCollaborator(
-    id: number,
+    id: string,
     removeCollaboratorDto: RemoveCollaboratorDto,
   ): Promise<ProjectEx> {
     const user = await this.findUserByIdentifier(removeCollaboratorDto);

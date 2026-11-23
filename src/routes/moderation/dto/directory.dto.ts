@@ -1,8 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform, Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 
 import { ROLE_NAMES, RoleName } from '../../../auth/access/roles';
+import { IsId } from '../../../common/decorators/is-id';
 import { PaginationQueryDto } from '../../../common/dto/pagination-query.dto';
 import { trimmed } from '../../reports/dto/report-transforms';
 import { SuspensionDto } from '../../user/dto/suspension.dto';
@@ -92,8 +93,8 @@ export class AccountDirectoryQueryDto extends DirectoryQueryDto {
 
 /** A game with where it stands, published or not. */
 export class ModerationProjectDto {
-  @ApiProperty()
-  id!: number;
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
 
   @ApiProperty()
   name!: string;
@@ -146,8 +147,8 @@ export class ModerationProjectDetailDto extends ModerationProjectDto {
   @ApiProperty({ type: [ModerationAccountRefDto] })
   collaborators!: ModerationAccountRefDto[];
 
-  @ApiPropertyOptional({ type: Number, nullable: true })
-  forkedFromId!: number | null;
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
+  forkedFromId!: string | null;
 
   @ApiProperty({ description: 'Whether the cover route has an image to serve' })
   hasCover!: boolean;
@@ -176,18 +177,16 @@ export class ProjectDirectoryQueryDto extends DirectoryQueryDto {
   @IsIn(PROJECT_STATES)
   state?: ProjectModerationState;
 
-  @ApiPropertyOptional({ description: 'Only the games this account created' })
+  @ApiPropertyOptional({ format: 'uuid', description: 'Only the games this account created' })
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  creatorId?: number;
+  @IsId()
+  creatorId?: string;
 }
 
 /** A comment as staff read it: its text stays readable while it is hidden from everyone else. */
 export class ModerationCommentDto {
-  @ApiProperty()
-  id!: number;
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
 
   @ApiProperty({ description: 'Empty once a user deleted the comment' })
   content!: string;
@@ -195,14 +194,19 @@ export class ModerationCommentDto {
   @ApiProperty({ type: ModerationAccountRefDto })
   author!: ModerationAccountRefDto;
 
-  @ApiProperty()
-  projectId!: number;
+  @ApiProperty({ format: 'uuid' })
+  projectId!: string;
 
   @ApiProperty()
   projectName!: string;
 
-  @ApiPropertyOptional({ type: Number, nullable: true, description: 'The comment it replies to' })
-  parentId!: number | null;
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description: 'The comment it replies to',
+  })
+  parentId!: string | null;
 
   @ApiProperty({ enum: COMMENT_STATES, enumName: 'CommentModerationState' })
   state!: CommentModerationState;
@@ -242,19 +246,15 @@ export class ModerationCommentListDto {
 }
 
 export class CommentDirectoryQueryDto extends DirectoryQueryDto {
-  @ApiPropertyOptional({ description: 'Only the comments on this game' })
+  @ApiPropertyOptional({ format: 'uuid', description: 'Only the comments on this game' })
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  projectId?: number;
+  @IsId()
+  projectId?: string;
 
-  @ApiPropertyOptional({ description: 'Only the comments of this account' })
+  @ApiPropertyOptional({ format: 'uuid', description: 'Only the comments of this account' })
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  authorId?: number;
+  @IsId()
+  authorId?: string;
 
   @ApiPropertyOptional({ enum: COMMENT_STATES, enumName: 'CommentModerationState' })
   @IsOptional()

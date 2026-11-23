@@ -7,7 +7,7 @@ import { DiscordMessage } from '../../discord/discord.types';
 
 export interface CaseNotice {
   targetType: ModerationTargetType;
-  targetId: number;
+  targetId: string;
   reason: ModerationReason;
 }
 
@@ -55,13 +55,13 @@ export class FlagNotifier {
           title: `A ${TARGETS[notice.targetType]} was reported`,
           color: 0xff8a1f,
           fields: [{ name: 'Reason', value: REASONS[notice.reason], inline: true }],
-          footer: { text: `${notice.targetType} #${String(notice.targetId)}` },
+          footer: { text: `${notice.targetType} #${notice.targetId}` },
           timestamp: new Date().toISOString(),
           ...(this.adminUrl
             ? {
                 url: `${this.adminUrl.replace(/\/+$/, '')}/moderation/cases/${
                   notice.targetType
-                }/${String(notice.targetId)}`,
+                }/${notice.targetId}`,
               }
             : {}),
         },

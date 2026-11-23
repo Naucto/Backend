@@ -15,6 +15,7 @@ import {
   PrismaClient,
 } from '@prisma/client';
 
+import { NO_RELEASE_ID } from '../src/common/ids';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AnalyticsFinalizeService } from '../src/routes/analytics/analytics-finalize.service';
 
@@ -348,7 +349,7 @@ const POSTS: Post[] = [
 const POST_DECAY_HOURS = 8;
 
 interface Game {
-  id: number;
+  id: string;
   name: string;
   publishedAt: Date;
   weight: number;
@@ -365,7 +366,7 @@ interface Visitor {
   screen: string;
   language: string;
   post: Post | null;
-  userId: number | null;
+  userId: string | null;
   linkedAt: Date | null;
   /** An account of this browser that has created a project, and published one. */
   creator: boolean;
@@ -373,7 +374,7 @@ interface Visitor {
 }
 
 interface Account {
-  id: number;
+  id: string;
   username: string;
   createdAt: Date;
 }
@@ -539,8 +540,8 @@ export async function seedAnalytics(prisma: PrismaClient): Promise<string> {
   const fact = (
     type: AnalyticsFactType,
     at: Date,
-    actor: number | null,
-    project: number | null,
+    actor: string | null,
+    project: string | null,
   ): void => {
     factCount += 1;
     facts.push({
@@ -692,7 +693,7 @@ export async function seedAnalytics(prisma: PrismaClient): Promise<string> {
       const source = chance(forCreators ? 0.8 : 0.3)
         ? (promoted ?? chooseGame(at, undefined))
         : undefined;
-      let projectId: number | null = null;
+      let projectId: string | null = null;
       if (source && source.publishedAt <= at) {
         const fork = await prisma.project.create({
           data: {
@@ -784,10 +785,10 @@ export async function seedAnalytics(prisma: PrismaClient): Promise<string> {
     const add = (
       minute: Date,
       state: AnalyticsLiveState,
-      releaseId: number,
+      releaseId: string,
       started: boolean,
     ): void => {
-      const key = `${minute.toISOString()}|${state}|${String(signedIn)}|${String(releaseId)}|${consent}`;
+      const key = `${minute.toISOString()}|${state}|${String(signedIn)}|${releaseId}|${consent}`;
       const row = tallies.get(key) ?? {
         minute,
         state,
@@ -821,7 +822,7 @@ export async function seedAnalytics(prisma: PrismaClient): Promise<string> {
       const minute = new Date(start.getTime() + offset * MINUTE_MS);
       const game = offset > 0 && chance(0.35) ? chooseGame(minute, promoted) : undefined;
       if (!game) {
-        add(minute, AnalyticsLiveState.BROWSING, 0, false);
+        add(minute, AnalyticsLiveState.BROWSING, NO_RELEASE_ID, false);
         offset += 1;
         continue;
       }
@@ -1057,7 +1058,7 @@ export async function seedAnalytics(prisma: PrismaClient): Promise<string> {
   await inBatches(
     visitors
       .filter((visitor) => visitor.userId !== null)
-      .map((visitor) => ({ visitorId: visitor.id, userId: visitor.userId as number })),
+      .map((visitor) => ({ visitorId: visitor.id, userId: visitor.userId as string })),
     (batch) => prisma.analyticsProjectionWork.createMany({ data: batch, skipDuplicates: true }),
   );
 

@@ -6,18 +6,18 @@ export const CLIENT_PRESENCE_KINDS = ['IDLE', 'PLAYING'] as const;
 
 export type PresenceSetInput = {
   kind: PresenceKind;
-  releaseId?: number | null;
-  projectId?: number | null;
+  releaseId?: string | null;
+  projectId?: string | null;
 };
 
 export type PresenceState = {
-  userId: number;
+  userId: string;
   // Identity, so a presence row can name someone without a second lookup.
   username: string;
   nickname: string | null;
   kind: PresenceKind;
-  releaseId: number | null;
-  projectId: number | null;
+  releaseId: string | null;
+  projectId: string | null;
   sessionId: string | null;
   title: string | null;
   // Cover of the game being played, built or hosted.
@@ -31,7 +31,7 @@ export type PresenceState = {
 // Contract the notifications websocket server uses to drive presence without
 // depending on the presence module (which depends on notifications).
 export interface PresenceSocketHandler {
-  onSocketOpen(userId: number, connectionId: number): Promise<PresenceState[]>;
-  onSocketClose(userId: number, connectionId: number): Promise<void>;
-  onSet(userId: number, connectionId: number, input: PresenceSetInput): Promise<void>;
+  onSocketOpen(userId: string, connectionId: number): Promise<PresenceState[]>;
+  onSocketClose(userId: string, connectionId: number): Promise<void>;
+  onSet(userId: string, connectionId: number, input: PresenceSetInput): Promise<void>;
 }

@@ -3,8 +3,8 @@ import { ApiProperty } from '@nestjs/swagger';
 import { PRESENCE_KINDS, PresenceKind, PresenceState } from '../presence.types';
 
 export class PresenceDto implements PresenceState {
-  @ApiProperty({ example: 1 })
-  userId!: number;
+  @ApiProperty({ format: 'uuid', example: '3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b' })
+  userId!: string;
 
   @ApiProperty({
     example: 'louis',
@@ -19,18 +19,20 @@ export class PresenceDto implements PresenceState {
   kind!: PresenceKind;
 
   @ApiProperty({
-    type: Number,
+    type: String,
+    format: 'uuid',
     nullable: true,
     description: 'Released project being played (PLAYING)',
   })
-  releaseId!: number | null;
+  releaseId!: string | null;
 
   @ApiProperty({
-    type: Number,
+    type: String,
+    format: 'uuid',
     nullable: true,
     description: 'Project being edited (BUILDING) or hosted (HOSTING)',
   })
-  projectId!: number | null;
+  projectId!: string | null;
 
   @ApiProperty({ type: String, nullable: true, description: 'Game session UUID (HOSTING)' })
   sessionId!: string | null;

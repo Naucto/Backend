@@ -42,8 +42,8 @@ const OWNER_HISTORY_LIMIT = 10;
 /** The flags on one target, counted. Reasons come back as text: Postgres has no array of the enum to hand over. */
 interface CaseRow {
   targetType: ModerationTargetType;
-  targetId: number;
-  targetOwnerId: number | null;
+  targetId: string;
+  targetOwnerId: string | null;
   openFlags: number;
   totalFlags: number;
   openReasons: string[] | null;
@@ -109,7 +109,7 @@ export class CaseService {
   async detail(
     staff: StaffActor,
     targetType: ModerationTargetType,
-    targetId: number,
+    targetId: string,
   ): Promise<CaseDetailDto> {
     const [row] = await this.prisma.$queryRaw<CaseRow[]>`
       ${this.grouped({ view: 'ALL' }, { targetType, targetId })}`;
@@ -182,7 +182,7 @@ export class CaseService {
   async dismiss(
     staff: StaffActor,
     targetType: ModerationTargetType,
-    targetId: number,
+    targetId: string,
     note: InternalNoteDto,
   ): Promise<CaseDetailDto> {
     const view = await this.targets.view(targetType, targetId);
@@ -228,24 +228,27 @@ export class CaseService {
     return this.detail(staff, targetType, targetId);
   }
 
-  /** Every target that was flagged, with its flags counted, narrowed as asked. */
+  /**
+   * Every target that was flagged, with its flags counted, narrowed as asked. The owner is
+   * aggregated as text: Postgres has no MAX over `uuid`.
+   */
   private grouped(
     query: Pick<CaseQueryDto, 'view' | 'targetType' | 'reason'>,
-    only?: { targetType: ModerationTargetType; targetId: number },
+    only?: { targetType: ModerationTargetType; targetId: string },
   ): Prisma.Sql {
     const targetType = only?.targetType ?? query.targetType;
     const filters = [
       targetType
         ? Prisma.sql`"targetType" = ${targetType}::"ModerationTargetType"`
         : Prisma.sql`TRUE`,
-      only ? Prisma.sql`"targetId" = ${only.targetId}` : Prisma.sql`TRUE`,
+      only ? Prisma.sql`"targetId" = ${only.targetId}::uuid` : Prisma.sql`TRUE`,
       query.reason ? Prisma.sql`"reason" = ${query.reason}::"ModerationReason"` : Prisma.sql`TRUE`,
     ];
     return Prisma.sql`
       SELECT
         "targetType",
         "targetId",
-        MAX("targetOwnerId") AS "targetOwnerId",
+        MAX("targetOwnerId"::text)::uuid AS "targetOwnerId",
         COUNT(*) FILTER (WHERE status = 'OPEN')::int AS "openFlags",
         COUNT(*)::int AS "totalFlags",
         ARRAY_AGG(DISTINCT "reason"::text) FILTER (WHERE status = 'OPEN') AS "openReasons",
@@ -312,7 +315,7 @@ export class CaseService {
     };
   }
 
-  private async suspended(accountId: number): Promise<boolean> {
+  private async suspended(accountId: string): Promise<boolean> {
     const view = await this.targets.view(ModerationTargetType.USER, accountId);
     return view.state === 'SUSPENDED';
   }

@@ -25,9 +25,9 @@ export class WorkSessionController {
     type: JoinWorkSessionDto,
   })
   @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: 'Bad request.' })
-  @ApiParam({ name: 'id', type: 'number', description: 'Project ID' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid', description: 'Project ID' })
   async join(
-    @ProjectId() projectId: number,
+    @ProjectId() projectId: string,
     @Req() req: RequestWithUser,
   ): Promise<JoinWorkSessionDto> {
     return await this.workSessionService.join(projectId, req.user);
@@ -42,8 +42,8 @@ export class WorkSessionController {
     description: 'Successfully left the work session.',
   })
   @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: 'Bad request.' })
-  @ApiParam({ name: 'id', type: 'number', description: 'Project ID' })
-  async leave(@ProjectId() projectId: number, @Req() req: RequestWithUser): Promise<void> {
+  @ApiParam({ name: 'id', type: String, format: 'uuid', description: 'Project ID' })
+  async leave(@ProjectId() projectId: string, @Req() req: RequestWithUser): Promise<void> {
     return await this.workSessionService.leave(projectId, req.user);
   }
 
@@ -55,8 +55,8 @@ export class WorkSessionController {
     description: 'The user was removed from the work session.',
   })
   @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: 'Bad request.' })
-  @ApiParam({ name: 'id', type: 'number', description: 'Project ID' })
-  async kick(@ProjectId() projectId: number, @Body() kick: KickWorkSessionDto): Promise<void> {
+  @ApiParam({ name: 'id', type: String, format: 'uuid', description: 'Project ID' })
+  async kick(@ProjectId() projectId: string, @Body() kick: KickWorkSessionDto): Promise<void> {
     return await this.workSessionService.kick(projectId, kick.userId);
   }
 
@@ -71,8 +71,8 @@ export class WorkSessionController {
     status: HttpStatus.NOT_FOUND,
     description: 'Work session not found.',
   })
-  @ApiParam({ name: 'id', type: 'number', description: 'Project ID' })
-  async getInfo(@ProjectId() projectId: number): Promise<FetchWorkSessionDto> {
+  @ApiParam({ name: 'id', type: String, format: 'uuid', description: 'Project ID' })
+  async getInfo(@ProjectId() projectId: string): Promise<FetchWorkSessionDto> {
     return await this.workSessionService.getInfo(projectId);
   }
 }

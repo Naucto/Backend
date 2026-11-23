@@ -20,6 +20,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
+import { compareIds } from '../src/common/ids';
 import { getOptionalEnv } from '../src/config/env';
 import { databaseUrl } from '../src/prisma/database-url';
 import { DiskStyleDto } from '../src/routes/project/dto/disk-style.dto';
@@ -49,10 +50,7 @@ interface SeedUser {
   friendCode: string;
 }
 
-/**
- * Names are the design's own cast, so a screenshot lines up with the artboard. The ids they land on
- * drive the identity colour, which is why the order matters and the list is not alphabetical.
- */
+/** Names are the design's own cast, so a screenshot lines up with the artboard. */
 const USERS: SeedUser[] = [
   {
     username: 'alexis',
@@ -153,9 +151,9 @@ function assertLocalDatabase(url: string): void {
   }
 }
 
-async function seedUsers(): Promise<Map<string, number>> {
+async function seedUsers(): Promise<Map<string, string>> {
   const password = await bcrypt.hash(DEV_PASSWORD, 10);
-  const ids = new Map<string, number>();
+  const ids = new Map<string, string>();
   for (const user of USERS) {
     const row = await prisma.user.upsert({
       where: { email: `${user.username}@naucto.local` },
@@ -181,14 +179,14 @@ async function seedUsers(): Promise<Map<string, number>> {
   return ids;
 }
 
-async function seedSocialGraph(ids: Map<string, number>, alexis: number): Promise<void> {
+async function seedSocialGraph(ids: Map<string, string>, alexis: string): Promise<void> {
   for (const name of FRIENDS_OF_ALEXIS) {
     const other = ids.get(name);
     if (other === undefined) {
       continue;
     }
-    // FriendsService stores the pair with userAId < userBId; match that or lookups miss.
-    const [userAId, userBId] = alexis < other ? [alexis, other] : [other, alexis];
+    // FriendsService stores the pair in the order of `compareIds`; match that or lookups miss.
+    const [userAId, userBId] = compareIds(alexis, other) < 0 ? [alexis, other] : [other, alexis];
     await prisma.friendship.upsert({
       where: { userAId_userBId: { userAId, userBId } },
       update: {},
@@ -217,8 +215,8 @@ async function seedSocialGraph(ids: Map<string, number>, alexis: number): Promis
  * re-run refreshes its times instead of inserting a duplicate.
  */
 async function seedGameSessions(
-  ids: Map<string, number>,
-  alexis: number,
+  ids: Map<string, string>,
+  alexis: string,
 ): Promise<{ total: number; made: number } | null> {
   const projects = await prisma.project.findMany({
     select: { id: true, name: true },
@@ -334,7 +332,7 @@ async function main(): Promise<void> {
   console.log(`seeded ${String(ids.size)} people`);
   console.log(`  sign in as any of them: <name>@naucto.local / ${DEV_PASSWORD}`);
   console.log(
-    `  alexis (id ${String(alexis)}) has ${String(FRIENDS_OF_ALEXIS.length)} friends and ` +
+    `  alexis (id ${alexis}) has ${String(FRIENDS_OF_ALEXIS.length)} friends and ` +
       `${String(PENDING_TO_ALEXIS.length)} pending requests`,
   );
   console.log(

@@ -36,8 +36,8 @@ export const HUB_REASONS = [
 export type HubReason = (typeof HUB_REASONS)[number];
 
 export class HubReasonGameDto {
-  @ApiProperty({ example: 42 })
-  id!: number;
+  @ApiProperty({ format: 'uuid', example: '7c9e6679-7425-40de-944b-e07fc1f90ae7' })
+  id!: string;
 
   @ApiProperty({ example: 'Moon Lander' })
   name!: string;
