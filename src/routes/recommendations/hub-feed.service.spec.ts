@@ -1,6 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
 
 import { aProject } from '../../../test/project-mocks';
+import { uuidOf } from '../../../test/uuid';
+import { NO_RELEASE_ID } from '../../common/ids';
 import { PresenceService } from '../../presence/presence.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CollectionsService } from '../collections/collections.service';
@@ -14,18 +16,22 @@ import { HubSnapshotService } from './hub-snapshot.service';
 import { RecommendationsService } from './recommendations.service';
 
 const NOW = new Date('2026-11-20T12:00:00Z');
-const ME = 1;
+const ME = uuidOf(1);
 
 /** A game on the hub as the project module hands it over, private fields included. */
 const release = (id: number, overrides: Partial<ReleaseProject> = {}): ReleaseProject => ({
-  ...aProject({ id, name: `Game ${id}`, publishedAt: new Date('2026-10-01T00:00:00Z') }),
+  ...aProject({
+    id: uuidOf(id),
+    name: `Game ${id}`,
+    publishedAt: new Date('2026-10-01T00:00:00Z'),
+  }),
   tags: [],
   contentSize: { code: 12 },
   releaseContentHash: 'hash',
   releaseRevision: 3,
   commentCount: 0,
   forkCount: 0,
-  coverUrl: `https://cdn.test/projects/${id}/image?v=1`,
+  coverUrl: `https://cdn.test/projects/${uuidOf(id)}/image?v=1`,
   clipUrl: null,
   disk: null,
   ...overrides,
@@ -37,7 +43,7 @@ const collection = (index: number, gameCount = 5): CollectionPreviewDto => ({
   title: `Collection ${index}`,
   description: null,
   visibility: 'PUBLIC',
-  owner: { id: 500 + index, username: `owner${index}` },
+  owner: { id: uuidOf(500 + index), username: `owner${index}` },
   gameCount,
   createdAt: NOW,
   updatedAt: NOW,
@@ -47,9 +53,12 @@ const collection = (index: number, gameCount = 5): CollectionPreviewDto => ({
 const range = (from: number, to: number): number[] =>
   Array.from({ length: to - from + 1 }, (_, index) => from + index);
 
+const ids = (...numbers: number[]): string[] => numbers.map(uuidOf);
+const idRange = (from: number, to: number): string[] => ids(...range(from, to));
+
 describe('HubFeedService', () => {
   /** The games on the hub; an id missing from it reads as a game that left. */
-  let onHub: Map<number, ReleaseProject>;
+  let onHub: Map<string, ReleaseProject>;
   let payload: HubSnapshotPayload;
 
   const prisma = {
@@ -70,14 +79,12 @@ describe('HubFeedService', () => {
   let service: HubFeedService;
 
   /** What friends played lately, as the grouping by game and friend answers it. */
-  const friendsPlayed = (
-    ...rows: [releaseId: number, userId: number, activeMs?: bigint][]
-  ): void => {
+  const friendsPlayed = (...rows: [release: number, user: number, activeMs?: bigint][]): void => {
     prisma.analyticsUserDaily.groupBy.mockImplementation(async ({ by }: { by: string[] }) =>
       by.includes('userId')
-        ? rows.map(([releaseId, userId, activeMs]) => ({
-            releaseId,
-            userId,
+        ? rows.map(([played, user, activeMs]) => ({
+            releaseId: uuidOf(played),
+            userId: uuidOf(user),
             _sum: { activeMs: activeMs ?? 60_000n },
           }))
         : [],
@@ -86,24 +93,24 @@ describe('HubFeedService', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
-    onHub = new Map(range(1, 60).map((id) => [id, release(id)]));
+    onHub = new Map(range(1, 60).map((id) => [uuidOf(id), release(id)]));
     payload = {
-      popular: { total: 60, games: range(1, 30) },
-      trending: { total: 12, games: range(31, 42) },
-      rising: range(51, 60),
+      popular: { total: 60, games: idRange(1, 30) },
+      trending: { total: 12, games: idRange(31, 42) },
+      rising: idRange(51, 60),
       tags: [
-        { tag: 'arcade', total: 4, games: [3, 33, 35, 52] },
-        { tag: 'puzzle', total: 3, games: [5, 6, 7] },
+        { tag: 'arcade', total: 4, games: ids(3, 33, 35, 52) },
+        { tag: 'puzzle', total: 3, games: ids(5, 6, 7) },
       ],
       collections: { total: 0, ids: [] },
     };
     listed = [];
-    collections.listedByIds.mockImplementation(async (ids: string[]) =>
-      ids.flatMap((id) => listed.find((one) => one.id === id) ?? []),
+    collections.listedByIds.mockImplementation(async (asked: string[]) =>
+      asked.flatMap((id) => listed.find((one) => one.id === id) ?? []),
     );
     snapshots.today.mockImplementation(async () => ({ day: '2026-11-20', payload }));
-    hubService.fetchReleasesByIds.mockImplementation(async (ids: number[]) =>
-      ids.flatMap((id) => onHub.get(id) ?? []),
+    hubService.fetchReleasesByIds.mockImplementation(async (asked: string[]) =>
+      asked.flatMap((id) => onHub.get(id) ?? []),
     );
     hubService.fetchLastEdited.mockResolvedValue(null);
     recommendations.getCurrent.mockResolvedValue(null);
@@ -123,7 +130,7 @@ describe('HubFeedService', () => {
     );
   });
 
-  const heroOf = async (viewer: number | null): Promise<[string, number][]> =>
+  const heroOf = async (viewer: string | null): Promise<[string, string][]> =>
     (await service.feed(viewer, NOW)).hero.map((slot) => [slot.reason, slot.game.id]);
 
   describe('feed, signed out', () => {
@@ -131,39 +138,39 @@ describe('HubFeedService', () => {
       recommendations.getCurrent.mockResolvedValue({ project: release(9) });
 
       await expect(heroOf(null)).resolves.toEqual([
-        ['GAME_OF_THE_WEEK', 9],
-        ['TRENDING', 31],
-        ['TRENDING', 32],
-        ['NEW_AND_RISING', 51],
+        ['GAME_OF_THE_WEEK', uuidOf(9)],
+        ['TRENDING', uuidOf(31)],
+        ['TRENDING', uuidOf(32)],
+        ['NEW_AND_RISING', uuidOf(51)],
       ]);
     });
 
     it('never shows a game twice in the hero', async () => {
       recommendations.getCurrent.mockResolvedValue({ project: release(31) });
-      payload.rising = [32, 33, 55];
+      payload.rising = ids(32, 33, 55);
 
       await expect(heroOf(null)).resolves.toEqual([
-        ['GAME_OF_THE_WEEK', 31],
-        ['TRENDING', 32],
-        ['TRENDING', 33],
-        ['NEW_AND_RISING', 55],
+        ['GAME_OF_THE_WEEK', uuidOf(31)],
+        ['TRENDING', uuidOf(32)],
+        ['TRENDING', uuidOf(33)],
+        ['NEW_AND_RISING', uuidOf(55)],
       ]);
     });
 
     it('fills the slot of a week without a pick with the next trending game', async () => {
       await expect(heroOf(null)).resolves.toEqual([
-        ['TRENDING', 31],
-        ['TRENDING', 32],
-        ['TRENDING', 33],
-        ['NEW_AND_RISING', 51],
+        ['TRENDING', uuidOf(31)],
+        ['TRENDING', uuidOf(32)],
+        ['TRENDING', uuidOf(33)],
+        ['NEW_AND_RISING', uuidOf(51)],
       ]);
     });
 
     it('stacks fewer games rather than repeat one on a nearly empty hub', async () => {
-      payload.trending = { total: 1, games: [31] };
-      payload.rising = [31];
+      payload.trending = { total: 1, games: ids(31) };
+      payload.rising = ids(31);
 
-      await expect(heroOf(null)).resolves.toEqual([['TRENDING', 31]]);
+      await expect(heroOf(null)).resolves.toEqual([['TRENDING', uuidOf(31)]]);
     });
 
     it('opens on popular then trending, a page each, and names the tag shelves to fetch', async () => {
@@ -174,7 +181,7 @@ describe('HubFeedService', () => {
         ['popular', 'POPULAR', 60],
         ['trending', 'TRENDING', 12],
       ]);
-      expect(feed.shelves[0]?.games.map((game) => game.id)).toEqual(range(1, 24));
+      expect(feed.shelves[0]?.games.map((game) => game.id)).toEqual(idRange(1, 24));
       expect(feed.more).toEqual(['tag:arcade', 'tag:puzzle']);
     });
 
@@ -188,12 +195,12 @@ describe('HubFeedService', () => {
 
     it('leaves out a shelf whose games all left the hub since the day was drawn', async () => {
       payload.trending.games.forEach((id) => onHub.delete(id));
-      onHub.delete(2);
+      onHub.delete(uuidOf(2));
 
       const feed = await service.feed(null, NOW);
 
       expect(feed.shelves.map((shelf) => shelf.key)).toEqual(['popular']);
-      expect(feed.shelves[0]?.games.map((game) => game.id)).not.toContain(2);
+      expect(feed.shelves[0]?.games.map((game) => game.id)).not.toContain(uuidOf(2));
     });
 
     describe('collections', () => {
@@ -293,20 +300,20 @@ describe('HubFeedService', () => {
 
     it('hands out the disk and the clip a game was given, and none for a game without', async () => {
       onHub.set(
-        1,
+        uuidOf(1),
         release(1, {
           disk: { color: '#ffd100', finish: 'gold' },
-          clipUrl: 'https://cdn.test/projects/1/clip?v=2',
+          clipUrl: `https://cdn.test/projects/${uuidOf(1)}/clip?v=2`,
         }),
       );
 
       const [popular] = (await service.feed(null, NOW)).shelves;
 
-      expect(popular?.games.find((game) => game.id === 1)).toMatchObject({
+      expect(popular?.games.find((game) => game.id === uuidOf(1))).toMatchObject({
         disk: { color: '#ffd100', finish: 'gold' },
-        clipUrl: 'https://cdn.test/projects/1/clip?v=2',
+        clipUrl: `https://cdn.test/projects/${uuidOf(1)}/clip?v=2`,
       });
-      expect(popular?.games.find((game) => game.id === 2)).toMatchObject({
+      expect(popular?.games.find((game) => game.id === uuidOf(2))).toMatchObject({
         disk: null,
         clipUrl: null,
       });
@@ -319,36 +326,38 @@ describe('HubFeedService', () => {
 
       const hero = await heroOf(ME);
 
-      expect(hero[1]).toEqual(['CONTINUE', 77]);
+      expect(hero[1]).toEqual(['CONTINUE', uuidOf(77)]);
       expect(hubService.fetchLastEdited).toHaveBeenCalledWith(ME);
     });
 
     it('puts what friends play fourth and on a shelf of its own, the most shared first', async () => {
-      friendsService.friendIdsOf.mockResolvedValue([2, 3, 4]);
+      friendsService.friendIdsOf.mockResolvedValue(ids(2, 3, 4));
       friendsPlayed([12, 2], [14, 2], [14, 3], [14, 4], [12, 3], [16, 4, 999_000n]);
 
       const feed = await service.feed(ME, NOW);
 
-      expect(feed.hero[3]).toMatchObject({ reason: 'FRIENDS_PLAY', game: { id: 14 } });
+      expect(feed.hero[3]).toMatchObject({ reason: 'FRIENDS_PLAY', game: { id: uuidOf(14) } });
       expect(feed.shelves.map((shelf) => shelf.key)).toEqual(['popular', 'friends', 'trending']);
       expect(feed.shelves[1]).toMatchObject({ kind: 'FRIENDS', total: 3 });
-      expect(feed.shelves[1]?.games.map((game) => game.id)).toEqual([14, 12, 16]);
+      expect(feed.shelves[1]?.games.map((game) => game.id)).toEqual(ids(14, 12, 16));
     });
 
     it('puts first the games friends are in right now', async () => {
-      friendsService.friendIdsOf.mockResolvedValue([2, 3]);
+      friendsService.friendIdsOf.mockResolvedValue(ids(2, 3));
       friendsPlayed([14, 2], [14, 3]);
-      presence.get.mockImplementation((userId: number) =>
-        userId === 3 ? { kind: 'PLAYING', releaseId: 20 } : { kind: 'BUILDING', releaseId: null },
+      presence.get.mockImplementation((userId: string) =>
+        userId === uuidOf(3)
+          ? { kind: 'PLAYING', releaseId: uuidOf(20) }
+          : { kind: 'BUILDING', releaseId: null },
       );
 
       const feed = await service.feed(ME, NOW);
 
-      expect(feed.shelves[1]?.games.map((game) => game.id)).toEqual([20, 14]);
+      expect(feed.shelves[1]?.games.map((game) => game.id)).toEqual(ids(20, 14));
     });
 
     it('reads the play history of friends only, over two weeks', async () => {
-      friendsService.friendIdsOf.mockResolvedValue([2, 3]);
+      friendsService.friendIdsOf.mockResolvedValue(ids(2, 3));
 
       await service.feed(ME, NOW);
 
@@ -357,8 +366,8 @@ describe('HubFeedService', () => {
         expect.objectContaining({
           by: ['releaseId', 'userId'],
           where: {
-            userId: { in: [2, 3] },
-            releaseId: { not: 0 },
+            userId: { in: ids(2, 3) },
+            releaseId: { not: NO_RELEASE_ID },
             day: { gte: new Date('2026-11-06T12:00:00Z') },
           },
         }),
@@ -366,7 +375,7 @@ describe('HubFeedService', () => {
     });
 
     it('shows no friends shelf when no friend has a play history, which only consent creates', async () => {
-      friendsService.friendIdsOf.mockResolvedValue([2, 3]);
+      friendsService.friendIdsOf.mockResolvedValue(ids(2, 3));
 
       const feed = await service.feed(ME, NOW);
 
@@ -375,12 +384,12 @@ describe('HubFeedService', () => {
     });
 
     describe('because you played', () => {
-      const iPlayedMost = (releaseId: number, opened: number[] = [releaseId]): void => {
+      const iPlayedMost = (most: number, opened: number[] = [most]): void => {
         prisma.analyticsUserDaily.groupBy.mockImplementation(async ({ by }: { by: string[] }) =>
-          by.includes('userId') ? [] : [{ releaseId, _sum: { activeMs: 500_000n } }],
+          by.includes('userId') ? [] : [{ releaseId: uuidOf(most), _sum: { activeMs: 500_000n } }],
         );
         prisma.analyticsUserDaily.findMany.mockResolvedValue(
-          opened.map((id) => ({ releaseId: id })),
+          opened.map((id) => ({ releaseId: uuidOf(id) })),
         );
       };
 
@@ -388,10 +397,10 @@ describe('HubFeedService', () => {
         // The first three slots filled otherwise, so only the first trending game is taken.
         recommendations.getCurrent.mockResolvedValue({ project: release(9) });
         hubService.fetchLastEdited.mockResolvedValue(release(77));
-        onHub.set(3, release(3, { name: 'Snake', tags: ['arcade', 'solo'] }));
-        onHub.set(33, release(33, { tags: ['arcade'] }));
-        onHub.set(35, release(35, { tags: ['solo', 'retro'] }));
-        onHub.set(36, release(36, { tags: ['puzzle'] }));
+        onHub.set(uuidOf(3), release(3, { name: 'Snake', tags: ['arcade', 'solo'] }));
+        onHub.set(uuidOf(33), release(33, { tags: ['arcade'] }));
+        onHub.set(uuidOf(35), release(35, { tags: ['solo', 'retro'] }));
+        onHub.set(uuidOf(36), release(36, { tags: ['puzzle'] }));
       });
 
       it('puts fourth a trending game sharing a tag with the game the reader played most', async () => {
@@ -401,8 +410,8 @@ describe('HubFeedService', () => {
 
         expect(feed.hero[3]).toEqual({
           reason: 'BECAUSE_YOU_PLAYED',
-          reasonGame: { id: 3, name: 'Snake' },
-          game: expect.objectContaining({ id: 33 }),
+          reasonGame: { id: uuidOf(3), name: 'Snake' },
+          game: expect.objectContaining({ id: uuidOf(33) }),
         });
       });
 
@@ -411,7 +420,10 @@ describe('HubFeedService', () => {
 
         const feed = await service.feed(ME, NOW);
 
-        expect(feed.hero[3]).toMatchObject({ reason: 'BECAUSE_YOU_PLAYED', game: { id: 35 } });
+        expect(feed.hero[3]).toMatchObject({
+          reason: 'BECAUSE_YOU_PLAYED',
+          game: { id: uuidOf(35) },
+        });
       });
 
       it('reads the history of the reader alone, over thirty days for the game played most', async () => {
@@ -424,35 +436,35 @@ describe('HubFeedService', () => {
             by: ['releaseId'],
             where: {
               userId: ME,
-              releaseId: { not: 0 },
+              releaseId: { not: NO_RELEASE_ID },
               day: { gte: new Date('2026-10-21T12:00:00Z') },
             },
             take: 1,
           }),
         );
         expect(prisma.analyticsUserDaily.findMany).toHaveBeenCalledWith(
-          expect.objectContaining({ where: { userId: ME, releaseId: { in: [33, 35] } } }),
+          expect.objectContaining({ where: { userId: ME, releaseId: { in: ids(33, 35) } } }),
         );
       });
 
       it('gives way to what friends play', async () => {
         iPlayedMost(3);
-        friendsService.friendIdsOf.mockResolvedValue([2]);
+        friendsService.friendIdsOf.mockResolvedValue(ids(2));
         prisma.analyticsUserDaily.groupBy.mockImplementation(async ({ by }: { by: string[] }) =>
           by.includes('userId')
-            ? [{ releaseId: 14, userId: 2, _sum: { activeMs: 1n } }]
-            : [{ releaseId: 3, _sum: { activeMs: 500_000n } }],
+            ? [{ releaseId: uuidOf(14), userId: uuidOf(2), _sum: { activeMs: 1n } }]
+            : [{ releaseId: uuidOf(3), _sum: { activeMs: 500_000n } }],
         );
 
         const feed = await service.feed(ME, NOW);
 
-        expect(feed.hero[3]).toMatchObject({ reason: 'FRIENDS_PLAY', game: { id: 14 } });
+        expect(feed.hero[3]).toMatchObject({ reason: 'FRIENDS_PLAY', game: { id: uuidOf(14) } });
       });
 
       it('falls back on a new game for a reader without a play history', async () => {
         const feed = await service.feed(ME, NOW);
 
-        expect(feed.hero[3]).toMatchObject({ reason: 'NEW_AND_RISING', game: { id: 51 } });
+        expect(feed.hero[3]).toMatchObject({ reason: 'NEW_AND_RISING', game: { id: uuidOf(51) } });
         expect(prisma.analyticsUserDaily.findMany).not.toHaveBeenCalled();
       });
 
@@ -465,7 +477,7 @@ describe('HubFeedService', () => {
       });
 
       it('falls back on a new game when no trending game shares a tag', async () => {
-        onHub.set(3, release(3, { tags: ['story'] }));
+        onHub.set(uuidOf(3), release(3, { tags: ['story'] }));
         iPlayedMost(3);
 
         const feed = await service.feed(ME, NOW);
@@ -484,7 +496,7 @@ describe('HubFeedService', () => {
         expect.objectContaining({ key: 'trending', kind: 'TRENDING', total: 12 }),
         expect.objectContaining({ key: 'tag:arcade', kind: 'TAG', tag: 'arcade', total: 4 }),
       ]);
-      expect(shelves[0]?.games.map((game) => game.id)).toEqual([5, 6, 7]);
+      expect(shelves[0]?.games.map((game) => game.id)).toEqual(ids(5, 6, 7));
       expect(shelves[1]).not.toHaveProperty('tag');
       expect(hubService.fetchReleasesByIds).toHaveBeenCalledTimes(1);
     });
@@ -496,7 +508,7 @@ describe('HubFeedService', () => {
     });
 
     it('answers the friends shelf to a reader who has one', async () => {
-      friendsService.friendIdsOf.mockResolvedValue([2]);
+      friendsService.friendIdsOf.mockResolvedValue(ids(2));
       friendsPlayed([14, 2]);
 
       const shelves = await service.shelves(['friends'], ME, NOW);
@@ -536,7 +548,7 @@ describe('HubFeedService', () => {
         page: 2,
         limit: 2,
       });
-      expect(result.games.map((game) => game.id)).toEqual([4, 8]);
+      expect(result.games.map((game) => game.id)).toEqual(ids(4, 8));
       expect(result.games[0]).not.toHaveProperty('releaseContentHash');
       expect(snapshots.today).not.toHaveBeenCalled();
     });
@@ -557,7 +569,7 @@ describe('HubFeedService', () => {
       const result = await service.shelfPage('trending', null, { page: 2, limit: 5 }, NOW);
 
       expect(result).toMatchObject({ key: 'trending', total: 12, page: 2, limit: 5 });
-      expect(result.games.map((game) => game.id)).toEqual(range(36, 40));
+      expect(result.games.map((game) => game.id)).toEqual(idRange(36, 40));
       expect(hubService.fetchPublishedGamesPaginated).not.toHaveBeenCalled();
     });
 
@@ -567,7 +579,7 @@ describe('HubFeedService', () => {
       expect(hubService.fetchPublishedGamesPaginated).toHaveBeenCalledWith(
         undefined,
         24,
-        { ids: range(31, 42) },
+        { ids: idRange(31, 42) },
         'name',
       );
     });

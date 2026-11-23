@@ -19,6 +19,8 @@ import { Readable, Writable } from 'stream';
 import request from 'supertest';
 
 import { withEnv } from '../../../test/env';
+import { uuidOf } from '../../../test/uuid';
+import { ACCESS_KEY } from '../../auth/access/access.decorators';
 import { ProjectCollaboratorGuard, ProjectCreatorGuard } from '../../auth/guards/project.guard';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AnalyticsFactService } from '../analytics/analytics-fact.service';
@@ -53,8 +55,8 @@ jest.mock('load-esm', () => ({
   }),
 }));
 
-const SIGNED_IN_USER = 7;
-const OWN_PROJECT = 12;
+const SIGNED_IN_USER = uuidOf(7);
+const OWN_PROJECT = uuidOf(12);
 
 const WEBM = Buffer.concat([Buffer.from('1a45dfa3', 'hex'), Buffer.from('webm clip')]);
 const MP4 = Buffer.concat([Buffer.alloc(4), Buffer.from('ftypisom'), Buffer.from('mp4 clip')]);
@@ -111,14 +113,14 @@ describe('project controllers', () => {
     });
     edge.getCDNUrl.mockImplementation((key: string) => `https://cdn.test/${key}`);
     // The signed-in user collaborates on, and created, one project only.
-    prisma.project.findUnique.mockImplementation(async ({ where }: { where: { id: number } }) =>
+    prisma.project.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) =>
       where.id === OWN_PROJECT
         ? {
             id: OWN_PROJECT,
             collaborators: [{ id: SIGNED_IN_USER }],
             creator: { id: SIGNED_IN_USER },
           }
-        : { id: where.id, collaborators: [], creator: { id: SIGNED_IN_USER + 1 } },
+        : { id: where.id, collaborators: [], creator: { id: uuidOf(8) } },
     );
 
     module = await Test.createTestingModule({
@@ -216,6 +218,16 @@ describe('project controllers', () => {
         .map(({ controller, name }) => `${controller.name}.${name}`);
 
       expect(lenient).toEqual([]);
+    });
+
+    it('reads an id in the lower case the database answers ids in', () => {
+      const context = {
+        switchToHttp: () => ({
+          getRequest: () => ({ params: { id: 'ABCDEF01-2345-4678-9ABC-DEF012345678' } }),
+        }),
+      } as unknown as ExecutionContext;
+
+      expect(projectIdOf(undefined, context)).toBe('abcdef01-2345-4678-9abc-def012345678');
     });
   });
 
@@ -361,17 +373,17 @@ describe('project controllers', () => {
       await app.close();
     });
 
-    // parseInt reads "12.34e2" as 12, the user's own project; Number reads it as 1234.
+    // A segment that starts as the id of the user's own project names no project at all.
     it.each([
-      ['get', '/projects/12.34e2', 'findOne'],
-      ['put', '/projects/12.34e2', 'update'],
-      ['delete', '/projects/12.34e2', 'remove'],
-      ['patch', '/projects/12.34e2/add-collaborator', 'addCollaborator'],
-      ['delete', '/projects/12.34e2/remove-collaborator', 'removeCollaborator'],
-      ['post', '/projects/12.34e2/image', 'uploadImage'],
-      ['patch', '/projects/12.34e2/disk', 'setDisk'],
-      ['post', '/projects/12.34e2/clip', 'uploadClip'],
-      ['delete', '/projects/12.34e2/clip', 'removeClip'],
+      ['get', `/projects/${OWN_PROJECT}.34e2`, 'findOne'],
+      ['put', `/projects/${OWN_PROJECT}.34e2`, 'update'],
+      ['delete', `/projects/${OWN_PROJECT}.34e2`, 'remove'],
+      ['patch', `/projects/${OWN_PROJECT}.34e2/add-collaborator`, 'addCollaborator'],
+      ['delete', `/projects/${OWN_PROJECT}.34e2/remove-collaborator`, 'removeCollaborator'],
+      ['post', `/projects/${OWN_PROJECT}.34e2/image`, 'uploadImage'],
+      ['patch', `/projects/${OWN_PROJECT}.34e2/disk`, 'setDisk'],
+      ['post', `/projects/${OWN_PROJECT}.34e2/clip`, 'uploadClip'],
+      ['delete', `/projects/${OWN_PROJECT}.34e2/clip`, 'removeClip'],
     ] as const)(
       '%s %s never reaches a project other than the one the guard checked',
       async (verb, path, method) => {
@@ -380,7 +392,7 @@ describe('project controllers', () => {
         if (method === 'uploadImage' || method === 'uploadClip') {
           pending.attach('file', Buffer.from('blob'), 'game.bin');
         } else if (verb !== 'get') {
-          pending.send({ name: 'Renamed', shortDesc: '', userId: 3 });
+          pending.send({ name: 'Renamed', shortDesc: '', userId: uuidOf(3) });
         }
 
         const response = await pending;
@@ -391,19 +403,19 @@ describe('project controllers', () => {
     );
 
     it.each([
-      ['get', '/projects/12.34e2/size', 'getContentSize'],
-      ['patch', '/projects/12.34e2/content', 'save'],
-      ['get', '/projects/12.34e2/content', 'fetchLastVersion'],
-      ['post', '/projects/12.34e2/publish', 'publish'],
-      ['post', '/projects/12.34e2/unpublish', 'unpublish'],
-      ['post', '/projects/12.34e2/update-release', 'updateRelease'],
-      ['get', '/projects/12.34e2/versions', 'listVersions'],
-      ['get', '/projects/12.34e2/checkpoints', 'listCheckpoints'],
-      ['delete', '/projects/12.34e2/versions/1', 'deleteVersion'],
-      ['get', '/projects/12.34e2/versions/1', 'fetchSavedVersion'],
-      ['delete', '/projects/12.34e2/checkpoints/x', 'removeCheckpoint'],
-      ['get', '/projects/12.34e2/checkpoints/x', 'fetchCheckpoint'],
-      ['post', '/projects/12.34e2/checkpoints/x', 'save'],
+      ['get', `/projects/${OWN_PROJECT}.34e2/size`, 'getContentSize'],
+      ['patch', `/projects/${OWN_PROJECT}.34e2/content`, 'save'],
+      ['get', `/projects/${OWN_PROJECT}.34e2/content`, 'fetchLastVersion'],
+      ['post', `/projects/${OWN_PROJECT}.34e2/publish`, 'publish'],
+      ['post', `/projects/${OWN_PROJECT}.34e2/unpublish`, 'unpublish'],
+      ['post', `/projects/${OWN_PROJECT}.34e2/update-release`, 'updateRelease'],
+      ['get', `/projects/${OWN_PROJECT}.34e2/versions`, 'listVersions'],
+      ['get', `/projects/${OWN_PROJECT}.34e2/checkpoints`, 'listCheckpoints'],
+      ['delete', `/projects/${OWN_PROJECT}.34e2/versions/1`, 'deleteVersion'],
+      ['get', `/projects/${OWN_PROJECT}.34e2/versions/1`, 'fetchSavedVersion'],
+      ['delete', `/projects/${OWN_PROJECT}.34e2/checkpoints/x`, 'removeCheckpoint'],
+      ['get', `/projects/${OWN_PROJECT}.34e2/checkpoints/x`, 'fetchCheckpoint'],
+      ['post', `/projects/${OWN_PROJECT}.34e2/checkpoints/x`, 'save'],
     ] as const)(
       '%s %s never reaches a project other than the one the guard checked',
       async (verb, path, method) => {
@@ -412,7 +424,7 @@ describe('project controllers', () => {
         if (method === 'save') {
           pending.attach('file', Buffer.from('blob'), 'game.bin');
         } else if (verb !== 'get') {
-          pending.send({ name: 'Renamed', shortDesc: '', userId: 3 });
+          pending.send({ name: 'Renamed', shortDesc: '', userId: uuidOf(3) });
         }
 
         const response = await pending;
@@ -429,7 +441,8 @@ describe('project controllers', () => {
       ['post', '/projects/releases/abc/like'],
       ['delete', '/projects/releases/abc/like'],
       ['get', '/projects/releases/abc/like-status'],
-    ] as const)('%s %s refuses an id that is not a number', async (verb, path) => {
+      ['get', '/projects/releases/12'],
+    ] as const)('%s %s refuses an id that is not one', async (verb, path) => {
       await http()[verb](path).expect(HttpStatus.BAD_REQUEST);
     });
 
@@ -437,7 +450,7 @@ describe('project controllers', () => {
       const update = jest.spyOn(projectService, 'update');
 
       await http()
-        .put('/projects/99')
+        .put(`/projects/${uuidOf(99)}`)
         .send({ name: 'Taken over', shortDesc: '' })
         .expect(HttpStatus.FORBIDDEN);
 
@@ -456,7 +469,10 @@ describe('project controllers', () => {
       it('sets the disk of a project the caller is on, and answers it', async () => {
         const disk = { color: '#ff8426', finish: 'gradient', color2: '#ffd100', gradDir: 'r' };
 
-        const response = await http().patch('/projects/12/disk').send({ disk }).expect(200);
+        const response = await http()
+          .patch(`/projects/${OWN_PROJECT}/disk`)
+          .send({ disk })
+          .expect(200);
 
         expect(setDisk).toHaveBeenCalledWith(OWN_PROJECT, disk);
         expect(response.body).toEqual({ disk });
@@ -465,13 +481,16 @@ describe('project controllers', () => {
       it('takes any colour, whatever palette the game draws with', async () => {
         const disk = { color: '#123456', finish: 'stripes', color2: '#ABCDEF' };
 
-        await http().patch('/projects/12/disk').send({ disk }).expect(200);
+        await http().patch(`/projects/${OWN_PROJECT}/disk`).send({ disk }).expect(200);
 
         expect(setDisk).toHaveBeenCalledWith(OWN_PROJECT, disk);
       });
 
       it('clears it with null', async () => {
-        const response = await http().patch('/projects/12/disk').send({ disk: null }).expect(200);
+        const response = await http()
+          .patch(`/projects/${OWN_PROJECT}/disk`)
+          .send({ disk: null })
+          .expect(200);
 
         expect(setDisk).toHaveBeenCalledWith(OWN_PROJECT, null);
         expect(response.body).toEqual({ disk: null });
@@ -499,14 +518,17 @@ describe('project controllers', () => {
         ['a list', { disk: [{ color: '#ff8426', finish: 'solid' }] }],
         ['the columns themselves', { diskColor: '#ff8426', diskFinish: 'solid' }],
       ])('refuses %s', async (_case, body) => {
-        await http().patch('/projects/12/disk').send(body).expect(HttpStatus.BAD_REQUEST);
+        await http()
+          .patch(`/projects/${OWN_PROJECT}/disk`)
+          .send(body)
+          .expect(HttpStatus.BAD_REQUEST);
 
         expect(setDisk).not.toHaveBeenCalled();
       });
 
       it('refuses someone who is not on the project', async () => {
         await http()
-          .patch('/projects/99/disk')
+          .patch(`/projects/${uuidOf(99)}/disk`)
           .send({ disk: { color: '#ff8426', finish: 'solid' } })
           .expect(HttpStatus.FORBIDDEN);
 
@@ -517,7 +539,7 @@ describe('project controllers', () => {
         for (const finish of DISK_FINISHES) {
           for (const gradDir of DISK_GRAD_DIRS) {
             await http()
-              .patch('/projects/12/disk')
+              .patch(`/projects/${OWN_PROJECT}/disk`)
               .send({ disk: { color: '#16171a', finish, gradDir } })
               .expect(HttpStatus.OK);
           }
@@ -529,7 +551,7 @@ describe('project controllers', () => {
       let uploadClip: jest.SpyInstance;
       let removeClip: jest.SpyInstance;
 
-      const upload = (project: number, file: Buffer, contentType: string): request.Test =>
+      const upload = (project: string, file: Buffer, contentType: string): request.Test =>
         http().post(`/projects/${project}/clip`).attach('file', file, {
           filename: 'clip',
           contentType,
@@ -538,7 +560,7 @@ describe('project controllers', () => {
       beforeEach(() => {
         uploadClip = jest
           .spyOn(projectService, 'uploadClip')
-          .mockResolvedValue('https://cdn.test/projects/12/clip?v=1');
+          .mockResolvedValue(`https://cdn.test/projects/${OWN_PROJECT}/clip?v=1`);
         removeClip = jest.spyOn(projectService, 'removeClip').mockResolvedValue(undefined);
       });
 
@@ -550,7 +572,9 @@ describe('project controllers', () => {
         async (_name, file, type) => {
           const response = await upload(OWN_PROJECT, file, type).expect(HttpStatus.CREATED);
 
-          expect(response.body).toEqual({ clipUrl: 'https://cdn.test/projects/12/clip?v=1' });
+          expect(response.body).toEqual({
+            clipUrl: `https://cdn.test/projects/${OWN_PROJECT}/clip?v=1`,
+          });
           expect(uploadClip).toHaveBeenCalledWith(
             OWN_PROJECT,
             expect.objectContaining({ mimetype: type, buffer: file }),
@@ -583,20 +607,22 @@ describe('project controllers', () => {
       });
 
       it('refuses a request without a file', async () => {
-        await http().post('/projects/12/clip').expect(HttpStatus.UNPROCESSABLE_ENTITY);
+        await http().post(`/projects/${OWN_PROJECT}/clip`).expect(HttpStatus.UNPROCESSABLE_ENTITY);
 
         expect(uploadClip).not.toHaveBeenCalled();
       });
 
       it('removes the clip for a collaborator', async () => {
-        await http().delete('/projects/12/clip').expect(HttpStatus.NO_CONTENT);
+        await http().delete(`/projects/${OWN_PROJECT}/clip`).expect(HttpStatus.NO_CONTENT);
 
         expect(removeClip).toHaveBeenCalledWith(OWN_PROJECT);
       });
 
       it('refuses someone who is not on the project, to store as to remove', async () => {
-        await upload(99, WEBM, 'video/webm').expect(HttpStatus.FORBIDDEN);
-        await http().delete('/projects/99/clip').expect(HttpStatus.FORBIDDEN);
+        await upload(uuidOf(99), WEBM, 'video/webm').expect(HttpStatus.FORBIDDEN);
+        await http()
+          .delete(`/projects/${uuidOf(99)}/clip`)
+          .expect(HttpStatus.FORBIDDEN);
 
         expect(uploadClip).not.toHaveBeenCalled();
         expect(removeClip).not.toHaveBeenCalled();
@@ -615,7 +641,7 @@ describe('project controllers', () => {
         const palette = ['#16171a', '#FAFDFF'];
 
         await http()
-          .put('/projects/12')
+          .put(`/projects/${OWN_PROJECT}`)
           .send({ ...project, palette })
           .expect(HttpStatus.OK);
 
@@ -627,7 +653,7 @@ describe('project controllers', () => {
         ['sixty-four colours', Array.from({ length: 64 }, () => '#000000')],
       ])('may hold %s', async (_case, palette) => {
         await http()
-          .put('/projects/12')
+          .put(`/projects/${OWN_PROJECT}`)
           .send({ ...project, palette })
           .expect(HttpStatus.OK);
       });
@@ -640,7 +666,7 @@ describe('project controllers', () => {
         ['one colour instead of a list', '#16171a'],
       ])('is refused with %s', async (_case, palette) => {
         await http()
-          .put('/projects/12')
+          .put(`/projects/${OWN_PROJECT}`)
           .send({ ...project, palette })
           .expect(HttpStatus.BAD_REQUEST);
 
@@ -649,7 +675,7 @@ describe('project controllers', () => {
 
       it('is not written by someone who is not on the project', async () => {
         await http()
-          .put('/projects/99')
+          .put(`/projects/${uuidOf(99)}`)
           .send({ ...project, palette: ['#16171a'] })
           .expect(HttpStatus.FORBIDDEN);
 
@@ -661,7 +687,7 @@ describe('project controllers', () => {
       const update = jest.spyOn(projectService, 'update');
 
       await http()
-        .put('/projects/12')
+        .put(`/projects/${OWN_PROJECT}`)
         .send({ name: 'Renamed', shortDesc: '', diskColor: '#ff8426' })
         .expect(HttpStatus.BAD_REQUEST);
 
@@ -669,10 +695,10 @@ describe('project controllers', () => {
     });
 
     const downloads = [
-      ['/projects/releases/12/content', 'fetchReleaseContent'],
-      ['/projects/12/content', 'fetchLastVersion'],
-      ['/projects/12/versions/1', 'fetchSavedVersion'],
-      ['/projects/12/checkpoints/x', 'fetchCheckpoint'],
+      [`/projects/releases/${OWN_PROJECT}/content`, 'fetchReleaseContent'],
+      [`/projects/${OWN_PROJECT}/content`, 'fetchLastVersion'],
+      [`/projects/${OWN_PROJECT}/versions/1`, 'fetchSavedVersion'],
+      [`/projects/${OWN_PROJECT}/checkpoints/x`, 'fetchCheckpoint'],
     ] as const;
 
     it.each(downloads)('GET %s streams what the store holds', async (path, method) => {
@@ -709,7 +735,7 @@ describe('project controllers', () => {
       jest.spyOn(contentService, 'fetchCheckpoint').mockResolvedValue(stored());
 
       const response = await http()
-        .get(`/projects/12/checkpoints/${encodeURIComponent('v1 – final')}`)
+        .get(`/projects/${OWN_PROJECT}/checkpoints/${encodeURIComponent('v1 – final')}`)
         .expect(HttpStatus.OK);
 
       expect(response.headers['content-disposition']).toContain(
@@ -721,14 +747,14 @@ describe('project controllers', () => {
 
     it('answers 400, not 500, for a checkpoint name the store would not accept', async () => {
       await http()
-        .get(`/projects/12/checkpoints/${encodeURIComponent('a/b')}`)
+        .get(`/projects/${OWN_PROJECT}/checkpoints/${encodeURIComponent('a/b')}`)
         .expect(HttpStatus.BAD_REQUEST);
     });
 
     it.each([
-      ['patch', '/projects/12/content', PROJECT_BLOB_MAX_BYTES],
-      ['post', '/projects/12/checkpoints/x', PROJECT_BLOB_MAX_BYTES],
-      ['post', '/projects/12/image', 5 * 1024 * 1024],
+      ['patch', `/projects/${OWN_PROJECT}/content`, PROJECT_BLOB_MAX_BYTES],
+      ['post', `/projects/${OWN_PROJECT}/checkpoints/x`, PROJECT_BLOB_MAX_BYTES],
+      ['post', `/projects/${OWN_PROJECT}/image`, 5 * 1024 * 1024],
     ] as const)('%s %s stops reading an upload past its size limit', async (verb, path, limit) => {
       const save = jest.spyOn(contentService, 'save');
 
@@ -747,7 +773,9 @@ describe('project controllers', () => {
     it('answers the status it documents when a checkpoint is deleted', async () => {
       jest.spyOn(contentService, 'removeCheckpoint').mockResolvedValue();
 
-      const response = await http().delete('/projects/12/checkpoints/x').expect(HttpStatus.OK);
+      const response = await http()
+        .delete(`/projects/${OWN_PROJECT}/checkpoints/x`)
+        .expect(HttpStatus.OK);
 
       expect(response.body).toEqual({
         message: 'Checkpoint deleted successfully',
@@ -779,6 +807,40 @@ describe('project controllers', () => {
 
       expect(getLimits).toHaveBeenCalledTimes(1);
       expect(findOne).not.toHaveBeenCalled();
+    });
+
+    describe('GET /projects/legacy/:number', () => {
+      it('answers the id of the project the number once named, to anyone', async () => {
+        const findOne = jest.spyOn(projectService, 'findOne');
+        prisma.project.findUnique.mockResolvedValue({ id: OWN_PROJECT });
+
+        const response = await http().get('/projects/legacy/12').expect(HttpStatus.OK);
+
+        expect(response.body).toEqual({ id: OWN_PROJECT });
+        expect(prisma.project.findUnique).toHaveBeenCalledWith({
+          where: { legacyId: 12 },
+          select: { id: true },
+        });
+        expect(findOne).not.toHaveBeenCalled();
+      });
+
+      it('answers 404 for a number no project was known by', async () => {
+        prisma.project.findUnique.mockResolvedValue(null);
+
+        await http().get('/projects/legacy/12').expect(HttpStatus.NOT_FOUND);
+      });
+
+      it('answers 400 for anything but a number', async () => {
+        await http().get(`/projects/legacy/${OWN_PROJECT}`).expect(HttpStatus.BAD_REQUEST);
+
+        expect(prisma.project.findUnique).not.toHaveBeenCalled();
+      });
+
+      it('asks for no account', () => {
+        expect(
+          Reflect.getMetadata(ACCESS_KEY, ProjectController.prototype.findLegacy as object),
+        ).toEqual({ kind: 'public' });
+      });
     });
 
     it('GET /projects/count answers from its own route, not from the :id one', async () => {

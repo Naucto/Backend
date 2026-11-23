@@ -1,5 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 
+import { uuidOf } from '../../../test/uuid';
 import { ADMIN, USER, VIEWER } from '../../auth/access/roles';
 import { PrismaService } from '../../prisma/prisma.service';
 import { S3Service } from '../s3/s3.service';
@@ -12,7 +13,7 @@ describe('AdminReportsService', () => {
     $transaction: jest.fn((queries: Promise<unknown>[]) => Promise.all(queries)),
   };
   const user = {
-    id: 9,
+    id: uuidOf(9),
     username: 'kay',
     nickname: 'Kay',
     email: 'kay@example.com',
@@ -21,7 +22,7 @@ describe('AdminReportsService', () => {
     deletedAt: null,
   };
   const rating = {
-    id: 5,
+    id: uuidOf(5),
     kind: 'RATING',
     status: 'NEW',
     createdAt: new Date('2026-10-20T10:00:00.000Z'),
@@ -29,7 +30,7 @@ describe('AdminReportsService', () => {
     user,
     role: 'PLAYER',
     route: null,
-    releaseId: 42,
+    releaseId: uuidOf(42),
     score: 3,
     reasons: ['BUGS'],
     liked: null,
@@ -46,7 +47,7 @@ describe('AdminReportsService', () => {
     screenshotKey: null,
     screenshotMime: null,
     screenshotBytes: null,
-    followUps: [{ id: 31 }],
+    followUps: [{ id: uuidOf(31) }],
     source: null,
     count: 1,
     lastSeen: null,
@@ -59,7 +60,7 @@ describe('AdminReportsService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     prisma.project.findMany.mockResolvedValue([
-      { id: 42, name: 'cave', publishedName: 'Cave Diver' },
+      { id: uuidOf(42), name: 'cave', publishedName: 'Cave Diver' },
     ]);
     service = new AdminReportsService(
       prisma as unknown as PrismaService,
@@ -100,10 +101,10 @@ describe('AdminReportsService', () => {
       },
     });
     expect(list.items[0]).toMatchObject({
-      id: 5,
+      id: uuidOf(5),
       score: 3,
-      release: { id: 42, name: 'Cave Diver' },
-      followUpIds: [31],
+      release: { id: uuidOf(42), name: 'Cave Diver' },
+      followUpIds: [uuidOf(31)],
       account: { username: 'kay', profileUrl: 'http://localhost:3001/u/kay', deleted: false },
     });
   });
@@ -131,7 +132,7 @@ describe('AdminReportsService', () => {
   it('answers 404 for an update of a report that does not exist', async () => {
     prisma.report.updateMany.mockResolvedValue({ count: 0 });
 
-    await expect(service.update(99, { status: 'RESOLVED' }, ADMIN)).rejects.toBeInstanceOf(
+    await expect(service.update(uuidOf(99), { status: 'RESOLVED' }, ADMIN)).rejects.toBeInstanceOf(
       NotFoundException,
     );
   });
@@ -140,10 +141,10 @@ describe('AdminReportsService', () => {
     prisma.report.updateMany.mockResolvedValue({ count: 1 });
     prisma.report.findUnique.mockResolvedValue(rating);
 
-    await service.update(5, { adminNote: '   ' }, ADMIN);
+    await service.update(uuidOf(5), { adminNote: '   ' }, ADMIN);
 
     expect(prisma.report.updateMany).toHaveBeenCalledWith({
-      where: { id: 5 },
+      where: { id: uuidOf(5) },
       data: { adminNote: null },
     });
   });
@@ -181,15 +182,15 @@ describe('AdminReportsService', () => {
       title: 'No music',
       message: 'The song never starts.',
       category: 'SOUND',
-      ratingId: 5,
+      ratingId: uuidOf(5),
       context: { viewport: '1280x720' },
-      screenshotKey: 'reports/31/screenshot.webp',
+      screenshotKey: `reports/${uuidOf(31)}/screenshot.webp`,
       screenshotMime: 'image/webp',
       screenshotBytes: 2048,
-      rating: { id: 5, score: 3, liked: null, improve: 'Loading' },
+      rating: { id: uuidOf(5), score: 3, liked: null, improve: 'Loading' },
     });
 
-    const detail = await service.detail(31, ADMIN);
+    const detail = await service.detail(uuidOf(31), ADMIN);
 
     expect(detail).toMatchObject({
       kind: 'BUG',
@@ -197,7 +198,7 @@ describe('AdminReportsService', () => {
       category: 'SOUND',
       hasScreenshot: true,
       context: { viewport: '1280x720' },
-      rating: { id: 5, score: 3 },
+      rating: { id: uuidOf(5), score: 3 },
       screenshot: { mime: 'image/webp', bytes: 2048 },
     });
   });
@@ -242,7 +243,7 @@ describe('AdminReportsService', () => {
       stack: 'TypeError: x\n    at update (src/app/player.ts:12:5)',
       occurrences: [
         {
-          id: 900,
+          id: uuidOf(900),
           createdAt: new Date('2026-10-24T09:00:00.000Z'),
           route: '/play/:id',
           appRelease: '0.1.0+8f78127',
@@ -254,7 +255,7 @@ describe('AdminReportsService', () => {
       ],
     });
 
-    const detail = await service.detail(4, ADMIN);
+    const detail = await service.detail(uuidOf(4), ADMIN);
 
     expect(detail).toMatchObject({
       kind: 'CRASH',
@@ -262,7 +263,7 @@ describe('AdminReportsService', () => {
       source: 'WEB',
       count: 37,
       stack: expect.stringContaining('src/app/player.ts:12:5'),
-      occurrences: [{ id: 900, route: '/play/:id', extra: null }],
+      occurrences: [{ id: uuidOf(900), route: '/play/:id', extra: null }],
     });
   });
 });

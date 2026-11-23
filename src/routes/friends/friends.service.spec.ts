@@ -3,15 +3,16 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Test } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
 
+import { uuidOf } from '../../../test/uuid';
 import { FRIENDSHIP_CHANGED, FriendshipChangedEvent } from '../../common/domain-events';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UserService } from '../user/user.service';
 import { FriendsService } from './friends.service';
 
-const alice = { id: 1, username: 'alice', nickname: null, deletedAt: null };
-const bob = { id: 2, username: 'bob', nickname: 'Bobby', deletedAt: null };
-const gone = { id: 3, username: 'gone', nickname: null, deletedAt: new Date() };
+const alice = { id: uuidOf(1), username: 'alice', nickname: null, deletedAt: null };
+const bob = { id: uuidOf(2), username: 'bob', nickname: 'Bobby', deletedAt: null };
+const gone = { id: uuidOf(3), username: 'gone', nickname: null, deletedAt: new Date() };
 
 describe('FriendsService', () => {
   let service: FriendsService;
@@ -62,18 +63,32 @@ describe('FriendsService', () => {
 
   describe('areFriends', () => {
     it('looks the pair up in canonical order', async () => {
-      friendship.findUnique.mockResolvedValue({ id: 9 });
+      friendship.findUnique.mockResolvedValue({ id: uuidOf(9) });
 
-      await expect(service.areFriends(5, 2)).resolves.toBe(true);
+      await expect(service.areFriends(uuidOf(5), uuidOf(2))).resolves.toBe(true);
       expect(friendship.findUnique).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { userAId_userBId: { userAId: 2, userBId: 5 } },
+          where: { userAId_userBId: { userAId: uuidOf(2), userBId: uuidOf(5) } },
+        }),
+      );
+    });
+
+    it('orders the pair as the database orders ids, digits before letters', async () => {
+      const lower = '00000000-0000-4000-8000-00000000009f';
+      const higher = '00000000-0000-4000-8000-0000000000a0';
+      friendship.findUnique.mockResolvedValue(null);
+
+      await service.areFriends(higher, lower);
+
+      expect(friendship.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userAId_userBId: { userAId: lower, userBId: higher } },
         }),
       );
     });
 
     it('is false for the same user without querying', async () => {
-      await expect(service.areFriends(1, 1)).resolves.toBe(false);
+      await expect(service.areFriends(uuidOf(1), uuidOf(1))).resolves.toBe(false);
       expect(friendship.findUnique).not.toHaveBeenCalled();
     });
   });
@@ -82,90 +97,94 @@ describe('FriendsService', () => {
     it('maps friendships to the other user and skips deleted accounts', async () => {
       const since = new Date('2026-01-01T00:00:00.000Z');
       friendship.findMany.mockResolvedValue([
-        { userAId: 1, userBId: 2, userA: alice, userB: bob, createdAt: since },
-        { userAId: 1, userBId: 3, userA: alice, userB: gone, createdAt: since },
+        { userAId: uuidOf(1), userBId: uuidOf(2), userA: alice, userB: bob, createdAt: since },
+        { userAId: uuidOf(1), userBId: uuidOf(3), userA: alice, userB: gone, createdAt: since },
       ]);
 
-      await expect(service.list(1)).resolves.toEqual([
-        { id: 2, username: 'bob', nickname: 'Bobby', since: since.toISOString() },
+      await expect(service.list(uuidOf(1))).resolves.toEqual([
+        { id: uuidOf(2), username: 'bob', nickname: 'Bobby', since: since.toISOString() },
       ]);
     });
   });
 
   describe('sendRequest', () => {
     it('creates a request and notifies the target', async () => {
-      user.findUnique.mockResolvedValue({ id: 2, deletedAt: null });
+      user.findUnique.mockResolvedValue({ id: uuidOf(2), deletedAt: null });
       friendship.findUnique.mockResolvedValue(null);
       friendRequest.findUnique.mockResolvedValue(null);
       friendRequest.create.mockResolvedValue({
-        id: 10,
-        fromId: 1,
-        toId: 2,
+        id: uuidOf(10),
+        fromId: uuidOf(1),
+        toId: uuidOf(2),
         from: alice,
         to: bob,
         createdAt: new Date('2026-01-01T00:00:00.000Z'),
       });
 
-      const result = await service.sendRequest(1, { userId: 2 });
+      const result = await service.sendRequest(uuidOf(1), { userId: uuidOf(2) });
 
-      expect(result).toMatchObject({ id: 10, from: { id: 1 }, to: { id: 2 } });
+      expect(result).toMatchObject({
+        id: uuidOf(10),
+        from: { id: uuidOf(1) },
+        to: { id: uuidOf(2) },
+      });
       expect(notificationsService.notifyBestEffort).toHaveBeenCalledWith(
         expect.objectContaining({
-          userId: 2,
+          userId: uuidOf(2),
           kind: 'FRIEND_REQUEST',
-          data: { requestId: 10, fromUserId: 1 },
+          data: { requestId: uuidOf(10), fromUserId: uuidOf(1) },
         }),
       );
     });
 
     it('resolves the target from a friend code', async () => {
-      userService.findIdByFriendCode.mockResolvedValue(2);
+      userService.findIdByFriendCode.mockResolvedValue(uuidOf(2));
       friendship.findUnique.mockResolvedValue(null);
       friendRequest.findUnique.mockResolvedValue(null);
       friendRequest.create.mockResolvedValue({
-        id: 10,
-        fromId: 1,
-        toId: 2,
+        id: uuidOf(10),
+        fromId: uuidOf(1),
+        toId: uuidOf(2),
         from: alice,
         to: bob,
         createdAt: new Date(),
       });
 
-      await service.sendRequest(1, { friendCode: '7k3q-w9zb' });
+      await service.sendRequest(uuidOf(1), { friendCode: '7k3q-w9zb' });
 
       expect(userService.findIdByFriendCode).toHaveBeenCalledWith('7k3q-w9zb');
       expect(friendRequest.create).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { fromId: 1, toId: 2 } }),
+        expect.objectContaining({ data: { fromId: uuidOf(1), toId: uuidOf(2) } }),
       );
     });
 
     it('resolves the target from a handle', async () => {
-      user.findUnique.mockResolvedValue({ id: 2, deletedAt: null });
+      user.findUnique.mockResolvedValue({ id: uuidOf(2), deletedAt: null });
       friendship.findUnique.mockResolvedValue(null);
       friendRequest.findUnique.mockResolvedValue(null);
       friendRequest.create.mockResolvedValue({
-        id: 11,
-        fromId: 1,
-        toId: 2,
+        id: uuidOf(11),
+        fromId: uuidOf(1),
+        toId: uuidOf(2),
         from: alice,
         to: bob,
         createdAt: new Date(),
       });
 
-      await service.sendRequest(1, { username: 'bob' });
+      await service.sendRequest(uuidOf(1), { username: 'bob' });
 
       expect(user.findUnique).toHaveBeenCalledWith(
         expect.objectContaining({ where: { username: 'bob' } }),
       );
       expect(friendRequest.create).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { fromId: 1, toId: 2 } }),
+        expect.objectContaining({ data: { fromId: uuidOf(1), toId: uuidOf(2) } }),
       );
     });
 
     it('404s on an unknown handle', async () => {
       user.findUnique.mockResolvedValue(null);
 
-      await expect(service.sendRequest(1, { username: 'nobody' })).rejects.toBeInstanceOf(
+      await expect(service.sendRequest(uuidOf(1), { username: 'nobody' })).rejects.toBeInstanceOf(
         NotFoundException,
       );
     });
@@ -173,24 +192,26 @@ describe('FriendsService', () => {
     it('404s on an unknown friend code', async () => {
       userService.findIdByFriendCode.mockResolvedValue(null);
 
-      await expect(service.sendRequest(1, { friendCode: 'XXXXXXXX' })).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        service.sendRequest(uuidOf(1), { friendCode: 'XXXXXXXX' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('rejects a request that names nobody', async () => {
-      await expect(service.sendRequest(1, {})).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.sendRequest(uuidOf(1), {})).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('rejects self, existing friends and duplicate requests', async () => {
-      user.findUnique.mockResolvedValue({ id: 1, deletedAt: null });
-      await expect(service.sendRequest(1, { userId: 1 })).rejects.toBeInstanceOf(
+      user.findUnique.mockResolvedValue({ id: uuidOf(1), deletedAt: null });
+      await expect(service.sendRequest(uuidOf(1), { userId: uuidOf(1) })).rejects.toBeInstanceOf(
         BadRequestException,
       );
 
-      user.findUnique.mockResolvedValue({ id: 2, deletedAt: null });
-      friendship.findUnique.mockResolvedValueOnce({ id: 1 });
-      await expect(service.sendRequest(1, { userId: 2 })).rejects.toBeInstanceOf(ConflictException);
+      user.findUnique.mockResolvedValue({ id: uuidOf(2), deletedAt: null });
+      friendship.findUnique.mockResolvedValueOnce({ id: uuidOf(1) });
+      await expect(service.sendRequest(uuidOf(1), { userId: uuidOf(2) })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
 
       friendship.findUnique.mockResolvedValue(null);
       friendRequest.findUnique.mockResolvedValue(null);
@@ -200,32 +221,34 @@ describe('FriendsService', () => {
           clientVersion: 'test',
         }),
       );
-      await expect(service.sendRequest(1, { userId: 2 })).rejects.toBeInstanceOf(ConflictException);
+      await expect(service.sendRequest(uuidOf(1), { userId: uuidOf(2) })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
     });
 
     it('auto-accepts a crossed request instead of creating one', async () => {
-      user.findUnique.mockResolvedValue({ id: 2, deletedAt: null });
+      user.findUnique.mockResolvedValue({ id: uuidOf(2), deletedAt: null });
       friendship.findUnique.mockResolvedValue(null);
-      friendRequest.findUnique.mockResolvedValueOnce({ id: 4 });
+      friendRequest.findUnique.mockResolvedValueOnce({ id: uuidOf(4) });
       friendRequest.findFirst.mockResolvedValue({
-        id: 4,
-        fromId: 2,
-        toId: 1,
+        id: uuidOf(4),
+        fromId: uuidOf(2),
+        toId: uuidOf(1),
         to: alice,
       });
       friendRequest.deleteMany
         .mockResolvedValueOnce({ count: 1 })
         .mockResolvedValueOnce({ count: 0 });
 
-      await expect(service.sendRequest(1, { userId: 2 })).resolves.toBeNull();
+      await expect(service.sendRequest(uuidOf(1), { userId: uuidOf(2) })).resolves.toBeNull();
 
       expect(friendRequest.create).not.toHaveBeenCalled();
       expect(friendship.createMany).toHaveBeenCalledWith({
-        data: [{ userAId: 1, userBId: 2 }],
+        data: [{ userAId: uuidOf(1), userBId: uuidOf(2) }],
         skipDuplicates: true,
       });
       expect(notificationsService.notifyBestEffort).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 2, kind: 'FRIEND_ACCEPTED' }),
+        expect.objectContaining({ userId: uuidOf(2), kind: 'FRIEND_ACCEPTED' }),
       );
     });
   });
@@ -234,135 +257,151 @@ describe('FriendsService', () => {
     it("accept only works on the recipient's own incoming request", async () => {
       friendRequest.findFirst.mockResolvedValue(null);
 
-      await expect(service.accept(1, 99)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.accept(uuidOf(1), uuidOf(99))).rejects.toBeInstanceOf(NotFoundException);
       expect(friendRequest.findFirst).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 99, toId: 1 } }),
+        expect.objectContaining({ where: { id: uuidOf(99), toId: uuidOf(1) } }),
       );
     });
 
     it('accept deletes the request and creates the canonical friendship', async () => {
       friendRequest.findFirst.mockResolvedValue({
-        id: 4,
-        fromId: 5,
-        toId: 1,
+        id: uuidOf(4),
+        fromId: uuidOf(5),
+        toId: uuidOf(1),
         to: alice,
       });
       friendRequest.deleteMany
         .mockResolvedValueOnce({ count: 1 })
         .mockResolvedValueOnce({ count: 0 });
 
-      await service.accept(1, 4);
+      await service.accept(uuidOf(1), uuidOf(4));
 
-      expect(friendRequest.deleteMany).toHaveBeenCalledWith({ where: { id: 4, toId: 1 } });
+      expect(friendRequest.deleteMany).toHaveBeenCalledWith({
+        where: { id: uuidOf(4), toId: uuidOf(1) },
+      });
       expect(friendship.createMany).toHaveBeenCalledWith({
-        data: [{ userAId: 1, userBId: 5 }],
+        data: [{ userAId: uuidOf(1), userBId: uuidOf(5) }],
         skipDuplicates: true,
       });
       expect(notificationsService.notifyBestEffort).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 5, kind: 'FRIEND_ACCEPTED' }),
+        expect.objectContaining({ userId: uuidOf(5), kind: 'FRIEND_ACCEPTED' }),
       );
       expect(eventEmitter.emit).toHaveBeenCalledWith(
         FRIENDSHIP_CHANGED,
-        new FriendshipChangedEvent(1, 5),
+        new FriendshipChangedEvent(uuidOf(1), uuidOf(5)),
       );
     });
 
     it('accept answers not found when the request went away after it was read', async () => {
       friendRequest.findFirst.mockResolvedValue({
-        id: 4,
-        fromId: 5,
-        toId: 1,
+        id: uuidOf(4),
+        fromId: uuidOf(5),
+        toId: uuidOf(1),
         to: alice,
       });
       friendRequest.deleteMany.mockResolvedValue({ count: 0 });
 
-      await expect(service.accept(1, 4)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.accept(uuidOf(1), uuidOf(4))).rejects.toBeInstanceOf(NotFoundException);
       expect(friendship.createMany).not.toHaveBeenCalled();
       expect(notificationsService.notifyBestEffort).not.toHaveBeenCalled();
     });
 
     it('decline removes an incoming or outgoing request and 404s otherwise', async () => {
       friendRequest.deleteMany.mockResolvedValueOnce({ count: 1 });
-      await service.decline(1, 4);
+      await service.decline(uuidOf(1), uuidOf(4));
       expect(friendRequest.deleteMany).toHaveBeenCalledWith({
-        where: { id: 4, OR: [{ toId: 1 }, { fromId: 1 }] },
+        where: { id: uuidOf(4), OR: [{ toId: uuidOf(1) }, { fromId: uuidOf(1) }] },
       });
 
       friendRequest.deleteMany.mockResolvedValueOnce({ count: 0 });
-      await expect(service.decline(1, 4)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.decline(uuidOf(1), uuidOf(4))).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('remove deletes the canonical pair and 404s when not friends', async () => {
       friendship.deleteMany.mockResolvedValueOnce({ count: 1 });
-      await service.remove(7, 2);
+      await service.remove(uuidOf(7), uuidOf(2));
       expect(friendship.deleteMany).toHaveBeenCalledWith({
-        where: { userAId: 2, userBId: 7 },
+        where: { userAId: uuidOf(2), userBId: uuidOf(7) },
       });
       expect(eventEmitter.emit).toHaveBeenCalledWith(
         FRIENDSHIP_CHANGED,
-        new FriendshipChangedEvent(7, 2),
+        new FriendshipChangedEvent(uuidOf(7), uuidOf(2)),
       );
 
       friendship.deleteMany.mockResolvedValueOnce({ count: 0 });
-      await expect(service.remove(7, 2)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.remove(uuidOf(7), uuidOf(2))).rejects.toBeInstanceOf(NotFoundException);
       expect(eventEmitter.emit).toHaveBeenCalledTimes(1);
     });
   });
 
   describe('friendshipStatus', () => {
     it('reports FRIENDS, PENDING or NONE', async () => {
-      friendship.findUnique.mockResolvedValueOnce({ id: 1 });
-      await expect(service.friendshipStatus(1, 2)).resolves.toBe('FRIENDS');
+      friendship.findUnique.mockResolvedValueOnce({ id: uuidOf(1) });
+      await expect(service.friendshipStatus(uuidOf(1), uuidOf(2))).resolves.toBe('FRIENDS');
 
       friendship.findUnique.mockResolvedValue(null);
-      friendRequest.findFirst.mockResolvedValueOnce({ id: 3 });
-      await expect(service.friendshipStatus(1, 2)).resolves.toBe('PENDING');
+      friendRequest.findFirst.mockResolvedValueOnce({ id: uuidOf(3) });
+      await expect(service.friendshipStatus(uuidOf(1), uuidOf(2))).resolves.toBe('PENDING');
 
       friendRequest.findFirst.mockResolvedValueOnce(null);
-      await expect(service.friendshipStatus(1, 2)).resolves.toBe('NONE');
+      await expect(service.friendshipStatus(uuidOf(1), uuidOf(2))).resolves.toBe('NONE');
     });
   });
 
   describe('requests', () => {
-    const carol = { id: 5, username: 'carol', nickname: null, deletedAt: null };
+    const carol = { id: uuidOf(5), username: 'carol', nickname: null, deletedAt: null };
 
     it('adds mutual counts, and playedYourGame on incoming requests', async () => {
       friendRequest.findMany.mockResolvedValue([
-        { id: 4, fromId: 2, toId: 1, from: bob, to: alice, createdAt: new Date() },
-        { id: 6, fromId: 1, toId: 5, from: alice, to: carol, createdAt: new Date() },
+        {
+          id: uuidOf(4),
+          fromId: uuidOf(2),
+          toId: uuidOf(1),
+          from: bob,
+          to: alice,
+          createdAt: new Date(),
+        },
+        {
+          id: uuidOf(6),
+          fromId: uuidOf(1),
+          toId: uuidOf(5),
+          from: alice,
+          to: carol,
+          createdAt: new Date(),
+        },
       ]);
       // My friends: 8, 9. Bob's: 9, 10. Carol's: 8, 9.
       friendship.findMany
         .mockResolvedValueOnce([
-          { userAId: 1, userBId: 8 },
-          { userAId: 1, userBId: 9 },
+          { userAId: uuidOf(1), userBId: uuidOf(8) },
+          { userAId: uuidOf(1), userBId: uuidOf(9) },
         ])
         .mockResolvedValueOnce([
-          { userAId: 2, userBId: 9 },
-          { userAId: 2, userBId: 10 },
-          { userAId: 5, userBId: 8 },
-          { userAId: 5, userBId: 9 },
+          { userAId: uuidOf(2), userBId: uuidOf(9) },
+          { userAId: uuidOf(2), userBId: uuidOf(10) },
+          { userAId: uuidOf(5), userBId: uuidOf(8) },
+          { userAId: uuidOf(5), userBId: uuidOf(9) },
         ]);
-      user.findMany.mockResolvedValue([{ id: 2 }]);
+      user.findMany.mockResolvedValue([{ id: uuidOf(2) }]);
 
-      const [incoming, outgoing] = await service.requests(1);
+      const [incoming, outgoing] = await service.requests(uuidOf(1));
 
       expect(incoming).toMatchObject({
-        id: 4,
-        from: { id: 2, nickname: 'Bobby' },
+        id: uuidOf(4),
+        from: { id: uuidOf(2), nickname: 'Bobby' },
         mutuals: 1,
         playedYourGame: true,
       });
-      expect(outgoing).toMatchObject({ id: 6, to: { id: 5 }, mutuals: 2 });
+      expect(outgoing).toMatchObject({ id: uuidOf(6), to: { id: uuidOf(5) }, mutuals: 2 });
       expect(outgoing).not.toHaveProperty('playedYourGame');
     });
 
     it('asks the database a fixed number of times, however many requests are pending', async () => {
       friendRequest.findMany.mockResolvedValue(
-        [2, 5, 6, 7].map((fromId, index) => ({
-          id: index,
+        [2, 5, 6, 7].map(uuidOf).map((fromId, index) => ({
+          id: uuidOf(index),
           fromId,
-          toId: 1,
+          toId: uuidOf(1),
           from: { ...bob, id: fromId },
           to: alice,
           createdAt: new Date(),
@@ -370,7 +409,7 @@ describe('FriendsService', () => {
       );
       user.findMany.mockResolvedValue([]);
 
-      await service.requests(1);
+      await service.requests(uuidOf(1));
 
       expect(friendship.findMany).toHaveBeenCalledTimes(2);
       expect(user.findMany).toHaveBeenCalledTimes(1);
@@ -391,15 +430,15 @@ describe('FriendsService', () => {
         {
           startedAt: older,
           host: bob,
-          otherUsers: [alice, { id: 4, username: 'dan', nickname: null, deletedAt: null }],
+          otherUsers: [alice, { id: uuidOf(4), username: 'dan', nickname: null, deletedAt: null }],
           project: { name: 'Older game', publishedName: null },
         },
       ]);
-      friendship.findMany.mockResolvedValue([{ userAId: 1, userBId: 2 }]);
+      friendship.findMany.mockResolvedValue([{ userAId: uuidOf(1), userBId: uuidOf(2) }]);
 
-      await expect(service.recentPlayers(1)).resolves.toEqual([
+      await expect(service.recentPlayers(uuidOf(1))).resolves.toEqual([
         {
-          id: 2,
+          id: uuidOf(2),
           username: 'bob',
           nickname: 'Bobby',
           game: 'Newer game',
@@ -407,7 +446,7 @@ describe('FriendsService', () => {
           friend: true,
         },
         {
-          id: 4,
+          id: uuidOf(4),
           username: 'dan',
           nickname: null,
           game: 'Older game',

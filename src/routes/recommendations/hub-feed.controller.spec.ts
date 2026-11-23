@@ -3,6 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 
+import { uuidOf } from '../../../test/uuid';
 import { HubFeedController } from './hub-feed.controller';
 import { HubFeedService } from './hub-feed.service';
 import { HUB_SHELF_KEYS_MAX } from './hub-limits';
@@ -10,7 +11,7 @@ import { HUB_SHELF_KEYS_MAX } from './hub-limits';
 describe('HubFeedController', () => {
   let app: INestApplication;
   /** The account the access guard found on the request; null for a reader who is signed out. */
-  let signedIn: { id: number } | null;
+  let signedIn: { id: string } | null;
 
   const hubFeedService = { feed: jest.fn(), shelves: jest.fn(), shelfPage: jest.fn() };
   const http = (): ReturnType<typeof request> => request(app.getHttpServer());
@@ -53,12 +54,12 @@ describe('HubFeedController', () => {
   });
 
   it('serves the hub of the reader a valid token names', async () => {
-    signedIn = { id: 7 };
+    signedIn = { id: uuidOf(7) };
     hubFeedService.feed.mockResolvedValue({ day: '2026-11-20', hero: [], shelves: [], more: [] });
 
     await http().get('/hub').expect(HttpStatus.OK);
 
-    expect(hubFeedService.feed).toHaveBeenCalledWith(7);
+    expect(hubFeedService.feed).toHaveBeenCalledWith(uuidOf(7));
   });
 
   it('reads the shelves to fetch from one comma-separated list', async () => {
@@ -84,7 +85,7 @@ describe('HubFeedController', () => {
   });
 
   it('pages one shelf, reading its key off the path and the page off the query', async () => {
-    signedIn = { id: 7 };
+    signedIn = { id: uuidOf(7) };
     hubFeedService.shelfPage.mockResolvedValue({});
 
     await http()
@@ -92,7 +93,7 @@ describe('HubFeedController', () => {
       .query({ page: 2, limit: 12, sort: 'liked' })
       .expect(HttpStatus.OK);
 
-    expect(hubFeedService.shelfPage).toHaveBeenCalledWith('tag:Action RPG', 7, {
+    expect(hubFeedService.shelfPage).toHaveBeenCalledWith('tag:Action RPG', uuidOf(7), {
       page: 2,
       limit: 12,
       sort: 'liked',

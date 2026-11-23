@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 
+import { uuidOf } from '../../../test/uuid';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as readers from './analytics-timeline.readers';
 import { AnalyticsTimelineService, bucketValues, sourceOf } from './analytics-timeline.service';
@@ -144,14 +145,14 @@ describe('AnalyticsTimelineService', () => {
           to: '2026-10-21T12:00:00Z',
           bucket: '1h',
           metrics: ['plays_anonymous', 'sessions', 'plays_consented'],
-          releaseId: 9,
+          releaseId: uuidOf(9),
           source: 'referrer:youtube.com',
         },
         NOW,
       );
 
       expect(mocked['plays_anonymous']).toHaveBeenCalledWith(prisma, expect.anything(), {
-        releaseId: 9,
+        releaseId: uuidOf(9),
       });
       expect(mocked['sessions']).toHaveBeenCalledWith(prisma, expect.anything(), {
         source: { kind: 'referrer', value: 'youtube.com' },
@@ -197,20 +198,20 @@ describe('AnalyticsTimelineService', () => {
   describe('the game search', () => {
     it('looks for published games by name or id, and puts the game of that id first', async () => {
       prisma.project.findMany.mockResolvedValue([
-        { id: 120, name: 'Orbit 12', publishedName: null, publishedAt: new Date(0) },
-        { id: 12, name: 'draft', publishedName: 'Starfall', publishedAt: new Date(0) },
+        { id: uuidOf(120), name: 'Orbit 12', publishedName: null, publishedAt: new Date(0) },
+        { id: uuidOf(12), name: 'draft', publishedName: 'Starfall', publishedAt: new Date(0) },
       ]);
 
-      const { releases } = await service.releases({ query: '#12', limit: 5 });
+      const { releases } = await service.releases({ query: `#${uuidOf(12)}`, limit: 5 });
 
       expect(prisma.project.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {
             publishedAt: { not: null },
             OR: [
-              { publishedName: { contains: '#12', mode: 'insensitive' } },
-              { name: { contains: '#12', mode: 'insensitive' } },
-              { id: 12 },
+              { publishedName: { contains: `#${uuidOf(12)}`, mode: 'insensitive' } },
+              { name: { contains: `#${uuidOf(12)}`, mode: 'insensitive' } },
+              { id: uuidOf(12) },
             ],
           },
           take: 5,
@@ -221,15 +222,17 @@ describe('AnalyticsTimelineService', () => {
 
     it('names the projects of given ids whatever their state, ignoring the query', async () => {
       prisma.project.findMany.mockResolvedValue([
-        { id: 7, name: 'Fork of Orbit', publishedName: null, publishedAt: null },
+        { id: uuidOf(7), name: 'Fork of Orbit', publishedName: null, publishedAt: null },
       ]);
 
-      const { releases } = await service.releases({ ids: [7], query: 'ignored' });
+      const { releases } = await service.releases({ ids: [uuidOf(7)], query: 'ignored' });
 
       expect(prisma.project.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: { in: [7] } } }),
+        expect.objectContaining({ where: { id: { in: [uuidOf(7)] } } }),
       );
-      expect(releases).toEqual([{ releaseId: 7, name: 'Fork of Orbit', publishedAt: null }]);
+      expect(releases).toEqual([
+        { releaseId: uuidOf(7), name: 'Fork of Orbit', publishedAt: null },
+      ]);
     });
   });
 
@@ -285,8 +288,8 @@ describe('AnalyticsTimelineService', () => {
       const newcomer = '6a1f4ad2-2a8f-4c43-9b37-3cdb1c0c9b9e';
       const returning = '7b2f4ad2-2a8f-4c43-9b37-3cdb1c0c9b9e';
       prisma.analyticsVisitor.findMany.mockResolvedValue([
-        { id: newcomer, firstSeenAt, lastSeenAt: firstSeenAt, userId: 1 },
-        { id: returning, firstSeenAt, lastSeenAt: firstSeenAt, userId: 2 },
+        { id: newcomer, firstSeenAt, lastSeenAt: firstSeenAt, userId: uuidOf(1) },
+        { id: returning, firstSeenAt, lastSeenAt: firstSeenAt, userId: uuidOf(2) },
       ]);
       const first = {
         referrerDomain: 'youtube.com',
@@ -308,20 +311,20 @@ describe('AnalyticsTimelineService', () => {
       prisma.analyticsPlay.findMany.mockResolvedValue([
         {
           startedAt: new Date('2026-10-21T10:05:00Z'),
-          releaseId: 9,
+          releaseId: uuidOf(9),
           continued: false,
           session: { visitorId: newcomer },
         },
         {
           startedAt: new Date('2026-10-21T10:15:00Z'),
-          releaseId: 9,
+          releaseId: uuidOf(9),
           continued: false,
           session: { visitorId: newcomer },
         },
       ]);
       prisma.analyticsFact.findMany.mockResolvedValue([
-        { at: new Date('2025-01-01T00:00:00Z'), type: 'SIGNUP', actorUserId: 2 },
-        { at: new Date('2026-10-21T10:20:00Z'), type: 'SIGNUP', actorUserId: 1 },
+        { at: new Date('2025-01-01T00:00:00Z'), type: 'SIGNUP', actorUserId: uuidOf(2) },
+        { at: new Date('2026-10-21T10:20:00Z'), type: 'SIGNUP', actorUserId: uuidOf(1) },
       ]);
       prisma.analyticsAnonTally.groupBy
         .mockResolvedValueOnce([
@@ -329,12 +332,14 @@ describe('AnalyticsTimelineService', () => {
           { consent: 'DECLINED', signedIn: true, _sum: { playsStarted: 1 } },
           { consent: 'UNANSWERED', signedIn: false, _sum: { playsStarted: 2 } },
         ])
-        .mockResolvedValueOnce([{ releaseId: 9, _sum: { playsStarted: 5 } }]);
+        .mockResolvedValueOnce([{ releaseId: uuidOf(9), _sum: { playsStarted: 5 } }]);
       mocked['signups_unlinked']?.mockResolvedValue([
         sample('2026-10-21T10:30:00Z'),
         sample('2026-10-21T11:30:00Z'),
       ]);
-      prisma.project.findMany.mockResolvedValue([{ id: 9, name: 'draft', publishedName: 'Orbs' }]);
+      prisma.project.findMany.mockResolvedValue([
+        { id: uuidOf(9), name: 'draft', publishedName: 'Orbs' },
+      ]);
 
       const arrivals = await service.arrivals({
         from: '2026-10-21T09:00:00Z',
@@ -353,7 +358,7 @@ describe('AnalyticsTimelineService', () => {
         unlinkedSignups: 2,
       });
       expect(arrivals.games).toEqual([
-        { releaseId: 9, name: 'Orbs', players: 1, plays: 2, anonymousPlays: 5 },
+        { releaseId: uuidOf(9), name: 'Orbs', players: 1, plays: 2, anonymousPlays: 5 },
       ]);
       expect(arrivals.visitors.map((row) => row.account)).toEqual(['NEW', 'EXISTING']);
       expect(arrivals.visitors[1]?.signedUpAt).toBeNull();

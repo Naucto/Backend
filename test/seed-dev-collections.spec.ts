@@ -6,9 +6,10 @@ import {
   seedCollections,
 } from '../prisma/seed-dev-collections';
 import { HUB_COLLECTION_MIN_GAMES } from '../src/routes/recommendations/hub-limits';
+import { uuidOf } from './uuid';
 
 const PEOPLE = new Map(
-  ['alexis', 'louis', 'edgar', 'thea', 'ulysse'].map((name, index) => [name, index + 1]),
+  ['alexis', 'louis', 'edgar', 'thea', 'ulysse'].map((name, index) => [name, uuidOf(index + 1)]),
 );
 
 describe('seed:dev collections', () => {
@@ -20,9 +21,9 @@ describe('seed:dev collections', () => {
   const seed = (): Promise<string> => seedCollections(prisma as unknown as PrismaClient, PEOPLE);
 
   /** What a run wrote, as `[collection id, game ids in order]`. */
-  const written = (): [string, number[]][] =>
+  const written = (): [string, string[]][] =>
     prisma.collectionItem.createMany.mock.calls.map(
-      ([{ data }]: [{ data: { collectionId: string; projectId: number; position: number }[] }]) => [
+      ([{ data }]: [{ data: { collectionId: string; projectId: string; position: number }[] }]) => [
         data[0]?.collectionId ?? '',
         data.map((item) => item.projectId),
       ],
@@ -31,7 +32,7 @@ describe('seed:dev collections', () => {
   beforeEach(() => {
     jest.resetAllMocks();
     prisma.project.findMany.mockResolvedValue(
-      Array.from({ length: 11 }, (_, index) => ({ id: index + 1 })),
+      Array.from({ length: 11 }, (_, index) => ({ id: uuidOf(index + 1) })),
     );
   });
 
@@ -61,7 +62,11 @@ describe('seed:dev collections', () => {
     expect(prisma.collection.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: seedCollectionId(0) },
-        create: expect.objectContaining({ ownerId: 1, title: 'Couch co-op', visibility: 'PUBLIC' }),
+        create: expect.objectContaining({
+          ownerId: uuidOf(1),
+          title: 'Couch co-op',
+          visibility: 'PUBLIC',
+        }),
       }),
     );
     expect(seedCollectionId(0)).toMatch(
@@ -91,7 +96,7 @@ describe('seed:dev collections', () => {
   });
 
   it('skips a collection whose owner was not seeded', async () => {
-    await seedCollections(prisma as unknown as PrismaClient, new Map([['louis', 2]]));
+    await seedCollections(prisma as unknown as PrismaClient, new Map([['louis', uuidOf(2)]]));
 
     expect(prisma.collection.upsert).toHaveBeenCalledTimes(1);
   });

@@ -1,3 +1,4 @@
+import { uuidOf } from '../../../test/uuid';
 import { ANALYTICS_THROTTLERS } from './analytics-throttler.guard';
 
 const VISITOR = '11111111-1111-4111-8111-111111111111';
@@ -14,8 +15,8 @@ describe('analytics throttlers', () => {
 
   it('keys a signed-in call by its account', () => {
     expect(
-      tracker('identity')({ user: { id: 5 }, body: { visitorId: VISITOR }, ip: '1.2.3.4' }),
-    ).toBe('u:5');
+      tracker('identity')({ user: { id: uuidOf(5) }, body: { visitorId: VISITOR }, ip: '1.2.3.4' }),
+    ).toBe(`u:${uuidOf(5)}`);
   });
 
   it('keys a consented report by its visitor', () => {

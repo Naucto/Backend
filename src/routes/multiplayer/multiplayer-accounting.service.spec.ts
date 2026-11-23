@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 
+import { uuidOf } from '../../../test/uuid';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MultiplayerAccountingService } from './multiplayer-accounting.service';
 
@@ -24,7 +25,7 @@ describe('MultiplayerAccountingService', () => {
   const prisma = {
     $transaction: jest.fn((run: (client: typeof tx) => Promise<void>) => run(tx)),
     $executeRaw: jest.fn(),
-    gameSession: { findUnique: jest.fn(() => Promise.resolve({ projectId: 3 })) },
+    gameSession: { findUnique: jest.fn(() => Promise.resolve({ projectId: uuidOf(3) })) },
     analyticsMpSession: {
       createMany: jest.fn(),
       updateMany: jest.fn((_args: { where: object; data: object }) =>
@@ -56,10 +57,10 @@ describe('MultiplayerAccountingService', () => {
   });
 
   it('records a created room with the editor flag it was created with', async () => {
-    await service.roomCreated(SESSION, 3, true);
+    await service.roomCreated(SESSION, uuidOf(3), true);
 
     expect(prisma.analyticsMpSession.createMany).toHaveBeenCalledWith({
-      data: [{ id: SESSION, projectId: 3, editorTest: true }],
+      data: [{ id: SESSION, projectId: uuidOf(3), editorTest: true }],
       skipDuplicates: true,
     });
   });
@@ -198,7 +199,7 @@ describe('MultiplayerAccountingService', () => {
     await service.settled();
 
     expect(prisma.analyticsMpSession.createMany).toHaveBeenCalledWith({
-      data: [{ id: SESSION, projectId: 3, editorTest: false }],
+      data: [{ id: SESSION, projectId: uuidOf(3), editorTest: false }],
       skipDuplicates: true,
     });
   });

@@ -3,6 +3,7 @@ import { seedCollections } from '../prisma/seed-dev-collections';
 import { seedHubSignals } from '../prisma/seed-dev-hub';
 import { normalizeFriendCode } from '../src/routes/user/friend-code.util';
 import { withEnv } from './env';
+import { uuidOf } from './uuid';
 
 const mockPrisma = {
   user: { upsert: jest.fn() },
@@ -56,7 +57,7 @@ describe('seed:dev', () => {
     });
 
     let nextId = 1;
-    mockPrisma.user.upsert.mockImplementation(async () => ({ id: nextId++ }));
+    mockPrisma.user.upsert.mockImplementation(async () => ({ id: uuidOf(nextId++) }));
     mockPrisma.project.findMany.mockResolvedValue([]);
 
     logged = jest.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -84,13 +85,13 @@ describe('seed:dev', () => {
   it('gives a few games the disk their author chose, without dating them as edited', async () => {
     const updatedAt = new Date('2026-11-02T08:00:00Z');
     mockPrisma.project.findMany.mockImplementation(async ({ where }: { where?: object }) =>
-      where ? [{ id: 4, name: 'Duel', updatedAt }] : [],
+      where ? [{ id: uuidOf(4), name: 'Duel', updatedAt }] : [],
     );
 
     await runSeed();
 
     expect(mockPrisma.project.update).toHaveBeenCalledWith({
-      where: { id: 4 },
+      where: { id: uuidOf(4) },
       data: {
         diskColor: '#ffd100',
         diskFinish: 'gold',
@@ -115,7 +116,9 @@ describe('seed:dev', () => {
 
     expect(seedHubSignals).toHaveBeenCalledWith(
       mockPrisma,
-      Array.from({ length: mockPrisma.user.upsert.mock.calls.length }, (_, index) => index + 1),
+      Array.from({ length: mockPrisma.user.upsert.mock.calls.length }, (_, index) =>
+        uuidOf(index + 1),
+      ),
     );
     expect(jest.mocked(seedAnalytics).mock.invocationCallOrder[0]).toBeLessThan(
       jest.mocked(seedHubSignals).mock.invocationCallOrder[0]!,
@@ -130,7 +133,7 @@ describe('seed:dev', () => {
     await runSeed();
 
     const [calledAt] = jest.mocked(seedCollections).mock.invocationCallOrder;
-    expect(jest.mocked(seedCollections).mock.calls[0]?.[1].get('alexis')).toBe(1);
+    expect(jest.mocked(seedCollections).mock.calls[0]?.[1].get('alexis')).toBe(uuidOf(1));
     expect(jest.mocked(seedAnalytics).mock.invocationCallOrder[0]).toBeLessThan(calledAt!);
     expect(calledAt).toBeLessThan(jest.mocked(seedHubSignals).mock.invocationCallOrder[0]!);
   });

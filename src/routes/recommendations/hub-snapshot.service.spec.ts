@@ -1,6 +1,8 @@
 import { Logger } from '@nestjs/common';
 import { HubSnapshot } from '@prisma/client';
 
+import { uuidOf } from '../../../test/uuid';
+import { NO_RELEASE_ID } from '../../common/ids';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CollectionsService } from '../collections/collections.service';
 import { HubSnapshotService } from './hub-snapshot.service';
@@ -10,10 +12,12 @@ const NOW = new Date('2026-11-20T00:05:00Z');
 const TODAY = new Date('2026-11-20T00:00:00Z');
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+const games = (...numbers: number[]): string[] => numbers.map(uuidOf);
+
 /** A published game as the catalogue query selects it. */
 const catalogued = (id: number, overrides: object = {}): object => ({
-  id,
-  userId: 100 + id,
+  id: uuidOf(id),
+  userId: uuidOf(100 + id),
   tags: ['draft-tag'],
   publishedTags: ['arcade'],
   viewCount: 10 * id,
@@ -25,7 +29,7 @@ const catalogued = (id: number, overrides: object = {}): object => ({
 });
 
 const signal = (projectId: number, ageDays: number, plays: number): object => ({
-  projectId,
+  projectId: uuidOf(projectId),
   ageDays,
   plays,
   likes: 0,
@@ -109,7 +113,7 @@ describe('HubSnapshotService', () => {
       await service.refresh(new Date(NOW.getTime() + DAY_MS));
 
       const [today, tomorrow] = [...rows.values()].map(
-        (row) => (row.payload as { popular: { games: number[] } }).popular.games,
+        (row) => (row.payload as { popular: { games: string[] } }).popular.games,
       );
       expect(tomorrow?.slice(0, 24)).not.toEqual(today?.slice(0, 24));
     });
@@ -150,7 +154,7 @@ describe('HubSnapshotService', () => {
       await service.refresh(NOW);
 
       const payload = rows.get(TODAY.getTime())?.payload as { rising: number[] };
-      expect(payload.rising).toEqual([1]);
+      expect(payload.rising).toEqual(games(1));
     });
 
     it('hands the vote the trending games first, then the most played', async () => {
@@ -158,19 +162,26 @@ describe('HubSnapshotService', () => {
 
       await service.refresh(NOW);
 
-      expect(recommendations.electGameOfTheWeek).toHaveBeenCalledWith([3, 5, 1], NOW);
+      expect(recommendations.electGameOfTheWeek).toHaveBeenCalledWith(games(3, 5, 1), NOW);
     });
 
     it('puts forward the public collections holding three games on the hub', async () => {
       collections.listedWithGames.mockResolvedValue([
-        { id: 'trio', ownerId: 1, games: [1, 2, 3] },
-        { id: 'pair', ownerId: 2, games: [1, 2] },
+        { id: 'trio', ownerId: uuidOf(1), games: games(1, 2, 3) },
+        { id: 'pair', ownerId: uuidOf(2), games: games(1, 2) },
       ]);
 
       await service.refresh(NOW);
 
       const payload = rows.get(TODAY.getTime())?.payload as { collections: object };
       expect(payload.collections).toEqual({ total: 2, ids: ['trio'] });
+    });
+
+    it('leaves out the anonymous plays counted outside a game', async () => {
+      await service.refresh(NOW);
+
+      const [, ...bound] = prisma.$queryRaw.mock.calls[0] as [unknown, ...unknown[]];
+      expect(bound).toContain(NO_RELEASE_ID);
     });
 
     it('drops the snapshots older than sixty days', async () => {
@@ -188,7 +199,7 @@ describe('HubSnapshotService', () => {
       for (let offset = 0; offset < 300; offset++) {
         await service.refresh(new Date(NOW.getTime() + offset * DAY_MS));
         const row = rows.get(TODAY.getTime() + offset * DAY_MS);
-        openers.push((row?.payload as { popular: { games: number[] } }).popular.games[0]);
+        openers.push((row?.payload as { popular: { games: string[] } }).popular.games[0]);
       }
 
       const repeats = openers.filter((opener, index) => index > 0 && opener === openers[index - 1]);
@@ -211,7 +222,7 @@ describe('HubSnapshotService', () => {
   describe('today', () => {
     it('answers the stored row of the day without computing anything', async () => {
       const payload = {
-        popular: { total: 1, games: [9] },
+        popular: { total: 1, games: games(9) },
         collections: { total: 1, ids: ['one'] },
       };
       rows.set(TODAY.getTime(), { day: TODAY, computedAt: NOW, payload });
@@ -225,7 +236,7 @@ describe('HubSnapshotService', () => {
     });
 
     it('reads a row written before collections had a shelf as a day without any', async () => {
-      const payload = { popular: { total: 1, games: [9] } };
+      const payload = { popular: { total: 1, games: games(9) } };
       rows.set(TODAY.getTime(), { day: TODAY, computedAt: NOW, payload });
 
       await expect(service.today(NOW)).resolves.toEqual({

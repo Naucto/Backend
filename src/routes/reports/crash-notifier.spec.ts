@@ -1,10 +1,11 @@
+import { uuidOf } from '../../../test/uuid';
 import { DiscordService } from '../../discord/discord.service';
 import { CrashNotice, CrashNotifier } from './crash-notifier';
 
 describe('CrashNotifier', () => {
   const notice: CrashNotice = {
     kind: 'regressed',
-    reportId: 4,
+    reportId: uuidOf(4),
     source: 'WEB',
     name: 'TypeError',
     message: 'x is `undefined`',

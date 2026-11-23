@@ -10,6 +10,7 @@ import { Request, Response } from 'express';
 import request from 'supertest';
 
 import { withEnv } from '../../test/env';
+import { uuidOf } from '../../test/uuid';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { RequestWithUser } from './auth.types';
@@ -41,7 +42,7 @@ describe('AuthController', () => {
           provide: APP_GUARD,
           useValue: {
             canActivate: (context: ExecutionContext): boolean => {
-              context.switchToHttp().getRequest().user = { id: 7 };
+              context.switchToHttp().getRequest().user = { id: uuidOf(7) };
               return true;
             },
           },
@@ -169,7 +170,7 @@ describe('AuthController', () => {
       refresh_token: 'refresh-after-change',
     });
 
-    const mockReq = { user: { id: 7 } } as unknown as RequestWithUser;
+    const mockReq = { user: { id: uuidOf(7) } } as unknown as RequestWithUser;
     const mockRes: Partial<Response> = { cookie: jest.fn() };
     const result = await controller.changePassword(
       { currentPassword: 'old-password', newPassword: 'new-password-1' },
@@ -177,7 +178,11 @@ describe('AuthController', () => {
       mockRes as Response,
     );
 
-    expect(authService.changePassword).toHaveBeenCalledWith(7, 'new-password-1', 'old-password');
+    expect(authService.changePassword).toHaveBeenCalledWith(
+      uuidOf(7),
+      'new-password-1',
+      'old-password',
+    );
     const [cookieName, cookieValue] = (mockRes.cookie as jest.Mock).mock.calls[0];
     expect(cookieName).toBe('refresh_token');
     expect(decryptRefreshToken(cookieValue)).toBe('refresh-after-change');
@@ -185,13 +190,13 @@ describe('AuthController', () => {
   });
 
   it('should revoke every session for the user and clear the refresh cookie', async () => {
-    const mockReq = { user: { id: 7 } } as unknown as RequestWithUser;
+    const mockReq = { user: { id: uuidOf(7) } } as unknown as RequestWithUser;
     const mockRes: Partial<Response> = {
       clearCookie: jest.fn(),
     };
     const result = await controller.logout(mockReq, mockRes as Response);
 
-    expect(authService.revokeAllRefreshTokens).toHaveBeenCalledWith(7);
+    expect(authService.revokeAllRefreshTokens).toHaveBeenCalledWith(uuidOf(7));
     expect(mockRes.clearCookie).toHaveBeenCalledWith(
       'refresh_token',
       expect.objectContaining({
@@ -203,7 +208,7 @@ describe('AuthController', () => {
   });
 
   it('should clear the cookie even though the request never carries it', async () => {
-    const mockReq = { user: { id: 7 }, cookies: {} } as unknown as RequestWithUser;
+    const mockReq = { user: { id: uuidOf(7) }, cookies: {} } as unknown as RequestWithUser;
     const mockRes: Partial<Response> = {
       clearCookie: jest.fn(),
     };
@@ -233,7 +238,7 @@ describe('AuthController', () => {
         .post('/auth/logout')
         .expect(HttpStatus.OK, { success: true });
 
-      expect(authService.revokeAllRefreshTokens).toHaveBeenCalledWith(7);
+      expect(authService.revokeAllRefreshTokens).toHaveBeenCalledWith(uuidOf(7));
     });
   });
 });

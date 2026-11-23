@@ -2,6 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { FlagStatus, ModerationActionType, ModerationReason } from '@prisma/client';
 
+import { uuidOf } from '../../../test/uuid';
 import { MODERATOR, USER } from '../../auth/access/roles';
 import { PROJECT_CHANGED, ProjectChangedEvent } from '../../common/domain-events';
 import { NotificationsService } from '../../notifications/notifications.service';
@@ -13,34 +14,34 @@ import { ContentModerationService } from './content-moderation.service';
 import { MODERATION_ERROR } from './moderation.error';
 import { ModerationLogService } from './moderation-log.service';
 
-const MOD = { id: 1, role: MODERATOR } as const;
+const MOD = { id: uuidOf(1), role: MODERATOR } as const;
 const DECISION = { reason: ModerationReason.SPAM };
 
 describe('ContentModerationService', () => {
   const comment = (overrides: object = {}): object => ({
-    id: 31,
+    id: uuidOf(31),
     content: 'Buy my thing',
     deleted: false,
     hiddenAt: null,
-    authorId: 7,
+    authorId: uuidOf(7),
     ...overrides,
   });
-  const account = (id: number, role: string): object => ({
-    id,
-    username: `user${String(id)}`,
+  const account = (number: number, role: string): object => ({
+    id: uuidOf(number),
+    username: `user${String(number)}`,
     nickname: null,
     role,
-    email: `user${String(id)}@example.com`,
+    email: `user${String(number)}@example.com`,
     deletedAt: null,
   });
   const recorded = (action: ModerationActionType): object => ({
-    id: 99,
+    id: uuidOf(99),
     action,
     actor: account(1, MODERATOR),
     subject: account(7, USER),
-    subjectUserId: 7,
+    subjectUserId: uuidOf(7),
     targetType: 'COMMENT',
-    targetId: 31,
+    targetId: uuidOf(31),
     reason: ModerationReason.SPAM,
     publicMessage: null,
     internalNote: null,
@@ -50,8 +51,8 @@ describe('ContentModerationService', () => {
   });
 
   const game = (overrides: object = {}): object => ({
-    id: 12,
-    userId: 7,
+    id: uuidOf(12),
+    userId: uuidOf(7),
     name: 'Draft name',
     shortDesc: 'Draft blurb',
     longDesc: null,
@@ -109,7 +110,7 @@ describe('ContentModerationService', () => {
       log.record.mockResolvedValue({
         ...(recorded(ModerationActionType.PROJECT_DELETED) as object),
         targetType: 'PROJECT',
-        targetId: 12,
+        targetId: uuidOf(12),
       });
       projects.remove.mockImplementation(
         async (_id: number, alongside: (client: typeof tx) => unknown) => {
@@ -119,37 +120,39 @@ describe('ContentModerationService', () => {
     });
 
     it('deletes the game as its creator could, recording it in the same transaction', async () => {
-      await service.removeProject(MOD, 12, DECISION);
+      await service.removeProject(MOD, uuidOf(12), DECISION);
 
-      expect(projects.remove).toHaveBeenCalledWith(12, expect.any(Function));
+      expect(projects.remove).toHaveBeenCalledWith(uuidOf(12), expect.any(Function));
       expect(log.record).toHaveBeenCalledWith(
         tx,
         expect.objectContaining({
           action: ModerationActionType.PROJECT_DELETED,
-          targetId: 12,
-          subjectUserId: 7,
+          targetId: uuidOf(12),
+          subjectUserId: uuidOf(7),
           snapshot: { title: 'Ferry Click', body: 'Click the ferry\n\nA longer text' },
         }),
       );
       expect(tx.flag.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { targetType: 'PROJECT', targetId: 12, status: FlagStatus.OPEN },
+          where: { targetType: 'PROJECT', targetId: uuidOf(12), status: FlagStatus.OPEN },
         }),
       );
     });
 
     it('tells its creator', async () => {
-      await service.removeProject(MOD, 12, DECISION);
+      await service.removeProject(MOD, uuidOf(12), DECISION);
 
       expect(notifications.notifyBestEffort).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 7, title: 'Your game was deleted' }),
+        expect.objectContaining({ userId: uuidOf(7), title: 'Your game was deleted' }),
       );
     });
 
     it('tells nobody when the game was not deleted', async () => {
       projects.remove.mockRejectedValue(new Error('database is down'));
 
-      await expect(service.removeProject(MOD, 12, DECISION)).rejects.toThrow('database is down');
+      await expect(service.removeProject(MOD, uuidOf(12), DECISION)).rejects.toThrow(
+        'database is down',
+      );
       expect(notifications.notifyBestEffort).not.toHaveBeenCalled();
     });
   });
@@ -164,9 +167,9 @@ describe('ContentModerationService', () => {
     });
 
     it('deletes a comment nobody replied to, keeping its text in the log only', async () => {
-      await service.removeComment(MOD, 31, DECISION);
+      await service.removeComment(MOD, uuidOf(31), DECISION);
 
-      expect(txComments.delete).toHaveBeenCalledWith({ where: { id: 31 } });
+      expect(txComments.delete).toHaveBeenCalledWith({ where: { id: uuidOf(31) } });
       expect(log.record).toHaveBeenCalledWith(
         tx,
         expect.objectContaining({
@@ -179,11 +182,11 @@ describe('ContentModerationService', () => {
     it('empties a comment that has replies, so they keep their place', async () => {
       txComments.count.mockResolvedValue(2);
 
-      await service.removeComment(MOD, 31, DECISION);
+      await service.removeComment(MOD, uuidOf(31), DECISION);
 
       expect(txComments.delete).not.toHaveBeenCalled();
       expect(tx.comment.update).toHaveBeenCalledWith({
-        where: { id: 31 },
+        where: { id: uuidOf(31) },
         data: { deleted: true, content: '', hiddenAt: expect.any(Date) },
       });
     });
@@ -194,12 +197,12 @@ describe('ContentModerationService', () => {
       log.record.mockResolvedValue({
         ...(recorded(ModerationActionType.PROJECT_HIDDEN) as object),
         targetType: 'PROJECT',
-        targetId: 12,
+        targetId: uuidOf(12),
       });
     });
 
     it('copies the release out of reach, marks the row, then removes what is served', async () => {
-      await service.hideProject(MOD, 12, DECISION);
+      await service.hideProject(MOD, uuidOf(12), DECISION);
 
       const order = [
         content.copyToWithheld.mock.invocationCallOrder[0]!,
@@ -208,45 +211,50 @@ describe('ContentModerationService', () => {
       ];
       expect(order).toEqual([...order].sort((a, b) => a - b));
       expect(tx.project.updateMany).toHaveBeenCalledWith({
-        where: { id: 12, hiddenAt: null },
+        where: { id: uuidOf(12), hiddenAt: null },
         data: { hiddenAt: expect.any(Date), iconUrl: null, clipVersion: null },
       });
     });
 
     it('records the game as its page read, for its creator to find in their standing', async () => {
-      await service.hideProject(MOD, 12, DECISION);
+      await service.hideProject(MOD, uuidOf(12), DECISION);
 
       expect(log.record).toHaveBeenCalledWith(
         tx,
         expect.objectContaining({
           action: ModerationActionType.PROJECT_HIDDEN,
-          targetId: 12,
-          subjectUserId: 7,
+          targetId: uuidOf(12),
+          subjectUserId: uuidOf(7),
           snapshot: { title: 'Ferry Click', body: 'Click the ferry\n\nA longer text' },
         }),
       );
     });
 
     it('ends the live sessions of the game and tells who watches it', async () => {
-      await service.hideProject(MOD, 12, DECISION);
+      await service.hideProject(MOD, uuidOf(12), DECISION);
 
-      expect(multiplayer.endSessionsOfProject).toHaveBeenCalledWith(12);
-      expect(eventEmitter.emit).toHaveBeenCalledWith(PROJECT_CHANGED, new ProjectChangedEvent(12));
+      expect(multiplayer.endSessionsOfProject).toHaveBeenCalledWith(uuidOf(12));
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        PROJECT_CHANGED,
+        new ProjectChangedEvent(uuidOf(12)),
+      );
       expect(notifications.notifyBestEffort).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 7, title: 'Your game was hidden' }),
+        expect.objectContaining({ userId: uuidOf(7), title: 'Your game was hidden' }),
       );
     });
 
     it('stays hidden when what is served could not be removed', async () => {
       content.removeServedCopies.mockRejectedValue(new Error('storage is down'));
 
-      await expect(service.hideProject(MOD, 12, DECISION)).resolves.toBeDefined();
+      await expect(service.hideProject(MOD, uuidOf(12), DECISION)).resolves.toBeDefined();
     });
 
     it('removes nothing that is served when the row could not be marked', async () => {
       log.record.mockRejectedValue(new Error('database is down'));
 
-      await expect(service.hideProject(MOD, 12, DECISION)).rejects.toThrow('database is down');
+      await expect(service.hideProject(MOD, uuidOf(12), DECISION)).rejects.toThrow(
+        'database is down',
+      );
       expect(content.removeServedCopies).not.toHaveBeenCalled();
     });
 
@@ -262,7 +270,7 @@ describe('ContentModerationService', () => {
     ])('refuses a game that %s', async (_case, arrange) => {
       arrange();
 
-      await expect(service.hideProject(MOD, 12, DECISION)).rejects.toMatchObject({
+      await expect(service.hideProject(MOD, uuidOf(12), DECISION)).rejects.toMatchObject({
         code: MODERATION_ERROR.ALREADY_HIDDEN,
       });
       expect(log.record).not.toHaveBeenCalled();
@@ -271,7 +279,7 @@ describe('ContentModerationService', () => {
     it('refuses staff deciding about a game they created', async () => {
       prisma.project.findUnique.mockResolvedValue(game({ userId: MOD.id }));
 
-      await expect(service.hideProject(MOD, 12, DECISION)).rejects.toMatchObject({
+      await expect(service.hideProject(MOD, uuidOf(12), DECISION)).rejects.toMatchObject({
         code: MODERATION_ERROR.OWN_CASE,
       });
       expect(content.copyToWithheld).not.toHaveBeenCalled();
@@ -282,47 +290,47 @@ describe('ContentModerationService', () => {
     beforeEach(() => {
       prisma.project.findUnique.mockResolvedValue(game({ hiddenAt: new Date() }));
       content.copyFromWithheld.mockResolvedValue({
-        coverUrl: 'https://cdn.test/projects/12/image',
+        coverUrl: `https://cdn.test/projects/${uuidOf(12)}/image`,
         clipVersion: '"c11p"',
       });
       log.record.mockResolvedValue({
         ...(recorded(ModerationActionType.PROJECT_RESTORED) as object),
         targetType: 'PROJECT',
-        targetId: 12,
+        targetId: uuidOf(12),
       });
     });
 
     it('refuses a game that is not hidden', async () => {
       prisma.project.findUnique.mockResolvedValue(game());
 
-      await expect(service.restoreProject(MOD, 12, {})).rejects.toMatchObject({
+      await expect(service.restoreProject(MOD, uuidOf(12), {})).rejects.toMatchObject({
         code: MODERATION_ERROR.NOT_HIDDEN,
       });
       expect(content.copyFromWithheld).not.toHaveBeenCalled();
     });
 
     it('puts the release, the cover and the clip back, then drops the withheld copies', async () => {
-      await service.restoreProject(MOD, 12, {});
+      await service.restoreProject(MOD, uuidOf(12), {});
 
       expect(tx.project.updateMany).toHaveBeenCalledWith({
-        where: { id: 12, hiddenAt: { not: null } },
+        where: { id: uuidOf(12), hiddenAt: { not: null } },
         data: {
           hiddenAt: null,
-          iconUrl: 'https://cdn.test/projects/12/image',
+          iconUrl: `https://cdn.test/projects/${uuidOf(12)}/image`,
           clipVersion: '"c11p"',
         },
       });
-      expect(content.removeWithheldCopies).toHaveBeenCalledWith(12);
+      expect(content.removeWithheldCopies).toHaveBeenCalledWith(uuidOf(12));
       expect(content.removeServedCopies).not.toHaveBeenCalled();
     });
 
     it('names no cover and no clip on the row of a game that had none', async () => {
       content.copyFromWithheld.mockResolvedValue({ coverUrl: null, clipVersion: null });
 
-      await service.restoreProject(MOD, 12, {});
+      await service.restoreProject(MOD, uuidOf(12), {});
 
       expect(tx.project.updateMany).toHaveBeenCalledWith({
-        where: { id: 12, hiddenAt: { not: null } },
+        where: { id: uuidOf(12), hiddenAt: { not: null } },
         data: { hiddenAt: null },
       });
     });
@@ -330,8 +338,8 @@ describe('ContentModerationService', () => {
     it('takes the release back out of reach when the row could not be cleared', async () => {
       log.record.mockRejectedValue(new Error('database is down'));
 
-      await expect(service.restoreProject(MOD, 12, {})).rejects.toThrow('database is down');
-      expect(content.removeServedCopies).toHaveBeenCalledWith(12);
+      await expect(service.restoreProject(MOD, uuidOf(12), {})).rejects.toThrow('database is down');
+      expect(content.removeServedCopies).toHaveBeenCalledWith(uuidOf(12));
       expect(content.removeWithheldCopies).not.toHaveBeenCalled();
     });
   });
@@ -342,39 +350,43 @@ describe('ContentModerationService', () => {
     });
 
     it('hides it, keeps its text as evidence and closes its flags, in one transaction', async () => {
-      await service.hideComment(MOD, 31, DECISION);
+      await service.hideComment(MOD, uuidOf(31), DECISION);
 
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
       expect(tx.comment.update).toHaveBeenCalledWith({
-        where: { id: 31 },
+        where: { id: uuidOf(31) },
         data: { hiddenAt: expect.any(Date) },
       });
       expect(log.record).toHaveBeenCalledWith(
         tx,
         expect.objectContaining({
           action: ModerationActionType.COMMENT_HIDDEN,
-          targetId: 31,
-          subjectUserId: 7,
+          targetId: uuidOf(31),
+          subjectUserId: uuidOf(7),
           snapshot: { title: null, body: 'Buy my thing' },
         }),
       );
       expect(tx.flag.updateMany).toHaveBeenCalledWith({
-        where: { targetType: 'COMMENT', targetId: 31, status: FlagStatus.OPEN },
-        data: expect.objectContaining({ status: FlagStatus.ACTIONED, resolutionId: 99 }),
+        where: { targetType: 'COMMENT', targetId: uuidOf(31), status: FlagStatus.OPEN },
+        data: expect.objectContaining({ status: FlagStatus.ACTIONED, resolutionId: uuidOf(99) }),
       });
     });
 
     it('never touches the text of the comment', async () => {
-      await service.hideComment(MOD, 31, DECISION);
+      await service.hideComment(MOD, uuidOf(31), DECISION);
 
       expect(tx.comment.update.mock.calls[0][0].data).not.toHaveProperty('content');
     });
 
     it('tells the author, in the words of staff when there are some', async () => {
-      await service.hideComment(MOD, 31, { ...DECISION, publicMessage: 'No advertising.' });
+      await service.hideComment(MOD, uuidOf(31), { ...DECISION, publicMessage: 'No advertising.' });
 
       expect(notifications.notifyBestEffort).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 7, kind: 'MODERATION', message: 'No advertising.' }),
+        expect.objectContaining({
+          userId: uuidOf(7),
+          kind: 'MODERATION',
+          message: 'No advertising.',
+        }),
       );
     });
 
@@ -384,14 +396,14 @@ describe('ContentModerationService', () => {
     ])('refuses a comment that %s', async (_case, state, code) => {
       prisma.comment.findUnique.mockResolvedValue(comment(state));
 
-      await expect(service.hideComment(MOD, 31, DECISION)).rejects.toMatchObject({ code });
+      await expect(service.hideComment(MOD, uuidOf(31), DECISION)).rejects.toMatchObject({ code });
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
     it('refuses staff deciding about their own comment', async () => {
       prisma.comment.findUnique.mockResolvedValue(comment({ authorId: MOD.id }));
 
-      await expect(service.hideComment(MOD, 31, DECISION)).rejects.toMatchObject({
+      await expect(service.hideComment(MOD, uuidOf(31), DECISION)).rejects.toMatchObject({
         code: MODERATION_ERROR.OWN_CASE,
       });
     });
@@ -399,7 +411,7 @@ describe('ContentModerationService', () => {
     it('finds no comment that does not exist', async () => {
       prisma.comment.findUnique.mockResolvedValue(null);
 
-      await expect(service.hideComment(MOD, 31, DECISION)).rejects.toBeInstanceOf(
+      await expect(service.hideComment(MOD, uuidOf(31), DECISION)).rejects.toBeInstanceOf(
         NotFoundException,
       );
     });
@@ -407,7 +419,9 @@ describe('ContentModerationService', () => {
     it('hides nothing when the log row cannot be written', async () => {
       log.record.mockRejectedValue(new Error('database is down'));
 
-      await expect(service.hideComment(MOD, 31, DECISION)).rejects.toThrow('database is down');
+      await expect(service.hideComment(MOD, uuidOf(31), DECISION)).rejects.toThrow(
+        'database is down',
+      );
       expect(notifications.notifyBestEffort).not.toHaveBeenCalled();
     });
   });
@@ -418,7 +432,7 @@ describe('ContentModerationService', () => {
     });
 
     it('refuses a comment that is not hidden', async () => {
-      await expect(service.restoreComment(MOD, 31, {})).rejects.toMatchObject({
+      await expect(service.restoreComment(MOD, uuidOf(31), {})).rejects.toMatchObject({
         code: MODERATION_ERROR.NOT_HIDDEN,
       });
     });
@@ -426,10 +440,10 @@ describe('ContentModerationService', () => {
     it('puts it back as it was, records it and tells the author', async () => {
       prisma.comment.findUnique.mockResolvedValue(comment({ hiddenAt: new Date() }));
 
-      await service.restoreComment(MOD, 31, {});
+      await service.restoreComment(MOD, uuidOf(31), {});
 
       expect(tx.comment.update).toHaveBeenCalledWith({
-        where: { id: 31 },
+        where: { id: uuidOf(31) },
         data: { hiddenAt: null },
       });
       expect(log.record).toHaveBeenCalledWith(
@@ -437,7 +451,7 @@ describe('ContentModerationService', () => {
         expect.objectContaining({ action: ModerationActionType.COMMENT_RESTORED }),
       );
       expect(notifications.notifyBestEffort).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 7, title: 'Your comment is back' }),
+        expect.objectContaining({ userId: uuidOf(7), title: 'Your comment is back' }),
       );
     });
   });

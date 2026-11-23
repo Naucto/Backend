@@ -14,6 +14,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 
 import { withEnv } from '../../../test/env';
+import { uuidOf } from '../../../test/uuid';
 import { UserService } from '../../routes/user/user.service';
 import { STAFF_SCOPE } from '../auth.types';
 import { JwtStrategy } from '../strategies/jwt.strategy';
@@ -31,16 +32,16 @@ import { ACCOUNT_SUSPENDED } from './suspension';
 
 const SECRET = 'access-guard-spec-secret';
 
-const PLAIN_USER = 1;
-const MODERATOR_USER = 2;
-const ADMIN_USER = 3;
-const DELETED_USER = 4;
-const SUSPENDED_USER = 5;
-const SUSPENDED_MODERATOR = 6;
-const LAPSED_USER = 7;
-const VIEWER_USER = 8;
+const PLAIN_USER = uuidOf(1);
+const MODERATOR_USER = uuidOf(2);
+const ADMIN_USER = uuidOf(3);
+const DELETED_USER = uuidOf(4);
+const SUSPENDED_USER = uuidOf(5);
+const SUSPENDED_MODERATOR = uuidOf(6);
+const LAPSED_USER = uuidOf(7);
+const VIEWER_USER = uuidOf(8);
 
-const ROLES: Record<number, RoleName> = {
+const ROLES: Record<string, RoleName> = {
   [PLAIN_USER]: USER,
   [MODERATOR_USER]: MODERATOR,
   [ADMIN_USER]: ADMIN,
@@ -52,25 +53,25 @@ const ROLES: Record<number, RoleName> = {
 };
 
 const SUSPENDED_UNTIL = new Date('2999-01-01T00:00:00.000Z');
-const SUSPENSIONS: Record<number, { suspendedAt: Date; suspendedUntil: Date | null }> = {
+const SUSPENSIONS: Record<string, { suspendedAt: Date; suspendedUntil: Date | null }> = {
   [SUSPENDED_USER]: { suspendedAt: new Date('2026-01-01'), suspendedUntil: SUSPENDED_UNTIL },
   [SUSPENDED_MODERATOR]: { suspendedAt: new Date('2026-01-01'), suspendedUntil: null },
   [LAPSED_USER]: { suspendedAt: new Date('2020-01-01'), suspendedUntil: new Date('2020-01-02') },
 };
 
-type Caller = { user: { id: number } | null };
+type Caller = { user: { id: string } | null };
 
 @Controller('probe')
 @RequiresAuth()
 class ProbeController {
   @Public()
   @Get('public')
-  open(@Req() req: { user?: { id: number } | null }): Caller {
+  open(@Req() req: { user?: { id: string } | null }): Caller {
     return { user: req.user ? { id: req.user.id } : null };
   }
 
   @Get('auth')
-  signedIn(@Req() req: { user: { id: number } }): Caller {
+  signedIn(@Req() req: { user: { id: string } }): Caller {
     return { user: { id: req.user.id } };
   }
 
@@ -115,7 +116,7 @@ class BareController {
 describe('AccessGuard', () => {
   let app: INestApplication;
   const userService = {
-    findOne: jest.fn(async (id: number) => {
+    findOne: jest.fn(async (id: string) => {
       if (ROLES[id] === undefined) {
         throw new NotFoundException();
       }
@@ -128,11 +129,11 @@ describe('AccessGuard', () => {
         ...SUSPENSIONS[id],
       };
     }),
-    getUserRole: jest.fn(async (id: number) => ROLES[id] ?? USER),
+    getUserRole: jest.fn(async (id: string) => ROLES[id] ?? USER),
   };
-  const tokenFor = (userId: number): string =>
+  const tokenFor = (userId: string): string =>
     `Bearer ${new JwtService({ secret: SECRET }).sign({ sub: userId, email: 'someone@example.com' })}`;
-  const staffTokenFor = (userId: number): string =>
+  const staffTokenFor = (userId: string): string =>
     `Bearer ${new JwtService({ secret: SECRET }).sign({ sub: userId, email: 'someone@example.com', scope: STAFF_SCOPE })}`;
 
   beforeEach(async () => {
@@ -415,7 +416,7 @@ describe('AccessGuard', () => {
       ['an anonymous caller', undefined, HttpStatus.UNAUTHORIZED],
       ['a moderator', MODERATOR_USER, HttpStatus.FORBIDDEN],
       ['an admin', ADMIN_USER, HttpStatus.OK],
-    ])('is admin-only: %s gets %s', async (_caller, userId, status) => {
+    ])('is admin-only: %s', async (_caller, userId, status) => {
       const pending = request(app.getHttpServer()).get('/bare');
       const response = await (userId === undefined
         ? pending

@@ -3,6 +3,7 @@ import { TestingModule } from '@nestjs/testing';
 
 import { withEnv } from '../../../test/env';
 import { draft, ProjectMocks, released } from '../../../test/project-mocks';
+import { uuidOf } from '../../../test/uuid';
 import { PROJECT_CHANGED, ProjectChangedEvent } from '../../common/domain-events';
 import { ProjectHiddenException } from './project.error';
 import { ProjectService } from './project.service';
@@ -38,7 +39,7 @@ describe('ProjectService', () => {
 
   describe('findAll', () => {
     it('should return paginated projects for a given user', async () => {
-      const userId = 1;
+      const userId = uuidOf(1);
       const where = {
         collaborators: {
           some: { id: userId },
@@ -74,7 +75,7 @@ describe('ProjectService', () => {
     });
 
     it('should normalize page and cap limit', async () => {
-      const userId = 1;
+      const userId = uuidOf(1);
 
       prismaMock.project.count.mockResolvedValue(250);
       prismaMock.project.findMany.mockResolvedValue([draft, released]);
@@ -99,11 +100,36 @@ describe('ProjectService', () => {
     });
   });
 
+  describe('idOfLegacy', () => {
+    it('answers the id of the project a number once named, a draft included', async () => {
+      prismaMock.project.findUnique.mockResolvedValue({ id: draft.id });
+
+      await expect(service.idOfLegacy(12)).resolves.toBe(draft.id);
+
+      expect(prismaMock.project.findUnique).toHaveBeenCalledWith({
+        where: { legacyId: 12 },
+        select: { id: true },
+      });
+    });
+
+    it('answers a 404 for a number no project was known by', async () => {
+      prismaMock.project.findUnique.mockResolvedValue(null);
+
+      await expect(service.idOfLegacy(12)).rejects.toThrow(NotFoundException);
+    });
+
+    it('answers a 404, without asking the database, for a number larger than the column holds', async () => {
+      await expect(service.idOfLegacy(99_999_999_999)).rejects.toThrow(NotFoundException);
+
+      expect(prismaMock.project.findUnique).not.toHaveBeenCalled();
+    });
+  });
+
   describe('findOne', () => {
     it('should throw NotFoundException if project not found', async () => {
       prismaMock.project.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOne(999)).rejects.toThrow(NotFoundException);
+      await expect(service.findOne(uuidOf(999))).rejects.toThrow(NotFoundException);
     });
 
     it('opens a project with the disk its author chose', async () => {
@@ -135,10 +161,10 @@ describe('ProjectService', () => {
     });
 
     it('writes the style whole, leaving out what it does not name', async () => {
-      const stored = await service.setDisk(4, { color: '#16171a', finish: 'holo' });
+      const stored = await service.setDisk(uuidOf(4), { color: '#16171a', finish: 'holo' });
 
       expect(prismaMock.project.update).toHaveBeenCalledWith({
-        where: { id: 4 },
+        where: { id: uuidOf(4) },
         data: { diskColor: '#16171a', diskFinish: 'holo', diskColor2: null, diskGradDir: null },
         select: columns,
       });
@@ -146,7 +172,7 @@ describe('ProjectService', () => {
     });
 
     it('stores the colours in lower case, however they were spelled', async () => {
-      const stored = await service.setDisk(4, {
+      const stored = await service.setDisk(uuidOf(4), {
         color: '#FF8426',
         finish: 'stripes',
         color2: '#AbCdEf',
@@ -156,10 +182,10 @@ describe('ProjectService', () => {
     });
 
     it('goes back to no chosen style with null', async () => {
-      const stored = await service.setDisk(4, null);
+      const stored = await service.setDisk(uuidOf(4), null);
 
       expect(prismaMock.project.update).toHaveBeenCalledWith({
-        where: { id: 4 },
+        where: { id: uuidOf(4) },
         data: { diskColor: null, diskFinish: null, diskColor2: null, diskGradDir: null },
         select: columns,
       });
@@ -167,7 +193,7 @@ describe('ProjectService', () => {
     });
 
     it('leaves the release alone: the disk is live, like the cover', async () => {
-      await service.setDisk(4, { color: '#16171a', finish: 'solid' });
+      await service.setDisk(uuidOf(4), { color: '#16171a', finish: 'solid' });
 
       const [{ data }] = prismaMock.project.update.mock.calls[0] as [{ data: object }];
       expect(Object.keys(data).sort()).toEqual([
@@ -186,11 +212,11 @@ describe('ProjectService', () => {
     };
 
     it('should create and return a project', async () => {
-      const userId = 1;
+      const userId = uuidOf(1);
 
       prismaMock.user.findUnique.mockResolvedValue({ id: userId });
       txMock.project.create.mockResolvedValue({
-        id: 10,
+        id: uuidOf(10),
         ...createDto,
         collaborators: [{ id: userId, username: 'user1' }],
         creator: { id: userId, username: 'user1' },
@@ -208,35 +234,35 @@ describe('ProjectService', () => {
           include: expect.any(Object),
         }),
       );
-      expect(result).toHaveProperty('id', 10);
+      expect(result).toHaveProperty('id', uuidOf(10));
     });
 
     it('records the creation in the transaction that creates the project', async () => {
-      prismaMock.user.findUnique.mockResolvedValue({ id: 1 });
-      txMock.project.create.mockResolvedValue({ id: 10 });
+      prismaMock.user.findUnique.mockResolvedValue({ id: uuidOf(1) });
+      txMock.project.create.mockResolvedValue({ id: uuidOf(10) });
 
-      await service.create(createDto, 1);
+      await service.create(createDto, uuidOf(1));
 
       expect(factsMock.record).toHaveBeenCalledWith(txMock, {
         type: 'PROJECT_CREATED',
-        dedupeKey: 'project:10',
-        actorUserId: 1,
-        projectId: 10,
+        dedupeKey: `project:${uuidOf(10)}`,
+        actorUserId: uuidOf(1),
+        projectId: uuidOf(10),
       });
     });
 
     it('should throw NotFoundException if user not found', async () => {
       prismaMock.user.findUnique.mockResolvedValue(null);
 
-      await expect(service.create(createDto, 999)).rejects.toThrow(NotFoundException);
+      await expect(service.create(createDto, uuidOf(999))).rejects.toThrow(NotFoundException);
     });
 
     it('lets a database failure through as it is', async () => {
       const failure = new Error('DB error');
-      prismaMock.user.findUnique.mockResolvedValue({ id: 1 });
+      prismaMock.user.findUnique.mockResolvedValue({ id: uuidOf(1) });
       txMock.project.create.mockRejectedValue(failure);
 
-      await expect(service.create(createDto, 1)).rejects.toBe(failure);
+      await expect(service.create(createDto, uuidOf(1))).rejects.toBe(failure);
       expect(factsMock.record).not.toHaveBeenCalled();
     });
   });
@@ -251,15 +277,15 @@ describe('ProjectService', () => {
       prismaMock.project.findUnique.mockResolvedValue(draft);
       prismaMock.project.update.mockResolvedValue(draft);
 
-      await service.update(1, { ...updateDto, tags: [' Action ', 'action', ''] });
+      await service.update(uuidOf(1), { ...updateDto, tags: [' Action ', 'action', ''] });
 
       expect(prismaMock.project.update).toHaveBeenCalledWith({
-        where: { id: 1 },
+        where: { id: uuidOf(1) },
         data: { ...updateDto, tags: ['Action'] },
       });
       expect(eventEmitterMock.emit).toHaveBeenCalledWith(
         PROJECT_CHANGED,
-        new ProjectChangedEvent(1),
+        new ProjectChangedEvent(uuidOf(1)),
       );
     });
 
@@ -267,10 +293,10 @@ describe('ProjectService', () => {
       prismaMock.project.findUnique.mockResolvedValue(draft);
       prismaMock.project.update.mockResolvedValue(draft);
 
-      await service.update(1, { ...updateDto, palette: ['#FAFDFF', '#16171a'] });
+      await service.update(uuidOf(1), { ...updateDto, palette: ['#FAFDFF', '#16171a'] });
 
       expect(prismaMock.project.update).toHaveBeenCalledWith({
-        where: { id: 1 },
+        where: { id: uuidOf(1) },
         data: { ...updateDto, palette: ['#fafdff', '#16171a'] },
       });
     });
@@ -279,15 +305,15 @@ describe('ProjectService', () => {
       prismaMock.project.findUnique.mockResolvedValue(draft);
       prismaMock.project.update.mockResolvedValue(draft);
 
-      await service.update(1, updateDto);
-      await service.update(1, { ...updateDto, palette: [] });
+      await service.update(uuidOf(1), updateDto);
+      await service.update(uuidOf(1), { ...updateDto, palette: [] });
 
       expect(prismaMock.project.update).toHaveBeenNthCalledWith(1, {
-        where: { id: 1 },
+        where: { id: uuidOf(1) },
         data: updateDto,
       });
       expect(prismaMock.project.update).toHaveBeenNthCalledWith(2, {
-        where: { id: 1 },
+        where: { id: uuidOf(1) },
         data: { ...updateDto, palette: [] },
       });
     });
@@ -295,7 +321,7 @@ describe('ProjectService', () => {
     it('should throw NotFoundException if project does not exist', async () => {
       prismaMock.project.findUnique.mockResolvedValue(null);
 
-      await expect(service.update(999, updateDto)).rejects.toThrow(NotFoundException);
+      await expect(service.update(uuidOf(999), updateDto)).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -308,19 +334,19 @@ describe('ProjectService', () => {
       s3ServiceMock.getFileMetadataOrNull.mockResolvedValue({ ETag: '"5d41"' });
       const file = { originalname: 'cover.png' } as Express.Multer.File;
 
-      await service.uploadImage(1, file, 7);
+      await service.uploadImage(uuidOf(1), file, uuidOf(7));
 
       expect(s3ServiceMock.uploadFile).toHaveBeenCalledWith(
-        expect.objectContaining({ file, keyName: 'projects/1/image' }),
+        expect.objectContaining({ file, keyName: `projects/${uuidOf(1)}/image` }),
       );
-      expect(s3ServiceMock.setObjectPublicRead).toHaveBeenCalledWith('projects/1/image');
+      expect(s3ServiceMock.setObjectPublicRead).toHaveBeenCalledWith(`projects/${uuidOf(1)}/image`);
       expect(prismaMock.project.update).toHaveBeenCalledWith({
-        where: { id: 1 },
-        data: { iconUrl: 'https://cdn.test/projects/1/image', coverVersion: '"5d41"' },
+        where: { id: uuidOf(1) },
+        data: { iconUrl: `https://cdn.test/projects/${uuidOf(1)}/image`, coverVersion: '"5d41"' },
       });
       expect(eventEmitterMock.emit).toHaveBeenCalledWith(
         PROJECT_CHANGED,
-        new ProjectChangedEvent(1),
+        new ProjectChangedEvent(uuidOf(1)),
       );
     });
   });
@@ -330,7 +356,7 @@ describe('ProjectService', () => {
 
     beforeEach(() => {
       prismaMock.project.update.mockImplementation(
-        async ({ where, data }: { where: { id: number }; data: object }) => ({
+        async ({ where, data }: { where: { id: string }; data: object }) => ({
           ...draft,
           ...where,
           ...data,
@@ -340,43 +366,43 @@ describe('ProjectService', () => {
     });
 
     it('stores the clip where anyone may read it and keeps its version on the row', async () => {
-      const clipUrl = await service.uploadClip(1, file, 7);
+      const clipUrl = await service.uploadClip(uuidOf(1), file, uuidOf(7));
 
       expect(s3ServiceMock.uploadFile).toHaveBeenCalledWith({
         file,
-        keyName: 'projects/1/clip',
-        metadata: { uploadedBy: '7', projectId: '1' },
+        keyName: `projects/${uuidOf(1)}/clip`,
+        metadata: { uploadedBy: uuidOf(7), projectId: uuidOf(1) },
         cacheControl: 'no-cache',
       });
-      expect(s3ServiceMock.setObjectPublicRead).toHaveBeenCalledWith('projects/1/clip');
+      expect(s3ServiceMock.setObjectPublicRead).toHaveBeenCalledWith(`projects/${uuidOf(1)}/clip`);
       expect(prismaMock.project.update).toHaveBeenCalledWith({
-        where: { id: 1 },
+        where: { id: uuidOf(1) },
         data: { clipVersion: '"c11p"' },
       });
-      expect(clipUrl).toBe('https://cdn.test/projects/1/clip?v=c11p');
+      expect(clipUrl).toBe(`https://cdn.test/projects/${uuidOf(1)}/clip?v=c11p`);
     });
 
     it('tells whoever shows the project that it changed, as a new cover does', async () => {
-      await service.uploadClip(1, file, 7);
+      await service.uploadClip(uuidOf(1), file, uuidOf(7));
 
       expect(eventEmitterMock.emit).toHaveBeenCalledWith(
         PROJECT_CHANGED,
-        new ProjectChangedEvent(1),
+        new ProjectChangedEvent(uuidOf(1)),
       );
     });
 
     it('still records a clip the store gave no version for', async () => {
       s3ServiceMock.getFileMetadataOrNull.mockResolvedValue(null);
 
-      await expect(service.uploadClip(1, file, 7)).resolves.toMatch(
-        /^https:\/\/cdn\.test\/projects\/1\/clip\?v=\d+$/,
+      await expect(service.uploadClip(uuidOf(1), file, uuidOf(7))).resolves.toMatch(
+        /^https:\/\/cdn\.test\/projects\/[0-9a-f-]{36}\/clip\?v=\d+$/,
       );
     });
 
     it('records nothing when the store refuses the clip', async () => {
       s3ServiceMock.uploadFile.mockRejectedValue(new Error('store down'));
 
-      await expect(service.uploadClip(1, file, 7)).rejects.toThrow('store down');
+      await expect(service.uploadClip(uuidOf(1), file, uuidOf(7))).rejects.toThrow('store down');
 
       expect(prismaMock.project.update).not.toHaveBeenCalled();
     });
@@ -385,31 +411,31 @@ describe('ProjectService', () => {
       prismaMock.project.findUnique.mockResolvedValue({ ...draft, clipVersion: '"c11p"' });
 
       await expect(service.findOne(draft.id)).resolves.toMatchObject({
-        clipUrl: 'https://cdn.test/projects/1/clip?v=c11p',
+        clipUrl: `https://cdn.test/projects/${uuidOf(1)}/clip?v=c11p`,
       });
       expect(s3ServiceMock.getFileMetadataOrNull).not.toHaveBeenCalled();
     });
 
     it('removes the clip from the row before the store, and says the project changed', async () => {
-      await service.removeClip(1);
+      await service.removeClip(uuidOf(1));
 
       expect(prismaMock.project.update).toHaveBeenCalledWith({
-        where: { id: 1 },
+        where: { id: uuidOf(1) },
         data: { clipVersion: null },
       });
-      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({ key: 'projects/1/clip' });
+      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({ key: `projects/${uuidOf(1)}/clip` });
       expect(prismaMock.project.update.mock.invocationCallOrder[0]).toBeLessThan(
         s3ServiceMock.deleteFile.mock.invocationCallOrder[0]!,
       );
       expect(eventEmitterMock.emit).toHaveBeenCalledWith(
         PROJECT_CHANGED,
-        new ProjectChangedEvent(1),
+        new ProjectChangedEvent(uuidOf(1)),
       );
     });
 
     it.each([
-      ['a new clip', (): Promise<unknown> => service.uploadClip(1, file, 7)],
-      ['the removal of its clip', (): Promise<unknown> => service.removeClip(1)],
+      ['a new clip', (): Promise<unknown> => service.uploadClip(uuidOf(1), file, uuidOf(7))],
+      ['the removal of its clip', (): Promise<unknown> => service.removeClip(uuidOf(1))],
     ])('refuses %s while moderation withholds the game', async (_case, act) => {
       prismaMock.project.findUnique.mockResolvedValue({ hiddenAt: new Date() });
 
@@ -427,7 +453,7 @@ describe('ProjectService', () => {
       s3ServiceMock.listObjects.mockResolvedValue([]);
       const alongside = jest.fn();
 
-      await service.remove(1, alongside);
+      await service.remove(uuidOf(1), alongside);
 
       expect(alongside).toHaveBeenCalledWith(txMock);
       expect(txMock.project.delete.mock.invocationCallOrder[0]).toBeLessThan(
@@ -439,13 +465,13 @@ describe('ProjectService', () => {
       prismaMock.project.findUnique.mockResolvedValue(draft);
 
       await expect(
-        service.remove(1, () => Promise.reject(new Error('log is down'))),
+        service.remove(uuidOf(1), () => Promise.reject(new Error('log is down'))),
       ).rejects.toThrow('log is down');
       expect(s3ServiceMock.deleteFile).not.toHaveBeenCalled();
     });
 
     it('clears the sessions and the project together, then the stored content', async () => {
-      const projectId = 1;
+      const projectId = uuidOf(1);
       prismaMock.project.findUnique.mockResolvedValue(draft);
       txMock.project.delete.mockResolvedValue(draft);
       s3ServiceMock.deleteFile.mockResolvedValue(undefined);
@@ -487,23 +513,23 @@ describe('ProjectService', () => {
         { Key: `${prefix}b` },
       ]);
 
-      await service.remove(1);
+      await service.remove(uuidOf(1));
 
-      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({ key: 'release/1' });
+      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({ key: `release/${uuidOf(1)}` });
       expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({
-        key: 'projects/1/image',
+        key: `projects/${uuidOf(1)}/image`,
       });
-      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({ key: 'projects/1/clip' });
+      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({ key: `projects/${uuidOf(1)}/clip` });
       expect(s3ServiceMock.deleteFiles).toHaveBeenCalledWith({
-        keys: ['checkpoint/1/a', 'checkpoint/1/b'],
+        keys: [`checkpoint/${uuidOf(1)}/a`, `checkpoint/${uuidOf(1)}/b`],
       });
       expect(s3ServiceMock.deleteFiles).toHaveBeenCalledWith({
-        keys: ['save/1/a', 'save/1/b'],
+        keys: [`save/${uuidOf(1)}/a`, `save/${uuidOf(1)}/b`],
       });
     });
 
     it('still deletes the project when its stored content cannot be reached', async () => {
-      const projectId = 1;
+      const projectId = uuidOf(1);
       prismaMock.project.findUnique.mockResolvedValue(draft);
       txMock.project.delete.mockResolvedValue(draft);
       s3ServiceMock.deleteFile.mockRejectedValue(new Error('S3 error'));
@@ -518,22 +544,22 @@ describe('ProjectService', () => {
     it('should throw NotFoundException if project does not exist', async () => {
       prismaMock.project.findUnique.mockResolvedValue(null);
 
-      await expect(service.remove(999)).rejects.toThrow(NotFoundException);
+      await expect(service.remove(uuidOf(999))).rejects.toThrow(NotFoundException);
     });
   });
 
   describe('addCollaborator', () => {
-    const addDto = { userId: 2 };
+    const addDto = { userId: uuidOf(2) };
 
     it('should add collaborator successfully', async () => {
-      prismaMock.user.findUnique.mockResolvedValue({ id: 2 });
+      prismaMock.user.findUnique.mockResolvedValue({ id: uuidOf(2) });
       prismaMock.project.findUnique.mockResolvedValue({
         ...draft,
-        collaborators: [{ id: 1 }, { id: 3 }],
+        collaborators: [{ id: uuidOf(1) }, { id: uuidOf(3) }],
       });
       prismaMock.project.update.mockResolvedValue(draft);
 
-      const result = await service.addCollaborator(1, addDto);
+      const result = await service.addCollaborator(uuidOf(1), addDto);
 
       // Nothing else tells the invitee they were added; the project simply turns up in their list.
       expect(notificationsMock.notifyBestEffort).toHaveBeenCalledWith(
@@ -559,45 +585,45 @@ describe('ProjectService', () => {
     });
 
     it('should refuse a request that names nobody', async () => {
-      await expect(service.addCollaborator(1, {})).rejects.toThrow(BadRequestException);
+      await expect(service.addCollaborator(uuidOf(1), {})).rejects.toThrow(BadRequestException);
     });
 
     it('should throw NotFoundException if user not found', async () => {
       prismaMock.user.findUnique.mockResolvedValue(null);
 
-      await expect(service.addCollaborator(1, addDto)).rejects.toThrow(NotFoundException);
+      await expect(service.addCollaborator(uuidOf(1), addDto)).rejects.toThrow(NotFoundException);
     });
 
     it('should throw NotFoundException if project not found', async () => {
-      prismaMock.user.findUnique.mockResolvedValue({ id: 2 });
+      prismaMock.user.findUnique.mockResolvedValue({ id: uuidOf(2) });
       prismaMock.project.findUnique.mockResolvedValue(null);
 
-      await expect(service.addCollaborator(1, addDto)).rejects.toThrow(NotFoundException);
+      await expect(service.addCollaborator(uuidOf(1), addDto)).rejects.toThrow(NotFoundException);
     });
 
     it('should throw BadRequestException if user already collaborator', async () => {
-      prismaMock.user.findUnique.mockResolvedValue({ id: 2 });
+      prismaMock.user.findUnique.mockResolvedValue({ id: uuidOf(2) });
       prismaMock.project.findUnique.mockResolvedValue({
         ...draft,
-        collaborators: [{ id: 2 }],
+        collaborators: [{ id: uuidOf(2) }],
       });
 
-      await expect(service.addCollaborator(1, addDto)).rejects.toThrow(BadRequestException);
+      await expect(service.addCollaborator(uuidOf(1), addDto)).rejects.toThrow(BadRequestException);
     });
   });
 
   describe('removeCollaborator', () => {
-    const removeDto = { userId: 2 };
+    const removeDto = { userId: uuidOf(2) };
 
     it('should remove collaborator successfully', async () => {
-      prismaMock.user.findUnique.mockResolvedValue({ id: 2 });
+      prismaMock.user.findUnique.mockResolvedValue({ id: uuidOf(2) });
       prismaMock.project.findUnique.mockResolvedValue({
         ...draft,
-        collaborators: [{ id: 2 }, { id: 3 }],
+        collaborators: [{ id: uuidOf(2) }, { id: uuidOf(3) }],
       });
       prismaMock.project.update.mockResolvedValue(draft);
 
-      const result = await service.removeCollaborator(1, removeDto);
+      const result = await service.removeCollaborator(uuidOf(1), removeDto);
 
       expect(prismaMock.project.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -610,51 +636,51 @@ describe('ProjectService', () => {
     });
 
     it('should tell the removed collaborator and close their live session', async () => {
-      prismaMock.user.findUnique.mockResolvedValue({ id: 2 });
+      prismaMock.user.findUnique.mockResolvedValue({ id: uuidOf(2) });
       prismaMock.project.findUnique.mockResolvedValue({
         ...draft,
-        collaborators: [{ id: 2 }, { id: 3 }],
+        collaborators: [{ id: uuidOf(2) }, { id: uuidOf(3) }],
       });
       prismaMock.project.update.mockResolvedValue(draft);
 
-      await service.removeCollaborator(1, removeDto);
+      await service.removeCollaborator(uuidOf(1), removeDto);
 
       expect(notificationsMock.notifyBestEffort).toHaveBeenCalledWith(
         expect.objectContaining({
-          userId: 2,
+          userId: uuidOf(2),
           kind: 'COLLABORATOR_REMOVED',
         }),
       );
-      expect(workSessionsMock.kick).toHaveBeenCalledWith(1, 2);
+      expect(workSessionsMock.kick).toHaveBeenCalledWith(uuidOf(1), uuidOf(2));
     });
 
     it('removes the collaborator even when no session is open to close', async () => {
-      prismaMock.user.findUnique.mockResolvedValue({ id: 2 });
+      prismaMock.user.findUnique.mockResolvedValue({ id: uuidOf(2) });
       prismaMock.project.findUnique.mockResolvedValue({
         ...draft,
-        collaborators: [{ id: 2 }, { id: 3 }],
+        collaborators: [{ id: uuidOf(2) }, { id: uuidOf(3) }],
       });
       prismaMock.project.update.mockResolvedValue(draft);
       workSessionsMock.kick.mockRejectedValueOnce(new NotFoundException());
 
-      await expect(service.removeCollaborator(1, removeDto)).resolves.toEqual(draft);
+      await expect(service.removeCollaborator(uuidOf(1), removeDto)).resolves.toEqual(draft);
     });
 
     it('reports a live session it could not close, without failing the removal', async () => {
       const logged = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
-      prismaMock.user.findUnique.mockResolvedValue({ id: 2 });
+      prismaMock.user.findUnique.mockResolvedValue({ id: uuidOf(2) });
       prismaMock.project.findUnique.mockResolvedValue({
         ...draft,
-        collaborators: [{ id: 2 }, { id: 3 }],
+        collaborators: [{ id: uuidOf(2) }, { id: uuidOf(3) }],
       });
       prismaMock.project.update.mockResolvedValue(draft);
 
       workSessionsMock.kick.mockRejectedValueOnce(new NotFoundException());
-      await service.removeCollaborator(1, removeDto);
+      await service.removeCollaborator(uuidOf(1), removeDto);
       expect(logged).not.toHaveBeenCalled();
 
       workSessionsMock.kick.mockRejectedValueOnce(new Error('host election failed'));
-      await expect(service.removeCollaborator(1, removeDto)).resolves.toEqual(draft);
+      await expect(service.removeCollaborator(uuidOf(1), removeDto)).resolves.toEqual(draft);
       expect(logged).toHaveBeenCalledTimes(1);
 
       logged.mockRestore();
@@ -663,14 +689,18 @@ describe('ProjectService', () => {
     it('should throw NotFoundException if user not found', async () => {
       prismaMock.user.findUnique.mockResolvedValue(null);
 
-      await expect(service.removeCollaborator(1, removeDto)).rejects.toThrow(NotFoundException);
+      await expect(service.removeCollaborator(uuidOf(1), removeDto)).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('should throw NotFoundException if project not found', async () => {
-      prismaMock.user.findUnique.mockResolvedValue({ id: 2 });
+      prismaMock.user.findUnique.mockResolvedValue({ id: uuidOf(2) });
       prismaMock.project.findUnique.mockResolvedValue(null);
 
-      await expect(service.removeCollaborator(1, removeDto)).rejects.toThrow(NotFoundException);
+      await expect(service.removeCollaborator(uuidOf(1), removeDto)).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('should throw ForbiddenException if trying to remove creator', async () => {
@@ -681,19 +711,21 @@ describe('ProjectService', () => {
         collaborators: [{ id: creatorId }],
       });
 
-      await expect(service.removeCollaborator(1, { userId: creatorId })).rejects.toThrow(
+      await expect(service.removeCollaborator(uuidOf(1), { userId: creatorId })).rejects.toThrow(
         ForbiddenException,
       );
     });
 
     it('should throw BadRequestException if user not a collaborator', async () => {
-      prismaMock.user.findUnique.mockResolvedValue({ id: 2 });
+      prismaMock.user.findUnique.mockResolvedValue({ id: uuidOf(2) });
       prismaMock.project.findUnique.mockResolvedValue({
         ...draft,
-        collaborators: [{ id: 3 }],
+        collaborators: [{ id: uuidOf(3) }],
       });
 
-      await expect(service.removeCollaborator(1, removeDto)).rejects.toThrow(BadRequestException);
+      await expect(service.removeCollaborator(uuidOf(1), removeDto)).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 });

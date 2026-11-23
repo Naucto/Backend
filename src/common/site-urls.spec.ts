@@ -1,13 +1,15 @@
 import { withEnv } from '../../test/env';
+import { uuidOf } from '../../test/uuid';
 import { siteUrls } from './site-urls';
 
 describe('siteUrls', () => {
   it('builds on the address of the web app, whatever slash it ends with', () => {
     withEnv({ FRONTEND_URL: 'https://naucto.example/' });
 
-    expect(siteUrls.play(42)).toBe('https://naucto.example/play/42');
-    expect(siteUrls.previewPlay(42)).toBe('https://naucto.example/staff/play/42');
-    expect(siteUrls.previewEdit(42)).toBe('https://naucto.example/staff/edit/42');
+    const id = uuidOf(42);
+    expect(siteUrls.play(id)).toBe(`https://naucto.example/play/${id}`);
+    expect(siteUrls.previewPlay(id)).toBe(`https://naucto.example/staff/play/${id}`);
+    expect(siteUrls.previewEdit(id)).toBe(`https://naucto.example/staff/edit/${id}`);
   });
 
   it('escapes a handle', () => {

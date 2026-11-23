@@ -5,6 +5,8 @@ import { BadRequestException, ForbiddenException, NotFoundException } from '@nes
 import { Collection, CollectionVisibility, Prisma } from '@prisma/client';
 
 import { aProject } from '../../../test/project-mocks';
+import { uuidOf } from '../../../test/uuid';
+import { compareIds } from '../../common/ids';
 import { PrismaService } from '../../prisma/prisma.service';
 import { HubService } from '../project/hub.service';
 import { ReleaseProject } from '../project/project-select';
@@ -12,8 +14,8 @@ import { CollectionLimitException } from './collection.error';
 import { COLLECTION_GAMES_MAX, COLLECTIONS_PER_USER_MAX } from './collection-limits';
 import { CollectionsService } from './collections.service';
 
-const OWNER = 1;
-const OTHER = 2;
+const OWNER = uuidOf(1);
+const OTHER = uuidOf(2);
 const ANONYMOUS = null;
 
 const PUBLIC_ID = '11111111-1111-4111-8111-111111111111';
@@ -25,21 +27,23 @@ const ID_OF: Record<CollectionVisibility, string> = {
   PRIVATE: PRIVATE_ID,
 };
 
-type Item = { collectionId: string; projectId: number; position: number };
+type Item = { collectionId: string; projectId: string; position: number };
 type ItemWhere = {
   collectionId?: string | { in: string[] };
-  projectId?: number;
+  projectId?: string;
   project?: unknown;
-  collection?: { ownerId: number };
+  collection?: { ownerId: string };
 };
 type CollectionWhere = {
   id?: { in: string[] };
-  ownerId?: number;
+  ownerId?: string;
   visibility?: CollectionVisibility;
   items?: unknown;
 };
 
-const release = (id: number): ReleaseProject => ({
+const games = (...numbers: number[]): string[] => numbers.map(uuidOf);
+
+const release = (id: string): ReleaseProject => ({
   ...aProject({ id, name: `Game ${id}`, publishedAt: new Date('2026-10-01T00:00:00Z') }),
   commentCount: 0,
   forkCount: 0,
@@ -52,14 +56,14 @@ describe('CollectionsService', () => {
   /** The tables, and the games on the hub: a game missing from `onHub` is a draft or is gone. */
   let rows: Map<string, Collection>;
   let items: Item[];
-  let onHub: Set<number>;
+  let onHub: Set<string>;
 
   const hasGameOnHub = (collectionId: string): boolean =>
     items.some((item) => item.collectionId === collectionId && onHub.has(item.projectId));
 
   const withOwner = (row: Collection): Collection & { owner: object } => ({
     ...row,
-    owner: { id: row.ownerId, username: `user${row.ownerId}` },
+    owner: { id: row.ownerId, username: row.ownerId === OWNER ? 'owner' : 'other' },
   });
 
   const matching = (where: CollectionWhere): Collection[] =>
@@ -83,7 +87,7 @@ describe('CollectionsService', () => {
           (!where.project || onHub.has(item.projectId)) &&
           (!where.collection || rows.get(item.collectionId)?.ownerId === where.collection.ownerId),
       )
-      .sort((a, b) => a.position - b.position || a.projectId - b.projectId);
+      .sort((a, b) => a.position - b.position || compareIds(a.projectId, b.projectId));
 
   const prisma = {
     collection: {
@@ -110,7 +114,7 @@ describe('CollectionsService', () => {
   const add = (
     id: string,
     visibility: CollectionVisibility,
-    games: number[] = [],
+    listed: string[] = [],
     ownerId = OWNER,
   ): void => {
     const at = new Date(Date.UTC(2020, 0, 1 + rows.size));
@@ -123,17 +127,17 @@ describe('CollectionsService', () => {
       createdAt: at,
       updatedAt: at,
     });
-    items.push(...games.map((projectId, position) => ({ collectionId: id, projectId, position })));
+    items.push(...listed.map((projectId, position) => ({ collectionId: id, projectId, position })));
   };
 
-  const gamesOf = (id: string): number[] =>
+  const gamesOf = (id: string): string[] =>
     itemsMatching({ collectionId: id }).map((item) => item.projectId);
 
   beforeEach(() => {
     jest.resetAllMocks();
     rows = new Map();
     items = [];
-    onHub = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    onHub = new Set(games(1, 2, 3, 4, 5, 6, 7, 8, 9, 10));
 
     prisma.collection.findUnique.mockImplementation(
       async ({ where }: { where: { id: string } }) => {
@@ -189,20 +193,20 @@ describe('CollectionsService', () => {
         where,
         data,
       }: {
-        where: { collectionId_projectId: { collectionId: string; projectId: number } };
+        where: { collectionId_projectId: { collectionId: string; projectId: string } };
         data: { position: number };
       }) => {
         const [item] = itemsMatching(where.collectionId_projectId);
         (item as Item).position = data.position;
       },
     );
-    prisma.project.count.mockImplementation(async ({ where }: { where: { id: number } }) =>
+    prisma.project.count.mockImplementation(async ({ where }: { where: { id: string } }) =>
       onHub.has(where.id) ? 1 : 0,
     );
     prisma.$transaction.mockImplementation((operations: Promise<unknown>[]) =>
       Promise.all(operations),
     );
-    hubService.fetchReleasesByIds.mockImplementation(async (ids: number[]) =>
+    hubService.fetchReleasesByIds.mockImplementation(async (ids: string[]) =>
       ids.filter((id) => onHub.has(id)).map(release),
     );
 
@@ -211,13 +215,13 @@ describe('CollectionsService', () => {
       hubService as unknown as HubService,
     );
 
-    add(PUBLIC_ID, 'PUBLIC', [3, 1, 2]);
-    add(UNLISTED_ID, 'UNLISTED', [4]);
-    add(PRIVATE_ID, 'PRIVATE', [5]);
+    add(PUBLIC_ID, 'PUBLIC', games(3, 1, 2));
+    add(UNLISTED_ID, 'UNLISTED', games(4));
+    add(PRIVATE_ID, 'PRIVATE', games(5));
   });
 
   describe('who reads a collection', () => {
-    it.each<[string, number | null, CollectionVisibility, boolean]>([
+    it.each<[string, string | null, CollectionVisibility, boolean]>([
       ['its owner', OWNER, 'PUBLIC', true],
       ['its owner', OWNER, 'UNLISTED', true],
       ['its owner', OWNER, 'PRIVATE', true],
@@ -265,16 +269,16 @@ describe('CollectionsService', () => {
       expect(page).toMatchObject({ total: 1, page: 1, limit: 24 });
       expect(page.collections.map((one) => one.id)).toEqual([PUBLIC_ID]);
       expect(drawn.map((one) => one.id)).toEqual([PUBLIC_ID]);
-      expect(candidates).toEqual([{ id: PUBLIC_ID, ownerId: OWNER, games: [3, 1, 2] }]);
+      expect(candidates).toEqual([{ id: PUBLIC_ID, ownerId: OWNER, games: games(3, 1, 2) }]);
     });
   });
 
   describe('who changes a collection', () => {
-    const writes: [string, (id: string, userId: number) => Promise<unknown>][] = [
+    const writes: [string, (id: string, userId: string) => Promise<unknown>][] = [
       ['update', (id, userId) => service.update(id, userId, { title: 'Mine now' })],
       ['remove', (id, userId) => service.remove(id, userId)],
-      ['addGame', (id, userId) => service.addGame(id, userId, 9)],
-      ['removeGame', (id, userId) => service.removeGame(id, userId, 3)],
+      ['addGame', (id, userId) => service.addGame(id, userId, uuidOf(9))],
+      ['removeGame', (id, userId) => service.removeGame(id, userId, uuidOf(3))],
       ['reorder', (id, userId) => service.reorder(id, userId, [])],
     ];
 
@@ -283,14 +287,14 @@ describe('CollectionsService', () => {
       await expect(write(UNLISTED_ID, OTHER)).rejects.toBeInstanceOf(ForbiddenException);
 
       expect(rows.get(PUBLIC_ID)?.title).toBe('A public one');
-      expect(gamesOf(PUBLIC_ID)).toEqual([3, 1, 2]);
+      expect(gamesOf(PUBLIC_ID)).toEqual(games(3, 1, 2));
     });
 
     it.each(writes)('%s on a private one of someone else finds nothing', async (_name, write) => {
       await expect(write(PRIVATE_ID, OTHER)).rejects.toBeInstanceOf(NotFoundException);
 
       expect(rows.has(PRIVATE_ID)).toBe(true);
-      expect(gamesOf(PRIVATE_ID)).toEqual([5]);
+      expect(gamesOf(PRIVATE_ID)).toEqual(games(5));
     });
 
     it('lets its owner retitle it, clear its description and open it to others', async () => {
@@ -306,7 +310,7 @@ describe('CollectionsService', () => {
         title: 'Rainy days',
         description: null,
         visibility: 'UNLISTED',
-        owner: { id: OWNER, username: 'user1' },
+        owner: { id: OWNER, username: 'owner' },
       });
     });
 
@@ -352,85 +356,87 @@ describe('CollectionsService', () => {
     it('opens on its games in order, as cards', async () => {
       const opened = await service.findOne(PUBLIC_ID, ANONYMOUS);
 
-      expect(opened.games.map((game) => game.id)).toEqual([3, 1, 2]);
+      expect(opened.games.map((game) => game.id)).toEqual(games(3, 1, 2));
       expect(opened.gameCount).toBe(3);
       expect(opened.games[0]).not.toHaveProperty('releaseContentHash');
     });
 
     it('adds a game last, once', async () => {
-      await service.addGame(PUBLIC_ID, OWNER, 9);
-      await service.addGame(PUBLIC_ID, OWNER, 9);
-      await service.addGame(PUBLIC_ID, OWNER, 3);
+      await service.addGame(PUBLIC_ID, OWNER, uuidOf(9));
+      await service.addGame(PUBLIC_ID, OWNER, uuidOf(9));
+      await service.addGame(PUBLIC_ID, OWNER, uuidOf(3));
 
-      expect(gamesOf(PUBLIC_ID)).toEqual([3, 1, 2, 9]);
+      expect(gamesOf(PUBLIC_ID)).toEqual(games(3, 1, 2, 9));
     });
 
     it('refuses a game that is not on the hub, a draft as a gap', async () => {
-      onHub.delete(9);
+      onHub.delete(uuidOf(9));
 
-      await expect(service.addGame(PUBLIC_ID, OWNER, 9)).rejects.toBeInstanceOf(NotFoundException);
-      await expect(service.addGame(PUBLIC_ID, OWNER, 999)).rejects.toBeInstanceOf(
+      await expect(service.addGame(PUBLIC_ID, OWNER, uuidOf(9))).rejects.toBeInstanceOf(
         NotFoundException,
       );
-      expect(gamesOf(PUBLIC_ID)).toEqual([3, 1, 2]);
+      await expect(service.addGame(PUBLIC_ID, OWNER, uuidOf(999))).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(gamesOf(PUBLIC_ID)).toEqual(games(3, 1, 2));
     });
 
     it('refuses a two hundred and first game, but not one it already lists', async () => {
-      const full = Array.from({ length: COLLECTION_GAMES_MAX }, (_, index) => 100 + index);
+      const full = Array.from({ length: COLLECTION_GAMES_MAX }, (_, index) => uuidOf(100 + index));
       full.forEach((id) => onHub.add(id));
       add('full', 'PRIVATE', full);
 
-      const refused = service.addGame('full', OWNER, 9);
+      const refused = service.addGame('full', OWNER, uuidOf(9));
 
       await expect(refused).rejects.toBeInstanceOf(CollectionLimitException);
       await expect(refused).rejects.toMatchObject({
         response: { code: 'COLLECTION_GAMES_LIMIT', max: 200 },
       });
-      await expect(service.addGame('full', OWNER, 100)).resolves.toBeUndefined();
+      await expect(service.addGame('full', OWNER, uuidOf(100))).resolves.toBeUndefined();
       expect(gamesOf('full')).toHaveLength(COLLECTION_GAMES_MAX);
     });
 
     it('counts towards the limit a game that left the hub', async () => {
-      const full = Array.from({ length: COLLECTION_GAMES_MAX }, (_, index) => 100 + index);
+      const full = Array.from({ length: COLLECTION_GAMES_MAX }, (_, index) => uuidOf(100 + index));
       add('full', 'PRIVATE', full);
 
-      await expect(service.addGame('full', OWNER, 9)).rejects.toBeInstanceOf(
+      await expect(service.addGame('full', OWNER, uuidOf(9))).rejects.toBeInstanceOf(
         CollectionLimitException,
       );
     });
 
     it('removes a game, and does nothing for one it does not list', async () => {
-      await service.removeGame(PUBLIC_ID, OWNER, 1);
-      await service.removeGame(PUBLIC_ID, OWNER, 9);
+      await service.removeGame(PUBLIC_ID, OWNER, uuidOf(1));
+      await service.removeGame(PUBLIC_ID, OWNER, uuidOf(9));
 
-      expect(gamesOf(PUBLIC_ID)).toEqual([3, 2]);
+      expect(gamesOf(PUBLIC_ID)).toEqual(games(3, 2));
     });
 
     it('reorders to the list given', async () => {
-      await service.reorder(PUBLIC_ID, OWNER, [2, 3, 1]);
+      await service.reorder(PUBLIC_ID, OWNER, games(2, 3, 1));
 
-      expect(gamesOf(PUBLIC_ID)).toEqual([2, 3, 1]);
+      expect(gamesOf(PUBLIC_ID)).toEqual(games(2, 3, 1));
     });
 
     it('keeps a game the list leaves out after those it names, in the order it had', async () => {
-      add('long', 'PRIVATE', [1, 2, 3, 4, 5]);
+      add('long', 'PRIVATE', games(1, 2, 3, 4, 5));
 
-      await service.reorder('long', OWNER, [4, 2]);
+      await service.reorder('long', OWNER, games(4, 2));
 
-      expect(gamesOf('long')).toEqual([4, 2, 1, 3, 5]);
+      expect(gamesOf('long')).toEqual(games(4, 2, 1, 3, 5));
     });
 
     it('refuses to order a game the collection does not list', async () => {
-      await expect(service.reorder(PUBLIC_ID, OWNER, [1, 9])).rejects.toBeInstanceOf(
+      await expect(service.reorder(PUBLIC_ID, OWNER, games(1, 9))).rejects.toBeInstanceOf(
         BadRequestException,
       );
-      expect(gamesOf(PUBLIC_ID)).toEqual([3, 1, 2]);
+      expect(gamesOf(PUBLIC_ID)).toEqual(games(3, 1, 2));
     });
 
     it.each([
-      ['addGame', (): Promise<void> => service.addGame(PUBLIC_ID, OWNER, 9)],
-      ['removeGame', (): Promise<void> => service.removeGame(PUBLIC_ID, OWNER, 3)],
-      ['reorder', (): Promise<void> => service.reorder(PUBLIC_ID, OWNER, [1, 2, 3])],
+      ['addGame', (): Promise<void> => service.addGame(PUBLIC_ID, OWNER, uuidOf(9))],
+      ['removeGame', (): Promise<void> => service.removeGame(PUBLIC_ID, OWNER, uuidOf(3))],
+      ['reorder', (): Promise<void> => service.reorder(PUBLIC_ID, OWNER, games(1, 2, 3))],
     ])('%s dates the collection as changed', async (_name, change) => {
       const before = rows.get(PUBLIC_ID)?.updatedAt as Date;
 
@@ -441,20 +447,20 @@ describe('CollectionsService', () => {
   });
 
   describe('a game that left the hub', () => {
-    beforeEach(() => onHub.delete(1));
+    beforeEach(() => onHub.delete(uuidOf(1)));
 
     it('is hidden from everyone, its owner included, and counted out', async () => {
       for (const viewer of [OWNER, OTHER, ANONYMOUS]) {
         const opened = await service.findOne(PUBLIC_ID, viewer);
 
-        expect(opened.games.map((game) => game.id)).toEqual([3, 2]);
+        expect(opened.games.map((game) => game.id)).toEqual(games(3, 2));
         expect(opened.gameCount).toBe(2);
       }
     });
 
     it('is named to the owner alone, as unavailable', async () => {
       await expect(service.findOne(PUBLIC_ID, OWNER)).resolves.toMatchObject({
-        unavailableGameIds: [1],
+        unavailableGameIds: [uuidOf(1)],
       });
       await expect(service.findOne(PUBLIC_ID, OTHER)).resolves.toMatchObject({
         unavailableGameIds: [],
@@ -465,7 +471,7 @@ describe('CollectionsService', () => {
     });
 
     it('can still be removed by the owner', async () => {
-      await service.removeGame(PUBLIC_ID, OWNER, 1);
+      await service.removeGame(PUBLIC_ID, OWNER, uuidOf(1));
 
       await expect(service.findOne(PUBLIC_ID, OWNER)).resolves.toMatchObject({
         unavailableGameIds: [],
@@ -475,20 +481,20 @@ describe('CollectionsService', () => {
     it('is left out of a preview and of its count', async () => {
       const [preview] = await service.listPublicOf(OWNER);
 
-      expect(preview?.games.map((game) => game.id)).toEqual([3, 2]);
+      expect(preview?.games.map((game) => game.id)).toEqual(games(3, 2));
       expect(preview?.gameCount).toBe(2);
     });
 
     it('comes back where it was once it is published again', async () => {
-      onHub.add(1);
+      onHub.add(uuidOf(1));
 
       const opened = await service.findOne(PUBLIC_ID, ANONYMOUS);
 
-      expect(opened.games.map((game) => game.id)).toEqual([3, 1, 2]);
+      expect(opened.games.map((game) => game.id)).toEqual(games(3, 1, 2));
     });
 
     it('takes a public collection out of the public list when it was its last game', async () => {
-      add('lonely', 'PUBLIC', [1]);
+      add('lonely', 'PUBLIC', games(1));
 
       await expect(service.listedByIds(['lonely', PUBLIC_ID])).resolves.toEqual([
         expect.objectContaining({ id: PUBLIC_ID }),
@@ -499,13 +505,13 @@ describe('CollectionsService', () => {
 
   describe('previews', () => {
     it('show the first eight games and count them all', async () => {
-      add('big', 'PUBLIC', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], OTHER);
+      add('big', 'PUBLIC', games(1, 2, 3, 4, 5, 6, 7, 8, 9, 10), OTHER);
 
       const [preview] = await service.listPublicOf(OTHER);
 
-      expect(preview?.games.map((game) => game.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+      expect(preview?.games.map((game) => game.id)).toEqual(games(1, 2, 3, 4, 5, 6, 7, 8));
       expect(preview?.gameCount).toBe(10);
-      expect(preview?.owner).toEqual({ id: OTHER, username: 'user2' });
+      expect(preview?.owner).toEqual({ id: OTHER, username: 'other' });
     });
 
     it('read the cards of every collection listed in one go', async () => {
@@ -516,17 +522,17 @@ describe('CollectionsService', () => {
     });
 
     it('say for each of the caller’s collections whether it lists the game asked about', async () => {
-      onHub.delete(5);
+      onHub.delete(uuidOf(5));
 
-      const containing = async (projectId: number): Promise<string[]> =>
+      const containing = async (projectId: string): Promise<string[]> =>
         (await service.listMine(OWNER, projectId))
           .filter((one) => one.contains)
           .map((one) => one.id);
 
-      await expect(containing(3)).resolves.toEqual([PUBLIC_ID]);
+      await expect(containing(uuidOf(3))).resolves.toEqual([PUBLIC_ID]);
       // Listed, though it left the hub: adding it again would do nothing.
-      await expect(containing(5)).resolves.toEqual([PRIVATE_ID]);
-      await expect(containing(9)).resolves.toEqual([]);
+      await expect(containing(uuidOf(5))).resolves.toEqual([PRIVATE_ID]);
+      await expect(containing(uuidOf(9))).resolves.toEqual([]);
     });
 
     it('say nothing about a game when none was asked about', async () => {
@@ -545,7 +551,7 @@ describe('CollectionsService', () => {
     };
 
     beforeEach(() => {
-      add('other', 'PUBLIC', [7, 8], OTHER);
+      add('other', 'PUBLIC', games(7, 8), OTHER);
       prisma.$queryRaw.mockResolvedValue([{ id: 'other' }, { id: PUBLIC_ID }]);
     });
 

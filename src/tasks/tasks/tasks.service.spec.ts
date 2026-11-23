@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 
+import { uuidOf } from '../../../test/uuid';
 import { ProjectContentService } from '../../routes/project/project-content.service';
 import { WorkSessionService } from '../../routes/work-session/work-session.service';
 import { TasksService, WORK_SESSION_TIMEOUT_MS } from './tasks.service';
@@ -45,7 +46,11 @@ describe('TasksService', () => {
 
   describe('backfillProjectContentSizes', () => {
     it('recomputes every project lacking a breakdown and survives failures', async () => {
-      contentServiceMock.findProjectsWithoutContentSize.mockResolvedValue([1, 2, 3]);
+      contentServiceMock.findProjectsWithoutContentSize.mockResolvedValue([
+        uuidOf(1),
+        uuidOf(2),
+        uuidOf(3),
+      ]);
       contentServiceMock.recomputeContentSize
         .mockResolvedValueOnce({ total: 1 })
         .mockRejectedValueOnce(new Error('no save'))

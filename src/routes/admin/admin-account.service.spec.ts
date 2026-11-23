@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 
+import { uuidOf } from '../../../test/uuid';
 import { ADMIN, MODERATOR, USER, VIEWER } from '../../auth/access/roles';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ModerationLogService } from '../moderation/moderation-log.service';
@@ -7,17 +8,17 @@ import { AdminAccountService } from './admin-account.service';
 import { AdminAccountRow } from './admin-session.service';
 
 describe('AdminAccountService', () => {
-  let rows: Map<number, AdminAccountRow>;
+  let rows: Map<string, AdminAccountRow>;
   let service: AdminAccountService;
   const log = { record: jest.fn() };
   const users = {
-    findUnique: jest.fn(({ where }: { where: { id: number } }) => rows.get(where.id)),
+    findUnique: jest.fn(({ where }: { where: { id: string } }) => rows.get(where.id)),
     findMany: jest.fn(async (_query: object) => [...rows.values()]),
     count: jest.fn(
       async () => [...rows.values()].filter((row) => row.role === ADMIN && !row.deletedAt).length,
     ),
     update: jest.fn(
-      async ({ where, data }: { where: { id: number }; data: Partial<AdminAccountRow> }) => {
+      async ({ where, data }: { where: { id: string }; data: Partial<AdminAccountRow> }) => {
         const next = { ...rows.get(where.id)!, ...data };
         rows.set(where.id, next);
         return next;
@@ -31,7 +32,7 @@ describe('AdminAccountService', () => {
   };
 
   const row = (overrides: Partial<AdminAccountRow>): AdminAccountRow => ({
-    id: 1,
+    id: uuidOf(1),
     username: 'ada',
     nickname: null,
     email: 'ada@example.com',
@@ -43,8 +44,8 @@ describe('AdminAccountService', () => {
 
   beforeEach(() => {
     rows = new Map([
-      [1, row({})],
-      [2, row({ id: 2, username: 'bob', email: 'bob@example.com', role: USER })],
+      [uuidOf(1), row({})],
+      [uuidOf(2), row({ id: uuidOf(2), username: 'bob', email: 'bob@example.com', role: USER })],
     ]);
     jest.clearAllMocks();
     service = new AdminAccountService(
@@ -73,12 +74,21 @@ describe('AdminAccountService', () => {
   });
 
   it('makes an account a viewer', async () => {
-    await expect(service.setRole(1, 2, VIEWER)).resolves.toMatchObject({ id: 2, role: VIEWER });
+    await expect(service.setRole(uuidOf(1), uuidOf(2), VIEWER)).resolves.toMatchObject({
+      id: uuidOf(2),
+      role: VIEWER,
+    });
   });
 
   it('promotes an account to admin, and demotes it back', async () => {
-    await expect(service.setRole(1, 2, ADMIN)).resolves.toMatchObject({ id: 2, role: ADMIN });
-    await expect(service.setRole(1, 2, USER)).resolves.toMatchObject({ id: 2, role: USER });
+    await expect(service.setRole(uuidOf(1), uuidOf(2), ADMIN)).resolves.toMatchObject({
+      id: uuidOf(2),
+      role: ADMIN,
+    });
+    await expect(service.setRole(uuidOf(1), uuidOf(2), USER)).resolves.toMatchObject({
+      id: uuidOf(2),
+      role: USER,
+    });
   });
 
   it('lists whoever signs in to the console, and nobody else', async () => {
@@ -90,45 +100,54 @@ describe('AdminAccountService', () => {
   });
 
   it('writes a role change to the log, with the role left and the role taken', async () => {
-    await service.setRole(1, 2, MODERATOR);
+    await service.setRole(uuidOf(1), uuidOf(2), MODERATOR);
 
     expect(log.record).toHaveBeenCalledWith(
       transaction,
       expect.objectContaining({
         action: 'ROLE_CHANGED',
-        actorId: 1,
+        actorId: uuidOf(1),
         targetType: 'USER',
-        targetId: 2,
-        subjectUserId: 2,
+        targetId: uuidOf(2),
+        subjectUserId: uuidOf(2),
         internalNote: 'From User to Moderator',
       }),
     );
   });
 
   it('writes nothing when the account already holds the role', async () => {
-    await expect(service.setRole(1, 2, USER)).resolves.toMatchObject({ id: 2, role: USER });
+    await expect(service.setRole(uuidOf(1), uuidOf(2), USER)).resolves.toMatchObject({
+      id: uuidOf(2),
+      role: USER,
+    });
 
     expect(log.record).not.toHaveBeenCalled();
     expect(prisma.user.update).not.toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 2 } }),
+      expect.objectContaining({ where: { id: uuidOf(2) } }),
     );
   });
 
   it('never changes your own role', async () => {
-    await expect(service.setRole(1, 1, USER)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.setRole(uuidOf(1), uuidOf(1), USER)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
   });
 
   it('keeps the last admin one', async () => {
-    rows.set(3, row({ id: 3, role: USER }));
-    rows.set(1, row({ deletedAt: new Date() }));
-    rows.set(4, row({ id: 4 }));
+    rows.set(uuidOf(3), row({ id: uuidOf(3), role: USER }));
+    rows.set(uuidOf(1), row({ deletedAt: new Date() }));
+    rows.set(uuidOf(4), row({ id: uuidOf(4) }));
 
-    await expect(service.setRole(3, 4, USER)).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.setRole(uuidOf(3), uuidOf(4), USER)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
   });
 
   it('does not touch a deleted account', async () => {
-    rows.set(2, row({ id: 2, role: USER, deletedAt: new Date() }));
+    rows.set(uuidOf(2), row({ id: uuidOf(2), role: USER, deletedAt: new Date() }));
 
-    await expect(service.setRole(1, 2, ADMIN)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.setRole(uuidOf(1), uuidOf(2), ADMIN)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 });

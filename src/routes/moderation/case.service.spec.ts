@@ -2,6 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 import { FlagStatus, ModerationActionType, ModerationTargetType } from '@prisma/client';
 
 import { withEnv } from '../../../test/env';
+import { uuidOf } from '../../../test/uuid';
 import { ADMIN, MODERATOR, USER } from '../../auth/access/roles';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CaseService } from './case.service';
@@ -9,30 +10,30 @@ import { MODERATION_ERROR } from './moderation.error';
 import { ModerationLogService } from './moderation-log.service';
 import { ModerationTargetService, TargetView } from './moderation-target.service';
 
-const MOD = { id: 1, role: MODERATOR } as const;
+const MOD = { id: uuidOf(1), role: MODERATOR } as const;
 
 describe('CaseService', () => {
-  const account = (id: number, role: string = USER): TargetView['owner'] => ({
-    id,
-    username: `user${String(id)}`,
+  const account = (number: number, role: string = USER): TargetView['owner'] => ({
+    id: uuidOf(number),
+    username: `user${String(number)}`,
     nickname: null,
     role,
-    email: `user${String(id)}@example.com`,
+    email: `user${String(number)}@example.com`,
     deletedAt: null,
   });
   const comment = (overrides: Partial<TargetView> = {}): TargetView => ({
     type: ModerationTargetType.COMMENT,
-    id: 31,
+    id: uuidOf(31),
     state: 'VISIBLE',
     owner: account(7),
     content: { title: null, body: 'Buy my thing' },
-    project: { id: 12, name: 'Ferry Click', reachable: true },
+    project: { id: uuidOf(12), name: 'Ferry Click', reachable: true },
     ...overrides,
   });
   const row = (overrides: object = {}): object => ({
     targetType: ModerationTargetType.COMMENT,
-    targetId: 31,
-    targetOwnerId: 7,
+    targetId: uuidOf(31),
+    targetOwnerId: uuidOf(7),
     openFlags: 2,
     totalFlags: 3,
     openReasons: ['SPAM'],
@@ -92,12 +93,12 @@ describe('CaseService', () => {
         reasons: ['SPAM'],
         target: {
           type: ModerationTargetType.COMMENT,
-          id: 31,
+          id: uuidOf(31),
           state: 'VISIBLE',
           label: 'Buy my thing',
           projectName: 'Ferry Click',
-          playUrl: 'https://naucto.test/play/12',
-          previewEditUrl: 'https://naucto.test/staff/edit/12',
+          playUrl: `https://naucto.test/play/${uuidOf(12)}`,
+          previewEditUrl: `https://naucto.test/staff/edit/${uuidOf(12)}`,
         },
       });
     });
@@ -125,7 +126,7 @@ describe('CaseService', () => {
       expect(items[0]?.target).toMatchObject({
         state: 'GONE',
         label: 'Buy my thing',
-        owner: { id: 7 },
+        owner: { id: uuidOf(7) },
         playUrl: null,
       });
     });
@@ -133,14 +134,14 @@ describe('CaseService', () => {
     it('links no play page for a game players cannot reach', async () => {
       prisma.$queryRaw.mockResolvedValueOnce([row()]).mockResolvedValueOnce([{ total: 1 }]);
       targets.view.mockResolvedValue(
-        comment({ project: { id: 12, name: 'Ferry Click', reachable: false } }),
+        comment({ project: { id: uuidOf(12), name: 'Ferry Click', reachable: false } }),
       );
 
       const { items } = await service.list(MOD, {});
 
       expect(items[0]?.target).toMatchObject({
         playUrl: null,
-        previewPlayUrl: 'https://naucto.test/staff/play/12',
+        previewPlayUrl: `https://naucto.test/staff/play/${uuidOf(12)}`,
       });
     });
   });
@@ -149,16 +150,16 @@ describe('CaseService', () => {
     it('finds no case where nothing was ever reported', async () => {
       prisma.$queryRaw.mockResolvedValue([]);
 
-      await expect(service.detail(MOD, ModerationTargetType.COMMENT, 31)).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        service.detail(MOD, ModerationTargetType.COMMENT, uuidOf(31)),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('gives the target now, its flags, and what the caller may do', async () => {
       prisma.$queryRaw.mockResolvedValue([row()]);
       prisma.flag.findMany.mockResolvedValue([
         {
-          id: 50,
+          id: uuidOf(50),
           reporter: account(3),
           resolvedBy: null,
           reason: 'SPAM',
@@ -170,11 +171,11 @@ describe('CaseService', () => {
         },
       ]);
 
-      const detail = await service.detail(MOD, ModerationTargetType.COMMENT, 31);
+      const detail = await service.detail(MOD, ModerationTargetType.COMMENT, uuidOf(31));
 
       expect(detail.current).toEqual({ title: null, body: 'Buy my thing' });
       expect(detail.flags).toHaveLength(1);
-      expect(detail.flags[0]?.reporter).toMatchObject({ id: 3, email: null });
+      expect(detail.flags[0]?.reporter).toMatchObject({ id: uuidOf(3), email: null });
       expect(detail.allowedActions).toEqual([
         'DISMISS',
         'HIDE',
@@ -188,7 +189,7 @@ describe('CaseService', () => {
       prisma.$queryRaw.mockResolvedValue([row()]);
       prisma.flag.findMany.mockResolvedValue([
         {
-          id: 50,
+          id: uuidOf(50),
           reporter: account(3),
           resolvedBy: null,
           reason: 'SPAM',
@@ -200,7 +201,11 @@ describe('CaseService', () => {
         },
       ]);
 
-      const detail = await service.detail({ id: 2, role: ADMIN }, ModerationTargetType.COMMENT, 31);
+      const detail = await service.detail(
+        { id: uuidOf(2), role: ADMIN },
+        ModerationTargetType.COMMENT,
+        uuidOf(31),
+      );
 
       expect(detail.flags[0]?.reporter.email).toBe('user3@example.com');
     });
@@ -208,30 +213,32 @@ describe('CaseService', () => {
 
   describe('dismiss', () => {
     beforeEach(() => {
-      prisma.flag.findFirst.mockResolvedValue({ targetOwnerId: 7 });
+      prisma.flag.findFirst.mockResolvedValue({ targetOwnerId: uuidOf(7) });
       prisma.$queryRaw.mockResolvedValue([row({ openFlags: 0, openReasons: null })]);
-      log.record.mockResolvedValue({ id: 99 });
+      log.record.mockResolvedValue({ id: uuidOf(99) });
     });
 
     it('closes the open flags as dismissed, under one log row, in one transaction', async () => {
-      await service.dismiss(MOD, ModerationTargetType.COMMENT, 31, { internalNote: 'Not spam' });
+      await service.dismiss(MOD, ModerationTargetType.COMMENT, uuidOf(31), {
+        internalNote: 'Not spam',
+      });
 
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
       expect(log.record).toHaveBeenCalledWith(
         tx,
         expect.objectContaining({
           action: ModerationActionType.FLAGS_DISMISSED,
-          targetId: 31,
-          subjectUserId: 7,
+          targetId: uuidOf(31),
+          subjectUserId: uuidOf(7),
           internalNote: 'Not spam',
         }),
       );
       expect(tx.flag.updateMany).toHaveBeenCalledWith({
-        where: { targetType: 'COMMENT', targetId: 31, status: FlagStatus.OPEN },
+        where: { targetType: 'COMMENT', targetId: uuidOf(31), status: FlagStatus.OPEN },
         data: expect.objectContaining({
           status: FlagStatus.DISMISSED,
           openKey: null,
-          resolutionId: 99,
+          resolutionId: uuidOf(99),
         }),
       });
     });
@@ -240,15 +247,15 @@ describe('CaseService', () => {
       prisma.flag.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.dismiss(MOD, ModerationTargetType.COMMENT, 31, {}),
+        service.dismiss(MOD, ModerationTargetType.COMMENT, uuidOf(31), {}),
       ).rejects.toMatchObject({ code: MODERATION_ERROR.NO_OPEN_FLAGS });
     });
 
     it('refuses staff dismissing the reports on their own content', async () => {
-      targets.view.mockResolvedValue(comment({ owner: account(MOD.id, MODERATOR) }));
+      targets.view.mockResolvedValue(comment({ owner: account(1, MODERATOR) }));
 
       await expect(
-        service.dismiss(MOD, ModerationTargetType.COMMENT, 31, {}),
+        service.dismiss(MOD, ModerationTargetType.COMMENT, uuidOf(31), {}),
       ).rejects.toMatchObject({ code: MODERATION_ERROR.OWN_CASE });
       expect(log.record).not.toHaveBeenCalled();
     });
@@ -260,7 +267,7 @@ describe('CaseService', () => {
       prisma.flag.findFirst.mockResolvedValue({ targetOwnerId: MOD.id });
 
       await expect(
-        service.dismiss(MOD, ModerationTargetType.COMMENT, 31, {}),
+        service.dismiss(MOD, ModerationTargetType.COMMENT, uuidOf(31), {}),
       ).rejects.toMatchObject({ code: MODERATION_ERROR.OWN_CASE });
     });
   });

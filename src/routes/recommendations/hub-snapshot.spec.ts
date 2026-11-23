@@ -1,3 +1,4 @@
+import { uuidOf } from '../../../test/uuid';
 import { HUB_COLLECTIONS_SIZE, HUB_SHELF_SIZE } from './hub-limits';
 import {
   composeSnapshot,
@@ -9,10 +10,12 @@ import {
 const DAY = '2026-11-20';
 const NEXT_DAY = '2026-11-21';
 
+const games = (...numbers: number[]): string[] => numbers.map(uuidOf);
+
 /** A game on the hub with an author of its own, a little activity and no tag. */
 const game = (id: number, overrides: Partial<HubCandidate> = {}): HubCandidate => ({
-  id,
-  authorId: 1000 + id,
+  id: uuidOf(id),
+  authorId: uuidOf(1000 + id),
   tags: [],
   lifetime: 50,
   activity: 5,
@@ -26,7 +29,7 @@ const catalogue = (
 ): HubCandidate[] =>
   Array.from({ length: count }, (_, index) => game(index + 1, overrides(index + 1)));
 
-const firstPage = (games: number[]): number[] => games.slice(0, HUB_SHELF_SIZE);
+const firstPage = (shelf: string[]): string[] => shelf.slice(0, HUB_SHELF_SIZE);
 
 /** A public collection of three games on the hub, with an owner of its own. */
 const collection = (
@@ -34,14 +37,14 @@ const collection = (
   overrides: Partial<HubCollectionCandidate> = {},
 ): HubCollectionCandidate => ({
   id: `c${index}`,
-  ownerId: 2000 + index,
-  games: [1, 2, 3],
+  ownerId: uuidOf(2000 + index),
+  games: games(1, 2, 3),
   ...overrides,
 });
 
 /** The snapshots of `days` consecutive days, each composed over the one before. */
 function consecutiveDays(
-  games: HubCandidate[],
+  candidates: HubCandidate[],
   days: number,
   collections: HubCollectionCandidate[] = [],
 ): HubSnapshotPayload[] {
@@ -50,7 +53,7 @@ function consecutiveDays(
 
   for (let offset = 0; offset < days; offset++) {
     const day = new Date(start + offset * 86_400_000).toISOString().slice(0, 10);
-    snapshots.push(composeSnapshot(games, collections, day, snapshots[offset - 1] ?? null));
+    snapshots.push(composeSnapshot(candidates, collections, day, snapshots[offset - 1] ?? null));
   }
 
   return snapshots;
@@ -58,16 +61,18 @@ function consecutiveDays(
 
 describe('composeSnapshot', () => {
   it('draws a day the same way however often it is composed', () => {
-    const games = catalogue(60, (id) => ({ tags: [id % 2 ? 'arcade' : 'puzzle'] }));
+    const candidates = catalogue(60, (id) => ({ tags: [id % 2 ? 'arcade' : 'puzzle'] }));
 
-    expect(composeSnapshot(games, [], DAY, null)).toEqual(composeSnapshot(games, [], DAY, null));
+    expect(composeSnapshot(candidates, [], DAY, null)).toEqual(
+      composeSnapshot(candidates, [], DAY, null),
+    );
   });
 
   it('opens every shelf on other games the next day, when the pool is larger than a page', () => {
-    const games = catalogue(60, () => ({ tags: ['arcade'], daysOut: 10 }));
+    const candidates = catalogue(60, () => ({ tags: ['arcade'], daysOut: 10 }));
 
-    const today = composeSnapshot(games, [], DAY, null);
-    const tomorrow = composeSnapshot(games, [], NEXT_DAY, today);
+    const today = composeSnapshot(candidates, [], DAY, null);
+    const tomorrow = composeSnapshot(candidates, [], NEXT_DAY, today);
 
     expect(firstPage(tomorrow.popular.games)).not.toEqual(firstPage(today.popular.games));
     expect(firstPage(tomorrow.trending.games)).not.toEqual(firstPage(today.trending.games));
@@ -79,29 +84,29 @@ describe('composeSnapshot', () => {
   });
 
   it('draws within the three best pages of a shelf, never below', () => {
-    const games = catalogue(100, (id) => ({ lifetime: id }));
+    const candidates = catalogue(100, (id) => ({ lifetime: id }));
 
-    const { popular } = composeSnapshot(games, [], DAY, null);
+    const { popular } = composeSnapshot(candidates, [], DAY, null);
 
     expect(popular.games).toHaveLength(3 * HUB_SHELF_SIZE);
-    expect(Math.min(...popular.games)).toBe(100 - 3 * HUB_SHELF_SIZE + 1);
+    expect([...popular.games].sort()[0]).toBe(uuidOf(100 - 3 * HUB_SHELF_SIZE + 1));
     expect(popular.total).toBe(100);
   });
 
   it('holds at most two games of an author on a page, however many of them lead the scores', () => {
-    const games = catalogue(120, (id) =>
-      id <= 20 ? { authorId: 7, lifetime: 500, activity: 500 } : {},
+    const candidates = catalogue(120, (id) =>
+      id <= 20 ? { authorId: uuidOf(7), lifetime: 500, activity: 500 } : {},
     );
-    const authorOf = new Map(games.map((candidate) => [candidate.id, candidate.authorId]));
+    const authorOf = new Map(candidates.map((candidate) => [candidate.id, candidate.authorId]));
 
-    const { popular, trending } = composeSnapshot(games, [], DAY, null);
+    const { popular, trending } = composeSnapshot(candidates, [], DAY, null);
 
     for (const shelf of [popular.games, trending.games]) {
       expect(shelf).toHaveLength(3 * HUB_SHELF_SIZE);
       for (let start = 0; start < shelf.length; start += HUB_SHELF_SIZE) {
         const prolific = shelf
           .slice(start, start + HUB_SHELF_SIZE)
-          .filter((id) => authorOf.get(id) === 7);
+          .filter((id) => authorOf.get(id) === uuidOf(7));
         expect(prolific.length).toBeLessThanOrEqual(2);
       }
     }
@@ -134,45 +139,49 @@ describe('composeSnapshot', () => {
     });
 
     it('keep the best trending games on the first page of a small catalogue', () => {
-      const games = catalogue(30, (id) => ({ activity: id === 30 ? 10_000 : 1 }));
+      const candidates = catalogue(30, (id) => ({ activity: id === 30 ? 10_000 : 1 }));
 
-      for (const snapshot of consecutiveDays(games, 20)) {
-        expect(firstPage(snapshot.trending.games)).toContain(30);
+      for (const snapshot of consecutiveDays(candidates, 20)) {
+        expect(firstPage(snapshot.trending.games)).toContain(uuidOf(30));
       }
     });
   });
 
   it('lists as trending only the games something happened to', () => {
-    const games = [game(1, { activity: 0 }), game(2), game(3, { activity: 0 }), game(4)];
+    const candidates = [game(1, { activity: 0 }), game(2), game(3, { activity: 0 }), game(4)];
 
-    const { trending, popular } = composeSnapshot(games, [], DAY, null);
+    const { trending, popular } = composeSnapshot(candidates, [], DAY, null);
 
-    expect([...trending.games].sort()).toEqual([2, 4]);
+    expect([...trending.games].sort()).toEqual(games(2, 4));
     expect(trending.total).toBe(2);
     expect(popular.games).toHaveLength(4);
   });
 
   it('lists as new and rising only the games out for thirty days at most', () => {
-    const games = [game(1, { daysOut: 30 }), game(2, { daysOut: 30.5 }), game(3, { daysOut: 2 })];
+    const candidates = [
+      game(1, { daysOut: 30 }),
+      game(2, { daysOut: 30.5 }),
+      game(3, { daysOut: 2 }),
+    ];
 
-    expect([...composeSnapshot(games, [], DAY, null).rising].sort()).toEqual([1, 3]);
+    expect([...composeSnapshot(candidates, [], DAY, null).rising].sort()).toEqual(games(1, 3));
   });
 
   it('puts a new game that rises ahead of one that does not', () => {
-    const games = [
+    const candidates = [
       game(1, { daysOut: 4, activity: 0 }),
       game(2, { daysOut: 4, activity: 40 }),
       game(3, { daysOut: 4, activity: 0 }),
     ];
 
-    for (const snapshot of consecutiveDays(games, 20)) {
-      expect(snapshot.rising[0]).toBe(2);
+    for (const snapshot of consecutiveDays(candidates, 20)) {
+      expect(snapshot.rising[0]).toBe(uuidOf(2));
     }
   });
 
   describe('tag shelves', () => {
     it('exist for a tag three games carry, and hold only its games', () => {
-      const games = [
+      const candidates = [
         game(1, { tags: ['arcade', 'solo'] }),
         game(2, { tags: ['arcade'] }),
         game(3, { tags: ['arcade', 'solo'] }),
@@ -180,21 +189,21 @@ describe('composeSnapshot', () => {
         game(5, { tags: ['puzzle', 'puzzle'] }),
       ];
 
-      const { tags } = composeSnapshot(games, [], DAY, null);
+      const { tags } = composeSnapshot(candidates, [], DAY, null);
 
       expect(tags).toHaveLength(1);
       expect(tags[0]).toMatchObject({ tag: 'arcade', total: 3 });
-      expect([...tags[0]!.games].sort()).toEqual([1, 2, 3]);
+      expect([...tags[0]!.games].sort()).toEqual(games(1, 2, 3));
     });
 
     it('come in another order the next day, the busiest tags first more often', () => {
       const names = ['arcade', 'puzzle', 'race', 'solo', 'duel', 'story'];
-      const games = catalogue(36, (id) => ({
+      const candidates = catalogue(36, (id) => ({
         tags: [names[id % 6]!],
         activity: id % 6 === 0 ? 400 : 1,
       }));
 
-      const days = consecutiveDays(games, 200).map((snapshot) =>
+      const days = consecutiveDays(candidates, 200).map((snapshot) =>
         snapshot.tags.map((shelf) => shelf.tag),
       );
 
@@ -204,14 +213,16 @@ describe('composeSnapshot', () => {
     });
 
     it('open on the game something happens to most days, and on a quiet one now and then', () => {
-      const games = catalogue(6, (id) => ({
+      const candidates = catalogue(6, (id) => ({
         tags: ['arcade'],
         activity: id === 6 ? 300 : 0,
         lifetime: 10,
       }));
 
-      const openers = consecutiveDays(games, 200).map((snapshot) => snapshot.tags[0]!.games[0]);
-      const busy = openers.filter((opener) => opener === 6).length;
+      const openers = consecutiveDays(candidates, 200).map(
+        (snapshot) => snapshot.tags[0]!.games[0],
+      );
+      const busy = openers.filter((opener) => opener === uuidOf(6)).length;
 
       expect(busy).toBeGreaterThan(160);
       expect(busy).toBeLessThan(200);
@@ -229,14 +240,18 @@ describe('composeSnapshot', () => {
   });
 
   describe('collections', () => {
-    const games = catalogue(12);
+    const candidates = catalogue(12);
     const idsOf = (collections: HubCollectionCandidate[], day = DAY): string[] =>
-      composeSnapshot(games, collections, day, null).collections.ids;
+      composeSnapshot(candidates, collections, day, null).collections.ids;
 
     it('are put forward from three games on the hub, and all counted', () => {
       const { collections } = composeSnapshot(
-        games,
-        [collection(1), collection(2, { games: [1, 2] }), collection(3, { games: [4, 5, 6, 7] })],
+        candidates,
+        [
+          collection(1),
+          collection(2, { games: games(1, 2) }),
+          collection(3, { games: games(4, 5, 6, 7) }),
+        ],
         DAY,
         null,
       );
@@ -247,12 +262,12 @@ describe('composeSnapshot', () => {
 
     it('come one per owner, an owner of several showing another of theirs on other days', () => {
       const collections = [
-        ...[1, 2, 3, 4].map((index) => collection(index, { ownerId: 7 })),
+        ...[1, 2, 3, 4].map((index) => collection(index, { ownerId: uuidOf(7) })),
         collection(5),
         collection(6),
       ];
 
-      const days = consecutiveDays(games, 60, collections).map((snapshot) =>
+      const days = consecutiveDays(candidates, 60, collections).map((snapshot) =>
         snapshot.collections.ids.filter((id) => id <= 'c4'),
       );
 
@@ -271,7 +286,7 @@ describe('composeSnapshot', () => {
       const moving = catalogue(12, (id) => ({ activity: id <= 3 ? 100 : 0 }));
       const collections = [
         collection(1),
-        ...[2, 3, 4, 5].map((index) => collection(index, { games: [4, 5, 6] })),
+        ...[2, 3, 4, 5].map((index) => collection(index, { games: games(4, 5, 6) })),
       ];
 
       const openers = consecutiveDays(moving, 200, collections).map(
@@ -284,7 +299,7 @@ describe('composeSnapshot', () => {
     });
 
     it('open less often on the one that opened the shelf the day before', () => {
-      const openers = consecutiveDays(games, 300, [collection(1), collection(2)]).map(
+      const openers = consecutiveDays(candidates, 300, [collection(1), collection(2)]).map(
         (snapshot) => snapshot.collections.ids[0],
       );
 

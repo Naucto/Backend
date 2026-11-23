@@ -1,5 +1,6 @@
 import { Test } from '@nestjs/testing';
 
+import { uuidOf } from '../../../test/uuid';
 import { RequestWithUser } from '../../auth/auth.types';
 import { FriendsController, UserFriendshipController } from './friends.controller';
 import { FriendsService } from './friends.service';
@@ -17,7 +18,7 @@ describe('FriendsController', () => {
     recentPlayers: jest.fn(),
     friendshipStatus: jest.fn(),
   };
-  const req = { user: { id: 7 } } as RequestWithUser;
+  const req = { user: { id: uuidOf(7) } } as unknown as RequestWithUser;
 
   beforeEach(async () => {
     jest.resetAllMocks();
@@ -40,23 +41,23 @@ describe('FriendsController', () => {
     await controller.list(req);
     await controller.requests(req);
     await controller.send(req, { friendCode: '7K3QW9ZB' });
-    await controller.accept(req, 4);
-    await controller.decline(req, 5);
-    await controller.remove(req, 2);
+    await controller.accept(req, uuidOf(4));
+    await controller.decline(req, uuidOf(5));
+    await controller.remove(req, uuidOf(2));
     await controller.recentPlayers(req, 14);
-    await expect(friendshipController.friendship(req, 2)).resolves.toEqual({
+    await expect(friendshipController.friendship(req, uuidOf(2))).resolves.toEqual({
       status: 'NONE',
     });
 
-    expect(friendsService.list).toHaveBeenCalledWith(7);
-    expect(friendsService.requests).toHaveBeenCalledWith(7);
-    expect(friendsService.sendRequest).toHaveBeenCalledWith(7, {
+    expect(friendsService.list).toHaveBeenCalledWith(uuidOf(7));
+    expect(friendsService.requests).toHaveBeenCalledWith(uuidOf(7));
+    expect(friendsService.sendRequest).toHaveBeenCalledWith(uuidOf(7), {
       friendCode: '7K3QW9ZB',
     });
-    expect(friendsService.accept).toHaveBeenCalledWith(7, 4);
-    expect(friendsService.decline).toHaveBeenCalledWith(7, 5);
-    expect(friendsService.remove).toHaveBeenCalledWith(7, 2);
-    expect(friendsService.recentPlayers).toHaveBeenCalledWith(7, 14);
-    expect(friendsService.friendshipStatus).toHaveBeenCalledWith(7, 2);
+    expect(friendsService.accept).toHaveBeenCalledWith(uuidOf(7), uuidOf(4));
+    expect(friendsService.decline).toHaveBeenCalledWith(uuidOf(7), uuidOf(5));
+    expect(friendsService.remove).toHaveBeenCalledWith(uuidOf(7), uuidOf(2));
+    expect(friendsService.recentPlayers).toHaveBeenCalledWith(uuidOf(7), 14);
+    expect(friendsService.friendshipStatus).toHaveBeenCalledWith(uuidOf(7), uuidOf(2));
   });
 });

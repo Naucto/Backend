@@ -1,3 +1,4 @@
+import { uuidOf } from '../../../test/uuid';
 import { crashGroupKey, normalizeMessage } from './crash-group';
 
 describe('crash groups', () => {
@@ -14,6 +15,17 @@ describe('crash groups', () => {
     expect(crashGroupKey('WEB', 'TypeError', 'Release 1 broke')).toBe(
       'WEB:TypeError: Release <n> broke',
     );
+  });
+
+  it('gives one crash the same key whichever row its message names', () => {
+    expect(crashGroupKey('BACKEND', 'NotFoundError', `Project ${uuidOf(1)} is gone`)).toBe(
+      crashGroupKey(
+        'BACKEND',
+        'NotFoundError',
+        'Project 3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b is gone',
+      ),
+    );
+    expect(normalizeMessage(`Project ${uuidOf(1)} is gone`)).toBe('Project <id> is gone');
   });
 
   it('keeps a browser crash apart from a backend crash that reads the same', () => {

@@ -3,6 +3,7 @@ import { EventEmitter2, EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule, SchedulerRegistry } from '@nestjs/schedule';
 import { Test } from '@nestjs/testing';
 
+import { uuidOf } from '../../test/uuid';
 import {
   ACTIVITY_CHANGED,
   ActivityChangedEvent,
@@ -26,7 +27,7 @@ import {
 function aHostedSession(overrides: Partial<HostedSession> = {}): HostedSession {
   return {
     sessionId: 'uuid',
-    projectId: 5,
+    projectId: uuidOf(5),
     title: 'Race',
     maxPlayers: 4,
     players: 1,
@@ -68,105 +69,109 @@ describe('PresenceService', () => {
   });
 
   it('counts the accounts online in each state, each account once', async () => {
-    project.findFirst.mockResolvedValue({ id: 42, name: 'Game', publishedName: 'Game' });
-    await service.onSocketOpen(1, 11);
-    await service.onSocketOpen(1, 12);
-    await service.onSocketOpen(2, 21);
-    await service.onSet(2, 21, { kind: 'PLAYING', releaseId: 42 });
+    project.findFirst.mockResolvedValue({ id: uuidOf(42), name: 'Game', publishedName: 'Game' });
+    await service.onSocketOpen(uuidOf(1), 11);
+    await service.onSocketOpen(uuidOf(1), 12);
+    await service.onSocketOpen(uuidOf(2), 21);
+    await service.onSet(uuidOf(2), 21, { kind: 'PLAYING', releaseId: uuidOf(42) });
 
     expect(service.countsByKind()).toEqual({ IDLE: 1, PLAYING: 1, BUILDING: 0, HOSTING: 0 });
 
-    await service.onSocketClose(1, 11);
-    await service.onSocketClose(1, 12);
+    await service.onSocketClose(uuidOf(1), 11);
+    await service.onSocketClose(uuidOf(1), 12);
     expect(service.countsByKind()).toEqual({ IDLE: 0, PLAYING: 1, BUILDING: 0, HOSTING: 0 });
   });
 
   it('comes online IDLE on first socket and offline when the last one closes', async () => {
-    await service.onSocketOpen(1, 11);
-    expect(service.get(1)).toMatchObject({ userId: 1, kind: 'IDLE' });
+    await service.onSocketOpen(uuidOf(1), 11);
+    expect(service.get(uuidOf(1))).toMatchObject({ userId: uuidOf(1), kind: 'IDLE' });
 
-    await service.onSocketOpen(1, 12);
-    await service.onSocketClose(1, 12);
-    expect(service.get(1)).not.toBeNull();
+    await service.onSocketOpen(uuidOf(1), 12);
+    await service.onSocketClose(uuidOf(1), 12);
+    expect(service.get(uuidOf(1))).not.toBeNull();
 
-    await service.onSocketClose(1, 11);
-    expect(service.get(1)).toBeNull();
+    await service.onSocketClose(uuidOf(1), 11);
+    expect(service.get(uuidOf(1))).toBeNull();
   });
 
   it('counts both sockets of a user whose two tabs open together', async () => {
-    await Promise.all([service.onSocketOpen(1, 11), service.onSocketOpen(1, 12)]);
+    await Promise.all([service.onSocketOpen(uuidOf(1), 11), service.onSocketOpen(uuidOf(1), 12)]);
 
-    await service.onSocketClose(1, 11);
-    expect(service.get(1)).not.toBeNull();
+    await service.onSocketClose(uuidOf(1), 11);
+    expect(service.get(uuidOf(1))).not.toBeNull();
 
-    await service.onSocketClose(1, 12);
-    expect(service.get(1)).toBeNull();
+    await service.onSocketClose(uuidOf(1), 12);
+    expect(service.get(uuidOf(1))).toBeNull();
   });
 
   it('leaves nobody online when a socket closes while its open is still deriving', async () => {
-    friendsService.friendIdsOf.mockImplementation(async (id: number) => (id === 1 ? [2] : [1]));
-    await service.onSocketOpen(2, 21);
+    friendsService.friendIdsOf.mockImplementation(async (id: string) =>
+      id === uuidOf(1) ? [uuidOf(2)] : [uuidOf(1)],
+    );
+    await service.onSocketOpen(uuidOf(2), 21);
     fanOut.mockClear();
 
-    const opening = service.onSocketOpen(1, 11);
-    await service.onSocketClose(1, 11);
+    const opening = service.onSocketOpen(uuidOf(1), 11);
+    await service.onSocketClose(uuidOf(1), 11);
     await opening;
 
-    expect(service.get(1)).toBeNull();
+    expect(service.get(uuidOf(1))).toBeNull();
     expect(fanOut).not.toHaveBeenCalledWith(
-      2,
+      uuidOf(2),
       expect.objectContaining({ type: 'presence:changed' }),
     );
   });
 
   it("keeps an activity declared while the socket's open is still deriving", async () => {
-    const opening = service.onSocketOpen(1, 11);
-    await service.onSet(1, 11, { kind: 'PLAYING', releaseId: 42 });
+    const opening = service.onSocketOpen(uuidOf(1), 11);
+    await service.onSet(uuidOf(1), 11, { kind: 'PLAYING', releaseId: uuidOf(42) });
     await opening;
 
-    expect(service.get(1)).toMatchObject({ kind: 'PLAYING', releaseId: 42 });
+    expect(service.get(uuidOf(1))).toMatchObject({ kind: 'PLAYING', releaseId: uuidOf(42) });
   });
 
   it('still counts a socket whose derivation failed', async () => {
     user.findUnique.mockRejectedValueOnce(new Error('database down'));
-    await expect(service.onSocketOpen(1, 11)).rejects.toThrow('database down');
+    await expect(service.onSocketOpen(uuidOf(1), 11)).rejects.toThrow('database down');
 
-    await service.onSocketOpen(1, 12);
-    await service.onSocketClose(1, 12);
-    await service.onSet(1, 11, { kind: 'IDLE' });
+    await service.onSocketOpen(uuidOf(1), 12);
+    await service.onSocketClose(uuidOf(1), 12);
+    await service.onSet(uuidOf(1), 11, { kind: 'IDLE' });
 
-    expect(service.get(1)).toMatchObject({ kind: 'IDLE' });
+    expect(service.get(uuidOf(1))).toMatchObject({ kind: 'IDLE' });
   });
 
   it('fans changes out to online friends only', async () => {
     // 1 and 2 are friends; 2 is online, 3 is a friend but offline.
-    friendsService.friendIdsOf.mockImplementation(async (id: number) => (id === 1 ? [2, 3] : [1]));
-    await service.onSocketOpen(2, 21);
+    friendsService.friendIdsOf.mockImplementation(async (id: string) =>
+      id === uuidOf(1) ? [uuidOf(2), uuidOf(3)] : [uuidOf(1)],
+    );
+    await service.onSocketOpen(uuidOf(2), 21);
     fanOut.mockClear();
 
-    await service.onSocketOpen(1, 11);
+    await service.onSocketOpen(uuidOf(1), 11);
     expect(fanOut).toHaveBeenCalledTimes(1);
-    expect(fanOut).toHaveBeenCalledWith(2, {
+    expect(fanOut).toHaveBeenCalledWith(uuidOf(2), {
       type: 'presence:changed',
-      payload: expect.objectContaining({ userId: 1, kind: 'IDLE' }),
+      payload: expect.objectContaining({ userId: uuidOf(1), kind: 'IDLE' }),
     });
 
     fanOut.mockClear();
-    await service.onSocketClose(1, 11);
-    expect(fanOut).toHaveBeenCalledWith(2, {
+    await service.onSocketClose(uuidOf(1), 11);
+    expect(fanOut).toHaveBeenCalledWith(uuidOf(2), {
       type: 'presence:offline',
-      payload: { userId: 1 },
+      payload: { userId: uuidOf(1) },
     });
   });
 
   it('accepts PLAYING from the client but never HOSTING/BUILDING claims', async () => {
-    await service.onSocketOpen(1, 11);
+    await service.onSocketOpen(uuidOf(1), 11);
 
-    await service.onSet(1, 11, { kind: 'PLAYING', releaseId: 42 });
-    expect(service.get(1)).toMatchObject({ kind: 'PLAYING', releaseId: 42 });
+    await service.onSet(uuidOf(1), 11, { kind: 'PLAYING', releaseId: uuidOf(42) });
+    expect(service.get(uuidOf(1))).toMatchObject({ kind: 'PLAYING', releaseId: uuidOf(42) });
 
-    await service.onSet(1, 11, { kind: 'HOSTING' });
-    expect(service.get(1)).toMatchObject({ kind: 'IDLE', sessionId: null });
+    await service.onSet(uuidOf(1), 11, { kind: 'HOSTING' });
+    expect(service.get(uuidOf(1))).toMatchObject({ kind: 'IDLE', sessionId: null });
   });
 
   it('derives HOSTING from a live hosted game session', async () => {
@@ -177,14 +182,14 @@ describe('PresenceService', () => {
       }),
     );
 
-    await service.onSocketOpen(1, 11);
+    await service.onSocketOpen(uuidOf(1), 11);
 
-    expect(multiplayerService.hostedSession).toHaveBeenCalledWith(1);
-    expect(service.get(1)).toMatchObject({
+    expect(multiplayerService.hostedSession).toHaveBeenCalledWith(uuidOf(1));
+    expect(service.get(uuidOf(1))).toMatchObject({
       kind: 'HOSTING',
       sessionId: 'uuid',
-      projectId: 5,
-      releaseId: 5,
+      projectId: uuidOf(5),
+      releaseId: uuidOf(5),
       title: 'Race',
       players: 3,
       maxPlayers: 4,
@@ -195,85 +200,91 @@ describe('PresenceService', () => {
   it('shows a hosted session as joinable only when a friend may join it without a code', async () => {
     multiplayerService.hostedSession.mockResolvedValue(aHostedSession({ openToFriends: false }));
 
-    await service.onSocketOpen(1, 11);
+    await service.onSocketOpen(uuidOf(1), 11);
 
-    expect(service.get(1)?.joinable).toBe(false);
+    expect(service.get(uuidOf(1))?.joinable).toBe(false);
   });
 
   it('derives BUILDING from a work session', async () => {
     workSession.findFirst.mockResolvedValue({
-      projectId: 7,
+      projectId: uuidOf(7),
       project: { name: 'Platformer', iconUrl: null, _count: { collaborators: 1 } },
     });
 
-    await service.onSocketOpen(1, 11);
+    await service.onSocketOpen(uuidOf(1), 11);
 
-    expect(service.get(1)).toMatchObject({
+    expect(service.get(uuidOf(1))).toMatchObject({
       kind: 'BUILDING',
-      projectId: 7,
+      projectId: uuidOf(7),
       title: 'Platformer',
     });
   });
 
   it('keeps `since` when the activity does not change', async () => {
-    await service.onSocketOpen(1, 11);
-    const since = service.get(1)!.since;
+    await service.onSocketOpen(uuidOf(1), 11);
+    const since = service.get(uuidOf(1))!.since;
 
-    await service.onSet(1, 11, { kind: 'IDLE' });
-    expect(service.get(1)!.since).toBe(since);
+    await service.onSet(uuidOf(1), 11, { kind: 'IDLE' });
+    expect(service.get(uuidOf(1))!.since).toBe(since);
   });
 
   it('returns the presence of online friends for the snapshot', async () => {
-    await service.onSocketOpen(2, 21);
-    friendsService.friendIdsOf.mockResolvedValue([2, 3]);
+    await service.onSocketOpen(uuidOf(2), 21);
+    friendsService.friendIdsOf.mockResolvedValue([uuidOf(2), uuidOf(3)]);
 
-    const snapshot = await service.friendsPresence(1);
+    const snapshot = await service.friendsPresence(uuidOf(1));
 
     expect(snapshot).toHaveLength(1);
-    expect(snapshot[0]).toMatchObject({ userId: 2 });
+    expect(snapshot[0]).toMatchObject({ userId: uuidOf(2) });
   });
 
   it("shows a user's presence to that user and to friends, and to nobody else", async () => {
-    await service.onSocketOpen(1, 11);
+    await service.onSocketOpen(uuidOf(1), 11);
 
-    await expect(service.presenceOf(1, 1)).resolves.toMatchObject({ userId: 1 });
-    await expect(service.presenceOf(9, 1)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.presenceOf(uuidOf(1), uuidOf(1))).resolves.toMatchObject({
+      userId: uuidOf(1),
+    });
+    await expect(service.presenceOf(uuidOf(9), uuidOf(1))).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
 
     friendsService.areFriends.mockResolvedValue(true);
-    await expect(service.presenceOf(9, 1)).resolves.toMatchObject({ userId: 1 });
+    await expect(service.presenceOf(uuidOf(9), uuidOf(1))).resolves.toMatchObject({
+      userId: uuidOf(1),
+    });
   });
 
   it('shows BUILDING once the work session declared before it is joined', async () => {
-    await service.onSocketOpen(1, 11);
-    expect(service.get(1)).toMatchObject({ kind: 'IDLE' });
+    await service.onSocketOpen(uuidOf(1), 11);
+    expect(service.get(uuidOf(1))).toMatchObject({ kind: 'IDLE' });
 
     workSession.findFirst.mockResolvedValue({
-      projectId: 7,
+      projectId: uuidOf(7),
       project: { name: 'Platformer', iconUrl: null, _count: { collaborators: 0 } },
     });
-    await service.onActivityChanged(new ActivityChangedEvent(1));
+    await service.onActivityChanged(new ActivityChangedEvent(uuidOf(1)));
 
-    expect(service.get(1)).toMatchObject({ kind: 'BUILDING', projectId: 7 });
+    expect(service.get(uuidOf(1))).toMatchObject({ kind: 'BUILDING', projectId: uuidOf(7) });
   });
 
   it('shows what the client declared once the work session holding it is left', async () => {
     workSession.findFirst.mockResolvedValue({
-      projectId: 7,
+      projectId: uuidOf(7),
       project: { name: 'Platformer', iconUrl: null, _count: { collaborators: 0 } },
     });
     project.findFirst.mockResolvedValue({ publishedName: 'Race', name: 'Race', iconUrl: null });
-    await service.onSocketOpen(1, 11);
-    await service.onSet(1, 11, { kind: 'PLAYING', releaseId: 42 });
-    expect(service.get(1)).toMatchObject({ kind: 'BUILDING' });
+    await service.onSocketOpen(uuidOf(1), 11);
+    await service.onSet(uuidOf(1), 11, { kind: 'PLAYING', releaseId: uuidOf(42) });
+    expect(service.get(uuidOf(1))).toMatchObject({ kind: 'BUILDING' });
 
     workSession.findFirst.mockResolvedValue(null);
-    await service.onActivityChanged(new ActivityChangedEvent(1));
+    await service.onActivityChanged(new ActivityChangedEvent(uuidOf(1)));
 
-    expect(service.get(1)).toMatchObject({ kind: 'PLAYING', releaseId: 42 });
+    expect(service.get(uuidOf(1))).toMatchObject({ kind: 'PLAYING', releaseId: uuidOf(42) });
   });
 
   it('keeps the latest derivation when an earlier one finishes after it', async () => {
-    await service.onSocketOpen(1, 11);
+    await service.onSocketOpen(uuidOf(1), 11);
     let finishSlow: (value: unknown) => void = () => undefined;
     workSession.findFirst
       .mockImplementationOnce(
@@ -284,152 +295,165 @@ describe('PresenceService', () => {
       )
       .mockResolvedValueOnce(null);
 
-    const slow = service.onActivityChanged(new ActivityChangedEvent(1));
-    await service.onActivityChanged(new ActivityChangedEvent(1));
+    const slow = service.onActivityChanged(new ActivityChangedEvent(uuidOf(1)));
+    await service.onActivityChanged(new ActivityChangedEvent(uuidOf(1)));
     finishSlow({
-      projectId: 7,
+      projectId: uuidOf(7),
       project: { name: 'Platformer', iconUrl: null, _count: { collaborators: 0 } },
     });
     await slow;
 
-    expect(service.get(1)).toMatchObject({ kind: 'IDLE' });
+    expect(service.get(uuidOf(1))).toMatchObject({ kind: 'IDLE' });
   });
 
   it('derives nothing for a user who is offline', async () => {
-    await service.onActivityChanged(new ActivityChangedEvent(9));
+    await service.onActivityChanged(new ActivityChangedEvent(uuidOf(9)));
 
-    expect(service.get(9)).toBeNull();
+    expect(service.get(uuidOf(9))).toBeNull();
     expect(user.findUnique).not.toHaveBeenCalled();
   });
 
   it("hands two new friends each other's presence", async () => {
-    await service.onSocketOpen(1, 11);
-    await service.onSocketOpen(2, 21);
+    await service.onSocketOpen(uuidOf(1), 11);
+    await service.onSocketOpen(uuidOf(2), 21);
     friendsService.areFriends.mockResolvedValue(true);
     fanOut.mockClear();
 
-    await service.onFriendshipChanged(new FriendshipChangedEvent(1, 2));
+    await service.onFriendshipChanged(new FriendshipChangedEvent(uuidOf(1), uuidOf(2)));
 
-    expect(fanOut).toHaveBeenCalledWith(1, {
+    expect(fanOut).toHaveBeenCalledWith(uuidOf(1), {
       type: 'presence:changed',
-      payload: expect.objectContaining({ userId: 2 }),
+      payload: expect.objectContaining({ userId: uuidOf(2) }),
     });
-    expect(fanOut).toHaveBeenCalledWith(2, {
+    expect(fanOut).toHaveBeenCalledWith(uuidOf(2), {
       type: 'presence:changed',
-      payload: expect.objectContaining({ userId: 1 }),
+      payload: expect.objectContaining({ userId: uuidOf(1) }),
     });
   });
 
   it("takes two former friends off each other's list", async () => {
-    await service.onSocketOpen(1, 11);
-    await service.onSocketOpen(2, 21);
+    await service.onSocketOpen(uuidOf(1), 11);
+    await service.onSocketOpen(uuidOf(2), 21);
     fanOut.mockClear();
 
-    await service.onFriendshipChanged(new FriendshipChangedEvent(1, 2));
+    await service.onFriendshipChanged(new FriendshipChangedEvent(uuidOf(1), uuidOf(2)));
 
-    expect(fanOut).toHaveBeenCalledWith(1, { type: 'presence:offline', payload: { userId: 2 } });
-    expect(fanOut).toHaveBeenCalledWith(2, { type: 'presence:offline', payload: { userId: 1 } });
+    expect(fanOut).toHaveBeenCalledWith(uuidOf(1), {
+      type: 'presence:offline',
+      payload: { userId: uuidOf(2) },
+    });
+    expect(fanOut).toHaveBeenCalledWith(uuidOf(2), {
+      type: 'presence:offline',
+      payload: { userId: uuidOf(1) },
+    });
   });
 
   it('shows a new friend who is offline as offline', async () => {
-    await service.onSocketOpen(1, 11);
+    await service.onSocketOpen(uuidOf(1), 11);
     friendsService.areFriends.mockResolvedValue(true);
     fanOut.mockClear();
 
-    await service.onFriendshipChanged(new FriendshipChangedEvent(1, 2));
+    await service.onFriendshipChanged(new FriendshipChangedEvent(uuidOf(1), uuidOf(2)));
 
-    expect(fanOut).toHaveBeenCalledWith(1, { type: 'presence:offline', payload: { userId: 2 } });
+    expect(fanOut).toHaveBeenCalledWith(uuidOf(1), {
+      type: 'presence:offline',
+      payload: { userId: uuidOf(2) },
+    });
   });
 
   it('shows a game played in one tab while another tab browses or builds', async () => {
     project.findFirst.mockResolvedValue({ publishedName: 'Race', name: 'Race', iconUrl: null });
-    await service.onSocketOpen(1, 11);
-    await service.onSocketOpen(1, 12);
-    await service.onSet(1, 11, { kind: 'PLAYING', releaseId: 42 });
+    await service.onSocketOpen(uuidOf(1), 11);
+    await service.onSocketOpen(uuidOf(1), 12);
+    await service.onSet(uuidOf(1), 11, { kind: 'PLAYING', releaseId: uuidOf(42) });
 
-    await service.onSet(1, 12, { kind: 'IDLE' });
-    expect(service.get(1)).toMatchObject({ kind: 'PLAYING', releaseId: 42 });
+    await service.onSet(uuidOf(1), 12, { kind: 'IDLE' });
+    expect(service.get(uuidOf(1))).toMatchObject({ kind: 'PLAYING', releaseId: uuidOf(42) });
 
-    await service.onSet(1, 12, { kind: 'BUILDING', projectId: 7 });
-    expect(service.get(1)).toMatchObject({ kind: 'PLAYING', releaseId: 42 });
+    await service.onSet(uuidOf(1), 12, { kind: 'BUILDING', projectId: uuidOf(7) });
+    expect(service.get(uuidOf(1))).toMatchObject({ kind: 'PLAYING', releaseId: uuidOf(42) });
   });
 
   it('shows the game of the tab that declared it last', async () => {
     project.findFirst.mockResolvedValue({ publishedName: 'Race', name: 'Race', iconUrl: null });
-    await service.onSocketOpen(1, 11);
-    await service.onSocketOpen(1, 12);
-    await service.onSet(1, 11, { kind: 'PLAYING', releaseId: 42 });
-    await service.onSet(1, 12, { kind: 'PLAYING', releaseId: 43 });
-    expect(service.get(1)).toMatchObject({ releaseId: 43 });
+    await service.onSocketOpen(uuidOf(1), 11);
+    await service.onSocketOpen(uuidOf(1), 12);
+    await service.onSet(uuidOf(1), 11, { kind: 'PLAYING', releaseId: uuidOf(42) });
+    await service.onSet(uuidOf(1), 12, { kind: 'PLAYING', releaseId: uuidOf(43) });
+    expect(service.get(uuidOf(1))).toMatchObject({ releaseId: uuidOf(43) });
 
-    await service.onSet(1, 12, { kind: 'IDLE' });
-    expect(service.get(1)).toMatchObject({ releaseId: 42 });
+    await service.onSet(uuidOf(1), 12, { kind: 'IDLE' });
+    expect(service.get(uuidOf(1))).toMatchObject({ releaseId: uuidOf(42) });
   });
 
   it('drops the game of a tab closed without saying so', async () => {
     project.findFirst.mockResolvedValue({ publishedName: 'Race', name: 'Race', iconUrl: null });
-    await service.onSocketOpen(1, 11);
-    await service.onSocketOpen(1, 12);
-    await service.onSet(1, 12, { kind: 'PLAYING', releaseId: 42 });
+    await service.onSocketOpen(uuidOf(1), 11);
+    await service.onSocketOpen(uuidOf(1), 12);
+    await service.onSet(uuidOf(1), 12, { kind: 'PLAYING', releaseId: uuidOf(42) });
 
-    await service.onSocketClose(1, 12);
+    await service.onSocketClose(uuidOf(1), 12);
 
-    expect(service.get(1)).toMatchObject({ kind: 'IDLE' });
+    expect(service.get(uuidOf(1))).toMatchObject({ kind: 'IDLE' });
   });
 
   it('ignores a declaration from a socket it never opened', async () => {
-    await service.onSocketOpen(1, 11);
+    await service.onSocketOpen(uuidOf(1), 11);
 
-    await service.onSet(1, 99, { kind: 'PLAYING', releaseId: 42 });
+    await service.onSet(uuidOf(1), 99, { kind: 'PLAYING', releaseId: uuidOf(42) });
 
-    expect(service.get(1)).toMatchObject({ kind: 'IDLE' });
+    expect(service.get(uuidOf(1))).toMatchObject({ kind: 'IDLE' });
   });
 
   it('refreshes whoever shows a project when that project changes', async () => {
     workSession.findFirst.mockResolvedValue({
-      projectId: 7,
+      projectId: uuidOf(7),
       project: { name: 'Platformer', iconUrl: null, _count: { collaborators: 0 } },
     });
-    await service.onSocketOpen(1, 11);
+    await service.onSocketOpen(uuidOf(1), 11);
     workSession.findFirst.mockResolvedValue(null);
-    await service.onSocketOpen(2, 21);
+    await service.onSocketOpen(uuidOf(2), 21);
 
     workSession.findFirst.mockResolvedValue({
-      projectId: 7,
+      projectId: uuidOf(7),
       project: { name: 'Jumper', iconUrl: 'cover.png', _count: { collaborators: 0 } },
     });
     user.findUnique.mockClear();
-    await service.onProjectChanged(new ProjectChangedEvent(7));
+    await service.onProjectChanged(new ProjectChangedEvent(uuidOf(7)));
 
-    expect(service.get(1)).toMatchObject({ title: 'Jumper', coverUrl: 'cover.png' });
+    expect(service.get(uuidOf(1))).toMatchObject({ title: 'Jumper', coverUrl: 'cover.png' });
     expect(user.findUnique).toHaveBeenCalledTimes(1);
   });
 
   it('tells friends nothing when a refresh finds what they already have', async () => {
-    friendsService.friendIdsOf.mockImplementation(async (id: number) => (id === 1 ? [2] : [1]));
-    await service.onSocketOpen(2, 21);
-    await service.onSocketOpen(1, 11);
+    friendsService.friendIdsOf.mockImplementation(async (id: string) =>
+      id === uuidOf(1) ? [uuidOf(2)] : [uuidOf(1)],
+    );
+    await service.onSocketOpen(uuidOf(2), 21);
+    await service.onSocketOpen(uuidOf(1), 11);
     fanOut.mockClear();
 
-    await service.onSet(1, 11, { kind: 'IDLE' });
-    await service.onActivityChanged(new ActivityChangedEvent(1));
+    await service.onSet(uuidOf(1), 11, { kind: 'IDLE' });
+    await service.onActivityChanged(new ActivityChangedEvent(uuidOf(1)));
 
     expect(fanOut).not.toHaveBeenCalled();
   });
 
   it('tells friends when only a detail of the same activity changes', async () => {
-    friendsService.friendIdsOf.mockImplementation(async (id: number) => (id === 1 ? [2] : [1]));
+    friendsService.friendIdsOf.mockImplementation(async (id: string) =>
+      id === uuidOf(1) ? [uuidOf(2)] : [uuidOf(1)],
+    );
     multiplayerService.hostedSession.mockResolvedValue(aHostedSession({ players: 1 }));
-    await service.onSocketOpen(2, 21);
-    await service.onSocketOpen(1, 11);
+    await service.onSocketOpen(uuidOf(2), 21);
+    await service.onSocketOpen(uuidOf(1), 11);
     fanOut.mockClear();
 
     multiplayerService.hostedSession.mockResolvedValue(aHostedSession({ players: 2 }));
-    await service.onActivityChanged(new ActivityChangedEvent(1));
+    await service.onActivityChanged(new ActivityChangedEvent(uuidOf(1)));
 
-    expect(fanOut).toHaveBeenCalledWith(2, {
+    expect(fanOut).toHaveBeenCalledWith(uuidOf(2), {
       type: 'presence:changed',
-      payload: expect.objectContaining({ userId: 1, players: 2 }),
+      payload: expect.objectContaining({ userId: uuidOf(1), players: 2 }),
     });
   });
 
@@ -445,22 +469,25 @@ describe('PresenceService', () => {
     });
 
     it('re-derives only the users nobody refreshed for the resync delay, oldest first', async () => {
-      await service.onSocketOpen(2, 21);
+      await service.onSocketOpen(uuidOf(2), 21);
       now.mockReturnValue(1_000_500);
-      await service.onSocketOpen(1, 11);
+      await service.onSocketOpen(uuidOf(1), 11);
       now.mockReturnValue(1_060_000);
-      await service.onSocketOpen(3, 31);
+      await service.onSocketOpen(uuidOf(3), 31);
       user.findUnique.mockClear();
 
       now.mockReturnValue(1_000_500 + PRESENCE_RESYNC_AFTER_MS);
       await service.resyncStale();
 
-      expect(user.findUnique.mock.calls.map(([query]) => query.where.id)).toEqual([2, 1]);
+      expect(user.findUnique.mock.calls.map(([query]) => query.where.id)).toEqual([
+        uuidOf(2),
+        uuidOf(1),
+      ]);
     });
 
     it('re-derives at most one batch per tick', async () => {
       for (let id = 1; id <= PRESENCE_RESYNC_MIN_BATCH + 1; id++) {
-        await service.onSocketOpen(id, id);
+        await service.onSocketOpen(uuidOf(id), id);
       }
       user.findUnique.mockClear();
 
@@ -480,7 +507,7 @@ describe('PresenceService', () => {
 
     it('re-derives a batch a few users at a time', async () => {
       for (let id = 1; id <= PRESENCE_RESYNC_CONCURRENCY + 1; id++) {
-        await service.onSocketOpen(id, id);
+        await service.onSocketOpen(uuidOf(id), id);
       }
       user.findUnique.mockClear();
       user.findUnique.mockReturnValue(new Promise(() => undefined));
@@ -493,8 +520,8 @@ describe('PresenceService', () => {
     });
 
     it('carries on past a user whose derivation fails', async () => {
-      await service.onSocketOpen(1, 11);
-      await service.onSocketOpen(2, 21);
+      await service.onSocketOpen(uuidOf(1), 11);
+      await service.onSocketOpen(uuidOf(2), 21);
       user.findUnique.mockClear();
       user.findUnique
         .mockRejectedValueOnce(new Error('database down'))
@@ -504,14 +531,16 @@ describe('PresenceService', () => {
       await service.resyncStale();
 
       expect(user.findUnique).toHaveBeenCalledTimes(2);
-      expect(service.get(2)).toMatchObject({ username: 'other' });
+      expect(service.get(uuidOf(2))).toMatchObject({ username: 'other' });
     });
   });
 
   it('answers not found for an offline user, friend or not', async () => {
     friendsService.areFriends.mockResolvedValue(true);
 
-    await expect(service.presenceOf(1, 2)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.presenceOf(uuidOf(1), uuidOf(2))).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 });
 
@@ -550,13 +579,13 @@ describe('PresenceService wiring', () => {
     const project = jest.spyOn(service, 'onProjectChanged').mockResolvedValue();
     const events = module.get(EventEmitter2);
 
-    await events.emitAsync(ACTIVITY_CHANGED, new ActivityChangedEvent(1));
-    await events.emitAsync(FRIENDSHIP_CHANGED, new FriendshipChangedEvent(1, 2));
-    await events.emitAsync(PROJECT_CHANGED, new ProjectChangedEvent(7));
+    await events.emitAsync(ACTIVITY_CHANGED, new ActivityChangedEvent(uuidOf(1)));
+    await events.emitAsync(FRIENDSHIP_CHANGED, new FriendshipChangedEvent(uuidOf(1), uuidOf(2)));
+    await events.emitAsync(PROJECT_CHANGED, new ProjectChangedEvent(uuidOf(7)));
 
-    expect(activity).toHaveBeenCalledWith(new ActivityChangedEvent(1));
-    expect(friendship).toHaveBeenCalledWith(new FriendshipChangedEvent(1, 2));
-    expect(project).toHaveBeenCalledWith(new ProjectChangedEvent(7));
+    expect(activity).toHaveBeenCalledWith(new ActivityChangedEvent(uuidOf(1)));
+    expect(friendship).toHaveBeenCalledWith(new FriendshipChangedEvent(uuidOf(1), uuidOf(2)));
+    expect(project).toHaveBeenCalledWith(new ProjectChangedEvent(uuidOf(7)));
 
     await module.close();
   });

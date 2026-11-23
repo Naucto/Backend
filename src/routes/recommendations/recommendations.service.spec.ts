@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 
+import { uuidOf } from '../../../test/uuid';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { HubService } from '../project/hub.service';
@@ -11,9 +12,19 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const MONDAY = new Date('2026-11-16T00:05:00Z');
 const weeksLater = (weeks: number): Date => new Date(MONDAY.getTime() + weeks * WEEK_MS);
 
+const ids = (...numbers: number[]): string[] => numbers.map(uuidOf);
+
+/** The games a ranking may name, each with an owner and a name of its own. */
+const GAMES = new Map(
+  Array.from({ length: 20 }, (_, index) => index + 1).map((number) => [
+    uuidOf(number),
+    { userId: uuidOf(100 + number), name: `draft-${number}`, publishedName: `Game ${number}` },
+  ]),
+);
+
 interface Pick {
-  id: number;
-  projectId: number;
+  id: string;
+  projectId: string;
   startsAt: Date;
   endsAt: Date | null;
 }
@@ -47,18 +58,18 @@ describe('RecommendationsService', () => {
     notifyBestEffort: jest.fn(),
   };
 
-  const curator = { id: 9, username: 'admin' };
+  const curator = { id: uuidOf(9), username: 'admin' };
   const row = {
-    id: 1,
-    projectId: 42,
-    featuredById: 9,
+    id: uuidOf(1),
+    projectId: uuidOf(42),
+    featuredById: uuidOf(9),
     note: 'pick',
     startsAt: new Date('2026-08-17T09:00:00Z'),
     endsAt: null,
     createdAt: new Date('2026-08-17T09:00:00Z'),
     featuredBy: curator,
   };
-  const release = { id: 42, name: 'Moon Lander', publishedAt: new Date() };
+  const release = { id: uuidOf(42), name: 'Moon Lander', publishedAt: new Date() };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -92,17 +103,13 @@ describe('RecommendationsService', () => {
       },
     );
     prismaMock.featuredRelease.create.mockImplementation(
-      async ({ data }: { data: { projectId: number; startsAt: Date } }) => {
-        const pick = { id: picks.length + 1, ...data, endsAt: null };
+      async ({ data }: { data: { projectId: string; startsAt: Date } }) => {
+        const pick = { id: uuidOf(picks.length + 1), ...data, endsAt: null };
         picks.push(pick);
         return pick;
       },
     );
-    projectServiceMock.requireProject.mockImplementation(async (id: number) => ({
-      userId: 100 + id,
-      name: `draft-${id}`,
-      publishedName: `Game ${id}`,
-    }));
+    projectServiceMock.requireProject.mockImplementation(async (id: string) => GAMES.get(id));
   });
 
   describe('getCurrent', () => {
@@ -118,15 +125,15 @@ describe('RecommendationsService', () => {
       hubServiceMock.fetchReleasesByIds.mockResolvedValue([release]);
 
       await expect(service.getCurrent()).resolves.toEqual({
-        id: 1,
-        projectId: 42,
+        id: uuidOf(1),
+        projectId: uuidOf(42),
         note: 'pick',
         startsAt: row.startsAt,
         endsAt: null,
         featuredBy: curator,
         project: release,
       });
-      expect(hubServiceMock.fetchReleasesByIds).toHaveBeenCalledWith([42]);
+      expect(hubServiceMock.fetchReleasesByIds).toHaveBeenCalledWith([uuidOf(42)]);
       expect(prismaMock.featuredRelease.updateMany).not.toHaveBeenCalled();
     });
 
@@ -136,7 +143,7 @@ describe('RecommendationsService', () => {
 
       await expect(service.getCurrent()).resolves.toBeNull();
       expect(prismaMock.featuredRelease.updateMany).toHaveBeenCalledWith({
-        where: { id: 1, project: { hiddenAt: { not: null } } },
+        where: { id: uuidOf(1), project: { hiddenAt: { not: null } } },
         data: { endsAt: expect.any(Date) },
       });
       expect(prismaMock.$transaction).not.toHaveBeenCalled();
@@ -145,50 +152,52 @@ describe('RecommendationsService', () => {
 
   describe('electGameOfTheWeek', () => {
     it('picks the best game, ends the pick before it and tells its creator', async () => {
-      picks.push({ id: 1, projectId: 7, startsAt: weeksLater(-1), endsAt: null });
+      picks.push({ id: uuidOf(1), projectId: uuidOf(7), startsAt: weeksLater(-1), endsAt: null });
 
-      await service.electGameOfTheWeek([3, 5, 8], MONDAY);
+      await service.electGameOfTheWeek(ids(3, 5, 8), MONDAY);
 
       expect(picks).toEqual([
-        { id: 1, projectId: 7, startsAt: weeksLater(-1), endsAt: MONDAY },
-        { id: 2, projectId: 3, startsAt: MONDAY, endsAt: null },
+        { id: uuidOf(1), projectId: uuidOf(7), startsAt: weeksLater(-1), endsAt: MONDAY },
+        { id: uuidOf(2), projectId: uuidOf(3), startsAt: MONDAY, endsAt: null },
       ]);
       expect(prismaMock.featuredRelease.create).toHaveBeenCalledWith({
-        data: { projectId: 3, startsAt: MONDAY },
+        data: { projectId: uuidOf(3), startsAt: MONDAY },
       });
       expect(notificationsServiceMock.notifyBestEffort).toHaveBeenCalledWith({
-        userId: 103,
+        userId: uuidOf(103),
         title: 'Your game is featured!',
         message: 'Game 3 is the game of the week on the Naucto hub.',
         type: 'INFO',
         kind: 'FEATURED',
-        data: { projectId: 3 },
+        data: { projectId: uuidOf(3) },
       });
     });
 
     it('picks once a week, however often it is asked', async () => {
-      await service.electGameOfTheWeek([3, 5, 8], MONDAY);
-      await service.electGameOfTheWeek([5, 3, 8], new Date('2026-11-18T14:00:00Z'));
-      await service.electGameOfTheWeek([8, 5, 3], new Date('2026-11-22T23:59:59Z'));
+      await service.electGameOfTheWeek(ids(3, 5, 8), MONDAY);
+      await service.electGameOfTheWeek(ids(5, 3, 8), new Date('2026-11-18T14:00:00Z'));
+      await service.electGameOfTheWeek(ids(8, 5, 3), new Date('2026-11-22T23:59:59Z'));
 
-      expect(picks.map((pick) => pick.projectId)).toEqual([3]);
+      expect(picks.map((pick) => pick.projectId)).toEqual(ids(3));
       expect(notificationsServiceMock.notifyBestEffort).toHaveBeenCalledTimes(1);
     });
 
     it('picks later in the week when the server missed Monday', async () => {
       const thursday = new Date('2026-11-19T10:00:00Z');
 
-      await service.electGameOfTheWeek([3], thursday);
-      await service.electGameOfTheWeek([5, 3], weeksLater(1));
+      await service.electGameOfTheWeek(ids(3), thursday);
+      await service.electGameOfTheWeek(ids(5, 3), weeksLater(1));
 
       expect(picks.map(({ projectId, startsAt }) => [projectId, startsAt])).toEqual([
-        [3, thursday],
-        [5, weeksLater(1)],
+        [uuidOf(3), thursday],
+        [uuidOf(5), weeksLater(1)],
       ]);
     });
 
     it('never picks a game again within eight weeks, even when it stays the best', async () => {
-      const ranking = Array.from({ length: WINNER_REST_WEEKS + 2 }, (_, index) => index + 1);
+      const ranking = Array.from({ length: WINNER_REST_WEEKS + 2 }, (_, index) =>
+        uuidOf(index + 1),
+      );
 
       for (let week = 0; week < 40; week++) {
         await service.electGameOfTheWeek(ranking, weeksLater(week));
@@ -200,34 +209,36 @@ describe('RecommendationsService', () => {
         expect(winners.slice(Math.max(0, week - WINNER_REST_WEEKS), week)).not.toContain(winner);
       });
       // The best game is back as soon as its rest is over, not later.
-      expect(winners[WINNER_REST_WEEKS + 1]).toBe(1);
+      expect(winners[WINNER_REST_WEEKS + 1]).toBe(uuidOf(1));
     });
 
     it('leaves the week without a pick rather than repeat one, and tries again the next day', async () => {
-      await service.electGameOfTheWeek([3], MONDAY);
+      await service.electGameOfTheWeek(ids(3), MONDAY);
 
-      await service.electGameOfTheWeek([3], weeksLater(1));
+      await service.electGameOfTheWeek(ids(3), weeksLater(1));
 
-      expect(picks).toEqual([{ id: 1, projectId: 3, startsAt: MONDAY, endsAt: weeksLater(1) }]);
+      expect(picks).toEqual([
+        { id: uuidOf(1), projectId: uuidOf(3), startsAt: MONDAY, endsAt: weeksLater(1) },
+      ]);
       expect(notificationsServiceMock.notifyBestEffort).toHaveBeenCalledTimes(1);
 
       const tuesday = new Date(weeksLater(1).getTime() + 24 * 60 * 60 * 1000);
-      await service.electGameOfTheWeek([3, 4], tuesday);
+      await service.electGameOfTheWeek(ids(3, 4), tuesday);
 
       expect(picks[picks.length - 1]).toEqual({
-        id: 2,
-        projectId: 4,
+        id: uuidOf(2),
+        projectId: uuidOf(4),
         startsAt: tuesday,
         endsAt: null,
       });
     });
 
     it('does not pick again a game a curator left running for months', async () => {
-      picks.push({ id: 1, projectId: 3, startsAt: weeksLater(-30), endsAt: null });
+      picks.push({ id: uuidOf(1), projectId: uuidOf(3), startsAt: weeksLater(-30), endsAt: null });
 
-      await service.electGameOfTheWeek([3, 4], MONDAY);
+      await service.electGameOfTheWeek(ids(3, 4), MONDAY);
 
-      expect(picks[picks.length - 1]).toMatchObject({ projectId: 4, endsAt: null });
+      expect(picks[picks.length - 1]).toMatchObject({ projectId: uuidOf(4), endsAt: null });
     });
   });
 
@@ -238,7 +249,7 @@ describe('RecommendationsService', () => {
         {
           ...row,
           endsAt: new Date('2026-08-20T09:00:00Z'),
-          project: { id: 42, name: 'moon', publishedName: 'Moon Lander' },
+          project: { id: uuidOf(42), name: 'moon', publishedName: 'Moon Lander' },
         },
       ]);
 
@@ -250,8 +261,8 @@ describe('RecommendationsService', () => {
       expect(result).toEqual({
         items: [
           expect.objectContaining({
-            id: 1,
-            project: { id: 42, name: 'Moon Lander' },
+            id: uuidOf(1),
+            project: { id: uuidOf(42), name: 'Moon Lander' },
           }),
         ],
         total: 1,

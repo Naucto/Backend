@@ -2,6 +2,7 @@ import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 
 import { withEnv } from '../../../test/env';
+import { uuidOf } from '../../../test/uuid';
 import { ADMIN, MODERATOR, USER, VIEWER } from '../../auth/access/roles';
 import { SuspensionState } from '../../auth/access/suspension';
 import { AuthService } from '../../auth/auth.service';
@@ -15,15 +16,15 @@ type StaffRow = AdminAccountRow & SuspensionState;
 
 describe('AdminSessionService', () => {
   const jwt = new JwtService({ secret: SECRET });
-  let rows: Map<number, StaffRow>;
+  let rows: Map<string, StaffRow>;
   const auth = { validateUser: jest.fn() };
   const prisma = {
-    user: { findUnique: jest.fn(({ where }: { where: { id: number } }) => rows.get(where.id)) },
+    user: { findUnique: jest.fn(({ where }: { where: { id: string } }) => rows.get(where.id)) },
   };
   let service: AdminSessionService;
 
   const row = (overrides: Partial<StaffRow>): StaffRow => ({
-    id: 1,
+    id: uuidOf(1),
     username: 'ada',
     nickname: null,
     email: 'ada@example.com',
@@ -38,9 +39,9 @@ describe('AdminSessionService', () => {
   beforeEach(() => {
     withEnv({ JWT_SECRET: SECRET });
     rows = new Map([
-      [1, row({})],
-      [2, row({ id: 2, email: 'bob@example.com', role: USER })],
-      [3, row({ id: 3, email: 'mia@example.com', role: MODERATOR })],
+      [uuidOf(1), row({})],
+      [uuidOf(2), row({ id: uuidOf(2), email: 'bob@example.com', role: USER })],
+      [uuidOf(3), row({ id: uuidOf(3), email: 'mia@example.com', role: MODERATOR })],
     ]);
     auth.validateUser.mockImplementation(async (email: string) => {
       const found = [...rows.values()].find((account) => account.email === email);
@@ -59,23 +60,23 @@ describe('AdminSessionService', () => {
   it('signs an admin in with an access token and a session for the cookie', async () => {
     const { session, sessionToken } = await service.login('ada@example.com', 'pw', '1.1.1.1');
 
-    expect(jwt.verify<{ sub: number }>(session.accessToken).sub).toBe(1);
-    expect(session.account).toMatchObject({ id: 1, role: ADMIN });
+    expect(jwt.verify<{ sub: string }>(session.accessToken).sub).toBe(uuidOf(1));
+    expect(session.account).toMatchObject({ id: uuidOf(1), role: ADMIN });
     expect(sessionToken).toBeDefined();
   });
 
   it('signs a moderator in, and says which role the session holds', async () => {
     const { session } = await service.login('mia@example.com', 'pw', '1.1.1.1');
 
-    expect(session.account).toMatchObject({ id: 3, role: MODERATOR });
+    expect(session.account).toMatchObject({ id: uuidOf(3), role: MODERATOR });
   });
 
   it('signs a viewer in, to observe', async () => {
-    rows.set(4, row({ id: 4, email: 'vic@example.com', role: VIEWER }));
+    rows.set(uuidOf(4), row({ id: uuidOf(4), email: 'vic@example.com', role: VIEWER }));
 
     const { session } = await service.login('vic@example.com', 'pw', '1.1.1.1');
 
-    expect(session.account).toMatchObject({ id: 4, role: VIEWER });
+    expect(session.account).toMatchObject({ id: uuidOf(4), role: VIEWER });
   });
 
   it('scopes every access token it issues to staff, at sign-in and at renewal', async () => {
@@ -93,7 +94,10 @@ describe('AdminSessionService', () => {
   });
 
   it('refuses a suspended staff member', async () => {
-    rows.set(3, row({ id: 3, email: 'mia@example.com', role: MODERATOR, suspendedAt: new Date() }));
+    rows.set(
+      uuidOf(3),
+      row({ id: uuidOf(3), email: 'mia@example.com', role: MODERATOR, suspendedAt: new Date() }),
+    );
 
     await expect(service.login('mia@example.com', 'pw', '1.1.1.1')).rejects.toBeInstanceOf(
       ForbiddenException,
@@ -124,13 +128,13 @@ describe('AdminSessionService', () => {
 
     const renewed = await service.refresh(sessionToken!);
 
-    expect(jwt.verify<{ sub: number }>(renewed.session.accessToken).sub).toBe(1);
+    expect(jwt.verify<{ sub: string }>(renewed.session.accessToken).sub).toBe(uuidOf(1));
     expect(renewed.sessionToken).toBeUndefined();
   });
 
   it('follows a role change at renewal: an admin made moderator keeps a moderator session', async () => {
     const { sessionToken } = await service.login('ada@example.com', 'pw', '1.1.1.1');
-    rows.set(1, row({ role: MODERATOR }));
+    rows.set(uuidOf(1), row({ role: MODERATOR }));
 
     const renewed = await service.refresh(sessionToken!);
 
@@ -143,12 +147,20 @@ describe('AdminSessionService', () => {
     ['was erased', { deletedAt: new Date() }],
   ])('ends the session of an account that %s', async (_case, change) => {
     const { sessionToken } = await service.login('ada@example.com', 'pw', '1.1.1.1');
-    rows.set(1, row(change));
+    rows.set(uuidOf(1), row(change));
 
     await expect(service.refresh(sessionToken!)).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('refuses a session that is not one', async () => {
     await expect(service.refresh('not-a-token')).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('refuses a session whose subject is not an id, before any account is looked up', async () => {
+    const sessionToken = jwt.sign({ sub: 1 }, { secret: `${SECRET}:admin-session` });
+    prisma.user.findUnique.mockClear();
+
+    await expect(service.refresh(sessionToken)).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
 });

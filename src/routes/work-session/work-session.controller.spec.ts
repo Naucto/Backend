@@ -3,12 +3,14 @@ import { APP_GUARD } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 
+import { uuidOf } from '../../../test/uuid';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WorkSessionController } from './work-session.controller';
 import { WorkSessionService } from './work-session.service';
 
-const SIGNED_IN_USER = 7;
-const OWN_PROJECT = 12;
+const SIGNED_IN_USER = uuidOf(7);
+// Spelled with letters, so its case can differ between a URL and the database.
+const OWN_PROJECT = 'abcdef00-0000-4000-8000-000000000012';
 
 describe('WorkSessionController', () => {
   describe('over HTTP', () => {
@@ -19,11 +21,12 @@ describe('WorkSessionController', () => {
       kick: jest.fn(),
       getInfo: jest.fn(),
     };
-    // The signed-in user collaborates on one project only.
+    // The signed-in user collaborates on one project only. The id is matched whatever its case, as
+    // Postgres matches a `uuid`.
     const prisma = {
       project: {
-        findUnique: jest.fn(async ({ where }: { where: { id: number } }) => ({
-          collaborators: where.id === OWN_PROJECT ? [{ id: SIGNED_IN_USER }] : [],
+        findUnique: jest.fn(async ({ where }: { where: { id: string } }) => ({
+          collaborators: where.id.toLowerCase() === OWN_PROJECT ? [{ id: SIGNED_IN_USER }] : [],
         })),
       },
     };
@@ -70,18 +73,26 @@ describe('WorkSessionController', () => {
       expect(workSessionService.getInfo).toHaveBeenCalledWith(OWN_PROJECT);
     });
 
-    // parseInt reads "12.34e2" as 12, the user's own project; Number reads it as 1234.
+    it('names the project in lower case however the URL spells its id', async () => {
+      await request(app.getHttpServer())
+        .get(`/work-sessions/info/${OWN_PROJECT.toUpperCase()}`)
+        .expect(HttpStatus.OK);
+
+      expect(workSessionService.getInfo).toHaveBeenCalledWith(OWN_PROJECT);
+    });
+
+    // A lenient reader would take the user's own project from the head of the segment.
     it.each([
-      ['post', '/work-sessions/join/12.34e2', 'join'],
-      ['post', '/work-sessions/leave/12.34e2', 'leave'],
-      ['post', '/work-sessions/kick/12.34e2', 'kick'],
-      ['get', '/work-sessions/info/12.34e2', 'getInfo'],
+      ['post', `/work-sessions/join/${OWN_PROJECT}.5`, 'join'],
+      ['post', `/work-sessions/leave/${OWN_PROJECT}.5`, 'leave'],
+      ['post', `/work-sessions/kick/${OWN_PROJECT}.5`, 'kick'],
+      ['get', `/work-sessions/info/${OWN_PROJECT}.5`, 'getInfo'],
     ] as const)(
       '%s %s never reaches a project other than the one the guard checked',
       async (verb, path, method) => {
         const pending = request(app.getHttpServer())[verb](path);
         if (method === 'kick') {
-          pending.send({ userId: 3 });
+          pending.send({ userId: uuidOf(3) });
         }
 
         const response = await pending;

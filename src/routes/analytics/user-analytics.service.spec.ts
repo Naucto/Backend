@@ -1,3 +1,4 @@
+import { uuidOf } from '../../../test/uuid';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AnalyticsErasureService } from './analytics-erasure.service';
 import { UserAnalyticsService } from './user-analytics.service';
@@ -22,7 +23,9 @@ describe('UserAnalyticsService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     prisma.analyticsVisitor.findMany.mockResolvedValue([{ id: 'v1' }]);
-    prisma.project.findMany.mockResolvedValue([{ id: 7, name: 'Draft', publishedName: 'Game' }]);
+    prisma.project.findMany.mockResolvedValue([
+      { id: uuidOf(7), name: 'Draft', publishedName: 'Game' },
+    ]);
     prisma.analyticsUserDaily.findFirst.mockResolvedValue(null);
     service = new UserAnalyticsService(
       prisma as unknown as PrismaService,
@@ -34,14 +37,26 @@ describe('UserAnalyticsService', () => {
     beforeEach(() => {
       prisma.$queryRaw
         .mockResolvedValueOnce([
-          { releaseId: 7, plays: 3, playtimeMs: 90_000, monthPlays: 1, monthPlaytimeMs: 30_000 },
-          { releaseId: 8, plays: 1, playtimeMs: 10_000, monthPlays: null, monthPlaytimeMs: 0 },
+          {
+            releaseId: uuidOf(7),
+            plays: 3,
+            playtimeMs: 90_000,
+            monthPlays: 1,
+            monthPlaytimeMs: 30_000,
+          },
+          {
+            releaseId: uuidOf(8),
+            plays: 1,
+            playtimeMs: 10_000,
+            monthPlays: null,
+            monthPlaytimeMs: 0,
+          },
         ])
         .mockResolvedValueOnce([{ at: new Date('2026-10-07T20:00:00Z') }]);
     });
 
     it('adds up lifetime and this month across games, and names the longest played', async () => {
-      const summary = await service.summary(5, NOW);
+      const summary = await service.summary(uuidOf(5), NOW);
 
       expect(summary).toMatchObject({
         tracked: true,
@@ -53,7 +68,7 @@ describe('UserAnalyticsService', () => {
         lastActiveIsExact: true,
       });
       expect(summary.topGames[0]).toEqual({
-        releaseId: 7,
+        releaseId: uuidOf(7),
         name: 'Game',
         plays: 3,
         playtimeMs: 90_000,
@@ -61,7 +76,7 @@ describe('UserAnalyticsService', () => {
     });
 
     it('reads the month from its first day, UTC', async () => {
-      await service.summary(5, NOW);
+      await service.summary(uuidOf(5), NOW);
 
       expect(prisma.$queryRaw.mock.calls[0]).toContain('2026-10-01');
     });
@@ -74,7 +89,7 @@ describe('UserAnalyticsService', () => {
     });
     prisma.analyticsVisitor.findMany.mockResolvedValue([]);
 
-    const summary = await service.summary(5, NOW);
+    const summary = await service.summary(uuidOf(5), NOW);
 
     expect(summary).toMatchObject({
       tracked: false,
@@ -95,7 +110,7 @@ describe('UserAnalyticsService', () => {
       {
         id: 'p1',
         sessionId: 's1',
-        releaseId: 7,
+        releaseId: uuidOf(7),
         continued: false,
         startedAt: NOW,
         activeMs: 5_000n,
@@ -105,7 +120,7 @@ describe('UserAnalyticsService', () => {
     prisma.analyticsUserDaily.findMany.mockResolvedValue([
       {
         day: new Date('2026-10-01T00:00:00Z'),
-        releaseId: 7,
+        releaseId: uuidOf(7),
         plays: 1,
         activeMs: 5_000n,
         activeMinutes: 2,
@@ -114,15 +129,15 @@ describe('UserAnalyticsService', () => {
     prisma.analyticsFact.findMany.mockResolvedValue([]);
     prisma.releaseView.findMany.mockResolvedValue([]);
 
-    const exported = await service.export(5, NOW);
+    const exported = await service.export(uuidOf(5), NOW);
 
     expect(prisma.releaseView.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { viewerKey: { in: ['u:5', 'v:v1'] } } }),
+      expect.objectContaining({ where: { viewerKey: { in: [`u:${uuidOf(5)}`, 'v:v1'] } } }),
     );
     expect(exported.plays[0]?.activeMs).toBe(5_000);
     expect(exported.history[0]).toEqual({
       day: '2026-10-01',
-      releaseId: 7,
+      releaseId: uuidOf(7),
       plays: 1,
       activeMs: 5_000,
       activeMinutes: 2,
@@ -134,7 +149,7 @@ describe('UserAnalyticsService', () => {
   it('erases through the shared erase routine', async () => {
     erasure.erase.mockResolvedValue(2);
 
-    await expect(service.erase(5)).resolves.toEqual({ erasedBrowsers: 2 });
-    expect(erasure.erase).toHaveBeenCalledWith(5);
+    await expect(service.erase(uuidOf(5))).resolves.toEqual({ erasedBrowsers: 2 });
+    expect(erasure.erase).toHaveBeenCalledWith(uuidOf(5));
   });
 });

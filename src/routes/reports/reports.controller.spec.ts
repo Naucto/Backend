@@ -4,6 +4,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { NextFunction, Request, Response } from 'express';
 import request from 'supertest';
 
+import { uuidOf } from '../../../test/uuid';
 import { ViolationValidationPipe } from '../../common/pipes/violation-validation.pipe';
 import { ANALYTICS_THROTTLERS } from '../analytics/analytics-throttler.guard';
 import { SCREENSHOT_MAX_BYTES } from './report-screenshot';
@@ -36,8 +37,8 @@ describe('ReportsController', () => {
 
   beforeEach(async () => {
     jest.resetAllMocks();
-    reports.createRating.mockResolvedValue({ id: 1 });
-    reports.createBugReport.mockResolvedValue({ id: 2 });
+    reports.createRating.mockResolvedValue({ id: uuidOf(1) });
+    reports.createBugReport.mockResolvedValue({ id: uuidOf(2) });
     reports.attachScreenshot.mockResolvedValue(undefined);
     reports.updatePrompt.mockResolvedValue({ eligible: false, declined: true });
 
@@ -48,7 +49,7 @@ describe('ReportsController', () => {
     }).compile();
     app = module.createNestApplication();
     app.use((req: Request, _res: Response, next: NextFunction) => {
-      (req as Request & { user: unknown }).user = { id: 7 };
+      (req as Request & { user: unknown }).user = { id: uuidOf(7) };
       next();
     });
     app.useGlobalPipes(
@@ -68,8 +69,8 @@ describe('ReportsController', () => {
     const response = await rate({ score: 9, role: 'CREATOR', origin: 'PROMPT' });
 
     expect(response.status).toBe(HttpStatus.CREATED);
-    expect(response.body).toEqual({ id: 1 });
-    expect(reports.createRating).toHaveBeenCalledWith(7, {
+    expect(response.body).toEqual({ id: uuidOf(1) });
+    expect(reports.createRating).toHaveBeenCalledWith(uuidOf(7), {
       score: 9,
       role: 'CREATOR',
       origin: 'PROMPT',
@@ -91,7 +92,7 @@ describe('ReportsController', () => {
     });
 
     expect(reports.createRating).toHaveBeenCalledWith(
-      7,
+      uuidOf(7),
       expect.objectContaining({ reasons: ['BUGS'], liked: 'the sprites', improve: 'loading' }),
     );
   });
@@ -118,7 +119,7 @@ describe('ReportsController', () => {
       .send({ action: 'decline' });
 
     expect(response.status).toBe(HttpStatus.OK);
-    expect(reports.updatePrompt).toHaveBeenCalledWith(7, 'decline');
+    expect(reports.updatePrompt).toHaveBeenCalledWith(uuidOf(7), 'decline');
   });
 
   it('refuses an unknown prompt action', async () => {
@@ -133,8 +134,8 @@ describe('ReportsController', () => {
     category: 'GAMEPLAY',
     title: 'Jump is stuck',
     description: 'Pressing jump twice freezes the player.',
-    route: '/play/42',
-    releaseId: 42,
+    route: `/play/${uuidOf(42)}`,
+    releaseId: uuidOf(42),
     context: { viewport: '1280x720', console: ['[error] boom'] },
   };
   const report = (body: object): request.Test =>
@@ -144,13 +145,13 @@ describe('ReportsController', () => {
     const response = await report(bug);
 
     expect(response.status).toBe(HttpStatus.CREATED);
-    expect(response.body).toEqual({ id: 2 });
+    expect(response.body).toEqual({ id: uuidOf(2) });
     expect(reports.createBugReport).toHaveBeenCalledWith(
-      7,
+      uuidOf(7),
       expect.objectContaining({
         category: 'GAMEPLAY',
         title: 'Jump is stuck',
-        releaseId: 42,
+        releaseId: uuidOf(42),
         context: expect.objectContaining({ viewport: '1280x720', console: ['[error] boom'] }),
       }),
       'Firefox',
@@ -164,6 +165,8 @@ describe('ReportsController', () => {
     ['too many console lines', { ...bug, context: { console: Array(51).fill('x') } }],
     ['a route with a query', { ...bug, route: '/play/42?token=x' }],
     ['a summary under 3 characters', { ...bug, title: 'ab' }],
+    ['a release id that is a number', { ...bug, releaseId: 42 }],
+    ['a rating id that is not an id', { ...bug, ratingId: 'twelve' }],
   ])('refuses %s', async (_, body) => {
     const response = await report(body);
 
@@ -173,7 +176,7 @@ describe('ReportsController', () => {
 
   const attach = (file: Buffer, contentType: string): request.Test =>
     request(app.getHttpServer())
-      .put('/reports/bugs/31/screenshot')
+      .put(`/reports/bugs/${uuidOf(31)}/screenshot`)
       .attach('screenshot', file, { filename: 'shot', contentType });
 
   it('attaches a PNG screenshot', async () => {
@@ -181,9 +184,28 @@ describe('ReportsController', () => {
 
     expect(response.status).toBe(HttpStatus.NO_CONTENT);
     expect(reports.attachScreenshot).toHaveBeenCalledWith(
-      7,
-      31,
+      uuidOf(7),
+      uuidOf(31),
       expect.objectContaining({ mimetype: 'image/png' }),
+    );
+  });
+
+  it('refuses a screenshot for a report id that is not an id', async () => {
+    const response = await request(app.getHttpServer())
+      .put('/reports/bugs/31/screenshot')
+      .attach('screenshot', PNG, { filename: 'shot', contentType: 'image/png' });
+
+    expect(response.status).toBe(HttpStatus.BAD_REQUEST);
+    expect(reports.attachScreenshot).not.toHaveBeenCalled();
+  });
+
+  it('reads an id typed in upper case as the id the database answers', async () => {
+    await report({ ...bug, projectId: '3F2B8C1E-9D4A-4E6F-8A7B-1C2D3E4F5A6B' });
+
+    expect(reports.createBugReport).toHaveBeenCalledWith(
+      uuidOf(7),
+      expect.objectContaining({ projectId: '3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b' }),
+      'Firefox',
     );
   });
 

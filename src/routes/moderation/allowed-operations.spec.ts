@@ -1,15 +1,16 @@
 import { ModerationTargetType } from '@prisma/client';
 
+import { uuidOf } from '../../../test/uuid';
 import { ADMIN, MODERATOR, USER, VIEWER } from '../../auth/access/roles';
 import { allowedOperations, OperationContext } from './allowed-operations';
 
-const MOD = { id: 1, role: MODERATOR } as const;
-const BOSS = { id: 2, role: ADMIN } as const;
+const MOD = { id: uuidOf(1), role: MODERATOR } as const;
+const BOSS = { id: uuidOf(2), role: ADMIN } as const;
 
 type Owner = NonNullable<OperationContext['owner']>;
 
 const owner = (overrides: Partial<Owner> = {}): Owner => ({
-  id: 7,
+  id: uuidOf(7),
   role: USER as string,
   deleted: false,
   suspended: false,
@@ -36,7 +37,7 @@ describe('allowedOperations', () => {
   });
 
   it('offers a viewer nothing, on any target in any state', () => {
-    const viewer = { id: 3, role: VIEWER } as const;
+    const viewer = { id: uuidOf(3), role: VIEWER } as const;
 
     expect(allowedOperations(viewer, comment())).toEqual([]);
     expect(allowedOperations(viewer, comment({ state: 'HIDDEN' }))).toEqual([]);

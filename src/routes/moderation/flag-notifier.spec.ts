@@ -1,12 +1,13 @@
 import { ModerationReason, ModerationTargetType } from '@prisma/client';
 
 import { withEnv } from '../../../test/env';
+import { uuidOf } from '../../../test/uuid';
 import { DiscordService } from '../../discord/discord.service';
 import { FlagNotifier } from './flag-notifier';
 
 const NOTICE = {
   targetType: ModerationTargetType.COMMENT,
-  targetId: 31,
+  targetId: uuidOf(31),
   reason: ModerationReason.HARASSMENT,
 };
 
@@ -40,7 +41,7 @@ describe('FlagNotifier', () => {
         embeds: [
           expect.objectContaining({
             title: 'A comment was reported',
-            url: 'https://admin.naucto.test/moderation/cases/COMMENT/31',
+            url: `https://admin.naucto.test/moderation/cases/COMMENT/${uuidOf(31)}`,
           }),
         ],
       }),
@@ -58,7 +59,7 @@ describe('FlagNotifier', () => {
       title: 'A comment was reported',
       color: expect.any(Number),
       fields: [{ name: 'Reason', value: 'Harassment', inline: true }],
-      footer: { text: 'COMMENT #31' },
+      footer: { text: `COMMENT #${uuidOf(31)}` },
       timestamp: expect.any(String),
     });
   });

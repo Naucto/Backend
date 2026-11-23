@@ -1,7 +1,8 @@
-import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
+import { Logger, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 
+import { uuidOf } from '../../test/uuid';
 import { PrismaService } from '../prisma/prisma.service';
 import { WebRTCService } from '../webrtc/webrtc.service';
 import { NotificationsService } from './notifications.service';
@@ -32,8 +33,8 @@ describe('NotificationsService', () => {
   let webrtcService: { buildOffer: jest.Mock };
 
   const notificationRecord = {
-    id: 7,
-    userId: 42,
+    id: uuidOf(7),
+    userId: uuidOf(42),
     title: 'Build complete',
     message: 'Your build is ready.',
     type: 'INFO' as const,
@@ -102,9 +103,9 @@ describe('NotificationsService', () => {
   ])('should tell whether a user can still sign in (%s)', async (_case, row, active) => {
     prisma.user.findUnique.mockResolvedValue(row);
 
-    await expect(service.isActiveUser(42)).resolves.toBe(active);
+    await expect(service.isActiveUser(uuidOf(42))).resolves.toBe(active);
     expect(prisma.user.findUnique).toHaveBeenCalledWith({
-      where: { id: 42 },
+      where: { id: uuidOf(42) },
       select: { deletedAt: true },
     });
   });
@@ -112,10 +113,10 @@ describe('NotificationsService', () => {
   it('should return the latest notifications as API payloads', async () => {
     prisma.notification.findMany.mockResolvedValue([notificationRecord]);
 
-    await expect(service.getUserNotifications(42)).resolves.toEqual([
+    await expect(service.getUserNotifications(uuidOf(42))).resolves.toEqual([
       {
-        id: '7',
-        userId: 42,
+        id: uuidOf(7),
+        userId: uuidOf(42),
         title: 'Build complete',
         message: 'Your build is ready.',
         type: 'INFO',
@@ -127,7 +128,7 @@ describe('NotificationsService', () => {
     ]);
 
     expect(prisma.notification.findMany).toHaveBeenCalledWith({
-      where: { userId: 42 },
+      where: { userId: uuidOf(42) },
       orderBy: { createdAt: 'desc' },
       take: 50,
     });
@@ -138,7 +139,7 @@ describe('NotificationsService', () => {
     prisma.$transaction.mockRejectedValueOnce(new Error('database down'));
 
     await expect(
-      service.notifyBestEffort({ userId: 42, title: 'Hi', message: 'Hello', type: 'INFO' }),
+      service.notifyBestEffort({ userId: uuidOf(42), title: 'Hi', message: 'Hello', type: 'INFO' }),
     ).resolves.toBeUndefined();
 
     expect(warned).toHaveBeenCalledTimes(1);
@@ -147,19 +148,19 @@ describe('NotificationsService', () => {
 
   it('should create a notification, prune old records, and send it in realtime', async () => {
     prisma.notification.create.mockResolvedValue(notificationRecord);
-    prisma.notification.findMany.mockResolvedValue([{ id: 1 }, { id: 2 }]);
+    prisma.notification.findMany.mockResolvedValue([{ id: uuidOf(1) }, { id: uuidOf(2) }]);
     prisma.notification.deleteMany.mockResolvedValue({ count: 2 });
 
     await expect(
       service.createNotification({
-        userId: 42,
+        userId: uuidOf(42),
         title: 'Build complete',
         message: 'Your build is ready.',
         type: 'INFO',
       }),
     ).resolves.toEqual({
-      id: '7',
-      userId: 42,
+      id: uuidOf(7),
+      userId: uuidOf(42),
       title: 'Build complete',
       message: 'Your build is ready.',
       type: 'INFO',
@@ -172,7 +173,7 @@ describe('NotificationsService', () => {
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(prisma.notification.create).toHaveBeenCalledWith({
       data: {
-        userId: 42,
+        userId: uuidOf(42),
         title: 'Build complete',
         message: 'Your build is ready.',
         type: 'INFO',
@@ -181,12 +182,12 @@ describe('NotificationsService', () => {
     });
     expect(prisma.notification.deleteMany).toHaveBeenCalledWith({
       where: {
-        id: { in: [1, 2] },
+        id: { in: [uuidOf(1), uuidOf(2)] },
       },
     });
     expect(mockNotificationServer.sendToUser).toHaveBeenCalledWith(
-      42,
-      expect.objectContaining({ id: '7', userId: 42 }),
+      uuidOf(42),
+      expect.objectContaining({ id: uuidOf(7), userId: uuidOf(42) }),
     );
   });
 
@@ -194,27 +195,27 @@ describe('NotificationsService', () => {
     prisma.notification.create.mockResolvedValue({
       ...notificationRecord,
       kind: 'FRIEND_REQUEST',
-      data: { requestId: 3, fromUserId: 9 },
+      data: { requestId: uuidOf(3), fromUserId: uuidOf(9) },
     });
     prisma.notification.findMany.mockResolvedValue([]);
 
     const payload = await service.createNotification({
-      userId: 42,
+      userId: uuidOf(42),
       title: 'New friend request',
       message: 'x wants to be your friend',
       type: 'INFO',
       kind: 'FRIEND_REQUEST',
-      data: { requestId: 3, fromUserId: 9 },
+      data: { requestId: uuidOf(3), fromUserId: uuidOf(9) },
     });
 
     expect(prisma.notification.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         kind: 'FRIEND_REQUEST',
-        data: { requestId: 3, fromUserId: 9 },
+        data: { requestId: uuidOf(3), fromUserId: uuidOf(9) },
       }),
     });
     expect(payload.kind).toBe('FRIEND_REQUEST');
-    expect(payload.data).toEqual({ requestId: 3, fromUserId: 9 });
+    expect(payload.data).toEqual({ requestId: uuidOf(3), fromUserId: uuidOf(9) });
   });
 
   it('should not prune when the user has no extra notifications', async () => {
@@ -222,7 +223,7 @@ describe('NotificationsService', () => {
     prisma.notification.findMany.mockResolvedValue([]);
 
     await service.createNotification({
-      userId: 42,
+      userId: uuidOf(42),
       title: 'Build complete',
       message: 'Your build is ready.',
       type: 'INFO',
@@ -238,9 +239,9 @@ describe('NotificationsService', () => {
       read: true,
     });
 
-    await expect(service.markAsRead(42, '7')).resolves.toEqual({
-      id: '7',
-      userId: 42,
+    await expect(service.markAsRead(uuidOf(42), uuidOf(7))).resolves.toEqual({
+      id: uuidOf(7),
+      userId: uuidOf(42),
       title: 'Build complete',
       message: 'Your build is ready.',
       type: 'INFO',
@@ -251,22 +252,19 @@ describe('NotificationsService', () => {
     });
 
     expect(prisma.notification.updateMany).toHaveBeenCalledWith({
-      where: { id: 7, userId: 42 },
+      where: { id: uuidOf(7), userId: uuidOf(42) },
       data: { read: true },
     });
-  });
-
-  it('should reject malformed notification ids', async () => {
-    await expect(service.markAsRead(42, 'abc')).rejects.toBeInstanceOf(BadRequestException);
-    expect(prisma.notification.updateMany).not.toHaveBeenCalled();
   });
 
   it('should reject notifications owned by another user', async () => {
     prisma.notification.updateMany.mockResolvedValue({ count: 0 });
 
-    await expect(service.markAsRead(42, '7')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.markAsRead(uuidOf(42), uuidOf(7))).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
     expect(prisma.notification.updateMany).toHaveBeenCalledWith({
-      where: { id: 7, userId: 42 },
+      where: { id: uuidOf(7), userId: uuidOf(42) },
       data: { read: true },
     });
     expect(prisma.notification.findUnique).not.toHaveBeenCalled();
@@ -275,10 +273,10 @@ describe('NotificationsService', () => {
   it('should mark all unread notifications as read', async () => {
     prisma.notification.updateMany.mockResolvedValue({ count: 3 });
 
-    await expect(service.markAllAsRead(42)).resolves.toBe(3);
+    await expect(service.markAllAsRead(uuidOf(42))).resolves.toBe(3);
     expect(prisma.notification.updateMany).toHaveBeenCalledWith({
       where: {
-        userId: 42,
+        userId: uuidOf(42),
         read: false,
       },
       data: {

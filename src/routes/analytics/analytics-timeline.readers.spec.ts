@@ -1,3 +1,5 @@
+import { uuidOf } from '../../../test/uuid';
+import { NO_RELEASE_ID } from '../../common/ids';
 import { PrismaService } from '../../prisma/prisma.service';
 import { cameFrom, sessionsFrom, TIMELINE_READERS } from './analytics-timeline.readers';
 
@@ -49,7 +51,7 @@ describe('timeline readers', () => {
         { startedAt: new Date('2026-10-21T11:00:00Z'), session: { visitorId: 'old' } },
       ]);
 
-    const samples = await TIMELINE_READERS.players_new(client, RANGE, { releaseId: 9 });
+    const samples = await TIMELINE_READERS.players_new(client, RANGE, { releaseId: uuidOf(9) });
 
     expect(samples).toEqual([{ at: new Date('2026-10-21T10:00:00Z'), value: 1 }]);
     expect(prisma.analyticsPlay.findMany).toHaveBeenLastCalledWith(
@@ -57,7 +59,7 @@ describe('timeline readers', () => {
         where: {
           startedAt: { lt: RANGE.to },
           session: { visitorId: { in: ['new', 'old'] } },
-          releaseId: 9,
+          releaseId: uuidOf(9),
         },
       }),
     );
@@ -65,11 +67,11 @@ describe('timeline readers', () => {
 
   it('counts a sign-up as unlinked when no consenting browser is linked to its account', async () => {
     prisma.analyticsFact.findMany.mockResolvedValue([
-      { at: new Date('2026-10-21T10:00:00Z'), actorUserId: 1 },
-      { at: new Date('2026-10-21T11:00:00Z'), actorUserId: 2 },
+      { at: new Date('2026-10-21T10:00:00Z'), actorUserId: uuidOf(1) },
+      { at: new Date('2026-10-21T11:00:00Z'), actorUserId: uuidOf(2) },
       { at: new Date('2026-10-21T12:00:00Z'), actorUserId: null },
     ]);
-    prisma.analyticsVisitor.findMany.mockResolvedValue([{ id: 'v', userId: 1 }]);
+    prisma.analyticsVisitor.findMany.mockResolvedValue([{ id: 'v', userId: uuidOf(1) }]);
 
     const samples = await TIMELINE_READERS.signups_unlinked(client, RANGE, {});
 
@@ -81,15 +83,15 @@ describe('timeline readers', () => {
 
   it('counts the projects forked from the chosen game', async () => {
     prisma.analyticsFact.findMany.mockResolvedValue([
-      { at: new Date('2026-10-21T10:00:00Z'), actorUserId: 1, projectId: 30 },
-      { at: new Date('2026-10-21T11:00:00Z'), actorUserId: 2, projectId: 31 },
+      { at: new Date('2026-10-21T10:00:00Z'), actorUserId: uuidOf(1), projectId: uuidOf(30) },
+      { at: new Date('2026-10-21T11:00:00Z'), actorUserId: uuidOf(2), projectId: uuidOf(31) },
     ]);
-    prisma.project.findMany.mockResolvedValue([{ id: 31 }]);
+    prisma.project.findMany.mockResolvedValue([{ id: uuidOf(31) }]);
 
-    const samples = await TIMELINE_READERS.projects_forked(client, RANGE, { releaseId: 9 });
+    const samples = await TIMELINE_READERS.projects_forked(client, RANGE, { releaseId: uuidOf(9) });
 
     expect(prisma.project.findMany).toHaveBeenCalledWith({
-      where: { id: { in: [30, 31] }, forkedFromId: 9 },
+      where: { id: { in: [uuidOf(30), uuidOf(31)] }, forkedFromId: uuidOf(9) },
       select: { id: true },
     });
     expect(samples).toEqual([{ at: new Date('2026-10-21T11:00:00Z'), value: 1 }]);
@@ -108,7 +110,7 @@ describe('timeline readers', () => {
         consent: 'DECLINED',
         minute: { gte: RANGE.from, lt: RANGE.to },
         playsStarted: { gt: 0 },
-        releaseId: { not: 0 },
+        releaseId: { not: NO_RELEASE_ID },
       },
       _sum: { playsStarted: true },
     });
