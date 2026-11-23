@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 
 /** Days after which something a player did weighs half as much. */
-export const HALF_LIFE_DAYS = 3;
+const HALF_LIFE_DAYS = 3;
 
 /** Whole days of signals behind "trending" and "new and rising". */
 export const TRENDING_WINDOW_DAYS = 7;
