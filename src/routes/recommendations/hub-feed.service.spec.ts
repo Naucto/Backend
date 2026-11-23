@@ -316,7 +316,7 @@ describe('HubFeedService', () => {
           }),
         );
         expect(prisma.analyticsUserDaily.findMany).toHaveBeenCalledWith(
-          expect.objectContaining({ where: { userId: ME, releaseId: { not: 0 } } }),
+          expect.objectContaining({ where: { userId: ME, releaseId: { in: [33, 35] } } }),
         );
       });
 

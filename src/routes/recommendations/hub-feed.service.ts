@@ -161,35 +161,17 @@ export class HubFeedService {
     return [{ ...shelfHead(key), total: pool.total, games: shown }];
   }
 
-  /**
-   * The game this reader played most over the last weeks, and the trending games carrying one of
-   * its tags that they never opened; null for a reader without a play history.
-   */
+  /** The trending games carrying a tag of `source` that this reader never opened. */
   private async becauseYouPlayed(
     userId: number,
+    source: HubGameDto,
     trending: HubGameDto[],
-    now: Date,
-  ): Promise<HeroSource | null> {
-    const [most] = await this.prisma.analyticsUserDaily.groupBy({
-      by: ['releaseId'],
-      where: {
-        userId,
-        releaseId: { not: 0 },
-        day: { gte: new Date(now.getTime() - OWN_PLAYS_WINDOW_DAYS * DAY_MS) },
-      },
-      _sum: { activeMs: true },
-      orderBy: [{ _sum: { activeMs: 'desc' } }, { releaseId: 'asc' }],
-      take: 1,
-    });
-    const [source] = most ? await this.hubService.fetchReleasesByIds([most.releaseId]) : [];
-    if (!source) {
-      return null;
-    }
-
+  ): Promise<HeroSource> {
+    const alike = trending.filter((game) => game.tags.some((tag) => source.tags.includes(tag)));
     const opened = new Set(
       (
         await this.prisma.analyticsUserDaily.findMany({
-          where: { userId, releaseId: { not: 0 } },
+          where: { userId, releaseId: { in: alike.map((game) => game.id) } },
           distinct: ['releaseId'],
           select: { releaseId: true },
         })
@@ -199,31 +181,47 @@ export class HubFeedService {
     return {
       reason: 'BECAUSE_YOU_PLAYED',
       reasonGame: { id: source.id, name: source.name },
-      games: trending.filter(
-        (game) => !opened.has(game.id) && game.tags.some((tag) => source.tags.includes(tag)),
-      ),
+      games: alike.filter((game) => !opened.has(game.id)),
     };
   }
 
   async feed(viewer: Viewer, now = new Date()): Promise<HubResponseDto> {
     const { day, payload } = await this.snapshots.today(now);
-    const [featured, lastEdited, friends] = await Promise.all([
+    const [featured, lastEdited, friends, [mostPlayed]] = await Promise.all([
       this.recommendations.getCurrent(),
       viewer === null ? null : this.hubService.fetchLastEdited(viewer),
       this.pool({ kind: 'FRIENDS' }, payload, viewer, now),
+      // The game the reader played most over the last weeks; none without a play history.
+      viewer === null
+        ? []
+        : this.prisma.analyticsUserDaily.groupBy({
+            by: ['releaseId'],
+            where: {
+              userId: viewer,
+              releaseId: { not: 0 },
+              day: { gte: new Date(now.getTime() - OWN_PLAYS_WINDOW_DAYS * DAY_MS) },
+            },
+            _sum: { activeMs: true },
+            orderBy: [{ _sum: { activeMs: 'desc' } }, { releaseId: 'asc' }],
+            take: 1,
+          }),
     ]);
     const games = await this.gamesById([
       ...payload.popular.games.slice(0, HUB_SHELF_SIZE),
       ...payload.trending.games,
       ...payload.rising.slice(0, HERO_RISING_DEPTH),
       ...friends.games.slice(0, HUB_SHELF_SIZE),
+      ...(mostPlayed ? [mostPlayed.releaseId] : []),
     ]);
     const listed = (ids: number[]): HubGameDto[] => ids.flatMap((id) => games.get(id) ?? []);
 
     const trending: HeroSource = { reason: 'TRENDING', games: listed(payload.trending.games) };
     const rising: HeroSource = { reason: 'NEW_AND_RISING', games: listed(payload.rising) };
+    const played = mostPlayed && games.get(mostPlayed.releaseId);
     const because =
-      viewer === null ? null : await this.becauseYouPlayed(viewer, trending.games, now);
+      viewer !== null && played
+        ? await this.becauseYouPlayed(viewer, played, trending.games)
+        : null;
 
     // Each slot takes the first game no earlier slot took, from the first of its sources with one.
     const slots: HeroSource[][] = [
