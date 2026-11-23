@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { withEnv } from '../../test/env';
-import { BadEnvVarError, getEnv, getOptionalEnv, MissingEnvVarError } from './env';
+import { BadEnvVarError, ENV_KEYS, getEnv, getOptionalEnv, MissingEnvVarError } from './env';
 
 describe('getEnv', () => {
   it('returns a text variable as set', () => {
@@ -57,5 +60,19 @@ describe('getOptionalEnv', () => {
     expect(getOptionalEnv('ENABLE_SWAGGER', false)).toBe(true);
     withEnv({ ENABLE_SWAGGER: 'yes' });
     expect(() => getOptionalEnv('ENABLE_SWAGGER', true)).toThrow(BadEnvVarError);
+  });
+});
+
+describe('the registry', () => {
+  const EXAMPLE = readFileSync(join(__dirname, '..', '..', '.env.example'), 'utf-8');
+
+  // A variable only the code knows is one a new deployment finds out about by failing.
+  it('holds no variable that .env.example leaves out', () => {
+    const documented = new Set(
+      [...EXAMPLE.matchAll(/^#? ?([A-Z][A-Z0-9_]*)=/gm)].map((match) => match[1]),
+    );
+
+    expect(ENV_KEYS).not.toEqual([]);
+    expect(ENV_KEYS.filter((key) => !documented.has(key))).toEqual([]);
   });
 });
