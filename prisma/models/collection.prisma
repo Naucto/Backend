@@ -13,6 +13,9 @@ model Collection {
   title       String
   description String?
   visibility  CollectionVisibility @default(PRIVATE)
+  // Set while moderation withholds the collection: only its owner reads it, whatever `visibility`
+  // says, and a restore puts it back as it was.
+  hiddenAt    DateTime?
   createdAt   DateTime             @default(now())
   updatedAt   DateTime             @updatedAt
 

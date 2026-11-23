@@ -28,6 +28,8 @@ describe('CaseService', () => {
     owner: account(7),
     content: { title: null, body: 'Buy my thing' },
     project: { id: uuidOf(12), name: 'Ferry Click', reachable: true },
+    visibility: null,
+    games: [],
     ...overrides,
   });
   const row = (overrides: object = {}): object => ({
@@ -174,6 +176,7 @@ describe('CaseService', () => {
       const detail = await service.detail(MOD, ModerationTargetType.COMMENT, uuidOf(31));
 
       expect(detail.current).toEqual({ title: null, body: 'Buy my thing' });
+      expect(detail).toMatchObject({ visibility: null, games: [] });
       expect(detail.flags).toHaveLength(1);
       expect(detail.flags[0]?.reporter).toMatchObject({ id: uuidOf(3), email: null });
       expect(detail.allowedActions).toEqual([
@@ -183,6 +186,33 @@ describe('CaseService', () => {
         'SUSPEND',
         'CLEAR_PROFILE',
       ]);
+    });
+
+    it('shows who may read the target and the games it lists, for a target that has them', async () => {
+      const games = [
+        { id: uuidOf(12), name: 'Ferry Click' },
+        { id: uuidOf(13), name: 'Unreleased' },
+      ];
+      prisma.$queryRaw.mockResolvedValue([row()]);
+      targets.view.mockResolvedValue(
+        comment({
+          state: 'HIDDEN',
+          content: { title: 'Couch co-op', body: 'Side by side.' },
+          project: null,
+          visibility: 'UNLISTED',
+          games,
+        }),
+      );
+
+      const detail = await service.detail(MOD, ModerationTargetType.COMMENT, uuidOf(31));
+
+      expect(detail).toMatchObject({
+        target: { state: 'HIDDEN', label: 'Couch co-op', owner: { id: uuidOf(7) } },
+        current: { title: 'Couch co-op', body: 'Side by side.' },
+        visibility: 'UNLISTED',
+        games,
+      });
+      expect(detail.allowedActions).toContain('RESTORE');
     });
 
     it('shows an admin the address of who reported', async () => {

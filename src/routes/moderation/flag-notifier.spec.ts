@@ -48,6 +48,22 @@ describe('FlagNotifier', () => {
     );
   });
 
+  it.each([
+    [ModerationTargetType.USER, 'A profile was reported'],
+    [ModerationTargetType.PROJECT, 'A game was reported'],
+    [ModerationTargetType.COMMENT, 'A comment was reported'],
+    [ModerationTargetType.COLLECTION, 'A collection was reported'],
+  ])('names a %s by its kind and links its case', (targetType, title) => {
+    withEnv({ ADMIN_PANEL_URL: 'https://admin.naucto.test' });
+
+    const [embed] = notifier().message({ ...NOTICE, targetType }).embeds ?? [];
+
+    expect(embed).toMatchObject({
+      title,
+      url: `https://admin.naucto.test/moderation/cases/${targetType}/${uuidOf(31)}`,
+    });
+  });
+
   // A notice is built from a kind, a reason and an id, so nothing a person wrote can reach it. This
   // pins the shape: a field added to the notice has to be argued for here.
   it('carries a kind of target, a reason and an id, and nothing else', () => {

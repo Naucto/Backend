@@ -15,6 +15,7 @@ const TARGETS: Record<ModerationTargetType, string> = {
   USER: 'profile',
   PROJECT: 'game',
   COMMENT: 'comment',
+  COLLECTION: 'collection',
 };
 
 const REASONS: Record<ModerationReason, string> = {

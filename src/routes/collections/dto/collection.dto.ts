@@ -21,7 +21,11 @@ import { IsId } from '../../../common/decorators/is-id';
 import { MAX_PAGE_SIZE, PaginationQueryDto } from '../../../common/dto/pagination-query.dto';
 import { HubGameDto } from '../../project/dto/hub-game.dto';
 import { UserBasicInfoDto } from '../../project/dto/project-response.dto';
-import { COLLECTION_LIMIT_CODES, CollectionLimitCode } from '../collection.error';
+import {
+  COLLECTION_HIDDEN_CODE,
+  COLLECTION_LIMIT_CODES,
+  CollectionLimitCode,
+} from '../collection.error';
 import {
   COLLECTION_DESCRIPTION_MAX_LENGTH,
   COLLECTION_GAMES_MAX,
@@ -131,6 +135,16 @@ export class CollectionHeaderDto {
   @ApiProperty({ enum: CollectionVisibility, enumName: 'CollectionVisibility' })
   visibility!: CollectionVisibility;
 
+  @ApiProperty({
+    example: null,
+    description:
+      'Set while moderation withholds the collection. Only its owner then reads it, and it takes no change but the removal of a game or its own deletion',
+    type: String,
+    format: 'date-time',
+    nullable: true,
+  })
+  hiddenAt!: Date | null;
+
   @ApiProperty({ type: UserBasicInfoDto })
   owner!: UserBasicInfoDto;
 
@@ -209,4 +223,19 @@ export class CollectionLimitDto {
 
   @ApiProperty({ example: 50, description: 'The count that is reached' })
   max!: number;
+}
+
+/** What a change answers the owner of a collection moderation withholds. */
+export class CollectionHiddenDto {
+  @ApiProperty({ example: HttpStatus.FORBIDDEN })
+  statusCode!: number;
+
+  @ApiProperty({ example: 'Forbidden' })
+  error!: string;
+
+  @ApiProperty({ enum: [COLLECTION_HIDDEN_CODE] })
+  code!: typeof COLLECTION_HIDDEN_CODE;
+
+  @ApiProperty({ example: 'This collection is hidden by moderation' })
+  message!: string;
 }

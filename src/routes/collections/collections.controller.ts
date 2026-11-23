@@ -20,6 +20,7 @@ import { ParseIdPipe } from '../../common/pipes/parse-id.pipe';
 import { CollectionsService } from './collections.service';
 import {
   CollectionDto,
+  CollectionHiddenDto,
   CollectionLimitDto,
   CollectionPreviewDto,
   CollectionsPageDto,
@@ -31,8 +32,10 @@ import {
   UpdateCollectionDto,
 } from './dto/collection.dto';
 
-const NOT_FOUND = 'No such collection, or a private one of someone else';
+const NOT_FOUND =
+  'No such collection, or one of someone else that is private or withheld by moderation';
 const NOT_OWNER = 'The collection is not the caller’s';
+const NOT_CHANGEABLE = `${NOT_OWNER} (no \`code\`), or it is theirs and moderation withholds it`;
 
 @ApiTags('collections')
 @Controller('collections')
@@ -66,7 +69,11 @@ export class CollectionsController {
   // Public, and wider for whoever sends a valid token: an owner also reads their private one.
   @Public()
   @Get(':id')
-  @ApiOperation({ summary: 'A collection and its games' })
+  @ApiOperation({
+    summary: 'A collection and its games',
+    description:
+      'One moderation withholds answers its owner alone, with `hiddenAt` set, and everyone else as a gap.',
+  })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: HttpStatus.OK, type: CollectionDto })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: NOT_FOUND })
@@ -81,7 +88,11 @@ export class CollectionsController {
   @ApiOperation({ summary: 'Change the title, the description or who may read a collection' })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: HttpStatus.OK, type: CollectionDto })
-  @ApiResponse({ status: HttpStatus.FORBIDDEN, description: NOT_OWNER })
+  @ApiResponse({
+    status: HttpStatus.FORBIDDEN,
+    description: NOT_CHANGEABLE,
+    type: CollectionHiddenDto,
+  })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: NOT_FOUND })
   async update(
     @Req() req: RequestWithUser,
@@ -93,7 +104,7 @@ export class CollectionsController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Delete a collection' })
+  @ApiOperation({ summary: 'Delete a collection, withheld by moderation or not' })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: HttpStatus.NO_CONTENT })
   @ApiResponse({ status: HttpStatus.FORBIDDEN, description: NOT_OWNER })
@@ -108,7 +119,11 @@ export class CollectionsController {
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: HttpStatus.NO_CONTENT })
   @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: 'A game named is not in it' })
-  @ApiResponse({ status: HttpStatus.FORBIDDEN, description: NOT_OWNER })
+  @ApiResponse({
+    status: HttpStatus.FORBIDDEN,
+    description: NOT_CHANGEABLE,
+    type: CollectionHiddenDto,
+  })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: NOT_FOUND })
   async reorder(
     @Req() req: RequestWithUser,
@@ -129,7 +144,11 @@ export class CollectionsController {
     description: 'The collection lists as many games as it may',
     type: CollectionLimitDto,
   })
-  @ApiResponse({ status: HttpStatus.FORBIDDEN, description: NOT_OWNER })
+  @ApiResponse({
+    status: HttpStatus.FORBIDDEN,
+    description: NOT_CHANGEABLE,
+    type: CollectionHiddenDto,
+  })
   @ApiResponse({
     status: HttpStatus.NOT_FOUND,
     description: `${NOT_FOUND}; or the game is not published`,
@@ -144,7 +163,10 @@ export class CollectionsController {
 
   @Delete(':id/games/:projectId')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Remove a game from a collection; no-op when it is not there' })
+  @ApiOperation({
+    summary: 'Remove a game from a collection; no-op when it is not there',
+    description: 'Open on a collection moderation withholds, unlike every other change to it.',
+  })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiParam({ name: 'projectId', type: String, format: 'uuid' })
   @ApiResponse({ status: HttpStatus.NO_CONTENT })

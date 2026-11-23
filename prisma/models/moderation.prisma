@@ -1,11 +1,12 @@
-// What users tell staff about a game, a comment or an account, and what staff decide. A flag is one
-// user's word about one target. Every decision is one ModerationAction row, written once and never
-// changed, in the transaction of the change it records.
+// What users tell staff about a game, a comment, a collection or an account, and what staff
+// decide. A flag is one user's word about one target. Every decision is one ModerationAction row,
+// written once and never changed, in the transaction of the change it records.
 
 enum ModerationTargetType {
   USER
   PROJECT
   COMMENT
+  COLLECTION
 }
 
 enum ModerationReason {
@@ -39,6 +40,9 @@ enum ModerationActionType {
   COMMENT_HIDDEN
   COMMENT_RESTORED
   COMMENT_DELETED
+  COLLECTION_HIDDEN
+  COLLECTION_RESTORED
+  COLLECTION_DELETED
   FLAGS_DISMISSED
   DRAFT_VIEWED
 }
@@ -48,10 +52,11 @@ model Flag {
   reporter   User @relation("FlagsFiled", fields: [reporterId], references: [id])
   reporterId String @db.Uuid
 
-  // No foreign key on the target: a flag outlives the game, the comment or the account it is about.
+  // No foreign key on the target: a flag outlives what it is about.
   targetType ModerationTargetType
   targetId String @db.Uuid
-  // Whose content it is: the account itself, the game's creator or the comment's author.
+  // Whose content it is: the account itself, the game's creator, the comment's author or the
+  // collection's owner.
   targetOwnerId String? @db.Uuid
 
   reason  ModerationReason

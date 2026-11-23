@@ -11,7 +11,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { HubService } from '../project/hub.service';
 import { toHubGame } from '../project/hub-fields';
 import { CREATOR_SELECT, PUBLISHED, PUBLISHED_SQL } from '../project/project-select';
-import { CollectionLimitException } from './collection.error';
+import { CollectionHiddenException, CollectionLimitException } from './collection.error';
 import {
   COLLECTION_GAMES_MAX,
   COLLECTION_PREVIEW_GAMES,
@@ -37,7 +37,7 @@ type CollectionRow = Prisma.CollectionGetPayload<{ include: typeof WITH_OWNER }>
 type Viewer = string | null;
 
 /** A game added twice at one position, by two requests at once, still has one place. */
-const ITEM_ORDER: Prisma.CollectionItemOrderByWithRelationInput[] = [
+export const ITEM_ORDER: Prisma.CollectionItemOrderByWithRelationInput[] = [
   { position: 'asc' },
   { addedAt: 'asc' },
   { projectId: 'asc' },
@@ -48,11 +48,15 @@ const NEWEST_FIRST: Prisma.CollectionOrderByWithRelationInput[] = [
   { id: 'asc' },
 ];
 
+/** Not withheld by moderation. A collection that is withheld is read by its owner alone. */
+const STANDING: Prisma.CollectionWhereInput = { hiddenAt: null };
+
 /**
  * What the public list holds: a collection anyone may read, with a game to show. One whose games
  * all left the hub would be an empty box.
  */
 const LISTED: Prisma.CollectionWhereInput = {
+  ...STANDING,
   visibility: CollectionVisibility.PUBLIC,
   items: { some: { project: PUBLISHED } },
 };
@@ -69,6 +73,7 @@ const toHeader = (row: CollectionRow, gameCount: number): CollectionHeaderDto =>
   title: row.title,
   description: row.description,
   visibility: row.visibility,
+  hiddenAt: row.hiddenAt,
   owner: row.owner,
   gameCount,
   createdAt: row.createdAt,
@@ -77,8 +82,9 @@ const toHeader = (row: CollectionRow, gameCount: number): CollectionHeaderDto =>
 
 /**
  * Collections: a person's lists of games. Who reads one is decided here and nowhere else: PUBLIC
- * by anyone, UNLISTED by whoever holds its id, PRIVATE by its owner. A game shows in one only
- * while it is on the hub; its row stays, so its owner can see it left and remove it.
+ * by anyone, UNLISTED by whoever holds its id, PRIVATE by its owner, and one moderation withholds
+ * by its owner alone. A game shows in one only while it is on the hub; its row stays, so its owner
+ * can see it left and remove it.
  */
 @Injectable()
 export class CollectionsService {
@@ -87,11 +93,15 @@ export class CollectionsService {
     private readonly hubService: HubService,
   ) {}
 
-  /** The collection as `viewer` may read it. A private one answers a stranger as a gap does. */
+  /**
+   * The collection as `viewer` may read it. A private one and a withheld one answer a stranger as
+   * a gap does.
+   */
   private async requireReadable(id: string, viewer: Viewer): Promise<CollectionRow> {
     const row = await this.prisma.collection.findUnique({ where: { id }, include: WITH_OWNER });
+    const ownerOnly = row?.visibility === CollectionVisibility.PRIVATE || Boolean(row?.hiddenAt);
 
-    if (!row || (row.visibility === CollectionVisibility.PRIVATE && row.ownerId !== viewer)) {
+    if (!row || (ownerOnly && row.ownerId !== viewer)) {
       throw new NotFoundException(`Collection ${id} not found`);
     }
 
@@ -103,6 +113,20 @@ export class CollectionsService {
 
     if (row.ownerId !== userId) {
       throw new ForbiddenException('Only its owner changes a collection');
+    }
+
+    return row;
+  }
+
+  /**
+   * The collection for a change to what it would show. A withheld one takes none: what a restore
+   * puts back is what staff withheld. Its owner still deletes it, or removes a game from it.
+   */
+  private async requireChangeable(id: string, userId: string): Promise<CollectionRow> {
+    const row = await this.requireOwned(id, userId);
+
+    if (row.hiddenAt) {
+      throw new CollectionHiddenException();
     }
 
     return row;
@@ -178,7 +202,7 @@ export class CollectionsService {
   }
 
   async update(id: string, userId: string, dto: UpdateCollectionDto): Promise<CollectionDto> {
-    await this.requireOwned(id, userId);
+    await this.requireChangeable(id, userId);
 
     const row = await this.prisma.collection.update({
       where: { id },
@@ -200,7 +224,7 @@ export class CollectionsService {
 
   /** Lists a game of the hub last; a game already listed keeps its place. */
   async addGame(id: string, userId: string, projectId: string): Promise<void> {
-    await this.requireOwned(id, userId);
+    await this.requireChangeable(id, userId);
     if ((await this.prisma.project.count({ where: { id: projectId, ...PUBLISHED } })) === 0) {
       throw new NotFoundException(`Published project with ID ${projectId} not found`);
     }
@@ -226,7 +250,10 @@ export class CollectionsService {
     ]);
   }
 
-  /** Works on a game that left the hub too: that is how its owner clears it. */
+  /**
+   * Works on a game that left the hub too: that is how its owner clears it. Works on a withheld
+   * collection as well, where it can only take away from what staff withheld.
+   */
   async removeGame(id: string, userId: string, projectId: string): Promise<void> {
     await this.requireOwned(id, userId);
     await this.prisma.$transaction([
@@ -240,7 +267,7 @@ export class CollectionsService {
    * hub, one added meanwhile from another tab) follows them in the order it had.
    */
   async reorder(id: string, userId: string, projectIds: string[]): Promise<void> {
-    await this.requireOwned(id, userId);
+    await this.requireChangeable(id, userId);
 
     const items = await this.prisma.collectionItem.findMany({
       where: { collectionId: id },
@@ -295,7 +322,7 @@ export class CollectionsService {
   async listPublicOf(ownerId: string): Promise<CollectionPreviewDto[]> {
     return this.toPreviews(
       await this.prisma.collection.findMany({
-        where: { ownerId, visibility: CollectionVisibility.PUBLIC },
+        where: { ...STANDING, ownerId, visibility: CollectionVisibility.PUBLIC },
         include: WITH_OWNER,
         orderBy: NEWEST_FIRST,
       }),
@@ -322,7 +349,7 @@ export class CollectionsService {
         FROM "Collection"
         JOIN "CollectionItem" ON "CollectionItem"."collectionId" = "Collection"."id"
         JOIN "Project" ON "Project"."id" = "CollectionItem"."projectId" AND ${PUBLISHED_SQL}
-        WHERE "Collection"."visibility" = 'PUBLIC'
+        WHERE "Collection"."visibility" = 'PUBLIC' AND "Collection"."hiddenAt" IS NULL
         GROUP BY "Collection"."id"
         ORDER BY ${LISTED_ORDER[query.sort ?? 'popular']}, "Collection"."id"
         LIMIT ${window.take} OFFSET ${window.skip}`,

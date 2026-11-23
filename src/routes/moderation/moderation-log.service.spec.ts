@@ -44,6 +44,9 @@ describe('ModerationLogService', () => {
     it.each([
       [ModerationActionType.ACCOUNT_WARNED, true],
       [ModerationActionType.COMMENT_HIDDEN, true],
+      [ModerationActionType.COLLECTION_HIDDEN, true],
+      [ModerationActionType.COLLECTION_RESTORED, true],
+      [ModerationActionType.COLLECTION_DELETED, true],
       [ModerationActionType.DRAFT_VIEWED, false],
       [ModerationActionType.FLAGS_DISMISSED, false],
     ])('writes %s as visible to its subject: %s', async (action, visible) => {

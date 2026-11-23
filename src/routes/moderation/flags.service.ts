@@ -17,6 +17,7 @@ const FLAGGABLE: Record<ModerationTargetType, readonly TargetState[]> = {
   USER: ['VISIBLE', 'SUSPENDED'],
   PROJECT: ['VISIBLE'],
   COMMENT: ['VISIBLE'],
+  COLLECTION: ['VISIBLE'],
 };
 
 /** What people report to staff. */

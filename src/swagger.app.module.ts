@@ -46,6 +46,7 @@ import { FriendsService } from './routes/friends/friends.service';
 import { AccountModerationService } from './routes/moderation/account-moderation.service';
 import { AdminCaseController } from './routes/moderation/admin-case.controller';
 import { AdminModerationAccountController } from './routes/moderation/admin-moderation-account.controller';
+import { AdminModerationCollectionController } from './routes/moderation/admin-moderation-collection.controller';
 import { AdminModerationCommentController } from './routes/moderation/admin-moderation-comment.controller';
 import { AdminModerationLogController } from './routes/moderation/admin-moderation-log.controller';
 import { AdminModerationProjectController } from './routes/moderation/admin-moderation-project.controller';
@@ -133,6 +134,7 @@ const nullProvider = (token: InjectionToken): Provider => ({
     AdminModerationAccountController,
     AdminModerationProjectController,
     AdminModerationCommentController,
+    AdminModerationCollectionController,
     AdminModerationLogController,
   ],
   providers: [

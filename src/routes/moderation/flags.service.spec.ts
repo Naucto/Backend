@@ -28,6 +28,8 @@ describe('FlagsService', () => {
     },
     content: { title: null, body: 'Buy my thing' },
     project: { id: uuidOf(12), name: 'Ferry Click', reachable: true },
+    visibility: null,
+    games: [],
     ...overrides,
   });
 
@@ -91,6 +93,67 @@ describe('FlagsService', () => {
       code: MODERATION_ERROR.FLAG_TARGET_NOT_FOUND,
     });
     expect(prisma.flag.create).not.toHaveBeenCalled();
+  });
+
+  describe('a collection', () => {
+    const LIST = {
+      targetType: ModerationTargetType.COLLECTION,
+      targetId: uuidOf(40),
+      reason: ModerationReason.HATE,
+    };
+    const list = (overrides: Partial<TargetView> = {}): TargetView =>
+      view({
+        type: ModerationTargetType.COLLECTION,
+        id: uuidOf(40),
+        content: { title: 'Couch co-op', body: 'Side by side.' },
+        project: null,
+        visibility: 'PUBLIC',
+        games: [{ id: uuidOf(12), name: 'Ferry Click' }],
+        ...overrides,
+      });
+
+    it.each(['PUBLIC', 'UNLISTED'] as const)(
+      'is reported by whoever reads a %s one, with its title and description as they read',
+      async (visibility) => {
+        targets.view.mockResolvedValue(list({ visibility }));
+
+        await expect(service.create(uuidOf(3), LIST)).resolves.toEqual({ id: uuidOf(50) });
+
+        expect(prisma.flag.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              targetType: ModerationTargetType.COLLECTION,
+              targetId: uuidOf(40),
+              targetOwnerId: uuidOf(7),
+              snapshot: { title: 'Couch co-op', body: 'Side by side.' },
+              openKey: `${uuidOf(3)}:COLLECTION:${uuidOf(40)}`,
+            }),
+          }),
+        );
+      },
+    );
+
+    it.each<[string, Partial<TargetView>]>([
+      ['its owner keeps private', { state: 'UNPUBLISHED', visibility: 'PRIVATE' }],
+      ['moderation already hid', { state: 'HIDDEN' }],
+      ['is gone', { state: 'GONE', owner: null, content: null, visibility: null, games: [] }],
+    ])('answers as nothing at all when it is one %s', async (_case, state) => {
+      targets.view.mockResolvedValue(list(state));
+
+      await expect(service.create(uuidOf(3), LIST)).rejects.toMatchObject({
+        code: MODERATION_ERROR.FLAG_TARGET_NOT_FOUND,
+      });
+      expect(prisma.flag.create).not.toHaveBeenCalled();
+    });
+
+    it('is not reported by its owner', async () => {
+      targets.view.mockResolvedValue(list());
+
+      await expect(service.create(uuidOf(7), LIST)).rejects.toMatchObject({
+        code: MODERATION_ERROR.CANNOT_FLAG_OWN_CONTENT,
+      });
+      expect(prisma.flag.create).not.toHaveBeenCalled();
+    });
   });
 
   it('still takes a report on a suspended account, whose profile stays up', async () => {

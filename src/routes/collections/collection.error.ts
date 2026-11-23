@@ -1,7 +1,7 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
 
 import { COLLECTION_GAMES_MAX, COLLECTIONS_PER_USER_MAX } from './collection-limits';
-import type { CollectionLimitDto } from './dto/collection.dto';
+import type { CollectionHiddenDto, CollectionLimitDto } from './dto/collection.dto';
 
 const LIMITS = {
   COLLECTIONS_LIMIT: {
@@ -28,6 +28,26 @@ export class CollectionLimitException extends HttpException {
         ...LIMITS[code],
       } satisfies CollectionLimitDto,
       HttpStatus.BAD_REQUEST,
+    );
+  }
+}
+
+export const COLLECTION_HIDDEN_CODE = 'COLLECTION_HIDDEN';
+
+/**
+ * Raised when the owner of a collection moderation withholds asks to change what it would show.
+ * Told apart from a refusal to someone who does not own it: the owner is owed the reason.
+ */
+export class CollectionHiddenException extends HttpException {
+  constructor() {
+    super(
+      {
+        statusCode: HttpStatus.FORBIDDEN,
+        error: 'Forbidden',
+        code: COLLECTION_HIDDEN_CODE,
+        message: 'This collection is hidden by moderation',
+      } satisfies CollectionHiddenDto,
+      HttpStatus.FORBIDDEN,
     );
   }
 }

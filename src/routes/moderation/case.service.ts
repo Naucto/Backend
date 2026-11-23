@@ -148,6 +148,8 @@ export class CaseService {
     return {
       ...summary,
       current: view.content,
+      visibility: view.visibility,
+      games: view.games,
       flags: flags.map(
         (flag): CaseFlagDto => ({
           id: flag.id,

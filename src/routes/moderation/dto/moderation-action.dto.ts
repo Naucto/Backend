@@ -39,19 +39,19 @@ export class ModerationAccountRefDto {
   email!: string | null;
 }
 
-/** The text of a game, a comment or a profile at one moment. */
+/** What a target says at one moment. */
 export class TargetContentDto {
   @ApiPropertyOptional({
     type: String,
     nullable: true,
-    description: 'The name of a game or the display name of an account. A comment has none.',
+    description: 'What the target is called: its name or its title. Null for a target without one',
   })
   title!: string | null;
 
   @ApiPropertyOptional({
     type: String,
     nullable: true,
-    description: 'The descriptions of a game, the text of a comment or the bio of an account',
+    description: 'The text of the target: its description, or what it says when it is only text',
   })
   body!: string | null;
 }

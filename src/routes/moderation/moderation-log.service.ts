@@ -31,6 +31,9 @@ export const VISIBLE_TO_SUBJECT: Record<ModerationActionType, boolean> = {
   COMMENT_HIDDEN: true,
   COMMENT_RESTORED: true,
   COMMENT_DELETED: true,
+  COLLECTION_HIDDEN: true,
+  COLLECTION_RESTORED: true,
+  COLLECTION_DELETED: true,
   FLAGS_DISMISSED: false,
   DRAFT_VIEWED: false,
 };

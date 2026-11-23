@@ -10,7 +10,7 @@ import { compareIds } from '../../common/ids';
 import { PrismaService } from '../../prisma/prisma.service';
 import { HubService } from '../project/hub.service';
 import { ReleaseProject } from '../project/project-select';
-import { CollectionLimitException } from './collection.error';
+import { CollectionHiddenException, CollectionLimitException } from './collection.error';
 import { COLLECTION_GAMES_MAX, COLLECTIONS_PER_USER_MAX } from './collection-limits';
 import { CollectionsService } from './collections.service';
 
@@ -38,6 +38,7 @@ type CollectionWhere = {
   id?: { in: string[] };
   ownerId?: string;
   visibility?: CollectionVisibility;
+  hiddenAt?: null;
   items?: unknown;
 };
 
@@ -70,6 +71,7 @@ describe('CollectionsService', () => {
         (!where.id || where.id.in.includes(row.id)) &&
         (where.ownerId === undefined || row.ownerId === where.ownerId) &&
         (!where.visibility || row.visibility === where.visibility) &&
+        (where.hiddenAt === undefined || row.hiddenAt === null) &&
         (!where.items || hasGameOnHub(row.id)),
     );
 
@@ -122,6 +124,7 @@ describe('CollectionsService', () => {
       title: `A ${visibility.toLowerCase()} one`,
       description: null,
       visibility,
+      hiddenAt: null,
       createdAt: at,
       updatedAt: at,
     });
@@ -130,6 +133,11 @@ describe('CollectionsService', () => {
 
   const gamesOf = (id: string): string[] =>
     itemsMatching({ collectionId: id }).map((item) => item.projectId);
+
+  /** What moderation does to a collection, and undoes. */
+  const hide = (id: string, hiddenAt: Date | null = new Date('2026-11-01T00:00:00Z')): void => {
+    rows.set(id, { ...(rows.get(id) as Collection), hiddenAt });
+  };
 
   beforeEach(() => {
     jest.resetAllMocks();
@@ -158,9 +166,10 @@ describe('CollectionsService', () => {
       const row: Collection = {
         id: `new-${rows.size}`,
         visibility: 'PRIVATE',
+        hiddenAt: null,
         createdAt: new Date(),
         updatedAt: new Date(),
-        ...(data as Omit<Collection, 'id' | 'visibility' | 'createdAt' | 'updatedAt'>),
+        ...(data as Omit<Collection, 'id' | 'visibility' | 'hiddenAt' | 'createdAt' | 'updatedAt'>),
       };
       rows.set(row.id, row);
       return withOwner(row);
@@ -498,6 +507,132 @@ describe('CollectionsService', () => {
         expect.objectContaining({ id: PUBLIC_ID }),
       ]);
       await expect(service.listPublicOf(OWNER)).resolves.toHaveLength(2);
+    });
+  });
+
+  describe('a collection moderation withholds', () => {
+    beforeEach(() => {
+      hide(PUBLIC_ID);
+      hide(UNLISTED_ID);
+    });
+
+    it.each<[string, string | null, CollectionVisibility, boolean]>([
+      ['its owner', OWNER, 'PUBLIC', true],
+      ['its owner', OWNER, 'UNLISTED', true],
+      ['someone else', OTHER, 'PUBLIC', false],
+      ['someone else', OTHER, 'UNLISTED', false],
+      ['a reader who is signed out', ANONYMOUS, 'PUBLIC', false],
+      ['a reader who is signed out', ANONYMOUS, 'UNLISTED', false],
+    ])('%s opening a %s one', async (_who, viewer, visibility, reads) => {
+      const opened = service.findOne(ID_OF[visibility], viewer);
+
+      await (reads
+        ? expect(opened).resolves.toMatchObject({
+            id: ID_OF[visibility],
+            visibility,
+            hiddenAt: new Date('2026-11-01T00:00:00Z'),
+          })
+        : expect(opened).rejects.toBeInstanceOf(NotFoundException));
+    });
+
+    it('answers anyone else exactly as an id that names nothing', async () => {
+      const refusal = (id: string): Promise<unknown> =>
+        service.findOne(id, OTHER).catch((error: NotFoundException) => error.getResponse());
+      const missing = '44444444-4444-4444-8444-444444444444';
+
+      expect(
+        JSON.stringify(await refusal(PUBLIC_ID))
+          .split(PUBLIC_ID)
+          .join(missing),
+      ).toBe(JSON.stringify(await refusal(missing)));
+    });
+
+    it('says of a collection still standing that it is not withheld', async () => {
+      await expect(service.findOne(PRIVATE_ID, OWNER)).resolves.toMatchObject({ hiddenAt: null });
+    });
+
+    it('leaves the public list, the hub and the profile of its owner', async () => {
+      add('standing', 'PUBLIC', games(6));
+      prisma.$queryRaw.mockResolvedValue([{ id: 'standing' }]);
+
+      const page = await service.listPublic({});
+
+      expect(page).toMatchObject({ total: 1 });
+      expect(page.collections.map((one) => one.id)).toEqual(['standing']);
+      expect((prisma.$queryRaw.mock.lastCall?.[0] as string[]).join('')).toContain(
+        '"Collection"."hiddenAt" IS NULL',
+      );
+      await expect(service.listedByIds([PUBLIC_ID, 'standing'])).resolves.toEqual([
+        expect.objectContaining({ id: 'standing' }),
+      ]);
+      await expect(service.listedWithGames()).resolves.toEqual([
+        { id: 'standing', ownerId: OWNER, games: games(6) },
+      ]);
+      expect((await service.listPublicOf(OWNER)).map((one) => one.id)).toEqual(['standing']);
+    });
+
+    it('stays among the collections of its owner, saying since when it is withheld', async () => {
+      const mine = await service.listMine(OWNER);
+
+      expect(mine.map((one) => [one.id, one.hiddenAt !== null])).toEqual([
+        [PRIVATE_ID, false],
+        [UNLISTED_ID, true],
+        [PUBLIC_ID, true],
+      ]);
+    });
+
+    it.each<[string, () => Promise<unknown>]>([
+      ['a new title', (): Promise<unknown> => service.update(PUBLIC_ID, OWNER, { title: 'Clean' })],
+      [
+        'another audience',
+        (): Promise<unknown> => service.update(PUBLIC_ID, OWNER, { visibility: 'PRIVATE' }),
+      ],
+      ['a game', (): Promise<unknown> => service.addGame(PUBLIC_ID, OWNER, uuidOf(9))],
+      ['another order', (): Promise<unknown> => service.reorder(PUBLIC_ID, OWNER, games(1, 2, 3))],
+    ])('takes %s from nobody, its owner included', async (_what, change) => {
+      const refused = change();
+
+      await expect(refused).rejects.toBeInstanceOf(CollectionHiddenException);
+      await expect(refused).rejects.toMatchObject({ response: { code: 'COLLECTION_HIDDEN' } });
+      expect(rows.get(PUBLIC_ID)).toMatchObject({ title: 'A public one', visibility: 'PUBLIC' });
+      expect(gamesOf(PUBLIC_ID)).toEqual(games(3, 1, 2));
+    });
+
+    it('still gives up a game to its owner', async () => {
+      await service.removeGame(PUBLIC_ID, OWNER, uuidOf(1));
+
+      expect(gamesOf(PUBLIC_ID)).toEqual(games(3, 2));
+    });
+
+    it('can still be deleted by its owner', async () => {
+      await service.remove(PUBLIC_ID, OWNER);
+
+      expect(rows.has(PUBLIC_ID)).toBe(false);
+    });
+
+    it.each<[string, (id: string) => Promise<unknown>]>([
+      ['update', (id): Promise<unknown> => service.update(id, OTHER, { title: 'Mine now' })],
+      ['remove', (id): Promise<unknown> => service.remove(id, OTHER)],
+      ['addGame', (id): Promise<unknown> => service.addGame(id, OTHER, uuidOf(9))],
+      ['removeGame', (id): Promise<unknown> => service.removeGame(id, OTHER, uuidOf(3))],
+      ['reorder', (id): Promise<unknown> => service.reorder(id, OTHER, [])],
+    ])('%s by someone else finds nothing', async (_name, write) => {
+      await expect(write(PUBLIC_ID)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(write(UNLISTED_ID)).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(gamesOf(PUBLIC_ID)).toEqual(games(3, 1, 2));
+    });
+
+    it('reads and changes as it did once moderation restores it', async () => {
+      hide(PUBLIC_ID, null);
+
+      await expect(service.findOne(PUBLIC_ID, ANONYMOUS)).resolves.toMatchObject({
+        hiddenAt: null,
+      });
+      await expect(service.update(PUBLIC_ID, OWNER, { title: 'Clean' })).resolves.toMatchObject({
+        title: 'Clean',
+      });
+      await expect(service.listedByIds([PUBLIC_ID])).resolves.toHaveLength(1);
     });
   });
 

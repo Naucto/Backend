@@ -43,6 +43,7 @@ const collection = (index: number, gameCount = 5): CollectionPreviewDto => ({
   title: `Collection ${index}`,
   description: null,
   visibility: 'PUBLIC',
+  hiddenAt: null,
   owner: { id: uuidOf(500 + index), username: `owner${index}` },
   gameCount,
   createdAt: NOW,

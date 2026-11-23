@@ -94,6 +94,20 @@ describe('allowedOperations', () => {
     ]);
   });
 
+  it.each([ModerationTargetType.PROJECT, ModerationTargetType.COLLECTION])(
+    'treats a %s as it treats any content, kept to its owner or not',
+    (type) => {
+      for (const state of ['VISIBLE', 'UNPUBLISHED'] as const) {
+        expect(allowedOperations(BOSS, comment({ type, state }))).toEqual(
+          allowedOperations(BOSS, comment()),
+        );
+      }
+      expect(allowedOperations(MOD, comment({ type, state: 'HIDDEN' }))).toEqual(
+        allowedOperations(MOD, comment({ state: 'HIDDEN' })),
+      );
+    },
+  );
+
   it('has no content to hide when the target is an account', () => {
     const operations = allowedOperations(
       BOSS,

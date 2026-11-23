@@ -63,14 +63,25 @@ describe('ContentModerationService', () => {
     ...overrides,
   });
 
+  const collection = (overrides: object = {}): object => ({
+    id: uuidOf(40),
+    title: 'Couch co-op',
+    description: 'Side by side.',
+    hiddenAt: null,
+    ownerId: uuidOf(7),
+    ...overrides,
+  });
+
   const tx = {
     comment: { update: jest.fn() },
     project: { updateMany: jest.fn() },
+    collection: { update: jest.fn(), delete: jest.fn() },
     flag: { updateMany: jest.fn() },
   };
   const prisma = {
     comment: { findUnique: jest.fn() },
     project: { findUnique: jest.fn() },
+    collection: { findUnique: jest.fn() },
     $transaction: jest.fn(),
   };
   const log = { record: jest.fn() };
@@ -91,6 +102,7 @@ describe('ContentModerationService', () => {
     prisma.$transaction.mockImplementation((run: (client: typeof tx) => unknown) => run(tx));
     prisma.comment.findUnique.mockResolvedValue(comment());
     prisma.project.findUnique.mockResolvedValue(game());
+    prisma.collection.findUnique.mockResolvedValue(collection());
     tx.flag.updateMany.mockResolvedValue({ count: 1 });
     tx.project.updateMany.mockResolvedValue({ count: 1 });
     service = new ContentModerationService(
@@ -453,6 +465,195 @@ describe('ContentModerationService', () => {
       expect(notifications.notifyBestEffort).toHaveBeenCalledWith(
         expect.objectContaining({ userId: uuidOf(7), title: 'Your comment is back' }),
       );
+    });
+  });
+  describe('a collection', () => {
+    const listed = (action: ModerationActionType): object => ({
+      ...(recorded(action) as object),
+      targetType: 'COLLECTION',
+      targetId: uuidOf(40),
+      snapshot: { title: 'Couch co-op', body: 'Side by side.' },
+    });
+    const hidden = (): object => collection({ hiddenAt: new Date('2026-11-01T00:00:00.000Z') });
+
+    describe('hideCollection', () => {
+      beforeEach(() => {
+        log.record.mockResolvedValue(listed(ModerationActionType.COLLECTION_HIDDEN));
+      });
+
+      it('hides it, keeps its title and description as evidence and closes its flags, in one transaction', async () => {
+        await service.hideCollection(MOD, uuidOf(40), DECISION);
+
+        expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+        expect(tx.collection.update).toHaveBeenCalledWith({
+          where: { id: uuidOf(40) },
+          data: { hiddenAt: expect.any(Date) },
+        });
+        expect(log.record).toHaveBeenCalledWith(
+          tx,
+          expect.objectContaining({
+            action: ModerationActionType.COLLECTION_HIDDEN,
+            actorId: MOD.id,
+            targetType: 'COLLECTION',
+            targetId: uuidOf(40),
+            subjectUserId: uuidOf(7),
+            reason: ModerationReason.SPAM,
+            snapshot: { title: 'Couch co-op', body: 'Side by side.' },
+          }),
+        );
+        expect(tx.flag.updateMany).toHaveBeenCalledWith({
+          where: { targetType: 'COLLECTION', targetId: uuidOf(40), status: FlagStatus.OPEN },
+          data: expect.objectContaining({ status: FlagStatus.ACTIONED, resolutionId: uuidOf(99) }),
+        });
+      });
+
+      it('leaves its flags open when staff ask for that', async () => {
+        await service.hideCollection(MOD, uuidOf(40), { ...DECISION, resolveFlags: false });
+
+        expect(tx.flag.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('changes nothing of what it says or of who may read it once restored', async () => {
+        await service.hideCollection(MOD, uuidOf(40), DECISION);
+
+        expect(Object.keys(tx.collection.update.mock.calls[0][0].data)).toEqual(['hiddenAt']);
+      });
+
+      it.each([
+        [{ publicMessage: 'No slurs in a title.' }, 'No slurs in a title.'],
+        [{}, 'A moderator hid one of your collections.'],
+      ])('tells its owner, in the words of staff when there are some', async (words, message) => {
+        await service.hideCollection(MOD, uuidOf(40), { ...DECISION, ...words });
+
+        expect(notifications.notifyBestEffort).toHaveBeenCalledWith({
+          userId: uuidOf(7),
+          title: 'Your collection was hidden',
+          message,
+          type: 'WARNING',
+          kind: 'MODERATION',
+          data: { actionId: uuidOf(99), action: ModerationActionType.COLLECTION_HIDDEN },
+        });
+      });
+
+      it('refuses one that is hidden already', async () => {
+        prisma.collection.findUnique.mockResolvedValue(hidden());
+
+        await expect(service.hideCollection(MOD, uuidOf(40), DECISION)).rejects.toMatchObject({
+          code: MODERATION_ERROR.ALREADY_HIDDEN,
+        });
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+      });
+
+      it('hides nothing when the log row cannot be written', async () => {
+        log.record.mockRejectedValue(new Error('database is down'));
+
+        await expect(service.hideCollection(MOD, uuidOf(40), DECISION)).rejects.toThrow(
+          'database is down',
+        );
+        expect(notifications.notifyBestEffort).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('restoreCollection', () => {
+      beforeEach(() => {
+        log.record.mockResolvedValue(listed(ModerationActionType.COLLECTION_RESTORED));
+      });
+
+      it('refuses one that is not hidden', async () => {
+        await expect(service.restoreCollection(MOD, uuidOf(40), {})).rejects.toMatchObject({
+          code: MODERATION_ERROR.NOT_HIDDEN,
+        });
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+      });
+
+      it('puts it back as it was, records it and tells its owner', async () => {
+        prisma.collection.findUnique.mockResolvedValue(hidden());
+
+        await service.restoreCollection(MOD, uuidOf(40), { internalNote: 'Title fixed' });
+
+        expect(tx.collection.update).toHaveBeenCalledWith({
+          where: { id: uuidOf(40) },
+          data: { hiddenAt: null },
+        });
+        expect(log.record).toHaveBeenCalledWith(
+          tx,
+          expect.objectContaining({
+            action: ModerationActionType.COLLECTION_RESTORED,
+            targetType: 'COLLECTION',
+            targetId: uuidOf(40),
+            subjectUserId: uuidOf(7),
+            internalNote: 'Title fixed',
+            snapshot: { title: 'Couch co-op', body: 'Side by side.' },
+          }),
+        );
+        expect(tx.flag.updateMany).not.toHaveBeenCalled();
+        expect(notifications.notifyBestEffort).toHaveBeenCalledWith(
+          expect.objectContaining({
+            userId: uuidOf(7),
+            title: 'Your collection is back',
+            message: 'A moderator restored one of your collections.',
+          }),
+        );
+      });
+    });
+
+    describe('removeCollection', () => {
+      beforeEach(() => {
+        log.record.mockResolvedValue(listed(ModerationActionType.COLLECTION_DELETED));
+      });
+
+      it.each([
+        ['still standing', collection()],
+        ['hidden', hidden()],
+      ])(
+        'deletes one that is %s, recording it and closing its flags in the same transaction',
+        async (_case, row) => {
+          prisma.collection.findUnique.mockResolvedValue(row);
+
+          await service.removeCollection(MOD, uuidOf(40), DECISION);
+
+          expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+          expect(tx.collection.delete).toHaveBeenCalledWith({ where: { id: uuidOf(40) } });
+          expect(log.record).toHaveBeenCalledWith(
+            tx,
+            expect.objectContaining({
+              action: ModerationActionType.COLLECTION_DELETED,
+              targetType: 'COLLECTION',
+              targetId: uuidOf(40),
+              subjectUserId: uuidOf(7),
+              snapshot: { title: 'Couch co-op', body: 'Side by side.' },
+            }),
+          );
+          expect(tx.flag.updateMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+              where: { targetType: 'COLLECTION', targetId: uuidOf(40), status: FlagStatus.OPEN },
+            }),
+          );
+          expect(notifications.notifyBestEffort).toHaveBeenCalledWith(
+            expect.objectContaining({ userId: uuidOf(7), title: 'Your collection was deleted' }),
+          );
+        },
+      );
+    });
+
+    const decisions: [string, () => Promise<unknown>][] = [
+      ['hide', (): Promise<unknown> => service.hideCollection(MOD, uuidOf(40), DECISION)],
+      ['restore', (): Promise<unknown> => service.restoreCollection(MOD, uuidOf(40), {})],
+      ['delete', (): Promise<unknown> => service.removeCollection(MOD, uuidOf(40), DECISION)],
+    ];
+
+    it.each(decisions)('refuses staff who %s a collection of their own', async (_name, decide) => {
+      prisma.collection.findUnique.mockResolvedValue(collection({ ownerId: MOD.id }));
+
+      await expect(decide()).rejects.toMatchObject({ code: MODERATION_ERROR.OWN_CASE });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it.each(decisions)('finds nothing to %s where no collection is', async (_name, decide) => {
+      prisma.collection.findUnique.mockResolvedValue(null);
+
+      await expect(decide()).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
     });
   });
 });

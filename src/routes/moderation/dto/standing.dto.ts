@@ -30,7 +30,7 @@ export class StandingEntryDto {
     type: String,
     nullable: true,
     description:
-      'What the target was called when the action was taken: the name of a game or the start of a comment. It may be gone since.',
+      'What the target was called when the action was taken: its name or its title, else the start of its text. It may be gone since.',
   })
   targetLabel!: string | null;
 
