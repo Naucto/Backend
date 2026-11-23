@@ -10,7 +10,8 @@ import { pageWindow } from '../../common/page-window';
 import { PrismaService } from '../../prisma/prisma.service';
 import { HubService } from '../project/hub.service';
 import { toHubGame } from '../project/hub-fields';
-import { CREATOR_SELECT, PUBLISHED, PUBLISHED_SQL } from '../project/project-select';
+import { ProjectHiddenException } from '../project/project.error';
+import { CREATOR_SELECT, PUBLISHED, PUBLISHED_SQL, RELEASED } from '../project/project-select';
 import { CollectionHiddenException, CollectionLimitException } from './collection.error';
 import {
   COLLECTION_GAMES_MAX,
@@ -226,7 +227,19 @@ export class CollectionsService {
   async addGame(id: string, userId: string, projectId: string): Promise<void> {
     await this.requireChangeable(id, userId);
     if ((await this.prisma.project.count({ where: { id: projectId, ...PUBLISHED } })) === 0) {
-      throw new NotFoundException(`Published project with ID ${projectId} not found`);
+      // Said only to who works on the game: to anyone else a withheld game reads as a gap here.
+      const ownWithheld = await this.prisma.project.count({
+        where: {
+          id: projectId,
+          ...RELEASED,
+          hiddenAt: { not: null },
+          collaborators: { some: { id: userId } },
+        },
+      });
+
+      throw ownWithheld > 0
+        ? new ProjectHiddenException()
+        : new NotFoundException(`Published project with ID ${projectId} not found`);
     }
 
     const items = await this.prisma.collectionItem.findMany({

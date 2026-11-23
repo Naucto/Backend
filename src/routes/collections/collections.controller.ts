@@ -12,11 +12,19 @@ import {
   Query,
   Req,
 } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiExtraModels,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
+  getSchemaPath,
+} from '@nestjs/swagger';
 
 import { Public, RequiresAuth } from '../../auth/access/access.decorators';
 import { RequestWithOptionalUser, RequestWithUser } from '../../auth/auth.types';
 import { ParseIdPipe } from '../../common/pipes/parse-id.pipe';
+import { ProjectHiddenDto } from '../project/dto/project-hidden.dto';
 import { CollectionsService } from './collections.service';
 import {
   CollectionDto,
@@ -38,6 +46,7 @@ const NOT_OWNER = 'The collection is not the caller’s';
 const NOT_CHANGEABLE = `${NOT_OWNER} (no \`code\`), or it is theirs and moderation withholds it`;
 
 @ApiTags('collections')
+@ApiExtraModels(CollectionHiddenDto, ProjectHiddenDto)
 @Controller('collections')
 @RequiresAuth()
 export class CollectionsController {
@@ -146,12 +155,17 @@ export class CollectionsController {
   })
   @ApiResponse({
     status: HttpStatus.FORBIDDEN,
-    description: NOT_CHANGEABLE,
-    type: CollectionHiddenDto,
+    description: `${NOT_CHANGEABLE}; or the game is one the caller works on and moderation withholds it`,
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(CollectionHiddenDto) },
+        { $ref: getSchemaPath(ProjectHiddenDto) },
+      ],
+    },
   })
   @ApiResponse({
     status: HttpStatus.NOT_FOUND,
-    description: `${NOT_FOUND}; or the game is not published`,
+    description: `${NOT_FOUND}; or the game is not on the hub, a game of someone else that moderation withholds included`,
   })
   async addGame(
     @Req() req: RequestWithUser,

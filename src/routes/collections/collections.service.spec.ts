@@ -9,6 +9,7 @@ import { uuidOf, uuidsOf as games } from '../../../test/uuid';
 import { compareIds } from '../../common/ids';
 import { PrismaService } from '../../prisma/prisma.service';
 import { HubService } from '../project/hub.service';
+import { ProjectHiddenException } from '../project/project.error';
 import { ReleaseProject } from '../project/project-select';
 import { CollectionHiddenException, CollectionLimitException } from './collection.error';
 import { COLLECTION_GAMES_MAX, COLLECTIONS_PER_USER_MAX } from './collection-limits';
@@ -41,6 +42,11 @@ type CollectionWhere = {
   hiddenAt?: null;
   items?: unknown;
 };
+type ProjectWhere = {
+  id: string;
+  hiddenAt: null | { not: null };
+  collaborators?: { some: { id: string } };
+};
 
 const release = (id: string): ReleaseProject => ({
   ...aProject({ id, name: `Game ${id}`, publishedAt: new Date('2026-10-01T00:00:00Z') }),
@@ -56,6 +62,8 @@ describe('CollectionsService', () => {
   let rows: Map<string, Collection>;
   let items: Item[];
   let onHub: Set<string>;
+  /** The released games moderation withholds, each with who works on it. */
+  let withheld: Map<string, string[]>;
 
   const hasGameOnHub = (collectionId: string): boolean =>
     items.some((item) => item.collectionId === collectionId && onHub.has(item.projectId));
@@ -144,6 +152,7 @@ describe('CollectionsService', () => {
     rows = new Map();
     items = [];
     onHub = new Set(games(1, 2, 3, 4, 5, 6, 7, 8, 9, 10));
+    withheld = new Map();
 
     prisma.collection.findUnique.mockImplementation(
       async ({ where }: { where: { id: string } }) => {
@@ -207,9 +216,12 @@ describe('CollectionsService', () => {
         (item as Item).position = data.position;
       },
     );
-    prisma.project.count.mockImplementation(async ({ where }: { where: { id: string } }) =>
-      onHub.has(where.id) ? 1 : 0,
-    );
+    prisma.project.count.mockImplementation(async ({ where }: { where: ProjectWhere }) => {
+      if (where.hiddenAt === null) {
+        return onHub.has(where.id) ? 1 : 0;
+      }
+      return withheld.get(where.id)?.includes(where.collaborators?.some.id ?? '') ? 1 : 0;
+    });
     prisma.$transaction.mockImplementation((operations: Promise<unknown>[]) =>
       Promise.all(operations),
     );
@@ -386,6 +398,29 @@ describe('CollectionsService', () => {
         NotFoundException,
       );
       expect(gamesOf(PUBLIC_ID)).toEqual(games(3, 1, 2));
+    });
+
+    it('tells who works on a withheld game that it is withheld, and anyone else nothing', async () => {
+      onHub.delete(uuidOf(9));
+      withheld.set(uuidOf(9), [OTHER]);
+      add('theirs', 'PRIVATE', [], OTHER);
+
+      const refused = service.addGame('theirs', OTHER, uuidOf(9));
+
+      await expect(refused).rejects.toBeInstanceOf(ProjectHiddenException);
+      await expect(refused).rejects.toMatchObject({ response: { code: 'PROJECT_HIDDEN' } });
+      await expect(service.addGame(PUBLIC_ID, OWNER, uuidOf(9))).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(gamesOf('theirs')).toEqual([]);
+      expect(prisma.project.count).toHaveBeenLastCalledWith({
+        where: {
+          id: uuidOf(9),
+          publishedAt: { not: null },
+          hiddenAt: { not: null },
+          collaborators: { some: { id: OWNER } },
+        },
+      });
     });
 
     it('refuses a two hundred and first game, but not one it already lists', async () => {

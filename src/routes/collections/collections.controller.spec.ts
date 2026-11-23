@@ -4,6 +4,8 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 
 import { uuidOf } from '../../../test/uuid';
+import { ProjectHiddenException } from '../project/project.error';
+import { CollectionHiddenException } from './collection.error';
 import { CollectionsController, UserCollectionsController } from './collections.controller';
 import { CollectionsService } from './collections.service';
 
@@ -144,6 +146,20 @@ describe('collections routes', () => {
     expect(collections.remove).toHaveBeenCalledWith(ID, USER);
     expect(collections.addGame).toHaveBeenCalledWith(ID, USER, GAME);
     expect(collections.removeGame).toHaveBeenCalledWith(ID, USER, GAME);
+  });
+
+  it('tells the caller a change was refused because moderation withholds something of theirs', async () => {
+    collections.update.mockRejectedValue(new CollectionHiddenException());
+    collections.addGame.mockRejectedValue(new ProjectHiddenException());
+
+    const retitled = await http()
+      .patch(`/collections/${ID}`)
+      .send({ title: 'Clean' })
+      .expect(HttpStatus.FORBIDDEN);
+    const added = await http().put(`/collections/${ID}/games/${GAME}`).expect(HttpStatus.FORBIDDEN);
+
+    expect(retitled.body).toMatchObject({ code: 'COLLECTION_HIDDEN' });
+    expect(added.body).toMatchObject({ code: 'PROJECT_HIDDEN' });
   });
 
   it('reorders from the whole list of games', async () => {
