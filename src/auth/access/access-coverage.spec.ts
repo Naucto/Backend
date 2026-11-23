@@ -1,4 +1,4 @@
-import { ScannedRoute, scanRoutes } from '../../../test/routes';
+import { namesOf, ScannedRoute, scanRoutes } from '../../../test/routes';
 import { Access, ACCESS_KEY, ALLOWED_WHILE_SUSPENDED_KEY } from './access.decorators';
 
 /**
@@ -37,8 +37,6 @@ const withAccess = (route: ScannedRoute): AccessRoute => ({
     Reflect.getMetadata(ACCESS_KEY, route.targets.handler) ??
     Reflect.getMetadata(ACCESS_KEY, route.targets.controller),
 });
-
-const namesOf = (routes: AccessRoute[]): string[] => routes.map((route) => route.name);
 
 describe('route access', () => {
   let routes: AccessRoute[];

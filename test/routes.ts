@@ -17,6 +17,8 @@ export interface ScannedRoute {
   targets: { controller: object; handler: object };
 }
 
+export const namesOf = (routes: ScannedRoute[]): string[] => routes.map((route) => route.name);
+
 /** Every route of every `*.controller.ts` as its decorators declared it, with no app booted. */
 export async function scanRoutes(): Promise<ScannedRoute[]> {
   const routes: ScannedRoute[] = [];

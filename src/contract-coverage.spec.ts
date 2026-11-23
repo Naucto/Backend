@@ -1,8 +1,6 @@
 import { DECORATORS } from '@nestjs/swagger/dist/constants';
 
-import { ScannedRoute, scanRoutes } from '../test/routes';
-
-const namesOf = (routes: ScannedRoute[]): string[] => routes.map((route) => route.name);
+import { namesOf, ScannedRoute, scanRoutes } from '../test/routes';
 
 // The generated client is built from these annotations alone: a route without them reaches the
 // frontend unnamed, ungrouped, or answering `unknown`.
