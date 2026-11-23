@@ -29,6 +29,7 @@ export const GAME_KEYS = {
   instruments: 'sound.instruments',
   patterns: 'sound.patterns',
   sfx: 'sound.sfx',
+  effects: 'sound.effects',
   songs: 'sound.songs',
   samples: 'sound.samples',
 } as const;
@@ -129,6 +130,7 @@ function soundBytes(doc: Y.Doc, schemaVersion: number): number {
     GAME_KEYS.patterns,
     GAME_KEYS.songs,
     GAME_KEYS.sfx,
+    GAME_KEYS.effects,
     GAME_KEYS.samples,
   ].reduce((bytes, key) => bytes + sumStringBytes(doc.getMap<unknown>(key)), 0);
 }
