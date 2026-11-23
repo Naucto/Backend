@@ -24,15 +24,21 @@ jest.mock('../prisma/seed-dev-hub', () => ({
 }));
 
 /** Runs the script the way `npm run seed:dev` does, and resolves once it has let go of the database. */
-async function runSeed(): Promise<void> {
+async function runSeed(...flags: string[]): Promise<void> {
   const finished = new Promise<void>((resolve) => {
     mockPrisma.$disconnect.mockImplementation(async () => resolve());
   });
 
-  await jest.isolateModulesAsync(async () => {
-    await import('../prisma/seed-dev');
-  });
-  await finished;
+  const argv = process.argv;
+  process.argv = [...argv, ...flags];
+  try {
+    await jest.isolateModulesAsync(async () => {
+      await import('../prisma/seed-dev');
+    });
+    await finished;
+  } finally {
+    process.argv = argv;
+  }
 }
 
 describe('seed:dev', () => {
@@ -76,12 +82,7 @@ describe('seed:dev', () => {
     expect(seedAnalytics).toHaveBeenCalledWith(mockPrisma);
 
     jest.mocked(seedAnalytics).mockClear();
-    process.argv.push('--no-analytics');
-    try {
-      await runSeed();
-    } finally {
-      process.argv.pop();
-    }
+    await runSeed('--no-analytics');
     expect(seedAnalytics).not.toHaveBeenCalled();
   });
 
@@ -97,22 +98,12 @@ describe('seed:dev', () => {
     );
 
     jest.mocked(seedHubSignals).mockClear();
-    process.argv.push('--no-analytics');
-    try {
-      await runSeed();
-    } finally {
-      process.argv.pop();
-    }
+    await runSeed('--no-analytics');
     expect(seedHubSignals).toHaveBeenCalledTimes(1);
   });
 
   it('only removes the analytics when asked to clear them', async () => {
-    process.argv.push('--clear-analytics');
-    try {
-      await runSeed();
-    } finally {
-      process.argv.pop();
-    }
+    await runSeed('--clear-analytics');
 
     expect(clearAnalytics).toHaveBeenCalledWith(mockPrisma);
     expect(mockPrisma.user.upsert).not.toHaveBeenCalled();
