@@ -8,8 +8,7 @@ describe('siteUrls', () => {
 
     const id = uuidOf(42);
     expect(siteUrls.play(id)).toBe(`https://naucto.example/play/${id}`);
-    expect(siteUrls.previewPlay(id)).toBe(`https://naucto.example/staff/play/${id}`);
-    expect(siteUrls.previewEdit(id)).toBe(`https://naucto.example/staff/edit/${id}`);
+    expect(siteUrls.edit(id)).toBe(`https://naucto.example/edit/${id}`);
   });
 
   it('escapes a handle', () => {

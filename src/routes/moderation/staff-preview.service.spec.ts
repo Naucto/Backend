@@ -61,6 +61,32 @@ describe('StaffPreviewService', () => {
     await expect(service.preview(MOD, uuidOf(12))).resolves.toMatchObject({ hasRelease: true });
   });
 
+  // The editor of the web app loads a game through these when staff open it read-only.
+  it.each([
+    ['a draft', { publishedAt: null, hiddenAt: null }],
+    ['a game on the hub', { publishedAt: new Date(), hiddenAt: null }],
+    ['a game moderation withholds', { publishedAt: new Date(), hiddenAt: new Date() }],
+    ['a draft moderation withholds', { publishedAt: null, hiddenAt: new Date() }],
+  ])(
+    'serves %s and its latest save to staff who do not collaborate on it',
+    async (_case, state) => {
+      const game = aProject({
+        id: uuidOf(12),
+        userId: uuidOf(7),
+        collaborators: [{ id: uuidOf(7), username: 'louis' }],
+        ...state,
+      });
+      projects.findOne.mockResolvedValue(game);
+
+      expect(game.collaborators.map((collaborator) => collaborator.id)).not.toContain(MOD.id);
+      await expect(service.preview(MOD, uuidOf(12))).resolves.toMatchObject({
+        id: uuidOf(12),
+        hiddenAt: state.hiddenAt,
+      });
+      await expect(service.content(MOD, uuidOf(12), 'draft')).resolves.toBe(file);
+    },
+  );
+
   it('notes who looked at whose game, once an hour', async () => {
     await service.preview(MOD, uuidOf(12));
 

@@ -179,7 +179,7 @@ describe('ModerationDirectoryService', () => {
       ['never published', { publishedAt: null }, 'UNPUBLISHED', null],
       ['hidden', { hiddenAt: new Date() }, 'HIDDEN', null],
     ])(
-      'lists a %s game with its state, and a play page only when players have one',
+      'lists a %s game with its state, the editor staff open it in, and a play page only when players have one',
       async (_case, state, expected, playUrl) => {
         prisma.project.findMany.mockResolvedValue([game(state)]);
 
@@ -189,9 +189,9 @@ describe('ModerationDirectoryService', () => {
           name: 'Ferry Click',
           state: expected,
           playUrl,
-          previewPlayUrl: `https://naucto.test/staff/play/${uuidOf(12)}`,
-          previewEditUrl: `https://naucto.test/staff/edit/${uuidOf(12)}`,
+          editUrl: `https://naucto.test/edit/${uuidOf(12)}`,
         });
+        expect(items[0]).not.toHaveProperty('previewPlayUrl');
       },
     );
 

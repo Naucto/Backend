@@ -13,8 +13,8 @@ import { staffOf } from './staff-actor';
 import { StaffPreviewService } from './staff-preview.service';
 
 /**
- * Read by the web app, so with the token of a site sign-in: staff look at a game there, in the
- * player and the editor, and nothing on these routes writes to it.
+ * Read by the web app, so with the token of a site sign-in: staff open a game there in the editor,
+ * which loads read-only for them, and nothing on these routes writes to it.
  */
 @ApiTags('moderation')
 @Controller('moderation/projects')

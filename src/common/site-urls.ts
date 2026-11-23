@@ -8,6 +8,6 @@ function origin(): string {
 export const siteUrls = {
   profile: (username: string): string => `${origin()}/u/${encodeURIComponent(username)}`,
   play: (projectId: string): string => `${origin()}/play/${projectId}`,
-  previewPlay: (projectId: string): string => `${origin()}/staff/play/${projectId}`,
-  previewEdit: (projectId: string): string => `${origin()}/staff/edit/${projectId}`,
+  /** The editor, which loads read-only for staff who do not collaborate on the game. */
+  edit: (projectId: string): string => `${origin()}/edit/${projectId}`,
 };

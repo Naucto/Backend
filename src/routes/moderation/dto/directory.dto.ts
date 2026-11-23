@@ -130,11 +130,8 @@ export class ModerationProjectDto {
   })
   playUrl!: string | null;
 
-  @ApiProperty({ description: 'The staff preview in the player of the web app' })
-  previewPlayUrl!: string;
-
-  @ApiProperty({ description: 'The staff preview in the editor of the web app' })
-  previewEditUrl!: string;
+  @ApiProperty({ description: 'The game in the editor of the web app, which staff open read-only' })
+  editUrl!: string;
 }
 
 export class ModerationProjectDetailDto extends ModerationProjectDto {

@@ -100,16 +100,10 @@ export class CaseTargetDto {
   @ApiPropertyOptional({
     type: String,
     nullable: true,
-    description: 'The staff preview of the game in the player, null for an account',
+    description:
+      'The game in the editor of the web app, which staff open read-only. Null without a game',
   })
-  previewPlayUrl!: string | null;
-
-  @ApiPropertyOptional({
-    type: String,
-    nullable: true,
-    description: 'The staff preview of the game in the editor, null for an account',
-  })
-  previewEditUrl!: string | null;
+  editUrl!: string | null;
 }
 
 /** A game a target lists. */

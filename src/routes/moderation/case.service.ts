@@ -312,8 +312,7 @@ export class CaseService {
       projectId: game?.id ?? null,
       projectName: game?.name ?? null,
       playUrl: game?.reachable ? siteUrls.play(game.id) : null,
-      previewPlayUrl: game ? siteUrls.previewPlay(game.id) : null,
-      previewEditUrl: game ? siteUrls.previewEdit(game.id) : null,
+      editUrl: game ? siteUrls.edit(game.id) : null,
     };
   }
 

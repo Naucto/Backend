@@ -100,8 +100,25 @@ describe('CaseService', () => {
           label: 'Buy my thing',
           projectName: 'Ferry Click',
           playUrl: `https://naucto.test/play/${uuidOf(12)}`,
-          previewEditUrl: `https://naucto.test/staff/edit/${uuidOf(12)}`,
+          editUrl: `https://naucto.test/edit/${uuidOf(12)}`,
         },
+      });
+    });
+
+    it('links no game for a target that sits on none', async () => {
+      prisma.$queryRaw.mockResolvedValueOnce([row()]).mockResolvedValueOnce([{ total: 1 }]);
+      targets.view.mockResolvedValue(
+        comment({ content: { title: 'Couch co-op', body: null }, project: null }),
+      );
+
+      const { items } = await service.list(MOD, {});
+
+      expect(items[0]?.target).toMatchObject({
+        label: 'Couch co-op',
+        projectId: null,
+        projectName: null,
+        playUrl: null,
+        editUrl: null,
       });
     });
 
@@ -143,8 +160,9 @@ describe('CaseService', () => {
 
       expect(items[0]?.target).toMatchObject({
         playUrl: null,
-        previewPlayUrl: `https://naucto.test/staff/play/${uuidOf(12)}`,
+        editUrl: `https://naucto.test/edit/${uuidOf(12)}`,
       });
+      expect(items[0]?.target).not.toHaveProperty('previewPlayUrl');
     });
   });
 

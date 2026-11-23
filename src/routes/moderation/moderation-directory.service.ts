@@ -372,8 +372,7 @@ export class ModerationDirectoryService {
       hiddenAt: row.hiddenAt,
       openFlags,
       playUrl: state === 'PUBLISHED' ? siteUrls.play(row.id) : null,
-      previewPlayUrl: siteUrls.previewPlay(row.id),
-      previewEditUrl: siteUrls.previewEdit(row.id),
+      editUrl: siteUrls.edit(row.id),
     };
   }
 
