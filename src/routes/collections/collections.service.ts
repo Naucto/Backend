@@ -120,17 +120,13 @@ export class CollectionsService {
   }
 
   /**
-   * The collection for a change to what it would show. A withheld one takes none: what a restore
-   * puts back is what staff withheld. Its owner still deletes it, or removes a game from it.
+   * Passes for a change to what the collection would show. A withheld one takes none: what a
+   * restore puts back is what staff withheld. Its owner still deletes it, or removes a game from it.
    */
-  private async requireChangeable(id: string, userId: string): Promise<CollectionRow> {
-    const row = await this.requireOwned(id, userId);
-
-    if (row.hiddenAt) {
+  private async requireChangeable(id: string, userId: string): Promise<void> {
+    if ((await this.requireOwned(id, userId)).hiddenAt) {
       throw new CollectionHiddenException();
     }
-
-    return row;
   }
 
   private async toDetail(row: CollectionRow, viewer: Viewer): Promise<CollectionDto> {
