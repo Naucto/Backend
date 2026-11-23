@@ -6,6 +6,7 @@ import request from 'supertest';
 import { uuidOf } from '../../../test/uuid';
 import { ProjectHiddenException } from '../project/project.error';
 import { CollectionHiddenException } from './collection.error';
+import { COLLECTION_SEARCH_MAX_LENGTH } from './collection-limits';
 import { CollectionsController, UserCollectionsController } from './collections.controller';
 import { CollectionsService } from './collections.service';
 
@@ -195,6 +196,24 @@ describe('collections routes', () => {
       .expect(HttpStatus.OK);
 
     expect(collections.listPublic).toHaveBeenCalledWith({ page: 2, limit: 12, sort: 'games' });
+  });
+
+  it('reads the search term off the query, trimmed', async () => {
+    collections.listPublic.mockResolvedValue({ collections: [], total: 0, page: 1, limit: 12 });
+    signedIn = null;
+
+    await http().get('/collections').query({ search: '  Couch  ' }).expect(HttpStatus.OK);
+
+    expect(collections.listPublic).toHaveBeenCalledWith({ search: 'Couch' });
+  });
+
+  it('refuses a search term beyond the cap', async () => {
+    await http()
+      .get('/collections')
+      .query({ search: 'a'.repeat(COLLECTION_SEARCH_MAX_LENGTH + 1) })
+      .expect(HttpStatus.BAD_REQUEST);
+
+    expect(collections.listPublic).not.toHaveBeenCalled();
   });
 
   it('refuses a page it cannot serve: an unknown sort, a size beyond the cap', async () => {

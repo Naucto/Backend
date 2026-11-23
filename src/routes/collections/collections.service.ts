@@ -69,6 +69,18 @@ const LISTED_ORDER: Record<CollectionSort, Prisma.Sql> = {
   games: Prisma.sql`COUNT(*) DESC`,
 };
 
+/** A term typed in the search box, found in the title or the description, whatever its case. */
+const matchingTerm = (term: string): Prisma.CollectionWhereInput => {
+  const contains = { contains: term, mode: 'insensitive' } as const;
+
+  return { OR: [{ title: contains }, { description: contains }] };
+};
+
+/** The twin of `matchingTerm` for the raw query; `strpos` takes the term as text, never as a pattern. */
+const matchingTermSql = (term: string): Prisma.Sql =>
+  Prisma.sql`AND (strpos(lower("Collection"."title"), lower(${term})) > 0
+          OR strpos(lower(coalesce("Collection"."description", '')), lower(${term})) > 0)`;
+
 const toHeader = (row: CollectionRow, gameCount: number): CollectionHeaderDto => ({
   id: row.id,
   title: row.title,
@@ -351,14 +363,16 @@ export class CollectionsService {
 
   async listPublic(query: CollectionsQueryDto): Promise<CollectionsPageDto> {
     const window = pageWindow(query.page, query.limit, COLLECTIONS_PAGE_SIZE);
+    const term = query.search?.trim();
     const [total, page] = await Promise.all([
-      this.prisma.collection.count({ where: LISTED }),
+      this.prisma.collection.count({ where: term ? { ...LISTED, ...matchingTerm(term) } : LISTED }),
       this.prisma.$queryRaw<{ id: string }[]>`
         SELECT "Collection"."id"
         FROM "Collection"
         JOIN "CollectionItem" ON "CollectionItem"."collectionId" = "Collection"."id"
         JOIN "Project" ON "Project"."id" = "CollectionItem"."projectId" AND ${PUBLISHED_SQL}
         WHERE "Collection"."visibility" = 'PUBLIC' AND "Collection"."hiddenAt" IS NULL
+        ${term ? matchingTermSql(term) : Prisma.empty}
         GROUP BY "Collection"."id"
         ORDER BY ${LISTED_ORDER[query.sort ?? 'popular']}, "Collection"."id"
         LIMIT ${window.take} OFFSET ${window.skip}`,

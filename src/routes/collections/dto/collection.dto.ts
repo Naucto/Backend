@@ -1,7 +1,7 @@
 import { HttpStatus } from '@nestjs/common';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { CollectionVisibility } from '@prisma/client';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayUnique,
@@ -30,6 +30,7 @@ import {
   COLLECTION_DESCRIPTION_MAX_LENGTH,
   COLLECTION_GAMES_MAX,
   COLLECTION_PREVIEW_GAMES,
+  COLLECTION_SEARCH_MAX_LENGTH,
   COLLECTION_TITLE_MAX_LENGTH,
   COLLECTIONS_PAGE_SIZE,
 } from '../collection-limits';
@@ -119,6 +120,18 @@ export class CollectionsQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsIn(COLLECTION_SORTS)
   sort?: CollectionSort;
+
+  @ApiPropertyOptional({
+    description:
+      'What was typed: only the collections whose title or description contains it, whatever the case, are listed. Blank means no search',
+    maxLength: COLLECTION_SEARCH_MAX_LENGTH,
+    example: 'co-op',
+  })
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @MaxLength(COLLECTION_SEARCH_MAX_LENGTH)
+  search?: string;
 }
 
 /** What every answer says of a collection, before its games. */

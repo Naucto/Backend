@@ -41,7 +41,9 @@ type CollectionWhere = {
   visibility?: CollectionVisibility;
   hiddenAt?: null;
   items?: unknown;
+  OR?: { title?: Contains; description?: Contains }[];
 };
+type Contains = { contains: string; mode: 'insensitive' };
 type ProjectWhere = {
   id: string;
   hiddenAt: null | { not: null };
@@ -73,6 +75,15 @@ describe('CollectionsService', () => {
     owner: { id: row.ownerId, username: row.ownerId === OWNER ? 'owner' : 'other' },
   });
 
+  const containsTerm = (
+    row: Collection,
+    clause: { title?: Contains; description?: Contains },
+  ): boolean => {
+    const [field, test] = Object.entries(clause)[0] as ['title' | 'description', Contains];
+
+    return (row[field] ?? '').toLowerCase().includes(test.contains.toLowerCase());
+  };
+
   const matching = (where: CollectionWhere): Collection[] =>
     [...rows.values()].filter(
       (row) =>
@@ -80,7 +91,8 @@ describe('CollectionsService', () => {
         (where.ownerId === undefined || row.ownerId === where.ownerId) &&
         (!where.visibility || row.visibility === where.visibility) &&
         (where.hiddenAt === undefined || row.hiddenAt === null) &&
-        (!where.items || hasGameOnHub(row.id)),
+        (!where.items || hasGameOnHub(row.id)) &&
+        (!where.OR || where.OR.some((clause) => containsTerm(row, clause))),
     );
 
   const itemsMatching = (where: ItemWhere): Item[] =>
@@ -698,6 +710,69 @@ describe('CollectionsService', () => {
       const [first] = await service.listMine(OWNER);
 
       expect(first).not.toHaveProperty('contains');
+    });
+  });
+
+  describe('searching the public list', () => {
+    const titled = (id: string, title: string, description: string | null = null): void => {
+      add(id, 'PUBLIC', games(1));
+      Object.assign(rows.get(id) as Collection, { title, description });
+    };
+
+    /** The count is the part the mocked tables evaluate; the ranked page is checked on its SQL. */
+    const totalFor = async (search: string): Promise<number> =>
+      (await service.listPublic({ search })).total;
+
+    beforeEach(() => {
+      rows.clear();
+      prisma.$queryRaw.mockResolvedValue([]);
+    });
+
+    it('finds a title or a description by a part of it, whatever the case', async () => {
+      titled('title', 'Couch Co-op');
+      titled('description', 'Party', 'Games to play side by SIDE');
+      titled('neither', 'Racers', 'Fast');
+
+      expect(await totalFor('couch')).toBe(1);
+      expect(await totalFor('co-')).toBe(1);
+      expect(await totalFor('SIDE b')).toBe(1);
+      expect(await totalFor('side  by')).toBe(0);
+      expect(await totalFor('fast')).toBe(1);
+      expect(await totalFor('absent')).toBe(0);
+    });
+
+    it('never lists a private, an unlisted, a withheld or a gameless collection', async () => {
+      titled('listed', 'Match');
+      add('private', 'PRIVATE', games(2));
+      add('unlisted', 'UNLISTED', games(3));
+      add('withheld', 'PUBLIC', games(4));
+      add('gameless', 'PUBLIC');
+      for (const id of ['private', 'unlisted', 'withheld', 'gameless']) {
+        Object.assign(rows.get(id) as Collection, { title: 'Match' });
+      }
+      Object.assign(rows.get('withheld') as Collection, { hiddenAt: new Date() });
+
+      expect(await totalFor('match')).toBe(1);
+    });
+
+    it('searches the ranked page by the same term, as text and never as a pattern', async () => {
+      titled('one', '100% fun');
+      await service.listPublic({ search: '100%' });
+
+      const [, ...spliced] = prisma.$queryRaw.mock.lastCall as [unknown, ...Partial<Prisma.Sql>[]];
+      const search = spliced.find((value) => value.sql?.includes('strpos'));
+
+      expect(search?.sql).toContain('strpos(lower("Collection"."title"), lower(?)) > 0');
+      expect(search?.values).toEqual(['100%', '100%']);
+    });
+
+    it('lists as before when the term is blank or missing', async () => {
+      titled('one', 'Anything');
+
+      expect((await service.listPublic({ search: '   ' })).total).toBe(1);
+      expect((await service.listPublic({})).total).toBe(1);
+      const [, ...spliced] = prisma.$queryRaw.mock.lastCall as [unknown, ...Partial<Prisma.Sql>[]];
+      expect(spliced.some((value) => value.sql?.includes('strpos'))).toBe(false);
     });
   });
 
