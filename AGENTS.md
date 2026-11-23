@@ -363,11 +363,15 @@ on the client side only: the routes answer whatever the flag says.
   nothing does, and only the owner writes. The id is a random UUID because an unlisted collection
   has nothing else to keep it from being walked.
 - A game is added only while it is on the hub (`PUBLISHED`), and shows only while it is. Its row
-  stays when it leaves, so the owner is told it is unavailable (`unavailableGameIds`) and can
-  remove it, and it comes back in place if it is published again. `gameCount` and the previews
-  count the games on the hub; the 200 limit counts every row.
+  stays when it leaves, unpublished by its author or withheld by moderation, so the owner is told
+  it is unavailable (`unavailableGameIds`) and can remove it, and it comes back in place once it
+  is on the hub again. `gameCount` and the previews count the games on the hub; the 200 limit
+  counts every row.
 - Deleting a project or a collection takes its rows by foreign key. An account is soft-deleted, so
-  `AccountDeletionService` deletes its collections itself.
+  `AccountDeletionService` deletes its collections itself, whether the person or an admin erases
+  the account.
+- A suspended account changes none of its collections, removals included: no route here carries
+  `@AllowedWhileSuspended()`. What it listed stays readable.
 - The public list (`GET /collections`) holds the public collections with at least one game on the
   hub. The hub's shelf of them is drawn with the day (`composeSnapshot`): three games on the hub
   at least, weighted by the activity of those games, one per owner. Its "see all" is the public
