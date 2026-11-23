@@ -26,6 +26,8 @@ type Shape = 'before' | 'after';
 
 interface Fingerprint {
   takenAt: string;
+  /** The columns each table had when the fingerprint was taken. */
+  columns: Record<string, string[]>;
   sections: Record<string, string[]>;
 }
 
@@ -366,20 +368,24 @@ async function rowCounts(db: Client, tables: string[]): Promise<string[]> {
 }
 
 /**
- * One digest per table over everything the migration leaves alone: each row without its id
- * columns and its rewritten columns. A change to any other value changes the digest.
+ * One digest per table over everything the migration leaves alone: each row, read through the
+ * columns given, without its id columns and its rewritten columns. A change to any other value
+ * changes the digest; a column a later migration adds is not among those given and does not.
  */
-async function untouchedDigests(db: Client, tables: string[]): Promise<string[]> {
+async function untouchedDigests(db: Client, columns: Record<string, string[]>): Promise<string[]> {
   const lines: string[] = [];
-  for (const table of tables) {
+  for (const [table, names] of Object.entries(columns)) {
     const excluded = [...(ID_COLUMNS[table] ?? []), ...(REWRITTEN_COLUMNS[table] ?? [])];
     const { rows } = await db.query<{ digest: string }>(
       // The alias must not be the name of a column, or \`to_jsonb\` reads that column.
       `SELECT COALESCE(md5(string_agg(hashed.hash, '' ORDER BY hashed.hash)), 'empty') AS digest
        FROM (
-         SELECT md5((to_jsonb(whole_row) - $1::text[])::text) AS hash FROM "${table}" AS whole_row
+         SELECT md5((
+           SELECT jsonb_object_agg(field.key, field.value)
+           FROM jsonb_each(to_jsonb(whole_row)) AS field WHERE field.key = ANY($1::text[])
+         )::text) AS hash FROM "${table}" AS whole_row
        ) AS hashed`,
-      [excluded],
+      [names.filter((name) => !excluded.includes(name))],
     );
     lines.push(`${table} | ${rows[0]?.digest ?? '?'}`);
   }
@@ -416,18 +422,44 @@ async function idColumnTypes(db: Client): Promise<Map<string, string>> {
   return types;
 }
 
-async function fingerprintOf(db: Client, shape: Shape): Promise<Fingerprint> {
-  const { rows: tableRows } = await db.query<{ name: string }>(
-    `SELECT table_name AS name FROM information_schema.tables
-     WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY table_name`,
+/**
+ * The tables and columns to read: those of the database, or with \`known\` those an earlier
+ * fingerprint read, so that what a later migration adds is left out of the comparison.
+ */
+async function columnsOf(
+  db: Client,
+  known?: Record<string, string[]>,
+): Promise<Record<string, string[]>> {
+  const { rows } = await db.query<{ table: string; column: string }>(
+    `SELECT columns.table_name AS "table", columns.column_name AS "column"
+     FROM information_schema.columns AS columns
+     JOIN information_schema.tables AS tables
+       ON tables.table_schema = columns.table_schema AND tables.table_name = columns.table_name
+     WHERE columns.table_schema = 'public' AND tables.table_type = 'BASE TABLE'
+     ORDER BY columns.table_name, columns.column_name`,
   );
-  const tables = tableRows
-    .map((row) => row.name)
-    .filter((name) => !BOOKKEEPING_TABLES.includes(name) && !EMPTIED_TABLES.includes(name));
+  const found: Record<string, string[]> = {};
+  for (const { table, column } of rows) {
+    if (BOOKKEEPING_TABLES.includes(table) || EMPTIED_TABLES.includes(table)) {
+      continue;
+    }
+    if (known === undefined || known[table]?.includes(column) === true) {
+      (found[table] ??= []).push(column);
+    }
+  }
+  return found;
+}
+
+async function fingerprintOf(
+  db: Client,
+  shape: Shape,
+  known?: Record<string, string[]>,
+): Promise<Fingerprint> {
+  const columns = await columnsOf(db, known);
 
   const sections: Record<string, string[]> = {
-    'row counts': await rowCounts(db, tables),
-    'untouched columns': await untouchedDigests(db, tables),
+    'row counts': await rowCounts(db, Object.keys(columns)),
+    'untouched columns': await untouchedDigests(db, columns),
     'null references': await nullCounts(db),
   };
 
@@ -443,7 +475,7 @@ async function fingerprintOf(db: Client, shape: Shape): Promise<Fingerprint> {
     sections[name] = await linesOf(db, `${labels} ${sql}`);
   }
 
-  return { takenAt: new Date().toISOString(), sections };
+  return { takenAt: new Date().toISOString(), columns, sections };
 }
 
 /**
@@ -630,7 +662,7 @@ async function main(): Promise<void> {
       throw new Error('--after reads a migrated database; this one still has integer ids.');
     }
     const before = JSON.parse(readFileSync(file, 'utf8')) as Fingerprint;
-    const after = withDerivedIdsNamed(await fingerprintOf(db, 'after'), before);
+    const after = withDerivedIdsNamed(await fingerprintOf(db, 'after', before.columns), before);
     const problems = [...compare(before, after), ...(await migratedStateProblems(db, before))];
 
     if (problems.length > 0) {
