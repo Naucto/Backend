@@ -1,12 +1,5 @@
-import { globSync } from 'node:fs';
-import { join } from 'node:path';
-
-import { RequestMethod } from '@nestjs/common';
-import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
-
+import { ScannedRoute, scanRoutes } from '../../../test/routes';
 import { Access, ACCESS_KEY, ALLOWED_WHILE_SUSPENDED_KEY } from './access.decorators';
-
-const SOURCE_ROOT = join(__dirname, '..', '..');
 
 /**
  * Every write a suspended account keeps: leaving, withdrawing its own content, and looking after
@@ -30,57 +23,28 @@ const KEPT_WHILE_SUSPENDED = [
   'WorkSessionController.leave',
 ];
 
-interface ScannedRoute {
-  handler: string;
-  method: string;
+interface AccessRoute extends ScannedRoute {
   allowedWhileSuspended: boolean;
-  /** `Controller.handler (file)` */
-  name: string;
-  controllerPath: string;
   /** What the handler declares or, failing that, its controller. */
   access: Access | undefined;
 }
 
-async function scanRoutes(): Promise<ScannedRoute[]> {
-  const routes: ScannedRoute[] = [];
+const withAccess = (route: ScannedRoute): AccessRoute => ({
+  ...route,
+  allowedWhileSuspended:
+    Reflect.getMetadata(ALLOWED_WHILE_SUSPENDED_KEY, route.targets.handler) === true,
+  access:
+    Reflect.getMetadata(ACCESS_KEY, route.targets.handler) ??
+    Reflect.getMetadata(ACCESS_KEY, route.targets.controller),
+});
 
-  for (const file of globSync('**/*.controller.ts', { cwd: SOURCE_ROOT }).sort()) {
-    const exports: Record<string, unknown> = await import(join(SOURCE_ROOT, file));
-
-    for (const exported of Object.values(exports)) {
-      if (typeof exported !== 'function' || !Reflect.hasMetadata(PATH_METADATA, exported)) {
-        continue;
-      }
-      const prototype: Record<string, unknown> = exported.prototype;
-
-      for (const name of Object.getOwnPropertyNames(prototype)) {
-        const handler = prototype[name];
-        if (typeof handler !== 'function' || !Reflect.hasMetadata(METHOD_METADATA, handler)) {
-          continue;
-        }
-        routes.push({
-          handler: `${exported.name}.${name}`,
-          method: RequestMethod[Reflect.getMetadata(METHOD_METADATA, handler) as number] ?? '',
-          allowedWhileSuspended: Reflect.getMetadata(ALLOWED_WHILE_SUSPENDED_KEY, handler) === true,
-          name: `${exported.name}.${name} (${file})`,
-          controllerPath: String(Reflect.getMetadata(PATH_METADATA, exported)),
-          access:
-            Reflect.getMetadata(ACCESS_KEY, handler) ?? Reflect.getMetadata(ACCESS_KEY, exported),
-        });
-      }
-    }
-  }
-
-  return routes;
-}
-
-const namesOf = (routes: ScannedRoute[]): string[] => routes.map((route) => route.name);
+const namesOf = (routes: AccessRoute[]): string[] => routes.map((route) => route.name);
 
 describe('route access', () => {
-  let routes: ScannedRoute[];
+  let routes: AccessRoute[];
 
   beforeAll(async () => {
-    routes = await scanRoutes();
+    routes = (await scanRoutes()).map(withAccess);
   }, 60_000);
 
   // An unannotated route falls back to admin-only, which is safe but says nothing: every route
