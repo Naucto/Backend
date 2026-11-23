@@ -276,7 +276,12 @@ export class ModerationDirectoryService {
     if (!row) {
       throw new NotFoundException('Game not found');
     }
-    const openFlags = (await this.openFlags(ModerationTargetType.PROJECT, [row.id])).get(row.id);
+    const [flags, cover, clip] = await Promise.all([
+      this.openFlags(ModerationTargetType.PROJECT, [row.id]),
+      this.storedKey(STORED_AT.cover(row.id)),
+      this.storedKey(STORED_AT.clip(row.id)),
+    ]);
+    const openFlags = flags.get(row.id);
     const state = projectState(row);
     const targetState: Record<ProjectModerationState, TargetState> = {
       PUBLISHED: 'VISIBLE',
@@ -290,8 +295,8 @@ export class ModerationDirectoryService {
       tags: row.tags,
       collaborators: row.collaborators.map((collaborator) => toAccountRef(collaborator, staff)),
       forkedFromId: row.forkedFromId,
-      hasCover: (await this.storedKey(STORED_AT.cover(row.id))) !== null,
-      hasClip: (await this.storedKey(STORED_AT.clip(row.id))) !== null,
+      hasCover: cover !== null,
+      hasClip: clip !== null,
       allowedActions: allowedOperations(staff, {
         type: ModerationTargetType.PROJECT,
         state: targetState[state],
