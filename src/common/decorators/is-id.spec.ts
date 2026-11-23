@@ -2,6 +2,7 @@ import { plainToInstance } from 'class-transformer';
 import { IsArray, IsOptional, validateSync } from 'class-validator';
 
 import { uuidOf } from '../../../test/uuid';
+import { NO_RELEASE_ID } from '../ids';
 import { IsId } from './is-id';
 
 class Body {
@@ -24,6 +25,15 @@ describe('IsId', () => {
 
   it('takes an id as the database answers it', () => {
     expect(read({ id: uuidOf(7) })).toEqual({ body: { id: uuidOf(7) }, refused: [] });
+  });
+
+  it.each([
+    ['the database draws (version 7)', '01a208ff-37b8-794f-8226-0f99754c1eed'],
+    ['derived for a row that is gone (version 3)', '35ef5962-d337-39f4-8509-e1399cc06535'],
+    ['of a collection made earlier (version 4)', UPPER.toLowerCase()],
+    ['that stands for "no game"', NO_RELEASE_ID],
+  ])('takes an id %s', (_kind, id) => {
+    expect(read({ id })).toEqual({ body: { id }, refused: [] });
   });
 
   it('reads an id typed in upper case as the id the database answers', () => {

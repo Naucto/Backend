@@ -1,6 +1,7 @@
 import { ArgumentMetadata, BadRequestException } from '@nestjs/common';
 
 import { uuidOf } from '../../../test/uuid';
+import { NO_RELEASE_ID } from '../ids';
 import { ParseIdPipe } from './parse-id.pipe';
 
 describe('ParseIdPipe', () => {
@@ -9,6 +10,15 @@ describe('ParseIdPipe', () => {
 
   it('takes an id as the database answers it', async () => {
     await expect(pipe.transform(uuidOf(7), metadata)).resolves.toBe(uuidOf(7));
+  });
+
+  it.each([
+    ['the database draws (version 7)', '01a208ff-37b8-794f-8226-0f99754c1eed'],
+    ['derived for a row that is gone (version 3)', '35ef5962-d337-39f4-8509-e1399cc06535'],
+    ['of a collection made earlier (version 4)', '3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b'],
+    ['that stands for "no game"', NO_RELEASE_ID],
+  ])('takes an id %s', async (_kind, id) => {
+    await expect(pipe.transform(id, metadata)).resolves.toBe(id);
   });
 
   it('reads an id typed in upper case as the id the database answers', async () => {
