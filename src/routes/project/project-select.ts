@@ -43,9 +43,17 @@ export const PUBLISHED: Prisma.ProjectWhereInput = { ...RELEASED, hiddenAt: null
 /** The same test for a raw query, as a condition on "Project". */
 export const PUBLISHED_SQL = Prisma.sql`"Project"."publishedAt" IS NOT NULL AND "Project"."hiddenAt" IS NULL`;
 
+/**
+ * A project row is answered as it stands, so the number it had while ids were integers is left in
+ * the database by every query that reads a whole row. Only the translation of an old link reads it.
+ */
+export const WITHOUT_LEGACY_ID = { legacyId: true } satisfies Prisma.ProjectOmit;
+
+export type ProjectRow = Omit<Project, 'legacyId'>;
+
 export const DEFAULT_LIMIT = 24;
 
-export type ProjectEx = Project & {
+export type ProjectEx = ProjectRow & {
   collaborators: Array<{ id: string; username: string }>;
   creator: { id: string; username: string };
 };

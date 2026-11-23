@@ -252,6 +252,67 @@ describe('HubService', () => {
     });
   });
 
+  // A release row is answered as it stands: the number a project once had reaches no answer
+  // because no row carries it.
+  describe('the number of an old link', () => {
+    const row = { ...released, _count: { comments: 0, forks: 0 } };
+
+    it.each<[string, () => Promise<unknown>, () => jest.Mock]>([
+      [
+        'releases by id',
+        (): Promise<unknown> => {
+          prismaMock.project.findMany.mockResolvedValueOnce([row]);
+          return service.fetchReleasesByIds([released.id]);
+        },
+        (): jest.Mock => prismaMock.project.findMany,
+      ],
+      [
+        'the project a person last worked on',
+        (): Promise<unknown> => {
+          prismaMock.project.findFirst.mockResolvedValueOnce(row);
+          return service.fetchLastEdited(uuidOf(1));
+        },
+        (): jest.Mock => prismaMock.project.findFirst,
+      ],
+      [
+        'a page of the hub',
+        (): Promise<unknown> => {
+          prismaMock.project.count.mockResolvedValueOnce(1);
+          prismaMock.project.findMany.mockResolvedValueOnce([row]);
+          return service.fetchPublishedGamesPaginated();
+        },
+        (): jest.Mock => prismaMock.project.findMany,
+      ],
+      [
+        'the releases of a person',
+        (): Promise<unknown> => {
+          prismaMock.project.findMany.mockResolvedValueOnce([row]);
+          return service.fetchPublishedGamesByUser(uuidOf(1));
+        },
+        (): jest.Mock => prismaMock.project.findMany,
+      ],
+      [
+        'a fork',
+        (): Promise<unknown> => {
+          prismaMock.project.findUnique.mockResolvedValueOnce(released);
+          prismaMock.user.findUnique.mockResolvedValueOnce({ id: uuidOf(9) });
+          prismaMock.project.create.mockResolvedValueOnce(draft);
+          s3ServiceMock.downloadFile.mockResolvedValueOnce({
+            body: Readable.from(['blob']),
+            contentType: 'application/octet-stream',
+            contentLength: 4,
+          });
+          return service.fork(released.id, uuidOf(9));
+        },
+        (): jest.Mock => prismaMock.project.create,
+      ],
+    ])('stays in the database when it reads %s', async (_what, read, query) => {
+      await read();
+
+      expect(query()).toHaveBeenCalledWith(expect.objectContaining({ omit: { legacyId: true } }));
+    });
+  });
+
   describe('fetchReleasesByIds', () => {
     it('keeps the order asked for and leaves out what the hub no longer carries', async () => {
       const counts = { _count: { forks: 0, comments: 0 } };
@@ -515,6 +576,7 @@ describe('HubService', () => {
             },
           },
         },
+        omit: { legacyId: true },
         orderBy: [{ firstPublishedAt: { sort: 'desc', nulls: 'last' } }, { id: 'desc' }],
         skip: 1,
         take: 1,

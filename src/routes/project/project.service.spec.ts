@@ -58,6 +58,7 @@ describe('ProjectService', () => {
           collaborators: { select: COLLABORATOR_SELECT },
           creator: { select: CREATOR_SELECT },
         },
+        omit: { legacyId: true },
         orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
         skip: 0,
         take: 24,
@@ -122,6 +123,72 @@ describe('ProjectService', () => {
       await expect(service.idOfLegacy(99_999_999_999)).rejects.toThrow(NotFoundException);
 
       expect(prismaMock.project.findUnique).not.toHaveBeenCalled();
+    });
+
+    // A row is answered as it stands: the number reaches no answer because no row carries it.
+    it.each<[string, () => Promise<unknown>, () => jest.Mock]>([
+      [
+        'the projects of a person',
+        (): Promise<unknown> => {
+          prismaMock.project.count.mockResolvedValueOnce(1);
+          prismaMock.project.findMany.mockResolvedValueOnce([draft]);
+          return service.findAll(uuidOf(1));
+        },
+        (): jest.Mock => prismaMock.project.findMany,
+      ],
+      [
+        'one project',
+        (): Promise<unknown> => {
+          prismaMock.project.findUnique.mockResolvedValueOnce(draft);
+          return service.findOne(uuidOf(1));
+        },
+        (): jest.Mock => prismaMock.project.findUnique,
+      ],
+      [
+        'a project just created',
+        (): Promise<unknown> => {
+          prismaMock.user.findUnique.mockResolvedValueOnce({ id: uuidOf(1) });
+          txMock.project.create.mockResolvedValueOnce(draft);
+          return service.create({ name: 'New', shortDesc: 'Short' }, uuidOf(1));
+        },
+        (): jest.Mock => txMock.project.create,
+      ],
+      [
+        'a project just updated',
+        (): Promise<unknown> => {
+          prismaMock.project.findUnique.mockResolvedValueOnce(draft);
+          prismaMock.project.update.mockResolvedValueOnce(draft);
+          return service.update(uuidOf(1), { name: 'Renamed', shortDesc: 'Short' });
+        },
+        (): jest.Mock => prismaMock.project.update,
+      ],
+      [
+        'a project that gained a collaborator',
+        (): Promise<unknown> => {
+          prismaMock.user.findUnique.mockResolvedValueOnce({ id: uuidOf(2) });
+          prismaMock.project.findUnique.mockResolvedValueOnce(draft);
+          prismaMock.project.update.mockResolvedValueOnce(draft);
+          return service.addCollaborator(uuidOf(1), { userId: uuidOf(2) });
+        },
+        (): jest.Mock => prismaMock.project.update,
+      ],
+      [
+        'a project that lost a collaborator',
+        (): Promise<unknown> => {
+          prismaMock.user.findUnique.mockResolvedValueOnce({ id: uuidOf(2) });
+          prismaMock.project.findUnique.mockResolvedValueOnce({
+            ...draft,
+            collaborators: [...draft.collaborators, { id: uuidOf(2), username: 'user2' }],
+          });
+          prismaMock.project.update.mockResolvedValueOnce(draft);
+          return service.removeCollaborator(uuidOf(1), { userId: uuidOf(2) });
+        },
+        (): jest.Mock => prismaMock.project.update,
+      ],
+    ])('leaves the number in the database when it reads %s', async (_what, read, query) => {
+      await read();
+
+      expect(query()).toHaveBeenCalledWith(expect.objectContaining({ omit: { legacyId: true } }));
     });
   });
 
@@ -282,6 +349,7 @@ describe('ProjectService', () => {
       expect(prismaMock.project.update).toHaveBeenCalledWith({
         where: { id: uuidOf(1) },
         data: { ...updateDto, tags: ['Action'] },
+        omit: { legacyId: true },
       });
       expect(eventEmitterMock.emit).toHaveBeenCalledWith(
         PROJECT_CHANGED,
@@ -298,6 +366,7 @@ describe('ProjectService', () => {
       expect(prismaMock.project.update).toHaveBeenCalledWith({
         where: { id: uuidOf(1) },
         data: { ...updateDto, palette: ['#fafdff', '#16171a'] },
+        omit: { legacyId: true },
       });
     });
 
@@ -311,10 +380,12 @@ describe('ProjectService', () => {
       expect(prismaMock.project.update).toHaveBeenNthCalledWith(1, {
         where: { id: uuidOf(1) },
         data: updateDto,
+        omit: { legacyId: true },
       });
       expect(prismaMock.project.update).toHaveBeenNthCalledWith(2, {
         where: { id: uuidOf(1) },
         data: { ...updateDto, palette: [] },
+        omit: { legacyId: true },
       });
     });
 

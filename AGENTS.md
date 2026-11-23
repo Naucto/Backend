@@ -204,7 +204,9 @@ at the controller boundary (see `project.controller.ts` catching `S3ObjectNotFou
   account, a profile or a roster. The synthetic player of an editor self-join is such a number with
   no account behind it. `Project.legacyId` is the number a project had while ids were integers,
   null for any project created since, read only by `GET /projects/legacy/:number`, which
-  translates an old public link into the id. `AnalyticsFact.id` is the sequence of the journal and
+  translates an old public link into the id. A project row is answered as it stands, so every
+  query that reads a whole one leaves the number in the database (`omit: WITHOUT_LEGACY_ID`,
+  `project-select.ts`). `AnalyticsFact.id` is the sequence of the journal and
   is never handed out.
 - **"No game" is the nil UUID** where a release id is part of a primary key
   (`AnalyticsAnonTally`, `AnalyticsUserDaily`), since a key cannot hold a null. It is written once,

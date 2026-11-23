@@ -22,6 +22,7 @@ import {
   ReleaseProject,
   WITH_PEOPLE,
   WITH_PEOPLE_AND_COUNTS,
+  WITHOUT_LEGACY_ID,
 } from './project-select';
 import { normalizeTags } from './project-tags';
 import { viewerKeyOf } from './viewer-key';
@@ -204,6 +205,7 @@ export class HubService {
     const projects = await this.prisma.project.findMany({
       where: { id: { in: ids }, ...PUBLISHED },
       include: WITH_PEOPLE_AND_COUNTS,
+      omit: WITHOUT_LEGACY_ID,
     });
     const releases = new Map(projects.map((project) => [project.id, this.toRelease(project)]));
 
@@ -230,6 +232,7 @@ export class HubService {
       where: { collaborators: { some: { id: userId } } },
       orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
       include: WITH_PEOPLE_AND_COUNTS,
+      omit: WITHOUT_LEGACY_ID,
     });
 
     return project && this.toRelease(project);
@@ -300,6 +303,7 @@ export class HubService {
       this.prisma.project.findMany({
         where,
         include: WITH_PEOPLE_AND_COUNTS,
+        omit: WITHOUT_LEGACY_ID,
         orderBy: RELEASE_ORDER_BY[sort],
         skip: window.skip,
         take: window.take,
@@ -333,6 +337,7 @@ export class HubService {
       skip,
       take,
       include: WITH_PEOPLE_AND_COUNTS,
+      omit: WITHOUT_LEGACY_ID,
     });
 
     return projects.map((project) => this.toRelease(project));
@@ -634,6 +639,7 @@ export class HubService {
         collaborators: { connect: [{ id: userId }] },
       },
       include: WITH_PEOPLE,
+      omit: WITHOUT_LEGACY_ID,
     });
 
     try {

@@ -31,8 +31,10 @@ import {
   PaginatedProjectsResult,
   ProjectEx,
   ProjectLook,
+  ProjectRow,
   RELEASED,
   WITH_PEOPLE,
+  WITHOUT_LEGACY_ID,
 } from './project-select';
 import { normalizeTags } from './project-tags';
 
@@ -177,6 +179,7 @@ export class ProjectService {
       this.prisma.project.findMany({
         where,
         include: WITH_PEOPLE,
+        omit: WITHOUT_LEGACY_ID,
         orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
         skip: window.skip,
         take: window.take,
@@ -201,6 +204,7 @@ export class ProjectService {
     const project = await this.prisma.project.findUnique({
       where: { id },
       include: WITH_PEOPLE,
+      omit: WITHOUT_LEGACY_ID,
     });
 
     if (!project) {
@@ -229,7 +233,7 @@ export class ProjectService {
     return project.id;
   }
 
-  async create(createProjectDto: CreateProjectDto, userId: string): Promise<Project> {
+  async create(createProjectDto: CreateProjectDto, userId: string): Promise<ProjectRow> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { id: true },
@@ -250,6 +254,7 @@ export class ProjectService {
           creator: { connect: { id: userId } },
         },
         include: WITH_PEOPLE,
+        omit: WITHOUT_LEGACY_ID,
       });
       await this.recordProjectCreated(tx, project.id, userId);
       return project;
@@ -270,7 +275,7 @@ export class ProjectService {
     });
   }
 
-  async update(id: string, updateProjectDto: UpdateProjectDto): Promise<Project> {
+  async update(id: string, updateProjectDto: UpdateProjectDto): Promise<ProjectRow> {
     await this.findOne(id);
 
     const updated = await this.prisma.project.update({
@@ -282,6 +287,7 @@ export class ProjectService {
           ? { palette: updateProjectDto.palette.map((colour) => colour.toLowerCase()) }
           : {}),
       },
+      omit: WITHOUT_LEGACY_ID,
     });
     this.eventEmitter.emit(PROJECT_CHANGED, new ProjectChangedEvent(id));
 
@@ -519,6 +525,7 @@ export class ProjectService {
         collaborators: { connect: { id: user.id } },
       },
       include: WITH_PEOPLE,
+      omit: WITHOUT_LEGACY_ID,
     });
 
     // The invitee has no other signal that they were added; the project id lets the notification
@@ -558,6 +565,7 @@ export class ProjectService {
         },
       },
       include: WITH_PEOPLE,
+      omit: WITHOUT_LEGACY_ID,
     });
 
     // No projectId: the removed collaborator has nothing left to open.
