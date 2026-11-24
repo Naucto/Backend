@@ -19,8 +19,9 @@ export const CASE_STATUSES = ['OPEN', 'RESOLVED'] as const;
 export type CaseStatus = (typeof CASE_STATUSES)[number];
 
 /**
- * Where a target stands. An account is VISIBLE, SUSPENDED or DELETED. A game is VISIBLE,
- * UNPUBLISHED, HIDDEN or GONE. A comment is VISIBLE, HIDDEN, DELETED by a user, or GONE.
+ * Where a target stands. VISIBLE: others can reach it. UNPUBLISHED: it exists and its owner keeps
+ * it to themselves. HIDDEN: moderation withholds it. SUSPENDED: an account under a suspension.
+ * DELETED: removed by a user, its row kept. GONE: no row is left.
  */
 export const TARGET_STATES = [
   'VISIBLE',
@@ -33,8 +34,8 @@ export const TARGET_STATES = [
 export type TargetState = (typeof TARGET_STATES)[number];
 
 /**
- * What staff can do from a moderation screen. HIDE, RESTORE and DELETE bear on the game or the
- * comment. The others bear on the account: the target itself, or the owner of the content.
+ * What staff can do from a moderation screen. HIDE, RESTORE and DELETE bear on content. The others
+ * bear on the account: the target itself, or the owner of the content.
  */
 export const MODERATION_OPERATIONS = [
   'DISMISS',
@@ -49,13 +50,17 @@ export const MODERATION_OPERATIONS = [
 ] as const;
 export type ModerationOperation = (typeof MODERATION_OPERATIONS)[number];
 
+/** Who the owner of a target lets read it, for a target whose owner chooses. */
+export const TARGET_VISIBILITIES = ['PUBLIC', 'UNLISTED', 'PRIVATE'] as const;
+export type TargetVisibility = (typeof TARGET_VISIBILITIES)[number];
+
 /** What a case is about, with where to look at it on the web app. */
 export class CaseTargetDto {
   @ApiProperty({ enum: ModerationTargetType, enumName: 'ModerationTargetType' })
   type!: ModerationTargetType;
 
-  @ApiProperty()
-  id!: number;
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
 
   @ApiProperty({ enum: TARGET_STATES, enumName: 'ModerationTargetState' })
   state!: TargetState;
@@ -63,19 +68,24 @@ export class CaseTargetDto {
   @ApiPropertyOptional({
     type: String,
     nullable: true,
-    description: 'The name of the game, the handle of the account or the start of the comment',
+    description: 'What to call the target: its title or its name, else the start of its text',
   })
   label!: string | null;
 
   @ApiPropertyOptional({
     type: ModerationAccountRefDto,
     nullable: true,
-    description: 'The account itself, the creator of the game or the author of the comment',
+    description: 'The account itself, or the account the content belongs to',
   })
   owner!: ModerationAccountRefDto | null;
 
-  @ApiPropertyOptional({ type: Number, nullable: true, description: 'The game a comment is on' })
-  projectId!: number | null;
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description: 'The game itself, or the game the target sits on. Null for any other target',
+  })
+  projectId!: string | null;
 
   @ApiPropertyOptional({ type: String, nullable: true })
   projectName!: string | null;
@@ -90,16 +100,19 @@ export class CaseTargetDto {
   @ApiPropertyOptional({
     type: String,
     nullable: true,
-    description: 'The staff preview of the game in the player, null for an account',
+    description:
+      'The game in the editor of the web app, which staff open read-only. Null without a game',
   })
-  previewPlayUrl!: string | null;
+  editUrl!: string | null;
+}
 
-  @ApiPropertyOptional({
-    type: String,
-    nullable: true,
-    description: 'The staff preview of the game in the editor, null for an account',
-  })
-  previewEditUrl!: string | null;
+/** A game a target lists. */
+export class CaseListedGameDto {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ description: 'The name the hub shows, else the one of the draft' })
+  name!: string;
 }
 
 /** Every flag on one target, as the queue lists them. */
@@ -172,8 +185,8 @@ export class CaseQueryDto extends PaginationQueryDto {
 }
 
 export class CaseFlagDto {
-  @ApiProperty()
-  id!: number;
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
 
   @ApiProperty({ type: ModerationAccountRefDto })
   reporter!: ModerationAccountRefDto;
@@ -207,6 +220,22 @@ export class CaseDetailDto extends CaseSummaryDto {
     description: 'The target as it reads now, null once it is gone',
   })
   current!: TargetContentDto | null;
+
+  @ApiPropertyOptional({
+    enum: TARGET_VISIBILITIES,
+    enumName: 'ModerationTargetVisibility',
+    nullable: true,
+    description:
+      'Who its owner lets read the target: anyone, whoever holds its id, or the owner alone. Null for a target whose owner has no such choice',
+  })
+  visibility!: TargetVisibility | null;
+
+  @ApiProperty({
+    type: [CaseListedGameDto],
+    description:
+      'The games the target lists, in its order, on the hub or not. Empty for a target that lists none',
+  })
+  games!: CaseListedGameDto[];
 
   @ApiProperty({ type: [CaseFlagDto], description: 'Newest first' })
   flags!: CaseFlagDto[];

@@ -63,7 +63,7 @@ export class DecisionDto extends InternalNoteDto {
   resolveFlags?: boolean;
 }
 
-/** Hiding or deleting a game or a comment. */
+/** Hiding or deleting content. */
 export class ContentDecisionDto extends DecisionDto {
   @ApiPropertyOptional({
     description: 'What the owner is told',

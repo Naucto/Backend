@@ -14,13 +14,13 @@ const NEGATIVE_CAPACITY = 10_000;
  */
 @Injectable()
 export class PublishedReleasesService {
-  private published = new Set<number>();
+  private published = new Set<string>();
   private publishedLoadedAt = Number.NEGATIVE_INFINITY;
-  private readonly unpublishedUntil = new Map<number, number>();
+  private readonly unpublishedUntil = new Map<string, number>();
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async isPublished(releaseId: number, now = Date.now()): Promise<boolean> {
+  async isPublished(releaseId: string, now = Date.now()): Promise<boolean> {
     if (now - this.publishedLoadedAt > POSITIVE_TTL_MS) {
       await this.reload(now);
     }

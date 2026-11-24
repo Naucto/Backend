@@ -8,18 +8,26 @@ import {
   HttpStatus,
   Logger,
   Param,
-  ParseIntPipe,
   Post,
   Query,
   Req,
   Res,
 } from '@nestjs/common';
-import { ApiBody, ApiOperation, ApiProduces, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBody,
+  ApiOperation,
+  ApiParam,
+  ApiProduces,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { Response } from 'express';
 
 import { RequiresStaffSession } from '../../auth/access/access.decorators';
 import { ADMIN, MODERATOR } from '../../auth/access/roles';
 import { RequestWithUser } from '../../auth/auth.types';
+import { ParseIdPipe } from '../../common/pipes/parse-id.pipe';
+import { DownloadedFile } from '../s3/s3.interface';
 import { ContentModerationService } from './content-moderation.service';
 import {
   ModerationProjectDetailDto,
@@ -43,6 +51,23 @@ export class AdminModerationProjectController {
     private readonly content: ContentModerationService,
   ) {}
 
+  /** Streams an object staff alone may read: never cached, never read as another type. */
+  private async send(res: Response, file: DownloadedFile, what: string): Promise<void> {
+    res.set({
+      'Content-Type': file.contentType ?? 'application/octet-stream',
+      ...(file.contentLength !== undefined ? { 'Content-Length': String(file.contentLength) } : {}),
+      'Cache-Control': 'private, no-store',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    try {
+      await pipeline(file.body, res);
+    } catch (error) {
+      this.logger.warn(
+        `${what} download interrupted: ${error instanceof Error ? error.message : 'unknown error'}`,
+      );
+    }
+  }
+
   @Get()
   @ApiOperation({ summary: 'Every game by name, published, unpublished or hidden' })
   @ApiResponse({ status: HttpStatus.OK, type: ModerationProjectListDto })
@@ -55,39 +80,39 @@ export class AdminModerationProjectController {
 
   @Get(':id')
   @ApiOperation({ summary: 'One game, with what the caller may do about it' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: HttpStatus.OK, type: ModerationProjectDetailDto })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No such game' })
   detail(
     @Req() req: RequestWithUser,
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
   ): Promise<ModerationProjectDetailDto> {
     return this.directory.project(staffOf(req), id);
   }
 
   @Get(':id/cover')
   @ApiOperation({ summary: 'The cover of a game, served privately even while it is hidden' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiProduces('image/png', 'image/jpeg', 'image/webp')
   @ApiResponse({ status: HttpStatus.OK, description: 'The image' })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No cover' })
-  async cover(@Param('id', ParseIntPipe) id: number, @Res() res: Response): Promise<void> {
-    const file = await this.directory.projectCover(id);
-    res.set({
-      'Content-Type': file.contentType ?? 'application/octet-stream',
-      ...(file.contentLength !== undefined ? { 'Content-Length': String(file.contentLength) } : {}),
-      'Cache-Control': 'private, no-store',
-      'X-Content-Type-Options': 'nosniff',
-    });
-    try {
-      await pipeline(file.body, res);
-    } catch (error) {
-      this.logger.warn(
-        `Cover download interrupted: ${error instanceof Error ? error.message : 'unknown error'}`,
-      );
-    }
+  async cover(@Param('id', ParseIdPipe) id: string, @Res() res: Response): Promise<void> {
+    await this.send(res, await this.directory.projectFile(id, 'cover'), 'Cover');
+  }
+
+  @Get(':id/clip')
+  @ApiOperation({ summary: 'The clip of a game, served privately even while it is hidden' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiProduces('video/webm', 'video/mp4')
+  @ApiResponse({ status: HttpStatus.OK, description: 'The video' })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No clip' })
+  async clip(@Param('id', ParseIdPipe) id: string, @Res() res: Response): Promise<void> {
+    await this.send(res, await this.directory.projectFile(id, 'clip'), 'Clip');
   }
 
   @Post(':id/hide')
   @ApiOperation({ summary: 'Take a game off the hub and stop serving its release' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: HttpStatus.CREATED, type: ModerationActionDto })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No such game' })
   @ApiResponse({
@@ -96,7 +121,7 @@ export class AdminModerationProjectController {
   })
   hide(
     @Req() req: RequestWithUser,
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
     @Body() dto: ContentDecisionDto,
   ): Promise<ModerationActionDto> {
     return this.content.hideProject(staffOf(req), id, dto);
@@ -104,6 +129,7 @@ export class AdminModerationProjectController {
 
   @Post(':id/restore')
   @ApiOperation({ summary: 'Put a hidden game back as it was' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: HttpStatus.CREATED, type: ModerationActionDto })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No such game' })
   @ApiResponse({
@@ -112,7 +138,7 @@ export class AdminModerationProjectController {
   })
   restore(
     @Req() req: RequestWithUser,
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
     @Body() dto: ModerationNoteDto,
   ): Promise<ModerationActionDto> {
     return this.content.restoreProject(staffOf(req), id, dto);
@@ -121,12 +147,13 @@ export class AdminModerationProjectController {
   @Delete(':id')
   @RequiresStaffSession(ADMIN)
   @ApiOperation({ summary: 'Delete a game for good, with its saves, release and comments' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiBody({ type: ContentDecisionDto })
   @ApiResponse({ status: HttpStatus.OK, type: ModerationActionDto })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No such game' })
   remove(
     @Req() req: RequestWithUser,
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
     @Body() dto: ContentDecisionDto,
   ): Promise<ModerationActionDto> {
     return this.content.removeProject(staffOf(req), id, dto);

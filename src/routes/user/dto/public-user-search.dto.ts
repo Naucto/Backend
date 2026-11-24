@@ -1,8 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 export class PublicUserSearchHitDto {
-  @ApiProperty({ description: 'User ID', example: 12 })
-  id!: number;
+  @ApiProperty({
+    description: 'User ID',
+    format: 'uuid',
+    example: '3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b',
+  })
+  id!: string;
 
   @ApiProperty({ description: 'Handle, unique across the platform', example: 'louis' })
   username!: string;
@@ -18,7 +22,7 @@ export class PublicUserSearchHitDto {
 
   @ApiProperty({
     description: 'Profile picture, null when the person has not set one',
-    example: 'https://cdn.example/users/12/profile?v=abc',
+    example: 'https://cdn.example/users/3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b/profile?v=abc',
     type: String,
     nullable: true,
     required: false,

@@ -1,5 +1,6 @@
 import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { isUUID } from 'class-validator';
 
 import { holdsRole, parseRole, VIEWER } from '../../auth/access/roles';
 import { currentSuspension } from '../../auth/access/suspension';
@@ -26,7 +27,7 @@ export const ADMIN_ACCOUNT_SELECT = {
 } as const;
 
 export interface AdminAccountRow {
-  id: number;
+  id: string;
   username: string;
   nickname: string | null;
   email: string;
@@ -73,7 +74,7 @@ export class AdminSessionService {
   async login(email: string, password: string, ip: string): Promise<IssuedSession> {
     const key = `ip:${ip}`;
     this.passwordAttempts.assertAllowed(key);
-    let userId: number;
+    let userId: string;
     try {
       userId = (await this.auth.validateUser(email, password)).id;
     } catch (error) {
@@ -84,12 +85,17 @@ export class AdminSessionService {
   }
 
   async refresh(sessionToken: string): Promise<IssuedSession> {
-    let sub: number;
+    let sub: unknown;
     try {
-      ({ sub } = await this.jwt.verifyAsync<{ sub: number }>(sessionToken, {
+      ({ sub } = await this.jwt.verifyAsync<{ sub: unknown }>(sessionToken, {
         secret: this.sessionSecret(),
       }));
     } catch {
+      throw new UnauthorizedException('Session expired');
+    }
+    // The signature vouches for who signed the session, not for what it carries: a subject that
+    // is not an id names no account, and must not reach a query as one.
+    if (typeof sub !== 'string' || !isUUID(sub)) {
       throw new UnauthorizedException('Session expired');
     }
     const issued = await this.issue(await this.staffAccount(sub, UnauthorizedException));
@@ -117,7 +123,7 @@ export class AdminSessionService {
    * a moderator may open once inside is each route's own business.
    */
   private async staffAccount(
-    userId: number,
+    userId: string,
     refusal: typeof ForbiddenException | typeof UnauthorizedException,
   ): Promise<AdminAccountRow> {
     const account = await this.prisma.user.findUnique({

@@ -2,6 +2,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
 
+import { uuidOf } from '../../../test/uuid';
 import { ADMIN, USER } from '../../auth/access/roles';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AnalyticsFactService } from '../analytics/analytics-fact.service';
@@ -55,18 +56,18 @@ describe('UserService', () => {
 
   describe('account creation', () => {
     it('records a signup in the transaction that creates a password account', async () => {
-      prisma.user.create.mockResolvedValue({ id: 5 });
+      prisma.user.create.mockResolvedValue({ id: uuidOf(5) });
 
       await service.create({ email: 'a@b.c', username: 'abc', password: 'Secret-123' });
 
       expect(facts.record).toHaveBeenCalledWith(
         expect.objectContaining({ user: prisma.user }),
-        expect.objectContaining({ type: 'SIGNUP', actorUserId: 5 }),
+        expect.objectContaining({ type: 'SIGNUP', actorUserId: uuidOf(5) }),
       );
     });
 
     it('records a signup for an account created by OAuth, under a key free of the account id', async () => {
-      prisma.user.create.mockResolvedValue({ id: 5 });
+      prisma.user.create.mockResolvedValue({ id: uuidOf(5) });
 
       await service.createOAuthUser('a@b.c', 'abc');
 
@@ -89,7 +90,7 @@ describe('UserService', () => {
     it('should write the display name', async () => {
       prisma.user.update.mockResolvedValue({});
 
-      await service.updateMyProfile(1, { nickname: 'Louis' });
+      await service.updateMyProfile(uuidOf(1), { nickname: 'Louis' });
 
       expect(prisma.user.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: { nickname: 'Louis' } }),
@@ -99,7 +100,7 @@ describe('UserService', () => {
     it('should leave alone what the request did not mention', async () => {
       prisma.user.update.mockResolvedValue({});
 
-      await service.updateMyProfile(1, { colour: 'JADE' });
+      await service.updateMyProfile(uuidOf(1), { colour: 'JADE' });
 
       expect(prisma.user.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: { colour: 'JADE' } }),
@@ -109,9 +110,9 @@ describe('UserService', () => {
     it('should name the handle that collided rather than leak a database code', async () => {
       prisma.user.update.mockRejectedValue(uniqueViolation());
 
-      await expect(service.updateMyProfile(1, { username: 'louis' })).rejects.toBeInstanceOf(
-        ConflictException,
-      );
+      await expect(
+        service.updateMyProfile(uuidOf(1), { username: 'louis' }),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
   });
 
@@ -124,10 +125,10 @@ describe('UserService', () => {
 
     it('should put an exact handle first', async () => {
       answering(
-        [{ id: 2, username: 'louis', nickname: null }],
+        [{ id: uuidOf(2), username: 'louis', nickname: null }],
         [
-          { id: 1, username: 'louisette', nickname: null },
-          { id: 2, username: 'louis', nickname: null },
+          { id: uuidOf(1), username: 'louisette', nickname: null },
+          { id: uuidOf(2), username: 'louis', nickname: null },
         ],
       );
 
@@ -138,11 +139,11 @@ describe('UserService', () => {
 
     it('should keep the exact handle when partial matches alone fill the page', async () => {
       answering(
-        [{ id: 4, username: 'max', nickname: null }],
+        [{ id: uuidOf(4), username: 'max', nickname: null }],
         [
-          { id: 1, username: 'amax', nickname: null },
-          { id: 2, username: 'bigmax', nickname: null },
-          { id: 3, username: 'climax', nickname: null },
+          { id: uuidOf(1), username: 'amax', nickname: null },
+          { id: uuidOf(2), username: 'bigmax', nickname: null },
+          { id: uuidOf(3), username: 'climax', nickname: null },
         ],
       );
 
@@ -170,7 +171,7 @@ describe('UserService', () => {
   describe('findPublicProfile', () => {
     it('should return a public user profile', async () => {
       const publicProfile = {
-        id: 1,
+        id: uuidOf(1),
         username: 'alice',
         nickname: 'Ali',
         description: 'Hello',
@@ -179,9 +180,9 @@ describe('UserService', () => {
 
       prisma.user.findUnique.mockResolvedValue(publicProfile);
 
-      await expect(service.findPublicProfile(1)).resolves.toEqual(publicProfile);
+      await expect(service.findPublicProfile(uuidOf(1))).resolves.toEqual(publicProfile);
       expect(prisma.user.findUnique).toHaveBeenCalledWith({
-        where: { id: 1 },
+        where: { id: uuidOf(1) },
         select: {
           id: true,
           username: true,
@@ -196,8 +197,8 @@ describe('UserService', () => {
     it('should throw a NotFoundException when user does not exist', async () => {
       prisma.user.findUnique.mockResolvedValue(null);
 
-      await expect(service.findPublicProfile(42)).rejects.toThrow(
-        new NotFoundException('User with ID 42 not found'),
+      await expect(service.findPublicProfile(uuidOf(42))).rejects.toThrow(
+        new NotFoundException(`User with ID ${uuidOf(42)} not found`),
       );
     });
   });
@@ -205,7 +206,7 @@ describe('UserService', () => {
   describe('findPublicProfileByUsername', () => {
     it('should return a public user profile by username', async () => {
       const publicProfile = {
-        id: 1,
+        id: uuidOf(1),
         username: 'Madeline',
         nickname: 'Maddy',
         description: 'Hello',
@@ -244,7 +245,7 @@ describe('UserService', () => {
         password: 'hash',
       });
 
-      await expect(service.getMe(1)).resolves.toEqual({
+      await expect(service.getMe(uuidOf(1))).resolves.toEqual({
         friendCode: '7K3QW9ZB',
         sessionJoinPolicy: 'FRIENDS',
         hasPassword: true,
@@ -257,14 +258,14 @@ describe('UserService', () => {
         friendCode: null,
         sessionJoinPolicy: 'ANYONE',
       });
-      prisma.user.update.mockResolvedValue({ id: 1 });
+      prisma.user.update.mockResolvedValue({ id: uuidOf(1) });
 
-      const me = await service.getMe(1);
+      const me = await service.getMe(uuidOf(1));
 
       expect(me.friendCode).toHaveLength(8);
       expect(prisma.user.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: 1 },
+          where: { id: uuidOf(1) },
           data: { friendCode: me.friendCode },
         }),
       );
@@ -275,9 +276,11 @@ describe('UserService', () => {
         friendCode: null,
         sessionJoinPolicy: 'ANYONE',
       });
-      prisma.user.update.mockRejectedValueOnce(uniqueViolation()).mockResolvedValueOnce({ id: 1 });
+      prisma.user.update
+        .mockRejectedValueOnce(uniqueViolation())
+        .mockResolvedValueOnce({ id: uuidOf(1) });
 
-      const me = await service.getMe(1);
+      const me = await service.getMe(uuidOf(1));
 
       expect(me.friendCode).toHaveLength(8);
       expect(prisma.user.update).toHaveBeenCalledTimes(2);
@@ -290,26 +293,28 @@ describe('UserService', () => {
       });
       prisma.user.update.mockRejectedValue(uniqueViolation());
 
-      await expect(service.getMe(1)).rejects.toBeInstanceOf(ConflictException);
+      await expect(service.getMe(uuidOf(1))).rejects.toBeInstanceOf(ConflictException);
     });
 
     it('throws NotFound for an unknown user', async () => {
       prisma.user.findUnique.mockResolvedValue(null);
 
-      await expect(service.getMe(42)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.getMe(uuidOf(42))).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
   describe('updateMe', () => {
     it('persists the join policy and returns the settings', async () => {
-      prisma.user.update.mockResolvedValue({ id: 1 });
+      prisma.user.update.mockResolvedValue({ id: uuidOf(1) });
       prisma.user.findUnique.mockResolvedValue({
         friendCode: '7K3QW9ZB',
         sessionJoinPolicy: 'CODE_ONLY',
         password: null,
       });
 
-      await expect(service.updateMe(1, { sessionJoinPolicy: 'CODE_ONLY' })).resolves.toEqual({
+      await expect(
+        service.updateMe(uuidOf(1), { sessionJoinPolicy: 'CODE_ONLY' }),
+      ).resolves.toEqual({
         friendCode: '7K3QW9ZB',
         sessionJoinPolicy: 'CODE_ONLY',
         hasPassword: false,
@@ -325,7 +330,7 @@ describe('UserService', () => {
         sessionJoinPolicy: 'ANYONE',
       });
 
-      await service.updateMe(1, {});
+      await service.updateMe(uuidOf(1), {});
 
       expect(prisma.user.update).not.toHaveBeenCalled();
     });
@@ -335,32 +340,32 @@ describe('UserService', () => {
     it('reads the stored role', async () => {
       prisma.user.findUnique.mockResolvedValue({ role: ADMIN });
 
-      await expect(service.getUserRole(1)).resolves.toBe(ADMIN);
+      await expect(service.getUserRole(uuidOf(1))).resolves.toBe(ADMIN);
     });
 
     it('reads a stored value the hierarchy does not know as the least privilege', async () => {
       prisma.user.findUnique.mockResolvedValue({ role: 'Superuser' });
 
-      await expect(service.getUserRole(1)).resolves.toBe(USER);
+      await expect(service.getUserRole(uuidOf(1))).resolves.toBe(USER);
     });
 
     it('answers not found for an unknown id', async () => {
       prisma.user.findUnique.mockResolvedValue(null);
 
-      await expect(service.getUserRole(42)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.getUserRole(uuidOf(42))).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
   describe('regenerateFriendCode', () => {
     it('replaces the code even when one already exists', async () => {
-      prisma.user.update.mockResolvedValue({ id: 1 });
+      prisma.user.update.mockResolvedValue({ id: uuidOf(1) });
       prisma.user.findUnique.mockResolvedValue({
         friendCode: 'NEWCODE1',
         sessionJoinPolicy: 'ANYONE',
         password: null,
       });
 
-      await expect(service.regenerateFriendCode(1)).resolves.toEqual({
+      await expect(service.regenerateFriendCode(uuidOf(1))).resolves.toEqual({
         friendCode: 'NEWCODE1',
         sessionJoinPolicy: 'ANYONE',
         hasPassword: false,
@@ -375,9 +380,9 @@ describe('UserService', () => {
 
   describe('findIdByFriendCode', () => {
     it('normalizes the code and resolves a live user', async () => {
-      prisma.user.findUnique.mockResolvedValue({ id: 7, deletedAt: null });
+      prisma.user.findUnique.mockResolvedValue({ id: uuidOf(7), deletedAt: null });
 
-      await expect(service.findIdByFriendCode('7k3q-w9zb')).resolves.toBe(7);
+      await expect(service.findIdByFriendCode('7k3q-w9zb')).resolves.toBe(uuidOf(7));
       expect(prisma.user.findUnique).toHaveBeenCalledWith(
         expect.objectContaining({ where: { friendCode: '7K3QW9ZB' } }),
       );
@@ -389,7 +394,7 @@ describe('UserService', () => {
     });
 
     it('returns null for a deleted user', async () => {
-      prisma.user.findUnique.mockResolvedValue({ id: 7, deletedAt: new Date() });
+      prisma.user.findUnique.mockResolvedValue({ id: uuidOf(7), deletedAt: new Date() });
 
       await expect(service.findIdByFriendCode('7K3QW9ZB')).resolves.toBeNull();
     });

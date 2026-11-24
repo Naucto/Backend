@@ -5,11 +5,11 @@ enum GameSessionVisibility {
 }
 
 model GameSession {
-  id        Int       @id @default(autoincrement())
+  id        String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
   host      User      @relation("UserHostedGameSessions", fields: [hostId], references: [id])
-  hostId    Int
+  hostId    String    @db.Uuid
   project   Project   @relation(fields: [projectId], references: [id])
-  projectId Int
+  projectId String    @db.Uuid
   startedAt DateTime  @default(now())
   endedAt   DateTime?
 
@@ -27,12 +27,12 @@ model GameSession {
 }
 
 model WorkSession {
-  id           Int      @id @default(autoincrement())
+  id           String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   users        User[]   @relation("WorkSessionUsers")
   host         User     @relation("WorkSessionHost", fields: [hostId], references: [id])
-  hostId       Int
+  hostId       String   @db.Uuid
   project      Project  @relation(fields: [projectId], references: [id])
-  projectId    Int      @unique
+  projectId    String   @unique @db.Uuid
   startedAt    DateTime @default(now())
   lastSaveAt   DateTime @default(now())
   lastActiveAt DateTime @default(now())

@@ -1,6 +1,7 @@
 import { CookieOptions } from 'express';
 
 import { BadEnvVarError, getOptionalEnv } from '../config/env';
+import { BadTimeSpanError } from './auth.error';
 
 type TimeSpanUnit = 's' | 'm' | 'h' | 'd' | 'w' | 'y';
 type TimeSpanString = `${number}${TimeSpanUnit}`;
@@ -65,7 +66,7 @@ export function timespanToMs(value: TimeSpan): number {
 
   const match = value.match(/^(\d+)(s|m|h|d|w|y)$/);
   if (!match) {
-    throw new Error(`Not a time span: ${value}`);
+    throw new BadTimeSpanError(value);
   }
 
   const amount = Number(match[1]);

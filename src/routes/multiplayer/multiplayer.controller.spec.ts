@@ -1,15 +1,17 @@
 import { Test } from '@nestjs/testing';
 import { GameSessionVisibility } from '@prisma/client';
 
+import { uuidOf } from '../../../test/uuid';
 import { RequestWithUser } from '../../auth/auth.types';
+import { SESSION_ROSTER_PREVIEW } from './dto/game-session-limits';
 import { MultiplayerController } from './multiplayer.controller';
 import { GameSessionEx, MultiplayerService } from './multiplayer.service';
 
 function makeSession(overrides: Partial<GameSessionEx> = {}): GameSessionEx {
   return {
-    id: 1,
-    hostId: 1,
-    projectId: 1,
+    id: uuidOf(1),
+    hostId: uuidOf(1),
+    projectId: uuidOf(1),
     startedAt: new Date(),
     endedAt: null,
     title: 'My session',
@@ -17,8 +19,19 @@ function makeSession(overrides: Partial<GameSessionEx> = {}): GameSessionEx {
     visibility: GameSessionVisibility.PUBLIC,
     joinCode: null,
     sessionId: 'session-uuid',
-    host: { id: 1, username: 'alice', nickname: null },
-    project: { name: 'Snake', publishedName: null },
+    host: { id: uuidOf(1), username: 'alice', nickname: null, playerNumber: 101 },
+    project: {
+      id: uuidOf(1),
+      name: 'Snake',
+      publishedName: null,
+      iconUrl: null,
+      coverVersion: null,
+      clipVersion: null,
+      diskColor: null,
+      diskFinish: null,
+      diskColor2: null,
+      diskGradDir: null,
+    },
     otherUsers: [],
     ...overrides,
   };
@@ -27,12 +40,18 @@ function makeSession(overrides: Partial<GameSessionEx> = {}): GameSessionEx {
 describe('MultiplayerController', () => {
   let controller: MultiplayerController;
 
-  const multiplayerService = { get: jest.fn(), connectedPlayerCount: jest.fn() };
-  const req = { user: { id: 1 } } as RequestWithUser;
+  const multiplayerService = {
+    get: jest.fn(),
+    roster: jest.fn(),
+    connectedPlayerCount: jest.fn(),
+    lookOf: jest.fn(),
+  };
+  const req = { user: { id: uuidOf(1) } } as RequestWithUser;
 
   beforeEach(async () => {
     jest.resetAllMocks();
     multiplayerService.connectedPlayerCount.mockReturnValue(0);
+    multiplayerService.lookOf.mockReturnValue({ coverUrl: null, clipUrl: null, disk: null });
 
     const module = await Test.createTestingModule({
       controllers: [MultiplayerController],
@@ -45,7 +64,9 @@ describe('MultiplayerController', () => {
   describe('session response', () => {
     it('counts the players connected to the room', async () => {
       multiplayerService.get.mockResolvedValueOnce(
-        makeSession({ otherUsers: [{ id: 2, username: 'bob', nickname: null }] }),
+        makeSession({
+          otherUsers: [{ id: uuidOf(2), username: 'bob', nickname: null, playerNumber: 102 }],
+        }),
       );
       multiplayerService.connectedPlayerCount.mockReturnValueOnce(3);
 
@@ -56,7 +77,9 @@ describe('MultiplayerController', () => {
 
     it('counts the host and the members when nobody is connected', async () => {
       multiplayerService.get.mockResolvedValueOnce(
-        makeSession({ otherUsers: [{ id: 2, username: 'bob', nickname: null }] }),
+        makeSession({
+          otherUsers: [{ id: uuidOf(2), username: 'bob', nickname: null, playerNumber: 102 }],
+        }),
       );
 
       await expect(controller.get(req, 'session-uuid')).resolves.toMatchObject({
@@ -66,7 +89,9 @@ describe('MultiplayerController', () => {
 
     it('names the game as it was published, not by its working name', async () => {
       multiplayerService.get.mockResolvedValueOnce(
-        makeSession({ project: { name: 'snake-wip', publishedName: 'Snake' } }),
+        makeSession({
+          project: { ...makeSession().project, name: 'snake-wip', publishedName: 'Snake' },
+        }),
       );
 
       await expect(controller.get(req, 'session-uuid')).resolves.toMatchObject({
@@ -80,6 +105,74 @@ describe('MultiplayerController', () => {
       await expect(controller.get(req, 'session-uuid')).resolves.toMatchObject({
         projectName: 'Snake',
       });
+    });
+
+    it('names at most eight players, the host first, with a nickname only where one is set and no player number', async () => {
+      const guests = Array.from({ length: SESSION_ROSTER_PREVIEW + 2 }, (_, index) => ({
+        id: uuidOf(index + 2),
+        username: `guest-${index}`,
+        nickname: index === 0 ? 'Bobby' : null,
+        playerNumber: 102 + index,
+      }));
+      multiplayerService.get.mockResolvedValueOnce(makeSession({ otherUsers: guests }));
+
+      const { roster, playerCount } = await controller.get(req, 'session-uuid');
+
+      expect(roster).toHaveLength(SESSION_ROSTER_PREVIEW);
+      expect(roster.slice(0, 2)).toEqual([
+        { id: uuidOf(1), username: 'alice' },
+        { id: uuidOf(2), username: 'guest-0', nickname: 'Bobby' },
+      ]);
+      expect(playerCount).toBe(guests.length + 1);
+    });
+
+    it('says when the session was opened and how its game is drawn', async () => {
+      const startedAt = new Date('2026-11-20T18:30:00Z');
+      const session = makeSession({ startedAt });
+      const disk = { color: '#ff8426', finish: 'solid' };
+      multiplayerService.get.mockResolvedValueOnce(session);
+      multiplayerService.lookOf.mockReturnValueOnce({
+        coverUrl: 'https://cdn.test/projects/1/image?v=abc',
+        clipUrl: null,
+        disk,
+      });
+
+      await expect(controller.get(req, 'session-uuid')).resolves.toMatchObject({
+        startedAt,
+        coverUrl: 'https://cdn.test/projects/1/image?v=abc',
+        disk,
+      });
+      expect(multiplayerService.lookOf).toHaveBeenCalledWith(session);
+    });
+
+    it('answers a game without a chosen disk with none', async () => {
+      multiplayerService.get.mockResolvedValueOnce(makeSession());
+
+      await expect(controller.get(req, 'session-uuid')).resolves.toMatchObject({ disk: null });
+    });
+
+    it('hands the join code it was given to the lookup', async () => {
+      multiplayerService.get.mockResolvedValueOnce(makeSession());
+
+      await controller.get(req, 'session-uuid', 'ABCDEFGH');
+
+      expect(multiplayerService.get).toHaveBeenCalledWith('session-uuid', uuidOf(1), 'ABCDEFGH');
+    });
+  });
+
+  describe('players', () => {
+    it('answers each player with the number they have in the game', async () => {
+      const roster = {
+        players: [
+          { userId: uuidOf(1), username: 'alice', nickname: null, host: true, playerId: 101 },
+          { userId: uuidOf(2), username: 'bob', nickname: null, host: false, playerId: 102 },
+        ],
+        maxPlayers: 4,
+      };
+      multiplayerService.roster.mockResolvedValueOnce(roster);
+
+      await expect(controller.players(req, 'session-uuid')).resolves.toEqual(roster);
+      expect(multiplayerService.roster).toHaveBeenCalledWith('session-uuid', uuidOf(1));
     });
   });
 });

@@ -8,6 +8,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 
 import { FRIENDSHIP_CHANGED, FriendshipChangedEvent } from '../../common/domain-events';
+import { compareIds } from '../../common/ids';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { isUniqueViolation, PrismaService } from '../../prisma/prisma.service';
 import { UserService } from '../user/user.service';
@@ -44,7 +45,7 @@ export class FriendsService {
     private readonly eventEmitter: EventEmitter2,
   ) {}
 
-  async areFriends(userId: number, otherId: number): Promise<boolean> {
+  async areFriends(userId: string, otherId: string): Promise<boolean> {
     if (userId === otherId) {
       return false;
     }
@@ -57,7 +58,7 @@ export class FriendsService {
     return friendship !== null;
   }
 
-  async friendIdsOf(userId: number): Promise<number[]> {
+  async friendIdsOf(userId: string): Promise<string[]> {
     const friendships = await this.prisma.friendship.findMany({
       where: { OR: [{ userAId: userId }, { userBId: userId }] },
       select: { userAId: true, userBId: true },
@@ -66,7 +67,7 @@ export class FriendsService {
     return friendships.map((friendship) => friendIdOf(friendship, userId));
   }
 
-  async friendshipStatus(userId: number, otherId: number): Promise<FriendshipStatus> {
+  async friendshipStatus(userId: string, otherId: string): Promise<FriendshipStatus> {
     if (await this.areFriends(userId, otherId)) {
       return 'FRIENDS';
     }
@@ -84,7 +85,7 @@ export class FriendsService {
     return pending ? 'PENDING' : 'NONE';
   }
 
-  async list(userId: number): Promise<FriendDto[]> {
+  async list(userId: string): Promise<FriendDto[]> {
     const friendships = await this.prisma.friendship.findMany({
       where: { OR: [{ userAId: userId }, { userBId: userId }] },
       include: {
@@ -111,7 +112,7 @@ export class FriendsService {
     return friends;
   }
 
-  async remove(userId: number, friendUserId: number): Promise<void> {
+  async remove(userId: string, friendUserId: string): Promise<void> {
     if (userId === friendUserId) {
       throw new BadRequestException('Cannot unfriend yourself');
     }
@@ -129,9 +130,9 @@ export class FriendsService {
 
   /** How many friends the user shares with each of `otherIds`, keyed by that id. */
   private async mutualFriendCounts(
-    userId: number,
-    otherIds: number[],
-  ): Promise<Map<number, number>> {
+    userId: string,
+    otherIds: string[],
+  ): Promise<Map<string, number>> {
     const [myFriendIds, theirFriendships] = await Promise.all([
       this.friendIdsOf(userId),
       this.prisma.friendship.findMany({
@@ -142,7 +143,7 @@ export class FriendsService {
       }),
     ]);
 
-    const friendsOf = new Map(otherIds.map((id) => [id, new Set<number>()]));
+    const friendsOf = new Map(otherIds.map((id) => [id, new Set<string>()]));
     for (const { userAId, userBId } of theirFriendships) {
       friendsOf.get(userAId)?.add(userBId);
       friendsOf.get(userBId)?.add(userAId);
@@ -158,7 +159,7 @@ export class FriendsService {
   }
 
   /** Those of `candidateIds` who joined or hosted a session of one of the user's games. */
-  private async playedGamesOf(userId: number, candidateIds: number[]): Promise<Set<number>> {
+  private async playedGamesOf(userId: string, candidateIds: string[]): Promise<Set<string>> {
     const players = await this.prisma.user.findMany({
       where: {
         id: { in: candidateIds },
@@ -174,7 +175,7 @@ export class FriendsService {
   }
 
   // Incoming and outgoing pending requests for the caller.
-  async requests(userId: number): Promise<FriendRequestDto[]> {
+  async requests(userId: string): Promise<FriendRequestDto[]> {
     const requests = await this.prisma.friendRequest.findMany({
       where: { OR: [{ toId: userId }, { fromId: userId }] },
       include: {
@@ -212,7 +213,7 @@ export class FriendsService {
     });
   }
 
-  async sendRequest(userId: number, dto: SendFriendRequestDto): Promise<FriendRequestDto | null> {
+  async sendRequest(userId: string, dto: SendFriendRequestDto): Promise<FriendRequestDto | null> {
     const targetId = await this.resolveTarget(dto);
 
     if (targetId === userId) {
@@ -265,7 +266,7 @@ export class FriendsService {
     };
   }
 
-  async accept(userId: number, requestId: number): Promise<void> {
+  async accept(userId: string, requestId: string): Promise<void> {
     const request = await this.prisma.friendRequest.findFirst({
       where: { id: requestId, toId: userId },
       include: { to: { select: USER_SUMMARY_SELECT } },
@@ -307,7 +308,7 @@ export class FriendsService {
   }
 
   // Declines an incoming request or cancels an outgoing one.
-  async decline(userId: number, requestId: number): Promise<void> {
+  async decline(userId: string, requestId: string): Promise<void> {
     const result = await this.prisma.friendRequest.deleteMany({
       where: { id: requestId, OR: [{ toId: userId }, { fromId: userId }] },
     });
@@ -320,7 +321,7 @@ export class FriendsService {
   // People the caller shared a game session with in the last `days` days, most
   // recent first, one entry per user.
   async recentPlayers(
-    userId: number,
+    userId: string,
     days = DEFAULT_RECENT_PLAYERS_DAYS,
   ): Promise<RecentPlayerDto[]> {
     const window = Math.min(Math.max(days, 1), MAX_RECENT_PLAYERS_DAYS);
@@ -341,7 +342,7 @@ export class FriendsService {
     });
 
     const friendIds = new Set(await this.friendIdsOf(userId));
-    const seen = new Map<number, RecentPlayerDto>();
+    const seen = new Map<string, RecentPlayerDto>();
 
     for (const session of sessions) {
       const participants = [session.host, ...session.otherUsers];
@@ -367,13 +368,13 @@ export class FriendsService {
     return [...seen.values()];
   }
 
-  private canonicalPair(userId: number, otherId: number): { userAId: number; userBId: number } {
-    return userId < otherId
+  private canonicalPair(userId: string, otherId: string): { userAId: string; userBId: string } {
+    return compareIds(userId, otherId) < 0
       ? { userAId: userId, userBId: otherId }
       : { userAId: otherId, userBId: userId };
   }
 
-  private async resolveTarget(dto: SendFriendRequestDto): Promise<number> {
+  private async resolveTarget(dto: SendFriendRequestDto): Promise<string> {
     if (dto.userId !== undefined) {
       const user = await this.prisma.user.findUnique({
         where: { id: dto.userId },
@@ -408,12 +409,12 @@ export class FriendsService {
   }
 
   private async notify(
-    userId: number,
+    userId: string,
     input: {
       title: string;
       message: string;
       kind: 'FRIEND_REQUEST' | 'FRIEND_ACCEPTED';
-      data: Record<string, number>;
+      data: Record<string, string>;
     },
   ): Promise<void> {
     await this.notificationsService.notifyBestEffort({ userId, type: 'INFO', ...input });

@@ -34,7 +34,10 @@ export type SyncedGameTableTicketVerifier = (raw: string) => SyncedGameTableTick
 
 export type SyncedGameTableHostDisconnectHandler = (sessionId: string) => void;
 
-/** Told which seats are connected to which room, for anything accounting for rooms over time. */
+/**
+ * Told which seats are connected to which room, for anything accounting for rooms over time. A seat
+ * id is the player number the seat plays under.
+ */
 export interface SyncedGameTableObserver {
   seatConnected(sessionId: string, seatId: number): void;
   seatDisconnected(sessionId: string, seatId: number): void;
@@ -48,12 +51,13 @@ type TicketedRequest = IncomingMessage & {
 
 type SyncedGameTableClientSocket = WebRTCClientSocket<{
   sessionId: string;
-  userId: number;
+  playerNumber: number;
   role: SyncedGameTableRole;
 }>;
 
 interface SyncedGameTableRoom {
   host: SyncedGameTableClientSocket | null;
+  /** By player number, which is how the host addresses a slave on the wire. */
   slaves: Map<number, SyncedGameTableClientSocket>;
   /**
    * Set from the first ticket, then only by `resizeRoom`: a ticket minted before the session was
@@ -142,7 +146,7 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<
     const existingRoom = serverSocket.rooms.get(ticket.sessionId);
 
     const existingSlave =
-      ticket.role === 'slave' ? existingRoom?.slaves.get(ticket.userId) : undefined;
+      ticket.role === 'slave' ? existingRoom?.slaves.get(ticket.playerNumber) : undefined;
 
     if (ticket.role === 'host') {
       if (existingRoom?.host && existingRoom.host.readyState === WebRTCClientReadyState.OPEN) {
@@ -165,7 +169,7 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<
 
     const socket = rawClientSocket;
     socket.sessionId = ticket.sessionId;
-    socket.userId = ticket.userId;
+    socket.playerNumber = ticket.playerNumber;
     socket.role = ticket.role;
 
     let room = existingRoom;
@@ -179,7 +183,7 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<
       serverSocket.rooms.set(ticket.sessionId, room);
     }
 
-    this._observer?.seatConnected(ticket.sessionId, ticket.userId);
+    this._observer?.seatConnected(ticket.sessionId, ticket.playerNumber);
 
     if (ticket.role === 'host') {
       this._clearHostGrace(room);
@@ -188,11 +192,11 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<
       room.slaves.forEach((slave) => {
         this.send(socket, {
           type: 'peer-joined',
-          userId: slave.userId,
+          userId: slave.playerNumber,
         });
       });
     } else {
-      room.slaves.set(socket.userId, socket);
+      room.slaves.set(socket.playerNumber, socket);
       existingSlave?.close();
 
       // Sent for every accepted socket, a reconnection included: it is the host's only notice
@@ -200,7 +204,7 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<
       if (room.host) {
         this.send(room.host, {
           type: 'peer-joined',
-          userId: socket.userId,
+          userId: socket.playerNumber,
         });
       } else if (!room.hostGraceTimer) {
         // A slave can arrive before its host, or after the session ended: the host gets the same
@@ -229,20 +233,20 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<
 
     if (socket.role === 'host' && room.host === socket) {
       room.host = null;
-      this._observer?.seatDisconnected(socket.sessionId, socket.userId);
+      this._observer?.seatDisconnected(socket.sessionId, socket.playerNumber);
       this._scheduleHostGrace(room, socket.sessionId);
     } else if (socket.role === 'slave') {
-      if (room.slaves.get(socket.userId) !== socket) {
+      if (room.slaves.get(socket.playerNumber) !== socket) {
         return;
       }
 
-      room.slaves.delete(socket.userId);
-      this._observer?.seatDisconnected(socket.sessionId, socket.userId);
+      room.slaves.delete(socket.playerNumber);
+      this._observer?.seatDisconnected(socket.sessionId, socket.playerNumber);
 
       if (room.host) {
         this.send(room.host, {
           type: 'peer-left',
-          userId: socket.userId,
+          userId: socket.playerNumber,
         });
       }
 
@@ -322,7 +326,7 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<
 
     this.send(room.host, {
       type: 'request',
-      from: socket.userId,
+      from: socket.playerNumber,
       data: body.data,
     });
   }
@@ -370,7 +374,7 @@ export class SyncedGameTableWebRTCServer extends EventBasedWebRTCServer<
 
       this.send(room.host, {
         type: 'signal',
-        from: socket.userId,
+        from: socket.playerNumber,
         data: body.data,
       });
       return;

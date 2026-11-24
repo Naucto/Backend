@@ -1,5 +1,5 @@
 {
-  "monetization": true,
+  "monetization": false,
   "analytics": true,
   "moderation": true
 }

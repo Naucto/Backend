@@ -1,20 +1,18 @@
 import { BadRequestException, createParamDecorator, ExecutionContext } from '@nestjs/common';
+import { isUUID } from 'class-validator';
 
-export const projectIdOf = (_data: unknown, context: ExecutionContext): number => {
+export const projectIdOf = (_data: unknown, context: ExecutionContext): string => {
   const raw: unknown = context.switchToHttp().getRequest().params.id;
 
-  if (typeof raw !== 'string' || !/^\d+$/.test(raw)) {
-    throw new BadRequestException('Validation failed (numeric string is expected)');
+  if (typeof raw !== 'string' || !isUUID(raw)) {
+    throw new BadRequestException('Validation failed (uuid is expected)');
   }
 
-  return Number(raw);
+  return raw.toLowerCase();
 };
 
 /**
- * The project a route acts on, from `:id` exactly as the URL spells it, digits only.
- *
- * A parameter pipe cannot enforce this: Nest runs global pipes first, and a validation pipe with
- * `transform` has already coerced "12.34e2" to 1234 by then, while the project guards read the raw
- * segment, so the two would name different projects.
+ * The project a route acts on, from `:id` as the URL spells it: the segment the project guards
+ * read, in the lower case the database answers ids in.
  */
 export const ProjectId = createParamDecorator(projectIdOf);

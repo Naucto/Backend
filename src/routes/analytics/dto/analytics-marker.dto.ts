@@ -1,17 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AnalyticsMarkerAudience } from '@prisma/client';
-import { Type } from 'class-transformer';
 import {
   IsEnum,
-  IsInt,
   IsISO8601,
   IsOptional,
   IsString,
   IsUrl,
   MaxLength,
-  Min,
   MinLength,
 } from 'class-validator';
+
+import { IsId } from '../../../common/decorators/is-id';
 
 const URL_OPTIONS = { protocols: ['http', 'https'], require_protocol: true };
 
@@ -53,12 +52,10 @@ export class CreateAnalyticsMarkerDto {
   @IsEnum(AnalyticsMarkerAudience)
   audience?: AnalyticsMarkerAudience;
 
-  @ApiPropertyOptional({ description: RELEASE_DESCRIPTION })
+  @ApiPropertyOptional({ format: 'uuid', description: RELEASE_DESCRIPTION })
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  releaseId?: number;
+  @IsId()
+  releaseId?: string;
 }
 
 export class UpdateAnalyticsMarkerDto {
@@ -95,23 +92,26 @@ export class UpdateAnalyticsMarkerDto {
   @IsEnum(AnalyticsMarkerAudience)
   audience?: AnalyticsMarkerAudience;
 
-  @ApiPropertyOptional({ type: Number, nullable: true, description: RELEASE_DESCRIPTION })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description: RELEASE_DESCRIPTION,
+  })
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  releaseId?: number | null;
+  @IsId()
+  releaseId?: string | null;
 }
 
 export class AnalyticsMarkerDto {
-  @ApiProperty() id!: number;
+  @ApiProperty({ format: 'uuid' }) id!: string;
   @ApiProperty() at!: string;
   @ApiProperty() label!: string;
   @ApiProperty({ type: String, nullable: true }) channel!: string | null;
   @ApiProperty({ type: String, nullable: true }) url!: string | null;
   @ApiProperty({ enum: AnalyticsMarkerAudience, enumName: 'AnalyticsMarkerAudience' })
   audience!: AnalyticsMarkerAudience;
-  @ApiProperty({ type: Number, nullable: true }) releaseId!: number | null;
+  @ApiProperty({ type: String, format: 'uuid', nullable: true }) releaseId!: string | null;
   @ApiProperty({ type: String, nullable: true, description: 'Null for a game since deleted' })
   game!: string | null;
   @ApiProperty() createdAt!: string;

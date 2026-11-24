@@ -18,14 +18,14 @@ export class PublishStateRepair {
     private readonly s3: S3Service,
   ) {}
 
-  async run(): Promise<number[]> {
+  async run(): Promise<string[]> {
     const claimed = await this.prisma.project.findMany({
       // A game moderation withholds has its release moved out of public reach on purpose.
       where: PUBLISHED,
       select: { id: true },
-      orderBy: { id: 'asc' },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     });
-    const repaired: number[] = [];
+    const repaired: string[] = [];
 
     for (const { id } of claimed) {
       const release = projectKeys.release(id);
@@ -60,11 +60,11 @@ export class PublishStateRepair {
     const hidden = await this.prisma.project.findMany({
       where: { hiddenAt: { not: null } },
       select: { id: true },
-      orderBy: { id: 'asc' },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     });
 
     for (const { id } of hidden) {
-      for (const key of [projectKeys.release(id), projectKeys.cover(id)]) {
+      for (const key of [projectKeys.release(id), projectKeys.cover(id), projectKeys.clip(id)]) {
         if (await this.s3.fileExists(key)) {
           this.logger.warn(`Project ${id} is hidden but ${key} was still served, removing it`);
           await this.s3.deleteFile({ key });

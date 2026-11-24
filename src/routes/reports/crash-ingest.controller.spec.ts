@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import { ThrottlerModule } from '@nestjs/throttler';
 import request from 'supertest';
 
+import { uuidOf } from '../../../test/uuid';
 import { ViolationValidationPipe } from '../../common/pipes/violation-validation.pipe';
 import { useTextJsonParser } from '../analytics/analytics-ingest-paths';
 import { ANALYTICS_THROTTLERS } from '../analytics/analytics-throttler.guard';
@@ -41,7 +42,7 @@ describe('CrashIngestController', () => {
     name: 'WebGlError',
     message: 'WebGL context lost',
     stack: 'WebGlError: lost',
-    route: '/play/42',
+    route: `/play/${uuidOf(42)}`,
     extra: { kind: 'webgl-context-lost' },
   };
   const send = (body: object, userAgent = BROWSER): request.Test =>
@@ -59,7 +60,7 @@ describe('CrashIngestController', () => {
       expect.objectContaining({
         source: 'ENGINE',
         name: 'WebGlError',
-        route: '/play/42',
+        route: `/play/${uuidOf(42)}`,
         userAgent: BROWSER,
         extra: { kind: 'webgl-context-lost' },
       }),

@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 
+import { uuidOf } from '../../../test/uuid';
 import { viewerKeyOf } from './viewer-key';
 
 const VISITOR = '11111111-1111-4111-8111-111111111111';
@@ -20,9 +21,9 @@ describe('viewerKeyOf', () => {
   });
 
   it('keys a browser linked to an account by the account', async () => {
-    tx.analyticsVisitor.findUnique.mockResolvedValue({ userId: 7 });
+    tx.analyticsVisitor.findUnique.mockResolvedValue({ userId: uuidOf(7) });
 
-    await expect(keyOf()).resolves.toBe('u:7');
+    await expect(keyOf()).resolves.toBe(`u:${uuidOf(7)}`);
   });
 
   it('keys an unlinked browser by its visitor, stored or not yet', async () => {

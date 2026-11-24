@@ -10,9 +10,13 @@ export class GameSessionConnectionResponseDto {
   @IsUUID()
   sessionUuid!: string;
 
-  // The id this client plays under — its real user id, or a synthetic one for an
-  // editor self-join. Clients must use it (not their account id) as net.id().
-  @ApiProperty({ description: 'Player id assigned to this connection' })
+  // The number this client plays under — its account's player number, or a synthetic one for an
+  // editor self-join. Clients must use it as net.id(); it is never an account id.
+  @ApiProperty({
+    type: 'integer',
+    description:
+      'Player number assigned to this connection: what the game reads as net.id(), never an account id',
+  })
   @IsInt()
   playerId!: number;
 

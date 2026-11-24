@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 
+import { uuidOf } from '../../../test/uuid';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AnalyticsProjectionService } from './analytics-projection.service';
 
@@ -29,7 +30,7 @@ describe('AnalyticsProjectionService', () => {
       $executeRaw: jest.fn(),
       $queryRaw: jest.fn().mockResolvedValue([{ day: '2026-10-07' }]),
       analyticsVisitor: {
-        findUnique: jest.fn().mockResolvedValue({ userId: 5, projectedThrough: null }),
+        findUnique: jest.fn().mockResolvedValue({ userId: uuidOf(5), projectedThrough: null }),
         update: jest.fn(),
       },
       analyticsUserDaily: { deleteMany: jest.fn() },
@@ -38,14 +39,14 @@ describe('AnalyticsProjectionService', () => {
     prisma.$transaction.mockImplementation((run: (client: typeof tx) => unknown) => run(tx));
     prisma.$queryRaw.mockResolvedValue([{ day: '2026-10-07' }]);
     prisma.analyticsProjectionWork.findMany.mockResolvedValue([
-      { visitorId: VISITOR, userId: 5, attempts: 0 },
+      { visitorId: VISITOR, userId: uuidOf(5), attempts: 0 },
     ]);
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     service = new AnalyticsProjectionService(prisma as unknown as PrismaService);
   });
 
   it('holds the account lock shared before reading the visitor, so it waits for an erasure', async () => {
-    await service.project(VISITOR, 5);
+    await service.project(VISITOR, uuidOf(5));
 
     expect(sqlOf(tx.$executeRaw.mock.calls[0] ?? [])).toContain('pg_advisory_xact_lock_shared(');
     expect(tx.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
@@ -55,15 +56,15 @@ describe('AnalyticsProjectionService', () => {
 
   it('replaces the rows of every final day after the watermark, moves it, and drops the work', async () => {
     tx.analyticsVisitor.findUnique.mockResolvedValue({
-      userId: 5,
+      userId: uuidOf(5),
       projectedThrough: new Date('2026-10-03T00:00:00Z'),
     });
 
-    await expect(service.project(VISITOR, 5)).resolves.toBe('projected');
+    await expect(service.project(VISITOR, uuidOf(5))).resolves.toBe('projected');
 
     expect(tx.analyticsUserDaily.deleteMany).toHaveBeenCalledWith({
       where: {
-        userId: 5,
+        userId: uuidOf(5),
         visitorId: VISITOR,
         day: { gt: new Date('2026-10-03T00:00:00Z'), lte: new Date('2026-10-07T00:00:00Z') },
       },
@@ -82,7 +83,7 @@ describe('AnalyticsProjectionService', () => {
   });
 
   it('projects a never-projected visitor from its first activity', async () => {
-    await service.project(VISITOR, 5);
+    await service.project(VISITOR, uuidOf(5));
 
     expect(tx.analyticsUserDaily.deleteMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -96,7 +97,7 @@ describe('AnalyticsProjectionService', () => {
   it('drops the work of a visitor erased or no longer linked to the account', async () => {
     tx.analyticsVisitor.findUnique.mockResolvedValue(null);
 
-    await expect(service.project(VISITOR, 5)).resolves.toBe('dropped');
+    await expect(service.project(VISITOR, uuidOf(5))).resolves.toBe('dropped');
 
     expect(tx.analyticsUserDaily.deleteMany).not.toHaveBeenCalled();
     expect(tx.analyticsProjectionWork.deleteMany).toHaveBeenCalled();
@@ -116,8 +117,8 @@ describe('AnalyticsProjectionService', () => {
   it('backs off a failed projection, keeping its error, up to an hour', async () => {
     prisma.$transaction.mockRejectedValue(new Error('database is gone'));
     prisma.analyticsProjectionWork.findMany.mockResolvedValue([
-      { visitorId: VISITOR, userId: 5, attempts: 2 },
-      { visitorId: '22222222-2222-4222-8222-222222222222', userId: 6, attempts: 10 },
+      { visitorId: VISITOR, userId: uuidOf(5), attempts: 2 },
+      { visitorId: '22222222-2222-4222-8222-222222222222', userId: uuidOf(6), attempts: 10 },
     ]);
 
     await service.processDue(NOW);

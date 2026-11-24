@@ -8,6 +8,7 @@ import { Upload } from '@aws-sdk/lib-storage';
 import { Readable } from 'stream';
 
 import { withEnv } from '../../../test/env';
+import { uuidOf } from '../../../test/uuid';
 import {
   BucketResolutionException,
   S3ConfigurationException,
@@ -94,7 +95,7 @@ describe('S3Service', () => {
     it('returns the metadata of an existing object', async () => {
       mockS3.send.mockResolvedValueOnce({ ETag: '"abc"' });
 
-      await expect(s3Service.getFileMetadataOrNull('users/1/profile')).resolves.toEqual({
+      await expect(s3Service.getFileMetadataOrNull(`users/${uuidOf(1)}/profile`)).resolves.toEqual({
         ETag: '"abc"',
       });
     });
@@ -108,7 +109,9 @@ describe('S3Service', () => {
     ])('returns null when the store has no such object (%s)', async (error) => {
       mockS3.send.mockRejectedValueOnce(error);
 
-      await expect(s3Service.getFileMetadataOrNull('users/1/profile')).resolves.toBeNull();
+      await expect(
+        s3Service.getFileMetadataOrNull(`users/${uuidOf(1)}/profile`),
+      ).resolves.toBeNull();
     });
 
     it('does not report a store failure as a missing object', async () => {
@@ -118,7 +121,9 @@ describe('S3Service', () => {
       });
       mockS3.send.mockRejectedValueOnce(denied);
 
-      await expect(s3Service.getFileMetadataOrNull('users/1/profile')).rejects.toBe(denied);
+      await expect(s3Service.getFileMetadataOrNull(`users/${uuidOf(1)}/profile`)).rejects.toBe(
+        denied,
+      );
     });
   });
 
@@ -131,7 +136,7 @@ describe('S3Service', () => {
         })
         .mockResolvedValueOnce({ Body: 'stream' });
 
-      await expect(s3Service.downloadFile({ key: 'save/1/empty' })).resolves.toEqual({
+      await expect(s3Service.downloadFile({ key: `save/${uuidOf(1)}/empty` })).resolves.toEqual({
         body: 'stream',
         contentType: 'application/octet-stream',
         contentLength: 0,
@@ -143,9 +148,9 @@ describe('S3Service', () => {
       async (name) => {
         mockS3.send.mockRejectedValueOnce(Object.assign(new Error('missing'), { name }));
 
-        await expect(s3Service.downloadFile({ key: 'release/1' })).rejects.toBeInstanceOf(
-          S3ObjectNotFoundException,
-        );
+        await expect(
+          s3Service.downloadFile({ key: `release/${uuidOf(1)}` }),
+        ).rejects.toBeInstanceOf(S3ObjectNotFoundException);
       },
     );
 
@@ -155,7 +160,7 @@ describe('S3Service', () => {
       );
 
       const failure: unknown = await s3Service
-        .downloadFile({ key: 'release/1' })
+        .downloadFile({ key: `release/${uuidOf(1)}` })
         .catch((error: unknown) => error);
 
       expect(failure).toBeInstanceOf(S3DownloadException);
@@ -175,14 +180,14 @@ describe('S3Service', () => {
 
       await s3Service.uploadFile({
         file: multerFile,
-        keyName: 'projects/1/image',
+        keyName: `projects/${uuidOf(1)}/image`,
         metadata: { owner: '1' },
         cacheControl: 'no-cache',
       });
 
       expect(PutObjectCommand).toHaveBeenCalledWith({
         Bucket: 'my-default-bucket',
-        Key: 'projects/1/image',
+        Key: `projects/${uuidOf(1)}/image`,
         Body: multerFile.buffer,
         ContentType: 'image/png',
         Metadata: { owner: '1' },
@@ -195,11 +200,11 @@ describe('S3Service', () => {
       mockS3.send.mockRejectedValueOnce(new Error('Access Denied'));
 
       const failure: unknown = await s3Service
-        .uploadFile({ file: multerFile, keyName: 'projects/1/image' })
+        .uploadFile({ file: multerFile, keyName: `projects/${uuidOf(1)}/image` })
         .catch((error: unknown) => error);
 
       expect(failure).toBeInstanceOf(S3UploadException);
-      expect((failure as S3UploadException).fileName).toBe('projects/1/image');
+      expect((failure as S3UploadException).fileName).toBe(`projects/${uuidOf(1)}/image`);
     });
 
     it('streams a downloaded file under the given key', async () => {
@@ -209,14 +214,14 @@ describe('S3Service', () => {
 
       await s3Service.uploadFile({
         file: { body, contentType: 'application/zip' },
-        keyName: 'release/2',
+        keyName: `release/${uuidOf(2)}`,
       });
 
       expect(Upload).toHaveBeenCalledWith({
         client: mockS3,
         params: {
           Bucket: 'my-default-bucket',
-          Key: 'release/2',
+          Key: `release/${uuidOf(2)}`,
           Body: body,
           ContentType: 'application/zip',
         },
@@ -233,12 +238,12 @@ describe('S3Service', () => {
       const failure: unknown = await s3Service
         .uploadFile({
           file: { body: Readable.from(['content']) },
-          keyName: 'release/2',
+          keyName: `release/${uuidOf(2)}`,
         })
         .catch((error: unknown) => error);
 
       expect(failure).toBeInstanceOf(S3UploadException);
-      expect((failure as S3UploadException).fileName).toBe('release/2');
+      expect((failure as S3UploadException).fileName).toBe(`release/${uuidOf(2)}`);
     });
   });
 
@@ -267,11 +272,11 @@ describe('S3Service', () => {
   describe('setObjectPublicRead', () => {
     it('marks the object public', async () => {
       mockS3.send.mockResolvedValueOnce({});
-      await s3Service.setObjectPublicRead('release/1');
+      await s3Service.setObjectPublicRead(`release/${uuidOf(1)}`);
       expect(mockS3.send).toHaveBeenCalledTimes(1);
       expect(PutObjectAclCommand).toHaveBeenCalledWith({
         Bucket: 'my-default-bucket',
-        Key: 'release/1',
+        Key: `release/${uuidOf(1)}`,
         ACL: 'public-read',
       });
     });
@@ -280,12 +285,12 @@ describe('S3Service', () => {
       mockS3.send.mockRejectedValueOnce(
         Object.assign(new Error('Not Implemented'), { name: 'NotImplemented' }),
       );
-      await expect(s3Service.setObjectPublicRead('release/1')).resolves.toBeUndefined();
+      await expect(s3Service.setObjectPublicRead(`release/${uuidOf(1)}`)).resolves.toBeUndefined();
     });
 
     it('still surfaces a real failure', async () => {
       mockS3.send.mockRejectedValueOnce(Object.assign(new Error('nope'), { name: 'AccessDenied' }));
-      await expect(s3Service.setObjectPublicRead('release/1')).rejects.toThrow('nope');
+      await expect(s3Service.setObjectPublicRead(`release/${uuidOf(1)}`)).rejects.toThrow('nope');
     });
   });
 });

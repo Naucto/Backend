@@ -5,17 +5,16 @@ import {
   ArrayMaxSize,
   IsArray,
   IsEnum,
-  IsInt,
   IsObject,
   IsOptional,
   IsString,
   Matches,
   MaxLength,
-  Min,
   MinLength,
   ValidateNested,
 } from 'class-validator';
 
+import { IsId } from '../../../common/decorators/is-id';
 import { trimmed } from './report-transforms';
 
 export const BUG_TITLE_MIN_LENGTH = 3;
@@ -26,7 +25,7 @@ export const CONSOLE_LINES_MAX = 50;
 export const CONSOLE_LINE_MAX_LENGTH = 500;
 export const PATH_MAX_LENGTH = 200;
 export const APP_RELEASE_MAX_LENGTH = 64;
-/** A path of the web app, without its query or fragment, as in `/play/42`. */
+/** A path of the web app, without its query or fragment, as in `/hub` or `/play/<id>`. */
 export const PATH_PATTERN = /^\/[A-Za-z0-9_\-/.:]*$/;
 
 /** What the browser attaches to a bug report, every field of it listed to the person first. */
@@ -77,7 +76,10 @@ export class CreateBugReportDto {
   @MaxLength(BUG_DESCRIPTION_MAX_LENGTH)
   description!: string;
 
-  @ApiProperty({ example: '/play/42', maxLength: PATH_MAX_LENGTH })
+  @ApiProperty({
+    example: '/play/3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b',
+    maxLength: PATH_MAX_LENGTH,
+  })
   @IsString()
   @MaxLength(PATH_MAX_LENGTH)
   @Matches(PATH_PATTERN)
@@ -88,23 +90,23 @@ export class CreateBugReportDto {
   @IsEnum(ReportRole)
   role?: ReportRole;
 
-  @ApiPropertyOptional({ description: 'The release the page is about' })
+  @ApiPropertyOptional({ format: 'uuid', description: 'The release the page is about' })
   @IsOptional()
-  @IsInt()
-  @Min(1)
-  releaseId?: number;
+  @IsId()
+  releaseId?: string;
 
-  @ApiPropertyOptional({ description: 'The project open in the editor' })
+  @ApiPropertyOptional({ format: 'uuid', description: 'The project open in the editor' })
   @IsOptional()
-  @IsInt()
-  @Min(1)
-  projectId?: number;
+  @IsId()
+  projectId?: string;
 
-  @ApiPropertyOptional({ description: 'The rating the report follows, for a low score' })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'The rating the report follows, for a low score',
+  })
   @IsOptional()
-  @IsInt()
-  @Min(1)
-  ratingId?: number;
+  @IsId()
+  ratingId?: string;
 
   @ApiPropertyOptional({
     description: 'The build of the web app',

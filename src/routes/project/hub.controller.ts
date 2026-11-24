@@ -35,7 +35,6 @@ import { ReleaseTagsResponseDto } from './dto/release-tags-response.dto';
 import { ViewResponseDto } from './dto/view-response.dto';
 import type { PublishedProjectFilters, ReleaseSort, ReleaseWindow } from './hub.service';
 import { HubService, RELEASE_SORTS, RELEASE_WINDOWS } from './hub.service';
-import { ProjectHiddenException } from './project.error';
 import { ProjectId } from './project-id.decorator';
 import { parseOptionalInt, parseTags } from './project-query';
 
@@ -79,20 +78,6 @@ export class HubController {
   }
 
   // `releases/:id` follows the literal `releases/…` routes, or it would take them.
-  @Public()
-  @Get('releases')
-  @ApiOperation({
-    summary: 'Get all released projects',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'A JSON array of projects with collaborators and creator information',
-    type: [ProjectExResponseDto],
-  })
-  async getAllReleases(): Promise<ProjectExResponseDto[]> {
-    return this.hubService.fetchPublishedGames();
-  }
-
   @Public()
   @Get('releases/paginated')
   @ApiOperation({
@@ -206,30 +191,21 @@ export class HubController {
   @ApiOperation({
     summary: 'Get project release version',
   })
-  @ApiParam({ name: 'id', type: 'string' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({
     status: 200,
     description: 'Project release metadata',
     type: ProjectExResponseDto,
   })
-  async getRelease(@ProjectId() id: number): Promise<ProjectExResponseDto> {
-    const projectRelease = await this.hubService.fetchRelease(id);
-    // Public, so a draft's name and people are nobody's business until it is on the hub.
-    if (!projectRelease.publishedAt) {
-      throw new NotFoundException(`Published project with ID ${id} not found`);
-    }
-    if (projectRelease.hiddenAt) {
-      throw new ProjectHiddenException();
-    }
-
-    return projectRelease;
+  async getRelease(@ProjectId() id: string): Promise<ProjectExResponseDto> {
+    return this.hubService.fetchRelease(id);
   }
 
   @Post('releases/:id/like')
   @ApiOperation({
     summary: 'Like a published project (idempotent, authenticated users only)',
   })
-  @ApiParam({ name: 'id', type: 'string' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({
     status: 200,
     description: 'Like status',
@@ -237,7 +213,7 @@ export class HubController {
   })
   @HttpCode(HttpStatus.OK)
   async likeProject(
-    @ProjectId() id: number,
+    @ProjectId() id: string,
     @Req() req: RequestWithUser,
   ): Promise<LikeResponseDto> {
     return this.hubService.likeProject(id, req.user.id);
@@ -247,7 +223,7 @@ export class HubController {
   @ApiOperation({
     summary: 'Unlike a published project (authenticated users only)',
   })
-  @ApiParam({ name: 'id', type: 'string' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({
     status: 200,
     description: 'Like removed',
@@ -255,7 +231,7 @@ export class HubController {
   })
   @HttpCode(HttpStatus.OK)
   async unlikeProject(
-    @ProjectId() id: number,
+    @ProjectId() id: string,
     @Req() req: RequestWithUser,
   ): Promise<LikeResponseDto> {
     return this.hubService.unlikeProject(id, req.user.id);
@@ -265,14 +241,14 @@ export class HubController {
   @ApiOperation({
     summary: 'Get like status for a project (authenticated users only)',
   })
-  @ApiParam({ name: 'id', type: 'string' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({
     status: 200,
     description: 'Like status',
     type: LikeResponseDto,
   })
   async getLikeStatus(
-    @ProjectId() id: number,
+    @ProjectId() id: string,
     @Req() req: RequestWithUser,
   ): Promise<LikeResponseDto> {
     return this.hubService.getLikeStatus(id, req.user.id);
@@ -286,7 +262,7 @@ export class HubController {
     summary: 'Count a play of a published project',
   })
   @ApiConsumes('text/plain', 'application/json')
-  @ApiParam({ name: 'id', type: 'string' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({
     status: 200,
     description: 'Updated view count',
@@ -294,7 +270,7 @@ export class HubController {
   })
   @HttpCode(HttpStatus.OK)
   async registerReleaseView(
-    @ProjectId() id: number,
+    @ProjectId() id: string,
     @Body() dto: RegisterViewDto,
     @Req() req: Request,
   ): Promise<ViewResponseDto> {
@@ -311,7 +287,8 @@ export class HubController {
   })
   @ApiParam({
     name: 'id',
-    type: 'number',
+    type: String,
+    format: 'uuid',
     description: 'Project ID',
   })
   @ApiResponse({
@@ -323,7 +300,7 @@ export class HubController {
     status: HttpStatus.NOT_FOUND,
     description: 'Project not found, not published, or has no image',
   })
-  async getPublishedProjectImage(@ProjectId() id: number): Promise<ImageUrlResponseDto> {
+  async getPublishedProjectImage(@ProjectId() id: string): Promise<ImageUrlResponseDto> {
     const url = await this.hubService.publishedCoverUrl(id);
     if (!url) {
       throw new NotFoundException('Not found');
@@ -336,8 +313,9 @@ export class HubController {
   @ApiOperation({ summary: 'Fork a published project' })
   @ApiParam({
     name: 'id',
-    type: 'number',
-    description: 'Numeric ID of the published project to fork',
+    type: String,
+    format: 'uuid',
+    description: 'ID of the published project to fork',
   })
   @ApiResponse({
     status: 201,
@@ -348,7 +326,7 @@ export class HubController {
   @ApiResponse({ status: 404, description: 'Project not found' })
   @HttpCode(HttpStatus.CREATED)
   async fork(
-    @ProjectId() id: number,
+    @ProjectId() id: string,
     @Req() req: RequestWithUser,
   ): Promise<ForkProjectResponseDto> {
     return await this.hubService.fork(id, req.user.id);

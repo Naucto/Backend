@@ -1,8 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UserSummaryDto {
-  @ApiProperty({ example: 1 })
-  id!: number;
+  @ApiProperty({ format: 'uuid', example: '3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b' })
+  id!: string;
 
   @ApiProperty({ example: 'xX_DarkGamer_Xx' })
   username!: string;
@@ -20,8 +20,8 @@ export class FriendDto extends UserSummaryDto {
 }
 
 export class FriendRequestDto {
-  @ApiProperty({ example: 12 })
-  id!: number;
+  @ApiProperty({ format: 'uuid', example: '7c9e6679-7425-40de-944b-e07fc1f90ae7' })
+  id!: string;
 
   @ApiProperty({ type: () => UserSummaryDto })
   from!: UserSummaryDto;

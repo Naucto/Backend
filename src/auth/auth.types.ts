@@ -7,7 +7,7 @@ import { UserDto } from './dto/user.dto';
 export const STAFF_SCOPE = 'staff';
 
 export interface JwtPayload {
-  sub: number;
+  sub: string;
   email: string;
   scope?: typeof STAFF_SCOPE;
 }
@@ -20,6 +20,9 @@ export interface TokenInfo {
 export interface RequestWithUser extends Request {
   user: UserDto & SuspensionState;
 }
+
+/** A request to a `@Public()` route: the account when a valid token came with it, else null. */
+export type RequestWithOptionalUser = Omit<Request, 'user'> & { user: UserDto | null };
 
 export interface OAuthUserPayload {
   email: string;

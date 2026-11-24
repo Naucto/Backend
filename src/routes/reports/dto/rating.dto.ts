@@ -13,6 +13,7 @@ import {
   Min,
 } from 'class-validator';
 
+import { IsId } from '../../../common/decorators/is-id';
 import { trimmed } from './report-transforms';
 
 export const RATING_MIN = 1;
@@ -62,9 +63,11 @@ export class CreateRatingDto {
   @MaxLength(COMMENT_MAX_LENGTH)
   improve?: string;
 
-  @ApiPropertyOptional({ description: 'The release played just before the prompt' })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'The release played just before the prompt',
+  })
   @IsOptional()
-  @IsInt()
-  @Min(1)
-  releaseId?: number;
+  @IsId()
+  releaseId?: string;
 }

@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import cookieParser from 'cookie-parser';
 import request from 'supertest';
 
+import { uuidOf } from '../../../test/uuid';
 import { AdminAuthController } from './admin-auth.controller';
 import { AdminSessionService } from './admin-session.service';
 import { ADMIN_SESSION_COOKIE } from './admin-session-cookie';
@@ -52,7 +53,7 @@ describe('AdminAuthController refresh', () => {
   });
 
   it('answers a new access token while the session lasts', async () => {
-    const session = { accessToken: 'token', expiresIn: 900, account: { id: 1 } };
+    const session = { accessToken: 'token', expiresIn: 900, account: { id: uuidOf(1) } };
     refresh.mockResolvedValue({ session });
 
     const response = await post('live');

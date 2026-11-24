@@ -4,8 +4,8 @@ export const COMMENT_REMOVALS = ['USER', 'MODERATION'] as const;
 export type CommentRemoval = (typeof COMMENT_REMOVALS)[number];
 
 export class CommentAuthorDto {
-  @ApiProperty({ example: 1 })
-  id!: number;
+  @ApiProperty({ format: 'uuid', example: '3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b' })
+  id!: string;
 
   @ApiProperty({ example: 'john_doe' })
   username!: string;
@@ -20,8 +20,8 @@ export class CommentAuthorDto {
 }
 
 export class CommentResponseDto {
-  @ApiProperty({ example: 1 })
-  id!: number;
+  @ApiProperty({ format: 'uuid', example: '9b2f7a4c-1d3e-4f5a-8b6c-7d8e9f0a1b2c' })
+  id!: string;
 
   @ApiProperty({ example: 'Great game!' })
   content!: string;
@@ -29,8 +29,8 @@ export class CommentResponseDto {
   @ApiProperty({ example: '2023-04-15T12:00:00Z' })
   createdAt!: Date;
 
-  @ApiProperty({ example: 1 })
-  projectId!: number;
+  @ApiProperty({ format: 'uuid', example: '7c9e6679-7425-40de-944b-e07fc1f90ae7' })
+  projectId!: string;
 
   @ApiProperty({ type: CommentAuthorDto })
   author!: CommentAuthorDto;

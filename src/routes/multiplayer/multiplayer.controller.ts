@@ -6,7 +6,6 @@ import {
   HttpCode,
   HttpStatus,
   Param,
-  ParseIntPipe,
   Patch,
   Post,
   Query,
@@ -17,9 +16,11 @@ import { ApiBody, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/s
 
 import { AllowedWhileSuspended, RequiresAuth } from '../../auth/access/access.decorators';
 import { RequestWithUser } from '../../auth/auth.types';
+import { ParseIdPipe } from '../../common/pipes/parse-id.pipe';
 import { CreateGameSessionDto } from './dto/create-game-session.dto';
 import { GameSessionListResponseDto, GameSessionResponseDto } from './dto/game-session.dto';
 import { GameSessionConnectionResponseDto } from './dto/game-session-connection.dto';
+import { SESSION_ROSTER_PREVIEW } from './dto/game-session-limits';
 import { InviteToSessionDto } from './dto/invite-to-session.dto';
 import { JoinByCodeDto } from './dto/join-by-code.dto';
 import { JoinGameSessionDto } from './dto/join-game-session.dto';
@@ -69,9 +70,10 @@ export class MultiplayerController {
 
   @Get()
   @ApiOperation({
-    summary: "List open game sessions from the caller's perspective, one game's or every game's",
+    summary:
+      "List open game sessions from the caller's perspective, the latest first: one game's, or the latest across published games",
   })
-  @ApiQuery({ name: 'projectId', type: 'number', required: false })
+  @ApiQuery({ name: 'projectId', type: 'string', format: 'uuid', required: false })
   @ApiQuery({
     name: 'q',
     type: 'string',
@@ -81,7 +83,7 @@ export class MultiplayerController {
   @ApiResponse({ status: HttpStatus.OK, type: GameSessionListResponseDto })
   async list(
     @Req() req: RequestWithUser,
-    @Query('projectId', new ParseIntPipe({ optional: true })) projectId?: number,
+    @Query('projectId', new ParseIdPipe({ optional: true })) projectId?: string,
     @Query('q') query?: string,
   ): Promise<GameSessionListResponseDto> {
     const sessions = await this._multiplayerService.list(projectId, req.user.id, query);
@@ -94,12 +96,19 @@ export class MultiplayerController {
 
   @Get(':sessionId')
   @ApiOperation({ summary: 'Fetch a single game session' })
+  @ApiQuery({
+    name: 'code',
+    type: 'string',
+    required: false,
+    description: 'The join code of a session that is reached by code, for someone not in it yet',
+  })
   @ApiResponse({ status: HttpStatus.OK, type: GameSessionResponseDto })
   async get(
     @Req() req: RequestWithUser,
     @Param('sessionId') sessionId: string,
+    @Query('code') code?: string,
   ): Promise<GameSessionResponseDto> {
-    const session = await this._multiplayerService.get(sessionId, req.user.id);
+    const session = await this._multiplayerService.get(sessionId, req.user.id, code);
     return this._toResponse(session);
   }
 
@@ -207,6 +216,15 @@ export class MultiplayerController {
     dto.playerCount =
       this._multiplayerService.connectedPlayerCount(session.sessionId) ||
       session.otherUsers.length + 1;
+    dto.startedAt = session.startedAt;
+    dto.roster = [session.host, ...session.otherUsers]
+      .slice(0, SESSION_ROSTER_PREVIEW)
+      .map(({ id, username, nickname }) =>
+        nickname ? { id, username, nickname } : { id, username },
+      );
+    const { coverUrl, disk } = this._multiplayerService.lookOf(session);
+    dto.coverUrl = coverUrl;
+    dto.disk = disk;
 
     return dto;
   }

@@ -1,9 +1,17 @@
+import { isUUID } from 'class-validator';
+
 export type SyncedGameTableRole = 'host' | 'slave';
 
 /** The seat a connection ticket admits to a game table. */
 export interface SyncedGameTableTicket {
   sessionId: string;
-  userId: number;
+  /**
+   * The number the seat plays under: what its game reads as `net.id()` and what the table addresses
+   * it by. An integer, because published games compute on it.
+   */
+  playerNumber: number;
+  /** The account sitting there, or null for an editor self-join, which has none. */
+  userId: string | null;
   role: SyncedGameTableRole;
   maxPlayers: number;
 }
@@ -30,7 +38,8 @@ export function isSyncedGameTableTicketPayload(
   return (
     claims.kind === SYNCED_GAME_TABLE_TICKET_KIND &&
     typeof claims.sessionId === 'string' &&
-    typeof claims.userId === 'number' &&
+    Number.isInteger(claims.playerNumber) &&
+    (claims.userId === null || isUUID(claims.userId)) &&
     typeof claims.maxPlayers === 'number' &&
     (claims.role === 'host' || claims.role === 'slave')
   );

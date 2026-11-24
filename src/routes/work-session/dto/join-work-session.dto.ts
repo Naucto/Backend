@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsNumber, IsUUID } from 'class-validator';
+import { IsUUID } from 'class-validator';
 
 import { WebRTCOfferDto } from '../../../webrtc/webrtc.dto';
 
@@ -14,10 +14,11 @@ export class JoinWorkSessionDto {
 
   @ApiProperty({
     description: "The user ID of the session's host",
-    example: 1,
+    format: 'uuid',
+    example: '3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b',
   })
-  @IsNumber()
-  hostId!: number;
+  @IsUUID()
+  hostId!: string;
 
   @ApiProperty({
     type: () => WebRTCOfferDto,

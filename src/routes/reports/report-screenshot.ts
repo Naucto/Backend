@@ -13,7 +13,7 @@ const SCREENSHOT_EXTENSIONS: Record<string, string> = {
   'image/webp': 'webp',
 };
 
-export const screenshotKey = (reportId: number, mime: string): string =>
+export const screenshotKey = (reportId: string, mime: string): string =>
   `reports/${reportId}/screenshot.${SCREENSHOT_EXTENSIONS[mime] ?? 'bin'}`;
 
 /**

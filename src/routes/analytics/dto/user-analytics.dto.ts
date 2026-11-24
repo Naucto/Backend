@@ -6,7 +6,7 @@ export class UserAnalyticsTotalsDto {
 }
 
 export class UserAnalyticsGameDto {
-  @ApiProperty() releaseId!: number;
+  @ApiProperty({ format: 'uuid' }) releaseId!: string;
   @ApiProperty({ type: String, nullable: true, description: 'Null for a game since deleted' })
   name!: string | null;
   @ApiProperty() plays!: number;
@@ -80,7 +80,7 @@ export class ExportPageViewDto {
 export class ExportPlayDto {
   @ApiProperty() id!: string;
   @ApiProperty() sessionId!: string;
-  @ApiProperty() releaseId!: number;
+  @ApiProperty({ format: 'uuid' }) releaseId!: string;
   @ApiProperty() continued!: boolean;
   @ApiProperty() startedAt!: string;
   @ApiProperty() activeMs!: number;
@@ -89,7 +89,8 @@ export class ExportPlayDto {
 
 export class ExportHistoryDayDto {
   @ApiProperty() day!: string;
-  @ApiProperty() releaseId!: number;
+  @ApiProperty({ format: 'uuid', description: 'The nil UUID for activity outside a game' })
+  releaseId!: string;
   @ApiProperty() plays!: number;
   @ApiProperty() activeMs!: number;
   @ApiProperty() activeMinutes!: number;
@@ -98,11 +99,11 @@ export class ExportHistoryDayDto {
 export class ExportFactDto {
   @ApiProperty() type!: string;
   @ApiProperty() at!: string;
-  @ApiProperty({ type: Number, nullable: true }) projectId!: number | null;
+  @ApiProperty({ type: String, format: 'uuid', nullable: true }) projectId!: string | null;
 }
 
 export class ExportReleaseViewDto {
-  @ApiProperty() projectId!: number;
+  @ApiProperty({ format: 'uuid' }) projectId!: string;
   @ApiProperty() day!: string;
 }
 

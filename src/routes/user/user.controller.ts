@@ -9,7 +9,6 @@ import {
   NotFoundException,
   Param,
   ParseFilePipeBuilder,
-  ParseIntPipe,
   Patch,
   Post,
   Res,
@@ -33,6 +32,7 @@ import { AllowedWhileSuspended, RequiresAuth } from '../../auth/access/access.de
 import { currentSuspension } from '../../auth/access/suspension';
 import { RequestWithUser } from '../../auth/auth.types';
 import { REFRESH_COOKIE_NAME, refreshCookieOptions } from '../../auth/auth.utils';
+import { ParseIdPipe } from '../../common/pipes/parse-id.pipe';
 import { AccountDeletionService } from './account-deletion.service';
 import { DeleteAccountDto } from './dto/delete-account.dto';
 import { MeDto, UpdateMeDto } from './dto/me.dto';
@@ -209,7 +209,7 @@ export class UserController {
   }
 
   private async uploadProfileAsset(
-    id: number,
+    id: string,
     req: RequestWithUser,
     file: Express.Multer.File,
     asset: ProfileAsset,
@@ -228,7 +228,7 @@ export class UserController {
 
   @Post(':id/profile-picture')
   @ApiOperation({ summary: "Upload a user's profile picture" })
-  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid', description: 'User ID' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
@@ -252,7 +252,7 @@ export class UserController {
   @UseInterceptors(FileInterceptor('file', { limits: PROFILE_IMAGE_LIMITS }))
   @HttpCode(HttpStatus.CREATED)
   async uploadProfilePicture(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
     @UploadedFile(PROFILE_IMAGE_PIPE) file: Express.Multer.File,
     @Request() req: RequestWithUser,
   ): Promise<ProfileImageUploadResponseDto> {
@@ -261,7 +261,7 @@ export class UserController {
 
   /** Drops one of the two profile images; idempotent, so removing an absent image succeeds. */
   private async removeProfileAsset(
-    id: number,
+    id: string,
     req: RequestWithUser,
     asset: ProfileAsset,
     label: string,
@@ -278,7 +278,7 @@ export class UserController {
   @Delete(':id/profile-picture')
   @AllowedWhileSuspended()
   @ApiOperation({ summary: 'Remove your own profile picture' })
-  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid', description: 'User ID' })
   @ApiResponse({
     status: HttpStatus.OK,
     description: 'Removed, or there was none',
@@ -287,7 +287,7 @@ export class UserController {
   @ApiResponse({ status: HttpStatus.FORBIDDEN, description: 'Not your profile' })
   @RequiresAuth()
   async removeProfilePicture(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
     @Request() req: RequestWithUser,
   ): Promise<ProfileImageRemovedResponseDto> {
     return this.removeProfileAsset(id, req, 'profile', 'Profile picture');
@@ -295,7 +295,7 @@ export class UserController {
 
   @Post(':id/profile-background')
   @ApiOperation({ summary: "Upload a user's profile background" })
-  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid', description: 'User ID' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
@@ -319,7 +319,7 @@ export class UserController {
   @UseInterceptors(FileInterceptor('file', { limits: PROFILE_IMAGE_LIMITS }))
   @HttpCode(HttpStatus.CREATED)
   async uploadProfileBackground(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
     @UploadedFile(PROFILE_IMAGE_PIPE) file: Express.Multer.File,
     @Request() req: RequestWithUser,
   ): Promise<ProfileImageUploadResponseDto> {
@@ -329,7 +329,7 @@ export class UserController {
   @Delete(':id/profile-background')
   @AllowedWhileSuspended()
   @ApiOperation({ summary: 'Remove your own profile background' })
-  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid', description: 'User ID' })
   @ApiResponse({
     status: HttpStatus.OK,
     description: 'Removed, or there was none',
@@ -338,7 +338,7 @@ export class UserController {
   @ApiResponse({ status: HttpStatus.FORBIDDEN, description: 'Not your profile' })
   @RequiresAuth()
   async removeProfileBackground(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
     @Request() req: RequestWithUser,
   ): Promise<ProfileImageRemovedResponseDto> {
     return this.removeProfileAsset(id, req, 'background', 'Profile background');
@@ -348,7 +348,7 @@ export class UserController {
   @ApiOperation({
     summary: "Get the public CDN URL of a user's profile picture",
   })
-  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid', description: 'User ID' })
   @ApiResponse({
     status: HttpStatus.OK,
     description: 'Public CDN URL of the picture',
@@ -356,7 +356,7 @@ export class UserController {
   })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'Not found' })
   @RequiresAuth()
-  async getProfilePicture(@Param('id', ParseIntPipe) id: number): Promise<ProfileImageUrlDto> {
+  async getProfilePicture(@Param('id', ParseIdPipe) id: string): Promise<ProfileImageUrlDto> {
     const resourceUrl = await this.profileAssetService.url(id, 'profile');
     if (!resourceUrl) {
       throw new NotFoundException('Profile picture not found');

@@ -1,6 +1,7 @@
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 
+import { uuidOf } from '../../../../test/uuid';
 import {
   AnalyticsBeatDto,
   AnalyticsEventsDto,
@@ -82,7 +83,7 @@ describe('analytics ingest DTOs', () => {
       invalid(AnalyticsEventsDto, {
         visitorId: 'visitor-1',
         sessionId: SESSION,
-        userId: 5,
+        userId: uuidOf(5),
         events: [],
       }).sort(),
     ).toEqual(['userId', 'visitorId']);
@@ -118,8 +119,8 @@ describe('analytics ingest DTOs', () => {
         visitorId: VISITOR,
         sessionId: SESSION,
         state: 'PLAYING',
-        releaseId: 4,
-        play: { playId: EVENT, releaseId: 4, continued: false, activeMs: 45_000 },
+        releaseId: uuidOf(4),
+        play: { playId: EVENT, releaseId: uuidOf(4), continued: false, activeMs: 45_000 },
       }),
     ).toEqual([]);
   });

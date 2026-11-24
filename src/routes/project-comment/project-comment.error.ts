@@ -1,14 +1,14 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 
 export class CommentNotFoundException extends NotFoundException {
-  constructor(commentId: number) {
+  constructor(commentId: string) {
     super(`Comment with ID ${commentId} not found`);
   }
 }
 
 /** Also raised for a draft when reading: comments on a project the hub does not carry stay hidden. */
 export class CommentProjectNotFoundException extends NotFoundException {
-  constructor(projectId: number) {
+  constructor(projectId: string) {
     super(`Project with ID ${projectId} not found`);
   }
 }
@@ -21,7 +21,7 @@ export class CommentNotInProjectException extends NotFoundException {
 }
 
 export class CommentProjectNotPublishedException extends BadRequestException {
-  constructor(projectId: number) {
+  constructor(projectId: string) {
     super(`Project with ID ${projectId} is not published`);
   }
 }

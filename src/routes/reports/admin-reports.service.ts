@@ -71,8 +71,8 @@ export interface ReportUpdate {
 
 const REPORT_INCLUDE = {
   user: { select: ADMIN_ACCOUNT_SELECT },
-  followUps: { select: { id: true }, orderBy: { id: 'asc' } },
-} as const;
+  followUps: { select: { id: true }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
+} satisfies Prisma.ReportInclude;
 type ReportRow = Prisma.ReportGetPayload<{ include: typeof REPORT_INCLUDE }>;
 
 const dayStart = (day: string): Date => new Date(`${day}T00:00:00.000Z`);
@@ -141,7 +141,7 @@ export class AdminReportsService {
     return this.prisma.report.count({ where: { kind, ...(status ? { status } : {}) } });
   }
 
-  async detail(id: number, reader: RoleName): Promise<AdminReportDetailDto> {
+  async detail(id: string, reader: RoleName): Promise<AdminReportDetailDto> {
     const row = await this.prisma.report.findUnique({
       where: { id },
       include: {
@@ -185,7 +185,7 @@ export class AdminReportsService {
     };
   }
 
-  async screenshot(id: number): Promise<DownloadedFile> {
+  async screenshot(id: string): Promise<DownloadedFile> {
     const row = await this.prisma.report.findUnique({
       where: { id },
       select: { screenshotKey: true },
@@ -203,7 +203,7 @@ export class AdminReportsService {
     }
   }
 
-  async update(id: number, update: ReportUpdate, reader: RoleName): Promise<AdminReportDetailDto> {
+  async update(id: string, update: ReportUpdate, reader: RoleName): Promise<AdminReportDetailDto> {
     const updated = await this.prisma.report.updateMany({
       where: { id },
       data: {
@@ -259,7 +259,7 @@ export class AdminReportsService {
 
   private summary(
     row: ReportRow,
-    releases: Map<number, ReportReleaseDto>,
+    releases: Map<string, ReportReleaseDto>,
     reader: RoleName,
   ): AdminReportDto {
     return {
@@ -300,8 +300,8 @@ export class AdminReportsService {
     };
   }
 
-  private async releases(ids: (number | null)[]): Promise<Map<number, ReportReleaseDto>> {
-    const wanted = [...new Set(ids.filter((id): id is number => id !== null))];
+  private async releases(ids: (string | null)[]): Promise<Map<string, ReportReleaseDto>> {
+    const wanted = [...new Set(ids.filter((id): id is string => id !== null))];
     if (wanted.length === 0) {
       return new Map();
     }

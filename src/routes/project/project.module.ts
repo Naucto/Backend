@@ -16,7 +16,7 @@ import { ProjectContentService } from './project-content.service';
   // `projects/:id` takes any first segment. The controllers holding literal routes (`releases…`,
   // `limits`, `count`) therefore come before the one holding `:id`, and inside a controller every
   // literal route is declared above the first `:id` one; a literal route registered below would be
-  // caught by `:id` and answer 400 for a non-numeric id.
+  // caught by `:id` and answer 400 for a segment that is not an id.
   controllers: [HubController, ProjectContentController, ProjectController],
   providers: [ProjectService, ProjectContentService, HubService],
   exports: [ProjectService, ProjectContentService, HubService],

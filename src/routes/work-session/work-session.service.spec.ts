@@ -3,6 +3,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
 
+import { uuidOf } from '../../../test/uuid';
 import { ACTIVITY_CHANGED, ActivityChangedEvent } from '../../common/domain-events';
 import { PrismaService } from '../../prisma/prisma.service';
 import { YjsWebRTCServer } from '../../webrtc/server/webrtc.server.yjs';
@@ -27,7 +28,7 @@ describe('WorkSessionService', () => {
     },
   };
   const eventEmitter = { emit: jest.fn() };
-  const me = { id: 7 } as Parameters<WorkSessionService['join']>[1];
+  const me = { id: uuidOf(7) } as Parameters<WorkSessionService['join']>[1];
 
   beforeEach(async () => {
     jest.resetAllMocks();
@@ -58,18 +59,21 @@ describe('WorkSessionService', () => {
 
   describe('kickEverywhere', () => {
     it('takes the account out of each work session it sits in', async () => {
-      prismaMock.workSession.findMany.mockResolvedValue([{ projectId: 5 }, { projectId: 8 }]);
+      prismaMock.workSession.findMany.mockResolvedValue([
+        { projectId: uuidOf(5) },
+        { projectId: uuidOf(8) },
+      ]);
       const kick = jest.spyOn(service, 'kick').mockResolvedValue(undefined);
 
-      await service.kickEverywhere(7);
+      await service.kickEverywhere(uuidOf(7));
 
       expect(prismaMock.workSession.findMany).toHaveBeenCalledWith({
-        where: { users: { some: { id: 7 } } },
+        where: { users: { some: { id: uuidOf(7) } } },
         select: { projectId: true },
       });
       expect(kick.mock.calls).toEqual([
-        [5, 7],
-        [8, 7],
+        [uuidOf(5), uuidOf(7)],
+        [uuidOf(8), uuidOf(7)],
       ]);
     });
   });
@@ -77,22 +81,22 @@ describe('WorkSessionService', () => {
   describe('join', () => {
     const HOUR_MS = 60 * 60 * 1000;
     const recorded = (hostId: number, age = 0): object => ({
-      id: 1,
-      projectId: 5,
-      hostId,
+      id: uuidOf(1),
+      projectId: uuidOf(5),
+      hostId: uuidOf(hostId),
       roomId: 'room-uuid',
       lastActiveAt: new Date(Date.now() - age),
     });
     const present = (hostId: number, users: number[]): void => {
       prismaMock.workSession.findUnique.mockResolvedValueOnce({
-        id: 1,
-        hostId,
-        users: users.map((id) => ({ id })),
+        id: uuidOf(1),
+        hostId: uuidOf(hostId),
+        users: users.map((id) => ({ id: uuidOf(id) })),
       });
     };
     const joined = {
-      where: { projectId: 5 },
-      data: { users: { connect: { id: 7 } }, lastActiveAt: expect.any(Date) },
+      where: { projectId: uuidOf(5) },
+      data: { users: { connect: { id: uuidOf(7) } }, lastActiveAt: expect.any(Date) },
     };
 
     it('opens a session with the caller as host when the project has none', async () => {
@@ -100,16 +104,19 @@ describe('WorkSessionService', () => {
       prismaMock.workSession.create.mockResolvedValueOnce(recorded(7));
       present(7, [7]);
 
-      await expect(service.join(5, me)).resolves.toMatchObject({
+      await expect(service.join(uuidOf(5), me)).resolves.toMatchObject({
         roomId: 'room-uuid',
-        hostId: 7,
+        hostId: uuidOf(7),
       });
-      expect(eventEmitter.emit).toHaveBeenCalledWith(ACTIVITY_CHANGED, new ActivityChangedEvent(7));
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        ACTIVITY_CHANGED,
+        new ActivityChangedEvent(uuidOf(7)),
+      );
       expect(prismaMock.workSession.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
-          project: { connect: { id: 5 } },
-          users: { connect: { id: 7 } },
-          host: { connect: { id: 7 } },
+          project: { connect: { id: uuidOf(5) } },
+          users: { connect: { id: uuidOf(7) } },
+          host: { connect: { id: uuidOf(7) } },
         }),
       });
     });
@@ -119,9 +126,9 @@ describe('WorkSessionService', () => {
       prismaMock.workSession.update.mockResolvedValueOnce(recorded(3));
       present(3, [3, 7]);
 
-      await expect(service.join(5, me)).resolves.toMatchObject({
+      await expect(service.join(uuidOf(5), me)).resolves.toMatchObject({
         roomId: 'room-uuid',
-        hostId: 3,
+        hostId: uuidOf(3),
       });
       expect(prismaMock.workSession.update).toHaveBeenCalledWith(joined);
       expect(prismaMock.workSession.create).not.toHaveBeenCalled();
@@ -132,9 +139,9 @@ describe('WorkSessionService', () => {
       prismaMock.workSession.update.mockResolvedValueOnce(recorded(3));
       present(3, [3, 7]);
 
-      await expect(service.join(5, me)).resolves.toMatchObject({
+      await expect(service.join(uuidOf(5), me)).resolves.toMatchObject({
         roomId: 'room-uuid',
-        hostId: 3,
+        hostId: uuidOf(3),
       });
       expect(prismaMock.workSession.create).not.toHaveBeenCalled();
     });
@@ -150,9 +157,9 @@ describe('WorkSessionService', () => {
       prismaMock.workSession.update.mockResolvedValueOnce(recorded(3));
       present(3, [3, 7]);
 
-      await expect(service.join(5, me)).resolves.toMatchObject({
+      await expect(service.join(uuidOf(5), me)).resolves.toMatchObject({
         roomId: 'room-uuid',
-        hostId: 3,
+        hostId: uuidOf(3),
       });
       expect(prismaMock.workSession.update).toHaveBeenCalledWith(joined);
     });
@@ -162,7 +169,7 @@ describe('WorkSessionService', () => {
       prismaMock.workSession.findUnique.mockResolvedValueOnce(null);
       prismaMock.workSession.create.mockRejectedValueOnce(failure);
 
-      await expect(service.join(5, me)).rejects.toBe(failure);
+      await expect(service.join(uuidOf(5), me)).rejects.toBe(failure);
       expect(prismaMock.workSession.update).not.toHaveBeenCalled();
     });
 
@@ -171,7 +178,7 @@ describe('WorkSessionService', () => {
       prismaMock.workSession.update.mockResolvedValueOnce(recorded(3));
       present(3, [7]);
 
-      await expect(service.join(5, me)).resolves.toMatchObject({ hostId: 7 });
+      await expect(service.join(uuidOf(5), me)).resolves.toMatchObject({ hostId: uuidOf(7) });
     });
   });
 
@@ -179,18 +186,18 @@ describe('WorkSessionService', () => {
     it('reports who is in the session of a project', async () => {
       const startedAt = new Date();
       prismaMock.workSession.findFirst.mockResolvedValueOnce({
-        id: 1,
-        projectId: 5,
-        hostId: 3,
+        id: uuidOf(1),
+        projectId: uuidOf(5),
+        hostId: uuidOf(3),
         roomId: 'room-uuid',
         startedAt,
-        users: [{ id: 3 }, { id: 7 }],
+        users: [{ id: uuidOf(3) }, { id: uuidOf(7) }],
       });
 
-      await expect(service.getInfo(5)).resolves.toEqual({
-        users: [3, 7],
-        hostId: 3,
-        project: 5,
+      await expect(service.getInfo(uuidOf(5))).resolves.toEqual({
+        users: [uuidOf(3), uuidOf(7)],
+        hostId: uuidOf(3),
+        project: uuidOf(5),
         startedAt,
         roomId: 'room-uuid',
       });
@@ -199,36 +206,36 @@ describe('WorkSessionService', () => {
     it('reports a project that has no session', async () => {
       prismaMock.workSession.findFirst.mockResolvedValueOnce(null);
 
-      await expect(service.getInfo(5)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.getInfo(uuidOf(5))).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
   describe('host election', () => {
     const room = (hostId: number, present: number[]): void => {
       prismaMock.workSession.findFirst.mockResolvedValue({
-        id: 1,
-        projectId: 5,
-        hostId,
-        users: present.map((id) => ({ id })),
+        id: uuidOf(1),
+        projectId: uuidOf(5),
+        hostId: uuidOf(hostId),
+        users: present.map((id) => ({ id: uuidOf(id) })),
       });
       prismaMock.workSession.update.mockResolvedValue({});
     };
     const after = (hostId: number, present: number[]): void => {
       prismaMock.workSession.findUnique.mockResolvedValue({
-        id: 1,
-        hostId,
-        users: present.map((id) => ({ id })),
+        id: uuidOf(1),
+        hostId: uuidOf(hostId),
+        users: present.map((id) => ({ id: uuidOf(id) })),
       });
     };
     it('hands the room to the lowest present member when the host leaves', async () => {
       room(7, [7, 9, 3]);
       after(7, [9, 3]);
 
-      await service.leave(5, me);
+      await service.leave(uuidOf(5), me);
 
       expect(prismaMock.workSession.update).toHaveBeenLastCalledWith({
-        where: { id: 1 },
-        data: { host: { connect: { id: 3 } } },
+        where: { id: uuidOf(1) },
+        data: { host: { connect: { id: uuidOf(3) } } },
       });
     });
 
@@ -236,7 +243,7 @@ describe('WorkSessionService', () => {
       room(3, [7, 9, 3]);
       after(3, [9, 3]);
 
-      await service.leave(5, me);
+      await service.leave(uuidOf(5), me);
 
       expect(prismaMock.workSession.update).toHaveBeenCalledTimes(1);
       expect(prismaMock.workSession.update.mock.calls[0]![0].data).not.toHaveProperty('host');
@@ -246,20 +253,23 @@ describe('WorkSessionService', () => {
       room(7, [7, 9, 3]);
       after(7, [9, 3]);
 
-      await service.kick(5, 7);
+      await service.kick(uuidOf(5), uuidOf(7));
 
       expect(prismaMock.workSession.update).toHaveBeenLastCalledWith({
-        where: { id: 1 },
-        data: { host: { connect: { id: 3 } } },
+        where: { id: uuidOf(1) },
+        data: { host: { connect: { id: uuidOf(3) } } },
       });
-      expect(eventEmitter.emit).toHaveBeenCalledWith(ACTIVITY_CHANGED, new ActivityChangedEvent(7));
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        ACTIVITY_CHANGED,
+        new ActivityChangedEvent(uuidOf(7)),
+      );
     });
 
     it('keeps the recorded host over an empty room', async () => {
       room(7, [7]);
       after(7, []);
 
-      await service.leave(5, me);
+      await service.leave(uuidOf(5), me);
 
       expect(prismaMock.workSession.update).toHaveBeenCalledTimes(1);
     });
@@ -274,8 +284,8 @@ describe('WorkSessionService', () => {
 
     it('deletes only the stale sessions whose room is empty, and refreshes their members', async () => {
       prismaMock.workSession.findMany.mockResolvedValueOnce([
-        { id: 1, roomId: 'empty', users: [{ id: 3 }, { id: 4 }] },
-        { id: 2, roomId: 'open', users: [{ id: 5 }] },
+        { id: uuidOf(1), roomId: 'empty', users: [{ id: uuidOf(3) }, { id: uuidOf(4) }] },
+        { id: uuidOf(2), roomId: 'open', users: [{ id: uuidOf(5) }] },
       ]);
       collab().subscriberCount.mockImplementation((roomId) => (roomId === 'open' ? 1 : 0));
 
@@ -285,17 +295,17 @@ describe('WorkSessionService', () => {
         expect.objectContaining({ where: { lastSaveAt: { lt: olderThan } } }),
       );
       expect(prismaMock.workSession.deleteMany).toHaveBeenCalledWith({
-        where: { lastSaveAt: { lt: olderThan }, id: { in: [1] } },
+        where: { lastSaveAt: { lt: olderThan }, id: { in: [uuidOf(1)] } },
       });
       expect(eventEmitter.emit.mock.calls).toEqual([
-        [ACTIVITY_CHANGED, new ActivityChangedEvent(3)],
-        [ACTIVITY_CHANGED, new ActivityChangedEvent(4)],
+        [ACTIVITY_CHANGED, new ActivityChangedEvent(uuidOf(3))],
+        [ACTIVITY_CHANGED, new ActivityChangedEvent(uuidOf(4))],
       ]);
     });
 
     it('deletes nothing when every stale session still has someone connected', async () => {
       prismaMock.workSession.findMany.mockResolvedValueOnce([
-        { id: 2, roomId: 'open', users: [{ id: 5 }] },
+        { id: uuidOf(2), roomId: 'open', users: [{ id: uuidOf(5) }] },
       ]);
       collab().subscriberCount.mockReturnValue(1);
 

@@ -10,6 +10,7 @@ import { WorkSessionModule } from '../work-session/work-session.module';
 import { AccountModerationService } from './account-moderation.service';
 import { AdminCaseController } from './admin-case.controller';
 import { AdminModerationAccountController } from './admin-moderation-account.controller';
+import { AdminModerationCollectionController } from './admin-moderation-collection.controller';
 import { AdminModerationCommentController } from './admin-moderation-comment.controller';
 import { AdminModerationLogController } from './admin-moderation-log.controller';
 import { AdminModerationProjectController } from './admin-moderation-project.controller';
@@ -43,6 +44,7 @@ import { StandingService } from './standing.service';
     AdminModerationAccountController,
     AdminModerationProjectController,
     AdminModerationCommentController,
+    AdminModerationCollectionController,
     AdminModerationLogController,
   ],
   providers: [

@@ -13,8 +13,8 @@ import { staffOf } from './staff-actor';
 import { StaffPreviewService } from './staff-preview.service';
 
 /**
- * Read by the web app, so with the token of a site sign-in: staff look at a game there, in the
- * player and the editor, and nothing on these routes writes to it.
+ * Read by the web app, so with the token of a site sign-in: staff open a game there in the editor,
+ * which loads read-only for them, and nothing on these routes writes to it.
  */
 @ApiTags('moderation')
 @Controller('moderation/projects')
@@ -26,16 +26,16 @@ export class StaffPreviewController {
 
   @Get(':id/preview')
   @ApiOperation({ summary: 'Any game as its collaborators read it, published or not' })
-  @ApiParam({ name: 'id', type: 'string' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: HttpStatus.OK, type: ProjectPreviewDto })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No such game' })
-  preview(@Req() req: RequestWithUser, @ProjectId() id: number): Promise<ProjectPreviewDto> {
+  preview(@Req() req: RequestWithUser, @ProjectId() id: string): Promise<ProjectPreviewDto> {
     return this.previews.preview(staffOf(req), id);
   }
 
   @Get(':id/preview/content')
   @ApiOperation({ summary: 'The latest save of any game, or its released build' })
-  @ApiParam({ name: 'id', type: 'string' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiProduces('application/octet-stream')
   @ApiResponse({
     status: HttpStatus.OK,
@@ -46,7 +46,7 @@ export class StaffPreviewController {
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No such game' })
   async content(
     @Req() req: RequestWithUser,
-    @ProjectId() id: number,
+    @ProjectId() id: string,
     @Query() query: PreviewContentQueryDto,
     @Res() res: Response,
   ): Promise<void> {

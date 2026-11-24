@@ -185,9 +185,9 @@ async function main(): Promise<void> {
       `TRUNCATE ${tables.map((table) => `"${table.name}"`).join(', ')} RESTART IDENTITY CASCADE`,
     );
   };
-  const user = async (name: string): Promise<number> =>
+  const user = async (name: string): Promise<string> =>
     (await one.user.create({ data: { email: `${name}@test.invalid`, username: name } })).id;
-  const release = async (owner: number): Promise<number> =>
+  const release = async (owner: string): Promise<string> =>
     (
       await one.project.create({
         data: {
@@ -573,7 +573,7 @@ async function main(): Promise<void> {
           await tx.releaseView.create({
             data: {
               projectId: game,
-              viewerKey: `u:${String(account)}`,
+              viewerKey: `u:${account}`,
               day: at('2026-09-07T00:00:00Z'),
             },
           });
@@ -617,7 +617,7 @@ async function main(): Promise<void> {
         await a.ingest.link(account, visitor, at('2026-09-07T12:00:00Z'));
         await one.releaseView.createMany({
           data: [
-            { projectId: game, viewerKey: `u:${String(account)}`, day: at('2026-09-06T00:00:00Z') },
+            { projectId: game, viewerKey: `u:${account}`, day: at('2026-09-06T00:00:00Z') },
             { projectId: game, viewerKey: `v:${visitor}`, day: at('2026-09-07T00:00:00Z') },
             { projectId: game, viewerKey: 'v:someone-else', day: at('2026-09-07T00:00:00Z') },
           ],
@@ -706,7 +706,7 @@ async function main(): Promise<void> {
         await one.$transaction((tx) =>
           a.facts.record(tx, {
             type: 'PROJECT_CREATED',
-            dedupeKey: `project:${String(game.id)}`,
+            dedupeKey: `project:${game.id}`,
             actorUserId: owner,
             projectId: game.id,
           }),

@@ -11,11 +11,15 @@ import {
 } from '../notifications.types';
 
 export class NotificationPayloadDto implements NotificationPayload {
-  @ApiProperty({ example: '7' })
+  @ApiProperty({ format: 'uuid', example: '7c9e6679-7425-40de-944b-e07fc1f90ae7' })
   id!: string;
 
-  @ApiProperty({ example: 42, description: 'ID of the user notified' })
-  userId!: number;
+  @ApiProperty({
+    format: 'uuid',
+    example: '3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b',
+    description: 'ID of the user notified',
+  })
+  userId!: string;
 
   @ApiProperty({ example: 'Build complete' })
   title!: string;

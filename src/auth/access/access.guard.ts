@@ -22,7 +22,7 @@ const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 interface AccessRequest {
   method: string;
-  user?: ({ id: number } & Partial<SuspensionState>) | null;
+  user?: ({ id: string } & Partial<SuspensionState>) | null;
   /** Set by passport from the strategy once the token verified. */
   authInfo?: TokenInfo;
 }

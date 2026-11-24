@@ -7,7 +7,7 @@ function origin(): string {
 /** Where the web app shows something, for the admin console to link to. */
 export const siteUrls = {
   profile: (username: string): string => `${origin()}/u/${encodeURIComponent(username)}`,
-  play: (projectId: number): string => `${origin()}/play/${String(projectId)}`,
-  previewPlay: (projectId: number): string => `${origin()}/staff/play/${String(projectId)}`,
-  previewEdit: (projectId: number): string => `${origin()}/staff/edit/${String(projectId)}`,
+  play: (projectId: string): string => `${origin()}/play/${projectId}`,
+  /** The editor, which loads read-only for staff who do not collaborate on the game. */
+  edit: (projectId: string): string => `${origin()}/edit/${projectId}`,
 };

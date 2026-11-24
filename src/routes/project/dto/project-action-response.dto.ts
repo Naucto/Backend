@@ -4,8 +4,12 @@ export class ProjectActionResponseDto {
   @ApiProperty({ example: 'Project published successfully' })
   message!: string;
 
-  @ApiProperty({ example: 1, description: 'The project acted on' })
-  id!: number;
+  @ApiProperty({
+    format: 'uuid',
+    example: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
+    description: 'The project acted on',
+  })
+  id!: string;
 }
 
 export class VersionDeletedResponseDto {

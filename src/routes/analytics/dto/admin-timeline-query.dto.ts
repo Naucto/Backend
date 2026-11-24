@@ -14,6 +14,7 @@ import {
   Min,
 } from 'class-validator';
 
+import { IsId } from '../../../common/decorators/is-id';
 import {
   TIMELINE_BUCKET_NAMES,
   TIMELINE_METRIC_NAMES,
@@ -56,12 +57,13 @@ export class AnalyticsTimelineQueryDto extends AnalyticsInstantRangeQueryDto {
   @IsIn(TIMELINE_METRIC_NAMES, { each: true })
   metrics?: TimelineMetric[];
 
-  @ApiPropertyOptional({ description: 'Only what concerns this published project' })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Only what concerns this published project',
+  })
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  releaseId?: number;
+  @IsId()
+  releaseId?: string;
 
   @ApiPropertyOptional({
     description:
@@ -94,7 +96,7 @@ export class AnalyticsArrivalsQueryDto extends AnalyticsActivityQueryDto {
 
 export class AnalyticsReleasesQueryDto {
   @ApiPropertyOptional({
-    description: 'Part of the name of a published game, or its id as `12` or `#12`',
+    description: 'Part of the name of a published game, or its id, with or without a leading `#`',
     maxLength: 100,
   })
   @IsOptional()
@@ -104,23 +106,17 @@ export class AnalyticsReleasesQueryDto {
 
   @ApiPropertyOptional({
     description: 'Comma-separated project ids to name, published or not. The query is then ignored',
-    example: '12,40',
+    example: '3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b,7c9e6679-7425-40de-944b-e07fc1f90ae7',
     type: String,
   })
   @IsOptional()
   @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string'
-      ? value
-          .split(',')
-          .filter((id) => id !== '')
-          .map(Number)
-      : value,
+    typeof value === 'string' ? value.split(',').filter((id) => id !== '') : value,
   )
   @IsArray()
   @ArrayMaxSize(50)
-  @IsInt({ each: true })
-  @Min(1, { each: true })
-  ids?: number[];
+  @IsId({ each: true })
+  ids?: string[];
 
   @ApiPropertyOptional({ default: 10, minimum: 1, maximum: 50 })
   @IsOptional()

@@ -1,0 +1,40 @@
+enum CollectionVisibility {
+  PUBLIC
+  UNLISTED
+  PRIVATE
+}
+
+// A person's list of games. Holding the id is what opens an UNLISTED collection: the random bits
+// of a UUID keep it from being guessed, where a sequential id could be walked.
+model Collection {
+  id          String               @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  owner       User                 @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  ownerId     String               @db.Uuid
+  title       String
+  description String?
+  visibility  CollectionVisibility @default(PRIVATE)
+  // Set while moderation withholds the collection: only its owner reads it, whatever `visibility`
+  // says, and a restore puts it back as it was.
+  hiddenAt    DateTime?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  items CollectionItem[]
+
+  @@index([ownerId])
+  @@index([visibility, createdAt])
+}
+
+// A game's place in a collection. The row outlives the game's release: an unpublished game stays
+// listed for the owner, and is only hidden from the others.
+model CollectionItem {
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  collectionId String     @db.Uuid
+  project      Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId    String     @db.Uuid
+  position     Int
+  addedAt      DateTime   @default(now())
+
+  @@id([collectionId, projectId])
+  @@index([projectId])
+}

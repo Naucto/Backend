@@ -5,6 +5,9 @@ import { EventBasedMessageOf, eventBasedMessages } from './webrtc.server.event-b
 
 // Wire messages of the synced game-table protocol. `data` is opaque: relayed, never inspected.
 //
+// `to`, `from` and `userId` name a seat by its player number, the integer its game reads as
+// `net.id()`: never an account id.
+//
 // Every client message class carries at least one class-validator decorator: validation rejects an
 // instance of a class with no validation metadata (forbidUnknownValues, on by default), and a
 // rejected message closes the socket.
@@ -38,7 +41,7 @@ export class GameTableResponseMessage {
   @IsString()
   type!: 'response';
 
-  @ApiProperty({ description: 'userId of the slave this response is addressed to' })
+  @ApiProperty({ description: 'Player number of the slave this response is addressed to' })
   @IsInt()
   to!: number;
 
@@ -53,7 +56,7 @@ export class GameTableSignalMessage {
   type!: 'signal';
 
   @ApiPropertyOptional({
-    description: 'userId of the slave the host addresses; absent from a slave to its host',
+    description: 'Player number of the slave the host addresses; absent from a slave to its host',
   })
   @IsOptional()
   @IsInt()
@@ -83,7 +86,7 @@ export class GameTableRequestRelay {
   @ApiProperty({ enum: ['request'] })
   type!: 'request';
 
-  @ApiProperty({ description: 'userId of the slave that sent the request' })
+  @ApiProperty({ description: 'Player number of the slave that sent the request' })
   from!: number;
 
   @ApiPropertyOptional(OPAQUE_DATA)
@@ -103,7 +106,7 @@ export class GameTableSignalRelay {
   type!: 'signal';
 
   @ApiPropertyOptional({
-    description: 'userId of the slave that sent the signal; absent from the host to a slave',
+    description: 'Player number of the slave that sent the signal; absent from the host to a slave',
   })
   from?: number;
 
@@ -115,7 +118,7 @@ export class GameTablePeerJoinedMessage {
   @ApiProperty({ enum: ['peer-joined'] })
   type!: 'peer-joined';
 
-  @ApiProperty({ description: 'userId of the slave now at the table' })
+  @ApiProperty({ description: 'Player number of the slave now at the table' })
   userId!: number;
 }
 
@@ -123,7 +126,7 @@ export class GameTablePeerLeftMessage {
   @ApiProperty({ enum: ['peer-left'] })
   type!: 'peer-left';
 
-  @ApiProperty({ description: 'userId of the slave that left the table' })
+  @ApiProperty({ description: 'Player number of the slave that left the table' })
   userId!: number;
 }
 

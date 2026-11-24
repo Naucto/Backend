@@ -10,6 +10,7 @@ import { Readable } from 'stream';
 
 import { withEnv } from '../../../test/env';
 import { encodeGame, ProjectMocks } from '../../../test/project-mocks';
+import { uuidOf } from '../../../test/uuid';
 import { PROJECT_CHANGED, ProjectChangedEvent } from '../../common/domain-events';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AnalyticsFactService } from '../analytics/analytics-fact.service';
@@ -101,18 +102,18 @@ describe('ProjectContentService', () => {
     it('keeps an autosave slot open for the default window when the delay is blank', async () => {
       const newest = Date.now() - 30_000;
       s3ServiceMock.listObjects.mockResolvedValue([
-        { Key: `save/1/${newest}`, LastModified: new Date(newest) },
+        { Key: `save/${uuidOf(1)}/${newest}`, LastModified: new Date(newest) },
       ]);
       prismaMock.workSession.updateMany.mockResolvedValue({ count: 1 });
       s3ServiceMock.uploadFile.mockResolvedValue(undefined);
 
-      await serviceWith(blank).save(1, {
+      await serviceWith(blank).save(uuidOf(1), {
         originalname: 'game.bin',
       } as Express.Multer.File);
 
       expect(s3ServiceMock.deleteFile).not.toHaveBeenCalled();
       expect(s3ServiceMock.uploadFile).toHaveBeenCalledWith(
-        expect.objectContaining({ keyName: `save/1/${newest}` }),
+        expect.objectContaining({ keyName: `save/${uuidOf(1)}/${newest}` }),
       );
     });
   });
@@ -123,7 +124,7 @@ describe('ProjectContentService', () => {
       s3ServiceMock.listObjects.mockResolvedValue(
         ages.map((age) => {
           const at = Date.now() - age;
-          return { Key: `save/1/${at}`, LastModified: new Date(at) };
+          return { Key: `save/${uuidOf(1)}/${at}`, LastModified: new Date(at) };
         }),
       );
     };
@@ -136,36 +137,36 @@ describe('ProjectContentService', () => {
 
     it('rewrites the open slot while the window lasts', async () => {
       saves([30_000, 700_000, 1_400_000, 2_100_000, 2_800_000]);
-      const newest = (await service.listVersions(1))[0]!.name;
+      const newest = (await service.listVersions(uuidOf(1)))[0]!.name;
 
-      await service.save(1, file);
+      await service.save(uuidOf(1), file);
 
       expect(s3ServiceMock.deleteFile).not.toHaveBeenCalled();
       expect(s3ServiceMock.uploadFile).toHaveBeenCalledWith(
-        expect.objectContaining({ keyName: `save/1/${newest}` }),
+        expect.objectContaining({ keyName: `save/${uuidOf(1)}/${newest}` }),
       );
     });
 
     it('opens a new slot past the window and lets the oldest go', async () => {
       saves([660_000, 1_400_000, 2_100_000, 2_800_000, 3_500_000]);
-      const listed = await service.listVersions(1);
+      const listed = await service.listVersions(uuidOf(1));
       const oldest = listed[listed.length - 1]!.name;
 
-      await service.save(1, file);
+      await service.save(uuidOf(1), file);
 
       expect(s3ServiceMock.deleteFile).toHaveBeenCalledTimes(1);
       expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({
-        key: `save/1/${oldest}`,
+        key: `save/${uuidOf(1)}/${oldest}`,
       });
       const key = s3ServiceMock.uploadFile.mock.calls[0]![0]!.keyName as string;
-      expect(key).not.toBe(`save/1/${oldest}`);
+      expect(key).not.toBe(`save/${uuidOf(1)}/${oldest}`);
       expect(Number(key.split('/').pop())).toBeGreaterThan(Date.now() - 1000);
     });
 
     it('prunes everything beyond the slots it keeps', async () => {
       saves([660_000, 1e6, 2e6, 3e6, 4e6, 5e6, 6e6]);
 
-      await service.save(1, file);
+      await service.save(uuidOf(1), file);
 
       expect(s3ServiceMock.deleteFile).toHaveBeenCalledTimes(3);
     });
@@ -174,7 +175,7 @@ describe('ProjectContentService', () => {
       Object.assign(service, { maxAutosaves: 1 });
       saves([660_000]);
 
-      await service.save(1, file);
+      await service.save(uuidOf(1), file);
 
       expect(s3ServiceMock.deleteFile).toHaveBeenCalledTimes(1);
       expect(s3ServiceMock.uploadFile).toHaveBeenCalledTimes(1);
@@ -183,7 +184,7 @@ describe('ProjectContentService', () => {
     it('starts the first slot on an empty history', async () => {
       saves([]);
 
-      await service.save(1, file);
+      await service.save(uuidOf(1), file);
 
       expect(s3ServiceMock.deleteFile).not.toHaveBeenCalled();
       expect(s3ServiceMock.uploadFile).toHaveBeenCalledTimes(1);
@@ -193,10 +194,10 @@ describe('ProjectContentService', () => {
       saves([]);
       prismaMock.workSession.updateMany.mockResolvedValue({ count: 0 });
 
-      await service.save(1, file);
+      await service.save(uuidOf(1), file);
 
       expect(prismaMock.workSession.updateMany).toHaveBeenCalledWith({
-        where: { projectId: 1 },
+        where: { projectId: uuidOf(1) },
         data: { lastSaveAt: expect.any(Date) },
       });
       expect(s3ServiceMock.uploadFile).toHaveBeenCalledTimes(1);
@@ -206,7 +207,7 @@ describe('ProjectContentService', () => {
       saves([]);
 
       await expect(
-        service.save(1, {
+        service.save(uuidOf(1), {
           buffer: Buffer.from('hello world, not a yjs update'),
         } as unknown as Express.Multer.File),
       ).rejects.toBeInstanceOf(UnprocessableEntityException);
@@ -218,7 +219,7 @@ describe('ProjectContentService', () => {
   describe('checkpoint', () => {
     const named = (names: string[]): void => {
       s3ServiceMock.listObjects.mockResolvedValue(
-        names.map((name) => ({ Key: `checkpoint/1/${name}`, LastModified: new Date() })),
+        names.map((name) => ({ Key: `checkpoint/${uuidOf(1)}/${name}`, LastModified: new Date() })),
       );
     };
 
@@ -234,7 +235,7 @@ describe('ProjectContentService', () => {
     it('refuses a new name once the project holds as many as it may', async () => {
       named(['a', 'b', 'c', 'd', 'e']);
 
-      await expect(service.checkpoint(1, 'f')).rejects.toMatchObject({
+      await expect(service.checkpoint(uuidOf(1), 'f')).rejects.toMatchObject({
         count: 5,
         max: 5,
       });
@@ -244,17 +245,19 @@ describe('ProjectContentService', () => {
     it('rewrites a name that exists even at the cap', async () => {
       named(['a', 'b', 'c', 'd', 'e']);
 
-      await service.checkpoint(1, ' c ');
+      await service.checkpoint(uuidOf(1), ' c ');
 
       expect(s3ServiceMock.uploadFile).toHaveBeenCalledWith(
-        expect.objectContaining({ keyName: 'checkpoint/1/c' }),
+        expect.objectContaining({ keyName: `checkpoint/${uuidOf(1)}/c` }),
       );
     });
 
     it("refuses a name that could leave the project's prefix", async () => {
       named([]);
 
-      await expect(service.checkpoint(1, '../x')).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.checkpoint(uuidOf(1), '../x')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
       expect(s3ServiceMock.listObjects).not.toHaveBeenCalled();
     });
   });
@@ -262,35 +265,39 @@ describe('ProjectContentService', () => {
   describe('deleteVersion', () => {
     it('should delete an existing autosave', async () => {
       s3ServiceMock.listObjects.mockResolvedValue([
-        { Key: 'save/1/1742901234567', LastModified: new Date() },
+        { Key: `save/${uuidOf(1)}/1742901234567`, LastModified: new Date() },
       ]);
       s3ServiceMock.deleteFile.mockResolvedValue(undefined);
 
-      await service.deleteVersion(1, '1742901234567');
+      await service.deleteVersion(uuidOf(1), '1742901234567');
 
       expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({
-        key: 'save/1/1742901234567',
+        key: `save/${uuidOf(1)}/1742901234567`,
       });
     });
 
     it('should refuse a name that could climb out of the project prefix', async () => {
-      await expect(service.deleteVersion(1, '../release/2')).rejects.toThrow(BadRequestException);
+      await expect(service.deleteVersion(uuidOf(1), `../release/${uuidOf(2)}`)).rejects.toThrow(
+        BadRequestException,
+      );
       expect(s3ServiceMock.deleteFile).not.toHaveBeenCalled();
     });
 
     it("should 404 rather than delete a key that is not one of this project's saves", async () => {
       s3ServiceMock.listObjects.mockResolvedValue([]);
 
-      await expect(service.deleteVersion(1, '1742901234567')).rejects.toThrow(NotFoundException);
+      await expect(service.deleteVersion(uuidOf(1), '1742901234567')).rejects.toThrow(
+        NotFoundException,
+      );
       expect(s3ServiceMock.deleteFile).not.toHaveBeenCalled();
     });
   });
 
   describe('fetchSavedVersion', () => {
     it('should refuse a name that could climb out of the project prefix', async () => {
-      await expect(service.fetchSavedVersion(1, '../../save/7/1700000000000')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.fetchSavedVersion(uuidOf(1), `../../save/${uuidOf(7)}/1700000000000`),
+      ).rejects.toThrow(BadRequestException);
       expect(s3ServiceMock.downloadFile).not.toHaveBeenCalled();
     });
   });
@@ -299,8 +306,8 @@ describe('ProjectContentService', () => {
     it('takes the newest save when two land in the same second, whatever the listing order', async () => {
       const sameSecond = new Date(5000);
       for (const keys of [
-        ['save/1/1000', 'save/1/1500'],
-        ['save/1/1500', 'save/1/1000'],
+        [`save/${uuidOf(1)}/1000`, `save/${uuidOf(1)}/1500`],
+        [`save/${uuidOf(1)}/1500`, `save/${uuidOf(1)}/1000`],
       ]) {
         s3ServiceMock.listObjects.mockResolvedValue(
           keys.map((Key) => ({ Key, LastModified: sameSecond })),
@@ -311,10 +318,10 @@ describe('ProjectContentService', () => {
           contentLength: 0,
         });
 
-        await service.fetchLastVersion(1);
+        await service.fetchLastVersion(uuidOf(1));
 
         expect(s3ServiceMock.downloadFile).toHaveBeenLastCalledWith({
-          key: 'save/1/1500',
+          key: `save/${uuidOf(1)}/1500`,
         });
       }
     });
@@ -336,12 +343,12 @@ describe('ProjectContentService', () => {
       s3ServiceMock.uploadFile.mockResolvedValue(undefined);
       prismaMock.project.update.mockResolvedValue({});
 
-      await service.save(1, {
+      await service.save(uuidOf(1), {
         buffer: encodeGame(10),
       } as unknown as Express.Multer.File);
 
       expect(prismaMock.project.update).toHaveBeenCalledWith({
-        where: { id: 1 },
+        where: { id: uuidOf(1) },
         data: {
           contentSize: expect.objectContaining({ code: 10, schemaVersion: 1 }),
           contentSizeTotal: 10,
@@ -362,10 +369,10 @@ describe('ProjectContentService', () => {
       };
       prismaMock.project.findUnique.mockResolvedValue({ contentSize });
 
-      const result = await service.getContentSize(1);
+      const result = await service.getContentSize(uuidOf(1));
 
       expect(result).toEqual({
-        projectId: 1,
+        projectId: uuidOf(1),
         contentSize,
         maxContentBytes: PROJECT_CONTENT_MAX_BYTES,
         withinBudget: true,
@@ -378,7 +385,7 @@ describe('ProjectContentService', () => {
       prismaMock.project.update.mockResolvedValue({});
       mockLastVersion(encodeGame(7));
 
-      const result = await service.getContentSize(1);
+      const result = await service.getContentSize(uuidOf(1));
 
       expect(result.contentSize.code).toBe(7);
       expect(prismaMock.project.update).toHaveBeenCalledWith(
@@ -394,7 +401,7 @@ describe('ProjectContentService', () => {
       prismaMock.project.update.mockResolvedValue({});
       mockLastVersion(encodeGame(7));
 
-      await service.recomputeContentSize(1);
+      await service.recomputeContentSize(uuidOf(1));
 
       expect(prismaMock.project.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -406,7 +413,9 @@ describe('ProjectContentService', () => {
     it('rejects publishing a project above the budget with a 413', async () => {
       mockPublishable(encodeGame(PROJECT_CONTENT_MAX_BYTES + 1));
 
-      await expect(service.publish(1, 9)).rejects.toBeInstanceOf(ProjectTooLargeException);
+      await expect(service.publish(uuidOf(1), uuidOf(9))).rejects.toBeInstanceOf(
+        ProjectTooLargeException,
+      );
 
       expect(txMock.project.update).not.toHaveBeenCalled();
       expect(factsMock.record).not.toHaveBeenCalled();
@@ -416,10 +425,10 @@ describe('ProjectContentService', () => {
     it('publishes a project within the budget, and marks the row only once the blob is up', async () => {
       mockPublishable(encodeGame(3));
 
-      await service.publish(1, 9);
+      await service.publish(uuidOf(1), uuidOf(9));
 
       expect(s3ServiceMock.uploadFile).toHaveBeenCalledWith(
-        expect.objectContaining({ keyName: 'release/1' }),
+        expect.objectContaining({ keyName: `release/${uuidOf(1)}` }),
       );
       const [marked] = txMock.project.update.mock.calls as unknown as Array<
         [{ data: Record<string, unknown> }]
@@ -431,7 +440,7 @@ describe('ProjectContentService', () => {
       );
       expect(eventEmitterMock.emit).toHaveBeenCalledWith(
         PROJECT_CHANGED,
-        new ProjectChangedEvent(1),
+        new ProjectChangedEvent(uuidOf(1)),
       );
     });
   });
@@ -440,30 +449,44 @@ describe('ProjectContentService', () => {
     it('tells the edge to ask again before serving a release it kept', async () => {
       mockPublishable(encodeGame(3));
 
-      await service.publish(1, 9);
+      await service.publish(uuidOf(1), uuidOf(9));
 
       expect(s3ServiceMock.uploadFile).toHaveBeenCalledWith(
-        expect.objectContaining({ keyName: 'release/1', cacheControl: 'no-cache' }),
+        expect.objectContaining({ keyName: `release/${uuidOf(1)}`, cacheControl: 'no-cache' }),
       );
+    });
+
+    it('dates the first publication only on a row that has none yet', async () => {
+      mockPublishable(encodeGame(3));
+
+      await service.publish(uuidOf(1), uuidOf(9));
+
+      const [marked] = txMock.project.update.mock.calls as unknown as Array<
+        [{ data: { publishedAt: Date } }]
+      >;
+      expect(txMock.project.updateMany).toHaveBeenCalledWith({
+        where: { id: uuidOf(1), firstPublishedAt: null },
+        data: { firstPublishedAt: marked?.[0].data.publishedAt },
+      });
     });
 
     it('unpublishes by clearing the row before dropping the blob', async () => {
       txMock.project.update.mockResolvedValue({});
       s3ServiceMock.deleteFile.mockResolvedValue(undefined);
 
-      await service.unpublish(1, 9);
+      await service.unpublish(uuidOf(1), uuidOf(9));
 
       expect(txMock.project.update).toHaveBeenCalledWith({
-        where: { id: 1 },
+        where: { id: uuidOf(1) },
         data: { publishedAt: null, releaseRevision: 0 },
       });
-      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({ key: 'release/1' });
+      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({ key: `release/${uuidOf(1)}` });
       expect(txMock.project.update.mock.invocationCallOrder[0]).toBeLessThan(
         s3ServiceMock.deleteFile.mock.invocationCallOrder[0]!,
       );
       expect(eventEmitterMock.emit).toHaveBeenCalledWith(
         PROJECT_CHANGED,
-        new ProjectChangedEvent(1),
+        new ProjectChangedEvent(uuidOf(1)),
       );
     });
 
@@ -476,7 +499,7 @@ describe('ProjectContentService', () => {
         tags: [],
       });
 
-      await expect(service.updateRelease(1, 9)).rejects.toBeInstanceOf(
+      await expect(service.updateRelease(uuidOf(1), uuidOf(9))).rejects.toBeInstanceOf(
         ProjectNotPublishedException,
       );
       expect(s3ServiceMock.uploadFile).not.toHaveBeenCalled();
@@ -494,8 +517,8 @@ describe('ProjectContentService', () => {
     };
 
     it.each([
-      ['publish', () => service.publish(1, 9)],
-      ['update its release', () => service.updateRelease(1, 9)],
+      ['publish', () => service.publish(uuidOf(1), uuidOf(9))],
+      ['update its release', () => service.updateRelease(uuidOf(1), uuidOf(9))],
     ])('refuses to %s, before anything is uploaded', async (_case, act) => {
       prismaMock.project.findUnique.mockResolvedValue(hiddenRow);
 
@@ -509,8 +532,10 @@ describe('ProjectContentService', () => {
         { publishedAt: null, hiddenAt: new Date(), releaseContentHash: null, releaseRevision: 0 },
       ]);
 
-      await expect(service.publish(1, 9)).rejects.toBeInstanceOf(ProjectHiddenException);
-      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({ key: 'release/1' });
+      await expect(service.publish(uuidOf(1), uuidOf(9))).rejects.toBeInstanceOf(
+        ProjectHiddenException,
+      );
+      expect(s3ServiceMock.deleteFile).toHaveBeenCalledWith({ key: `release/${uuidOf(1)}` });
       expect(txMock.project.update).not.toHaveBeenCalled();
     });
 
@@ -524,14 +549,16 @@ describe('ProjectContentService', () => {
         },
       ]);
 
-      await expect(service.unpublish(1, 9)).rejects.toBeInstanceOf(ProjectHiddenException);
+      await expect(service.unpublish(uuidOf(1), uuidOf(9))).rejects.toBeInstanceOf(
+        ProjectHiddenException,
+      );
       expect(txMock.project.update).not.toHaveBeenCalled();
       expect(s3ServiceMock.deleteFile).not.toHaveBeenCalled();
     });
 
     it.each([
-      ['its release file', () => service.fetchReleaseContent(1)],
-      ['the address of its release', () => service.releaseUrl(1)],
+      ['its release file', () => service.fetchReleaseContent(uuidOf(1))],
+      ['the address of its release', () => service.releaseUrl(uuidOf(1))],
     ])('refuses to serve %s', async (_case, act) => {
       prismaMock.project.findUnique.mockResolvedValue({ hiddenAt: new Date() });
 
@@ -539,70 +566,104 @@ describe('ProjectContentService', () => {
       expect(s3ServiceMock.downloadFile).not.toHaveBeenCalled();
     });
 
-    it('copies the release and the cover to keys the edge does not serve', async () => {
+    it('copies the release, the cover and the clip to keys the edge does not serve', async () => {
       s3ServiceMock.fileExists.mockResolvedValue(true);
       s3ServiceMock.downloadFile.mockResolvedValue({ body: Readable.from('x') });
 
-      await service.copyToWithheld(1);
+      await service.copyToWithheld(uuidOf(1));
 
       expect(s3ServiceMock.uploadFile.mock.calls.map(([upload]) => upload.keyName)).toEqual([
-        'withheld/1/release',
-        'withheld/1/cover',
+        `withheld/${uuidOf(1)}/release`,
+        `withheld/${uuidOf(1)}/cover`,
+        `withheld/${uuidOf(1)}/clip`,
       ]);
       expect(s3ServiceMock.setObjectPublicRead).not.toHaveBeenCalled();
     });
 
-    it('has nothing to copy for a game with no release and no cover', async () => {
+    it('has nothing to copy for a game with no release, no cover and no clip', async () => {
       s3ServiceMock.fileExists.mockResolvedValue(false);
 
-      await service.copyToWithheld(1);
+      await service.copyToWithheld(uuidOf(1));
 
       expect(s3ServiceMock.uploadFile).not.toHaveBeenCalled();
     });
 
-    it('puts both back where the edge serves them, readable again', async () => {
+    it('puts them back where the edge serves them, readable again', async () => {
       s3ServiceMock.fileExists.mockResolvedValue(true);
       s3ServiceMock.downloadFile.mockResolvedValue({ body: Readable.from('x') });
+      s3ServiceMock.getFileMetadataOrNull.mockResolvedValue({ ETag: '"c11p"' });
 
-      await expect(service.copyFromWithheld(1)).resolves.toEqual({
-        coverUrl: 'https://cdn.test/projects/1/image',
+      await expect(service.copyFromWithheld(uuidOf(1))).resolves.toEqual({
+        coverUrl: `https://cdn.test/projects/${uuidOf(1)}/image`,
+        clipVersion: '"c11p"',
       });
 
       expect(s3ServiceMock.uploadFile).toHaveBeenCalledWith(
-        expect.objectContaining({ keyName: 'release/1', cacheControl: 'no-cache' }),
+        expect.objectContaining({ keyName: `release/${uuidOf(1)}`, cacheControl: 'no-cache' }),
       );
       expect(s3ServiceMock.setObjectPublicRead.mock.calls).toEqual([
-        ['release/1'],
-        ['projects/1/image'],
+        [`release/${uuidOf(1)}`],
+        [`projects/${uuidOf(1)}/image`],
+        [`projects/${uuidOf(1)}/clip`],
+      ]);
+      expect(s3ServiceMock.getFileMetadataOrNull).toHaveBeenCalledWith(
+        `projects/${uuidOf(1)}/clip`,
+      );
+    });
+
+    it('still names a clip put back that the store gave no version for', async () => {
+      s3ServiceMock.fileExists.mockResolvedValue(true);
+      s3ServiceMock.downloadFile.mockResolvedValue({ body: Readable.from('x') });
+      s3ServiceMock.getFileMetadataOrNull.mockResolvedValue(null);
+
+      await expect(service.copyFromWithheld(uuidOf(1))).resolves.toMatchObject({
+        clipVersion: expect.stringMatching(/^\d+$/),
+      });
+    });
+
+    it('removes the three served copies, and the three withheld ones', async () => {
+      await service.removeServedCopies(uuidOf(1));
+      await service.removeWithheldCopies(uuidOf(1));
+
+      expect(s3ServiceMock.deleteFile.mock.calls.map(([{ key }]) => key)).toEqual([
+        `release/${uuidOf(1)}`,
+        `projects/${uuidOf(1)}/image`,
+        `projects/${uuidOf(1)}/clip`,
+        `withheld/${uuidOf(1)}/release`,
+        `withheld/${uuidOf(1)}/cover`,
+        `withheld/${uuidOf(1)}/clip`,
       ]);
     });
 
     it.each([
-      ['still served', 'release/1'],
-      ['withheld', 'withheld/1/release'],
+      ['still served', `release/${uuidOf(1)}`],
+      ['withheld', `withheld/${uuidOf(1)}/release`],
     ])('hands staff the release when it is %s', async (_case, key) => {
       s3ServiceMock.fileExists.mockImplementation((asked: string) =>
         Promise.resolve(asked === key),
       );
       s3ServiceMock.downloadFile.mockResolvedValue({ body: Readable.from('x') });
 
-      await expect(service.fetchReleaseForReview(1)).resolves.toBeDefined();
+      await expect(service.fetchReleaseForReview(uuidOf(1))).resolves.toBeDefined();
       expect(s3ServiceMock.downloadFile).toHaveBeenCalledWith({ key });
     });
 
     it('has no release to hand staff for a game never released', async () => {
       s3ServiceMock.fileExists.mockResolvedValue(false);
 
-      await expect(service.fetchReleaseForReview(1)).resolves.toBeNull();
+      await expect(service.fetchReleaseForReview(uuidOf(1))).resolves.toBeNull();
     });
 
-    it('reports no cover when none was withheld', async () => {
+    it('reports no cover and no clip when none was withheld', async () => {
       s3ServiceMock.fileExists.mockImplementation((key: string) =>
-        Promise.resolve(key === 'withheld/1/release'),
+        Promise.resolve(key === `withheld/${uuidOf(1)}/release`),
       );
       s3ServiceMock.downloadFile.mockResolvedValue({ body: Readable.from('x') });
 
-      await expect(service.copyFromWithheld(1)).resolves.toEqual({ coverUrl: null });
+      await expect(service.copyFromWithheld(uuidOf(1))).resolves.toEqual({
+        coverUrl: null,
+        clipVersion: null,
+      });
     });
   });
 
@@ -621,7 +682,9 @@ describe('ProjectContentService', () => {
 
     const releaseWith = async (content: Buffer): Promise<void> => {
       mockLastVersion(content);
-      await (row.publishedAt ? service.updateRelease(1, 9) : service.publish(1, 9));
+      await (row.publishedAt
+        ? service.updateRelease(uuidOf(1), uuidOf(9))
+        : service.publish(uuidOf(1), uuidOf(9)));
     };
 
     beforeEach(() => {
@@ -655,10 +718,10 @@ describe('ProjectContentService', () => {
       await releaseWith(contentB);
 
       expect(recorded()).toEqual([
-        { type: 'RELEASE_PUBLISHED', dedupeKey: 'release:1:1' },
-        { type: 'RELEASE_UPDATED', dedupeKey: 'release:1:2' },
-        { type: 'RELEASE_UPDATED', dedupeKey: 'release:1:3' },
-        { type: 'RELEASE_UPDATED', dedupeKey: 'release:1:4' },
+        { type: 'RELEASE_PUBLISHED', dedupeKey: `release:${uuidOf(1)}:1` },
+        { type: 'RELEASE_UPDATED', dedupeKey: `release:${uuidOf(1)}:2` },
+        { type: 'RELEASE_UPDATED', dedupeKey: `release:${uuidOf(1)}:3` },
+        { type: 'RELEASE_UPDATED', dedupeKey: `release:${uuidOf(1)}:4` },
       ]);
       expect(row.releaseRevision).toBe(4);
     });
@@ -668,20 +731,20 @@ describe('ProjectContentService', () => {
 
       expect(factsMock.record).toHaveBeenCalledWith(
         txMock,
-        expect.objectContaining({ actorUserId: 9, projectId: 1 }),
+        expect.objectContaining({ actorUserId: uuidOf(9), projectId: uuidOf(1) }),
       );
     });
 
     it('records an unpublish only when the project was published', async () => {
-      await service.unpublish(1, 9);
+      await service.unpublish(uuidOf(1), uuidOf(9));
       expect(recorded()).toEqual([]);
 
       await releaseWith(encodeGame(3));
-      await service.unpublish(1, 9);
+      await service.unpublish(uuidOf(1), uuidOf(9));
 
       expect(recorded()).toEqual([
-        { type: 'RELEASE_PUBLISHED', dedupeKey: 'release:1:1' },
-        { type: 'RELEASE_UNPUBLISHED', dedupeKey: 'release:1:2' },
+        { type: 'RELEASE_PUBLISHED', dedupeKey: `release:${uuidOf(1)}:1` },
+        { type: 'RELEASE_UNPUBLISHED', dedupeKey: `release:${uuidOf(1)}:2` },
       ]);
     });
 

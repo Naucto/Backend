@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'crypto';
 
 import { getEnv, getOptionalEnv } from '../config/env';
+import { MalformedRefreshCookieError } from './auth.error';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12;
@@ -22,7 +23,7 @@ export function encryptRefreshToken(token: string): string {
 export function decryptRefreshToken(payload: string): string {
   const data = Buffer.from(payload, 'base64url');
   if (data.length <= IV_LENGTH + AUTH_TAG_LENGTH) {
-    throw new Error('Malformed refresh token cookie');
+    throw new MalformedRefreshCookieError();
   }
   const iv = data.subarray(0, IV_LENGTH);
   const authTag = data.subarray(IV_LENGTH, IV_LENGTH + AUTH_TAG_LENGTH);

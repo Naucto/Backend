@@ -69,7 +69,7 @@ export class AccountModerationService {
 
   async warn(
     staff: StaffActor,
-    accountId: number,
+    accountId: string,
     input: WarnAccountDto,
   ): Promise<ModerationActionDto> {
     const account = await this.subject(staff, accountId);
@@ -91,7 +91,7 @@ export class AccountModerationService {
 
   async suspend(
     staff: StaffActor,
-    accountId: number,
+    accountId: string,
     input: SuspendAccountDto,
   ): Promise<ModerationActionDto> {
     const account = await this.subject(staff, accountId);
@@ -124,7 +124,7 @@ export class AccountModerationService {
 
   async reinstate(
     staff: StaffActor,
-    accountId: number,
+    accountId: string,
     input: ModerationNoteDto,
   ): Promise<ModerationActionDto> {
     const account = await this.subject(staff, accountId);
@@ -158,7 +158,7 @@ export class AccountModerationService {
 
   async clearProfile(
     staff: StaffActor,
-    accountId: number,
+    accountId: string,
     input: ClearProfileDto,
   ): Promise<ModerationActionDto> {
     const account = await this.subject(staff, accountId);
@@ -201,7 +201,7 @@ export class AccountModerationService {
   /** Erases the account as its owner could, with the record of who did and why. */
   async remove(
     staff: StaffActor,
-    accountId: number,
+    accountId: string,
     input: StaffDeleteAccountDto,
   ): Promise<ModerationActionDto> {
     const account = await this.subject(staff, accountId);
@@ -234,7 +234,7 @@ export class AccountModerationService {
   }
 
   /** The account a decision bears on, once the caller is known to be allowed to decide about it. */
-  private async subject(staff: StaffActor, accountId: number): Promise<SubjectRow> {
+  private async subject(staff: StaffActor, accountId: string): Promise<SubjectRow> {
     if (staff.id === accountId) {
       throw new CodedException(
         HttpStatus.FORBIDDEN,
@@ -308,13 +308,13 @@ export class AccountModerationService {
    * A suspended account hosts and joins nothing. The suspension is already written when this runs,
    * so a failure here is logged and never undoes it: the guard refuses the account either way.
    */
-  private async endLiveSessions(accountId: number): Promise<void> {
+  private async endLiveSessions(accountId: string): Promise<void> {
     try {
       await this.multiplayer.removeAccount(accountId);
       await this.workSessions.kickEverywhere(accountId);
     } catch (error) {
       this.logger.warn(
-        `Could not end the live sessions of account ${String(accountId)}: ${
+        `Could not end the live sessions of account ${accountId}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );

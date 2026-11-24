@@ -6,7 +6,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { FlagStatus, ModerationActionType, ModerationTargetType, Prisma } from '@prisma/client';
+import {
+  FlagStatus,
+  ModerationActionType,
+  ModerationReason,
+  ModerationTargetType,
+  Prisma,
+} from '@prisma/client';
 
 import { CodedException } from '../../common/coded.exception';
 import { PROJECT_CHANGED, ProjectChangedEvent } from '../../common/domain-events';
@@ -33,6 +39,29 @@ const COMMENT_SELECT = {
 
 type CommentRow = Prisma.CommentGetPayload<{ select: typeof COMMENT_SELECT }>;
 
+const COLLECTION_SELECT = {
+  id: true,
+  title: true,
+  description: true,
+  hiddenAt: true,
+  ownerId: true,
+} satisfies Prisma.CollectionSelect;
+
+type CollectionRow = Prisma.CollectionGetPayload<{ select: typeof COLLECTION_SELECT }>;
+
+/** What staff say when they lift a decision. */
+export interface DecisionNote {
+  publicMessage?: string | undefined;
+  internalNote?: string | undefined;
+}
+
+/** What staff say when they hide or delete. */
+export interface ContentDecision extends DecisionNote {
+  reason: ModerationReason;
+  /** Left out, the open flags on the target close as acted on. */
+  resolveFlags?: boolean | undefined;
+}
+
 const PROJECT_SELECT = {
   id: true,
   userId: true,
@@ -58,7 +87,7 @@ function projectContent(project: ProjectRow): TargetContentDto {
   return { title: project.publishedName || project.name, body: body || null };
 }
 
-/** What staff decide about a game or a comment. */
+/** What staff decide about a game, a comment or a collection. */
 @Injectable()
 export class ContentModerationService {
   private readonly logger = new Logger(ContentModerationService.name);
@@ -75,7 +104,7 @@ export class ContentModerationService {
 
   async hideProject(
     staff: StaffActor,
-    projectId: number,
+    projectId: string,
     input: ContentDecisionDto,
   ): Promise<ModerationActionDto> {
     const project = await this.project(staff, projectId);
@@ -89,7 +118,7 @@ export class ContentModerationService {
       // The condition settles two staff members hiding the same game at once.
       const { count } = await tx.project.updateMany({
         where: { id: project.id, hiddenAt: null },
-        data: { hiddenAt: new Date(), iconUrl: null },
+        data: { hiddenAt: new Date(), iconUrl: null, clipVersion: null },
       });
       if (count === 0) {
         throw this.alreadyHidden();
@@ -118,7 +147,7 @@ export class ContentModerationService {
     });
 
     // The game is hidden from here on, whatever happens below: every route refuses it by its row.
-    await this.afterCommit(`unserve game ${String(project.id)}`, async () => {
+    await this.afterCommit(`unserve game ${project.id}`, async () => {
       await this.content.removeServedCopies(project.id);
       await this.multiplayer.endSessionsOfProject(project.id);
     });
@@ -133,7 +162,7 @@ export class ContentModerationService {
 
   async restoreProject(
     staff: StaffActor,
-    projectId: number,
+    projectId: string,
     input: ModerationNoteDto,
   ): Promise<ModerationActionDto> {
     const project = await this.project(staff, projectId);
@@ -141,14 +170,18 @@ export class ContentModerationService {
       throw this.notHidden();
     }
 
-    const { coverUrl } = await this.content.copyFromWithheld(project.id);
+    const { coverUrl, clipVersion } = await this.content.copyFromWithheld(project.id);
 
     let row: ActionRow;
     try {
       row = await this.prisma.$transaction(async (tx) => {
         const { count } = await tx.project.updateMany({
           where: { id: project.id, hiddenAt: { not: null } },
-          data: { hiddenAt: null, ...(coverUrl ? { iconUrl: coverUrl } : {}) },
+          data: {
+            hiddenAt: null,
+            ...(coverUrl ? { iconUrl: coverUrl } : {}),
+            ...(clipVersion ? { clipVersion } : {}),
+          },
         });
         if (count === 0) {
           throw this.notHidden();
@@ -166,13 +199,13 @@ export class ContentModerationService {
       });
     } catch (error) {
       // Still hidden: what was just put back where the edge serves it comes away again.
-      await this.afterCommit(`unserve game ${String(project.id)} again`, () =>
+      await this.afterCommit(`unserve game ${project.id} again`, () =>
         this.content.removeServedCopies(project.id),
       );
       throw error;
     }
 
-    await this.afterCommit(`drop the withheld copies of game ${String(project.id)}`, () =>
+    await this.afterCommit(`drop the withheld copies of game ${project.id}`, () =>
       this.content.removeWithheldCopies(project.id),
     );
     this.eventEmitter.emit(PROJECT_CHANGED, new ProjectChangedEvent(project.id));
@@ -186,7 +219,7 @@ export class ContentModerationService {
 
   async removeProject(
     staff: StaffActor,
-    projectId: number,
+    projectId: string,
     input: ContentDecisionDto,
   ): Promise<ModerationActionDto> {
     const project = await this.project(staff, projectId);
@@ -222,7 +255,7 @@ export class ContentModerationService {
 
   async hideComment(
     staff: StaffActor,
-    commentId: number,
+    commentId: string,
     input: ContentDecisionDto,
   ): Promise<ModerationActionDto> {
     const comment = await this.comment(staff, commentId);
@@ -276,7 +309,7 @@ export class ContentModerationService {
 
   async restoreComment(
     staff: StaffActor,
-    commentId: number,
+    commentId: string,
     input: ModerationNoteDto,
   ): Promise<ModerationActionDto> {
     const comment = await this.comment(staff, commentId);
@@ -312,7 +345,7 @@ export class ContentModerationService {
 
   async removeComment(
     staff: StaffActor,
-    commentId: number,
+    commentId: string,
     input: ContentDecisionDto,
   ): Promise<ModerationActionDto> {
     const comment = await this.comment(staff, commentId);
@@ -352,6 +385,117 @@ export class ContentModerationService {
     return toActionDto(row, staff);
   }
 
+  /**
+   * Nothing is stored apart for a collection, so hiding one is its row alone: every reader but its
+   * owner is refused by `hiddenAt`.
+   */
+  async hideCollection(
+    staff: StaffActor,
+    collectionId: string,
+    input: ContentDecision,
+  ): Promise<ModerationActionDto> {
+    const collection = await this.collection(staff, collectionId);
+    if (collection.hiddenAt) {
+      throw new CodedException(
+        HttpStatus.CONFLICT,
+        MODERATION_ERROR.ALREADY_HIDDEN,
+        'This collection is already hidden',
+      );
+    }
+
+    const row = await this.prisma.$transaction(async (tx) => {
+      await tx.collection.update({ where: { id: collection.id }, data: { hiddenAt: new Date() } });
+      const recorded = await this.log.record(tx, {
+        action: ModerationActionType.COLLECTION_HIDDEN,
+        actorId: staff.id,
+        targetType: ModerationTargetType.COLLECTION,
+        targetId: collection.id,
+        subjectUserId: collection.ownerId,
+        reason: input.reason,
+        publicMessage: input.publicMessage,
+        internalNote: input.internalNote,
+        snapshot: { title: collection.title, body: collection.description },
+      });
+      await this.settleFlags(tx, staff, recorded, input.resolveFlags);
+      return recorded;
+    });
+
+    await this.notify(
+      row,
+      'Your collection was hidden',
+      input.publicMessage || 'A moderator hid one of your collections.',
+    );
+    return toActionDto(row, staff);
+  }
+
+  async restoreCollection(
+    staff: StaffActor,
+    collectionId: string,
+    input: DecisionNote,
+  ): Promise<ModerationActionDto> {
+    const collection = await this.collection(staff, collectionId);
+    if (!collection.hiddenAt) {
+      throw new CodedException(
+        HttpStatus.CONFLICT,
+        MODERATION_ERROR.NOT_HIDDEN,
+        'This collection is not hidden',
+      );
+    }
+
+    const row = await this.prisma.$transaction(async (tx) => {
+      await tx.collection.update({ where: { id: collection.id }, data: { hiddenAt: null } });
+      return this.log.record(tx, {
+        action: ModerationActionType.COLLECTION_RESTORED,
+        actorId: staff.id,
+        targetType: ModerationTargetType.COLLECTION,
+        targetId: collection.id,
+        subjectUserId: collection.ownerId,
+        publicMessage: input.publicMessage,
+        internalNote: input.internalNote,
+        snapshot: { title: collection.title, body: collection.description },
+      });
+    });
+
+    await this.notify(
+      row,
+      'Your collection is back',
+      input.publicMessage || 'A moderator restored one of your collections.',
+    );
+    return toActionDto(row, staff);
+  }
+
+  async removeCollection(
+    staff: StaffActor,
+    collectionId: string,
+    input: ContentDecision,
+  ): Promise<ModerationActionDto> {
+    const collection = await this.collection(staff, collectionId);
+
+    const row = await this.prisma.$transaction(async (tx) => {
+      await tx.collection.delete({ where: { id: collection.id } });
+      const recorded = await this.log.record(tx, {
+        action: ModerationActionType.COLLECTION_DELETED,
+        actorId: staff.id,
+        targetType: ModerationTargetType.COLLECTION,
+        targetId: collection.id,
+        subjectUserId: collection.ownerId,
+        reason: input.reason,
+        publicMessage: input.publicMessage,
+        internalNote: input.internalNote,
+        snapshot: { title: collection.title, body: collection.description },
+      });
+      await this.settleFlags(tx, staff, recorded, input.resolveFlags);
+      return recorded;
+    });
+
+    await this.notify(
+      row,
+      'Your collection was deleted',
+      input.publicMessage || 'A moderator deleted one of your collections.',
+    );
+    return toActionDto(row, staff);
+  }
+
   private async settleFlags(
     tx: Prisma.TransactionClient,
     staff: StaffActor,
@@ -371,7 +515,7 @@ export class ContentModerationService {
   }
 
   /** The game a decision bears on. Staff never decide about a game they created. */
-  private async project(staff: StaffActor, projectId: number): Promise<ProjectRow> {
+  private async project(staff: StaffActor, projectId: string): Promise<ProjectRow> {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
       select: PROJECT_SELECT,
@@ -420,7 +564,7 @@ export class ContentModerationService {
   }
 
   /** The comment a decision bears on. Staff never decide about what they wrote themselves. */
-  private async comment(staff: StaffActor, commentId: number): Promise<CommentRow> {
+  private async comment(staff: StaffActor, commentId: string): Promise<CommentRow> {
     const comment = await this.prisma.comment.findUnique({
       where: { id: commentId },
       select: COMMENT_SELECT,
@@ -436,6 +580,25 @@ export class ContentModerationService {
       );
     }
     return comment;
+  }
+
+  /** The collection a decision bears on. Staff never decide about one of their own. */
+  private async collection(staff: StaffActor, collectionId: string): Promise<CollectionRow> {
+    const collection = await this.prisma.collection.findUnique({
+      where: { id: collectionId },
+      select: COLLECTION_SELECT,
+    });
+    if (!collection) {
+      throw new NotFoundException('Collection not found');
+    }
+    if (collection.ownerId === staff.id) {
+      throw new CodedException(
+        HttpStatus.FORBIDDEN,
+        MODERATION_ERROR.OWN_CASE,
+        'You cannot moderate your own content',
+      );
+    }
+    return collection;
   }
 
   private async notify(row: ActionRow, title: string, message: string): Promise<void> {

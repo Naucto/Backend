@@ -1,6 +1,6 @@
 export function friendIdOf(
-  friendship: { userAId: number; userBId: number },
-  userId: number,
-): number {
+  friendship: { userAId: string; userBId: string },
+  userId: string,
+): string {
   return friendship.userAId === userId ? friendship.userBId : friendship.userAId;
 }

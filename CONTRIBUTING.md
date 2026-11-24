@@ -42,7 +42,9 @@ CI (`.github/workflows/ci.yml`) runs lint, typecheck, build and tests (against P
 on every push/PR to `main` and must pass before merge.
 
 If you changed the database schema (`prisma/models/*.prisma`), include the generated migration
-(`npx prisma migrate dev --name <desc>`); never hand-edit files under `prisma/migrations/`.
+(`npx prisma migrate dev --name <desc>`). A migration that only changes the schema stays as
+generated; one that moves data is written by hand (see _Database / Prisma_ in `AGENTS.md`), and
+none is edited once merged.
 
 # Code conventions
 

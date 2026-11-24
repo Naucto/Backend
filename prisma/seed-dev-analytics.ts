@@ -15,6 +15,7 @@ import {
   PrismaClient,
 } from '@prisma/client';
 
+import { NO_RELEASE_ID } from '../src/common/ids';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AnalyticsFinalizeService } from '../src/routes/analytics/analytics-finalize.service';
 
@@ -146,21 +147,42 @@ const ROUTES = ['hub', 'play/:id', 'play/:id', 'learn', 'u/:username', 'games'] 
 interface SampleGame {
   name: string;
   shortDesc: string;
+  /** Shared with the games of the Frontend's `seed:content`, so the hub has several tag shelves. */
+  tags: string[];
   /** Day of the window it is published on, negative for before the window. */
   publishDay: number;
   weight: number;
 }
 
 const SAMPLE_GAMES: SampleGame[] = [
-  { name: 'Orbit Run', shortDesc: 'Slingshot around planets.', publishDay: -20, weight: 3 },
-  { name: 'Pixel Garden', shortDesc: 'Grow a garden, one pixel a day.', publishDay: 26, weight: 2 },
+  {
+    name: 'Orbit Run',
+    shortDesc: 'Slingshot around planets.',
+    tags: ['arcade', 'physics'],
+    publishDay: -20,
+    weight: 3,
+  },
+  {
+    name: 'Pixel Garden',
+    shortDesc: 'Grow a garden, one pixel a day.',
+    tags: ['puzzle', 'relaxing', 'remixable'],
+    publishDay: 26,
+    weight: 2,
+  },
   {
     name: 'Dungeon Bell',
     shortDesc: 'Ring the bell, wake the dungeon.',
+    tags: ['puzzle', 'relaxing', 'classic'],
     publishDay: 39,
     weight: 2,
   },
-  { name: 'Neon Drift', shortDesc: 'Drift through a neon city.', publishDay: 55, weight: 2.5 },
+  {
+    name: 'Neon Drift',
+    shortDesc: 'Drift through a neon city.',
+    tags: ['arcade', 'multiplayer', 'physics'],
+    publishDay: 55,
+    weight: 2.5,
+  },
 ];
 
 interface Post {
@@ -327,7 +349,7 @@ const POSTS: Post[] = [
 const POST_DECAY_HOURS = 8;
 
 interface Game {
-  id: number;
+  id: string;
   name: string;
   publishedAt: Date;
   weight: number;
@@ -344,7 +366,7 @@ interface Visitor {
   screen: string;
   language: string;
   post: Post | null;
-  userId: number | null;
+  userId: string | null;
   linkedAt: Date | null;
   /** An account of this browser that has created a project, and published one. */
   creator: boolean;
@@ -352,7 +374,7 @@ interface Visitor {
 }
 
 interface Account {
-  id: number;
+  id: string;
   username: string;
   createdAt: Date;
 }
@@ -452,10 +474,13 @@ export async function seedAnalytics(prisma: PrismaClient): Promise<string> {
       data: {
         name: sample.name,
         shortDesc: sample.shortDesc,
+        tags: sample.tags,
         publishedName: sample.name,
         publishedShortDesc: sample.shortDesc,
+        publishedTags: sample.tags,
         status: 'COMPLETED',
         publishedAt,
+        firstPublishedAt: publishedAt,
         releaseRevision: 1,
         userId: creator.id,
         createdAt: new Date(publishedAt.getTime() - 5 * DAY_MS),
@@ -515,8 +540,8 @@ export async function seedAnalytics(prisma: PrismaClient): Promise<string> {
   const fact = (
     type: AnalyticsFactType,
     at: Date,
-    actor: number | null,
-    project: number | null,
+    actor: string | null,
+    project: string | null,
   ): void => {
     factCount += 1;
     facts.push({
@@ -668,7 +693,7 @@ export async function seedAnalytics(prisma: PrismaClient): Promise<string> {
       const source = chance(forCreators ? 0.8 : 0.3)
         ? (promoted ?? chooseGame(at, undefined))
         : undefined;
-      let projectId: number | null = null;
+      let projectId: string | null = null;
       if (source && source.publishedAt <= at) {
         const fork = await prisma.project.create({
           data: {
@@ -760,10 +785,10 @@ export async function seedAnalytics(prisma: PrismaClient): Promise<string> {
     const add = (
       minute: Date,
       state: AnalyticsLiveState,
-      releaseId: number,
+      releaseId: string,
       started: boolean,
     ): void => {
-      const key = `${minute.toISOString()}|${state}|${String(signedIn)}|${String(releaseId)}|${consent}`;
+      const key = `${minute.toISOString()}|${state}|${String(signedIn)}|${releaseId}|${consent}`;
       const row = tallies.get(key) ?? {
         minute,
         state,
@@ -797,7 +822,7 @@ export async function seedAnalytics(prisma: PrismaClient): Promise<string> {
       const minute = new Date(start.getTime() + offset * MINUTE_MS);
       const game = offset > 0 && chance(0.35) ? chooseGame(minute, promoted) : undefined;
       if (!game) {
-        add(minute, AnalyticsLiveState.BROWSING, 0, false);
+        add(minute, AnalyticsLiveState.BROWSING, NO_RELEASE_ID, false);
         offset += 1;
         continue;
       }
@@ -1033,7 +1058,7 @@ export async function seedAnalytics(prisma: PrismaClient): Promise<string> {
   await inBatches(
     visitors
       .filter((visitor) => visitor.userId !== null)
-      .map((visitor) => ({ visitorId: visitor.id, userId: visitor.userId as number })),
+      .map((visitor) => ({ visitorId: visitor.id, userId: visitor.userId as string })),
     (batch) => prisma.analyticsProjectionWork.createMany({ data: batch, skipDuplicates: true }),
   );
 

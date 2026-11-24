@@ -6,7 +6,9 @@ import {
   HttpCode,
   HttpException,
   HttpStatus,
+  Param,
   ParseFilePipeBuilder,
+  ParseIntPipe,
   Patch,
   Post,
   Put,
@@ -28,13 +30,18 @@ import {
 } from '@nestjs/swagger';
 import { Request } from 'express';
 
-import { AllowedWhileSuspended, RequiresAuth } from '../../auth/access/access.decorators';
+import { AllowedWhileSuspended, Public, RequiresAuth } from '../../auth/access/access.decorators';
 import { UserDto } from '../../auth/dto/user.dto';
 import { ProjectCollaboratorGuard, ProjectCreatorGuard } from '../../auth/guards/project.guard';
 import { AddCollaboratorDto, RemoveCollaboratorDto } from './dto/collaborator-project.dto';
 import { CreateProjectDto } from './dto/create-project.dto';
+import { ProjectDiskDto } from './dto/disk-style.dto';
 import { ImageUrlResponseDto } from './dto/image-url-response.dto';
+import { LegacyProjectDto } from './dto/legacy-project.dto';
 import { ProjectActionResponseDto } from './dto/project-action-response.dto';
+import { ProjectClipDto } from './dto/project-clip.dto';
+import { PROJECT_CLIP_MAX_BYTES, PROJECT_CLIP_TYPES } from './dto/project-field-limits';
+import { ProjectHiddenDto } from './dto/project-hidden.dto';
 import {
   PaginatedProjectsResponseDto,
   ProjectExResponseDto,
@@ -53,6 +60,15 @@ interface RequestWithUser extends Request {
 
 /** Multer stops reading past it and answers 413 itself, before the route's pipe runs. */
 const PROJECT_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+
+/**
+ * The clip is stored and served under the type the client declared, so that type is held to the
+ * same list as the container read from the content.
+ */
+const CLIP_FILE = new ParseFilePipeBuilder()
+  .addFileTypeValidator({ fileType: PROJECT_CLIP_TYPES })
+  .addFileTypeValidator({ fileType: PROJECT_CLIP_TYPES, skipMagicNumbersValidation: true })
+  .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY });
 
 @ApiTags('projects')
 @Controller('projects')
@@ -135,6 +151,21 @@ export class ProjectController {
     return { total };
   }
 
+  @Public()
+  @Get('legacy/:number')
+  @ApiOperation({
+    summary: 'Translate the number a project was once known by into its id',
+    description:
+      'For links written while projects were numbered. Any project answers, published or not: the routes behind its id still decide who reads it.',
+  })
+  @ApiParam({ name: 'number', type: 'integer', example: 42 })
+  @ApiResponse({ status: 200, description: 'The id of the project', type: LegacyProjectDto })
+  @ApiResponse({ status: 400, description: 'Not a number' })
+  @ApiResponse({ status: 404, description: 'No project was known by that number' })
+  async findLegacy(@Param('number', ParseIntPipe) number: number): Promise<LegacyProjectDto> {
+    return { id: await this.projectService.idOfLegacy(number) };
+  }
+
   @Post()
   @ApiOperation({ summary: 'Create a new project' })
   @ApiBody({ type: CreateProjectDto })
@@ -158,8 +189,9 @@ export class ProjectController {
   @ApiOperation({ summary: 'Retrieve a single project' })
   @ApiParam({
     name: 'id',
-    type: 'number',
-    description: 'Numeric ID of the project to retrieve',
+    type: String,
+    format: 'uuid',
+    description: 'ID of the project to retrieve',
   })
   @ApiResponse({
     status: 200,
@@ -169,7 +201,7 @@ export class ProjectController {
   @ApiResponse({ status: 404, description: 'Project not found' })
   @ApiResponse({ status: 500, description: 'Internal server error' })
   @ApiResponse({ status: 403, description: 'Invalid user or project ID' })
-  async findOne(@ProjectId() id: number): Promise<ProjectExResponseDto> {
+  async findOne(@ProjectId() id: string): Promise<ProjectExResponseDto> {
     return this.projectService.findOne(id);
   }
 
@@ -178,8 +210,9 @@ export class ProjectController {
   @ApiOperation({ summary: 'Update an existing project' })
   @ApiParam({
     name: 'id',
-    type: 'number',
-    description: 'Numeric ID of the project to update',
+    type: String,
+    format: 'uuid',
+    description: 'ID of the project to update',
   })
   @ApiBody({ type: UpdateProjectDto })
   @ApiResponse({
@@ -191,10 +224,30 @@ export class ProjectController {
   @ApiResponse({ status: 404, description: 'Project not found' })
   @ApiResponse({ status: 500, description: 'Error updating project' })
   async update(
-    @ProjectId() id: number,
+    @ProjectId() id: string,
     @Body() updateProjectDto: UpdateProjectDto,
   ): Promise<ProjectResponseDto> {
     return this.projectService.update(id, updateProjectDto);
+  }
+
+  @Patch(':id/disk')
+  @UseGuards(ProjectCollaboratorGuard)
+  @ApiOperation({
+    summary: 'Choose the disk of a project, or go back to the derived one with null',
+  })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiBody({ type: ProjectDiskDto })
+  @ApiResponse({ status: 200, description: 'The disk as stored', type: ProjectDiskDto })
+  @ApiResponse({ status: 400, description: 'A colour, finish or direction the disk cannot take' })
+  @ApiResponse({
+    status: 403,
+    description:
+      'Not a collaborator of the project (no `code`), or the game is withheld by moderation',
+    type: ProjectHiddenDto,
+  })
+  @ApiResponse({ status: 404, description: 'Project not found' })
+  async setDisk(@ProjectId() id: string, @Body() dto: ProjectDiskDto): Promise<ProjectDiskDto> {
+    return { disk: await this.projectService.setDisk(id, dto.disk) };
   }
 
   @UseGuards(ProjectCreatorGuard)
@@ -206,8 +259,9 @@ export class ProjectController {
   })
   @ApiParam({
     name: 'id',
-    type: 'number',
-    description: 'Numeric ID of the project to update',
+    type: String,
+    format: 'uuid',
+    description: 'ID of the project to update',
   })
   @ApiBody({
     type: AddCollaboratorDto,
@@ -245,7 +299,7 @@ export class ProjectController {
   @ApiResponse({ status: 404, description: 'Project or user not found' })
   @ApiResponse({ status: 500, description: 'Error Patching project' })
   async addCollaborator(
-    @ProjectId() id: number,
+    @ProjectId() id: string,
     @Body() addCollaboratorDto: AddCollaboratorDto,
   ): Promise<ProjectExResponseDto> {
     return this.projectService.addCollaborator(id, addCollaboratorDto);
@@ -260,8 +314,9 @@ export class ProjectController {
   })
   @ApiParam({
     name: 'id',
-    type: 'number',
-    description: 'Numeric ID of the project to update',
+    type: String,
+    format: 'uuid',
+    description: 'ID of the project to update',
   })
   @ApiBody({
     type: RemoveCollaboratorDto,
@@ -307,7 +362,7 @@ export class ProjectController {
     description: 'Error remove collaborator on project',
   })
   async removeCollaborator(
-    @ProjectId() id: number,
+    @ProjectId() id: string,
     @Body() removeCollaboratorDto: RemoveCollaboratorDto,
   ): Promise<ProjectExResponseDto> {
     return this.projectService.removeCollaborator(id, removeCollaboratorDto);
@@ -319,8 +374,9 @@ export class ProjectController {
   @ApiOperation({ summary: 'Delete a project' })
   @ApiParam({
     name: 'id',
-    type: 'number',
-    description: 'Numeric ID of the project to delete',
+    type: String,
+    format: 'uuid',
+    description: 'ID of the project to delete',
   })
   @ApiResponse({
     status: 204,
@@ -329,7 +385,7 @@ export class ProjectController {
   @ApiResponse({ status: 404, description: 'Project not found' })
   @ApiResponse({ status: 500, description: 'Error deleting project' })
   @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(@ProjectId() id: number): Promise<void> {
+  async remove(@ProjectId() id: string): Promise<void> {
     return this.projectService.remove(id);
   }
 
@@ -350,7 +406,7 @@ export class ProjectController {
       },
     },
   })
-  @ApiParam({ name: 'id', type: 'number' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({
     status: 201,
     description: 'Image uploaded successfully',
@@ -361,7 +417,7 @@ export class ProjectController {
   @ApiResponse({ status: 422, description: 'Invalid file type or size' })
   @HttpCode(HttpStatus.CREATED)
   async uploadProjectImage(
-    @ProjectId() id: number,
+    @ProjectId() id: string,
     @UploadedFile(
       new ParseFilePipeBuilder()
         .addFileTypeValidator({ fileType: /^image\/(jpeg|png|gif|webp)$/ })
@@ -380,7 +436,7 @@ export class ProjectController {
   @ApiOperation({
     summary: 'Get CDN URL for project image (authenticated, any project status)',
   })
-  @ApiParam({ name: 'id', type: 'number' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({
     status: 200,
     description: 'CDN URL for the project image',
@@ -388,12 +444,54 @@ export class ProjectController {
   })
   @ApiResponse({ status: 204, description: 'Project has no image' })
   @ApiResponse({ status: 403, description: 'Forbidden' })
-  async getProjectImage(@ProjectId() id: number): Promise<ImageUrlResponseDto> {
+  async getProjectImage(@ProjectId() id: string): Promise<ImageUrlResponseDto> {
     const url = await this.projectService.coverUrl(id);
     if (!url) {
       throw new HttpException('No content', HttpStatus.NO_CONTENT);
     }
 
     return { url };
+  }
+
+  @Post(':id/clip')
+  @UseGuards(ProjectCollaboratorGuard)
+  // Multer stops reading past the limit and answers 413 itself, before the route's pipe runs.
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: PROJECT_CLIP_MAX_BYTES, files: 1 } }),
+  )
+  @ApiOperation({ summary: 'Upload the gameplay clip of a project, over the one it has' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: { type: 'string', format: 'binary', description: 'WebM or MP4 video, 4 MiB' },
+      },
+    },
+  })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiResponse({ status: 201, description: 'Clip stored', type: ProjectClipDto })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  @ApiResponse({ status: 413, description: 'Larger than 4 MiB' })
+  @ApiResponse({ status: 422, description: 'Not a WebM or MP4 video, by its type or its content' })
+  @HttpCode(HttpStatus.CREATED)
+  async uploadClip(
+    @ProjectId() id: string,
+    @UploadedFile(CLIP_FILE) file: Express.Multer.File,
+    @Req() req: RequestWithUser,
+  ): Promise<ProjectClipDto> {
+    return { clipUrl: await this.projectService.uploadClip(id, file, req.user.id) };
+  }
+
+  @Delete(':id/clip')
+  @UseGuards(ProjectCollaboratorGuard)
+  @ApiOperation({ summary: 'Remove the gameplay clip of a project; no-op when it has none' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Clip removed' })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async removeClip(@ProjectId() id: string): Promise<void> {
+    await this.projectService.removeClip(id);
   }
 }

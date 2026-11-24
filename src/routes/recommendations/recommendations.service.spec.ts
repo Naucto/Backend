@@ -1,14 +1,37 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 
+import { uuidOf, uuidsOf as ids } from '../../../test/uuid';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { HubService } from '../project/hub.service';
 import { ProjectService } from '../project/project.service';
-import { RecommendationsService } from './recommendations.service';
+import { RecommendationsService, WINNER_REST_WEEKS } from './recommendations.service';
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+/** A Monday, five minutes into the UTC day: when the hub computes its week. */
+const MONDAY = new Date('2026-11-16T00:05:00Z');
+const weeksLater = (weeks: number): Date => new Date(MONDAY.getTime() + weeks * WEEK_MS);
+
+/** The games a ranking may name, each with an owner and a name of its own. */
+const GAMES = new Map(
+  Array.from({ length: 20 }, (_, index) => index + 1).map((number) => [
+    uuidOf(number),
+    { userId: uuidOf(100 + number), name: `draft-${number}`, publishedName: `Game ${number}` },
+  ]),
+);
+
+interface Pick {
+  id: string;
+  projectId: string;
+  startsAt: Date;
+  endsAt: Date | null;
+}
 
 describe('RecommendationsService', () => {
   let service: RecommendationsService;
+
+  /** The picks the table holds, read and written by the mocks below as Prisma would. */
+  let picks: Pick[];
 
   const prismaMock = {
     featuredRelease: {
@@ -26,25 +49,25 @@ describe('RecommendationsService', () => {
   };
 
   const hubServiceMock = {
-    fetchRelease: jest.fn(),
+    fetchReleasesByIds: jest.fn(),
   };
 
   const notificationsServiceMock = {
     notifyBestEffort: jest.fn(),
   };
 
-  const curator = { id: 9, username: 'admin' };
+  const curator = { id: uuidOf(9), username: 'admin' };
   const row = {
-    id: 1,
-    projectId: 42,
-    featuredById: 9,
+    id: uuidOf(1),
+    projectId: uuidOf(42),
+    featuredById: uuidOf(9),
     note: 'pick',
     startsAt: new Date('2026-08-17T09:00:00Z'),
     endsAt: null,
     createdAt: new Date('2026-08-17T09:00:00Z'),
     featuredBy: curator,
   };
-  const release = { id: 42, name: 'Moon Lander', publishedAt: new Date() };
+  const release = { id: uuidOf(42), name: 'Moon Lander', publishedAt: new Date() };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -58,12 +81,33 @@ describe('RecommendationsService', () => {
     }).compile();
 
     service = module.get<RecommendationsService>(RecommendationsService);
-    jest.clearAllMocks();
+    jest.resetAllMocks();
     prismaMock.$transaction.mockImplementation((arg: unknown) =>
       typeof arg === 'function'
         ? (arg as (tx: typeof prismaMock) => Promise<unknown>)(prismaMock)
         : Promise.all(arg as Array<Promise<unknown>>),
     );
+
+    picks = [];
+    prismaMock.featuredRelease.findMany.mockImplementation(
+      async ({ where }: { where: { OR: [{ startsAt: { gte: Date } }, { endsAt: null }] } }) =>
+        picks.filter((pick) => pick.startsAt >= where.OR[0].startsAt.gte || pick.endsAt === null),
+    );
+    prismaMock.featuredRelease.updateMany.mockImplementation(
+      async ({ data }: { data: { endsAt: Date } }) => {
+        const running = picks.filter((pick) => pick.endsAt === null);
+        running.forEach((pick) => (pick.endsAt = data.endsAt));
+        return { count: running.length };
+      },
+    );
+    prismaMock.featuredRelease.create.mockImplementation(
+      async ({ data }: { data: { projectId: string; startsAt: Date } }) => {
+        const pick = { id: uuidOf(picks.length + 1), ...data, endsAt: null };
+        picks.push(pick);
+        return pick;
+      },
+    );
+    projectServiceMock.requireProject.mockImplementation(async (id: string) => GAMES.get(id));
   });
 
   describe('getCurrent', () => {
@@ -71,111 +115,128 @@ describe('RecommendationsService', () => {
       prismaMock.featuredRelease.findFirst.mockResolvedValue(null);
 
       await expect(service.getCurrent()).resolves.toBeNull();
-      expect(hubServiceMock.fetchRelease).not.toHaveBeenCalled();
+      expect(hubServiceMock.fetchReleasesByIds).not.toHaveBeenCalled();
     });
 
     it('returns the current entry with its release', async () => {
       prismaMock.featuredRelease.findFirst.mockResolvedValue(row);
-      hubServiceMock.fetchRelease.mockResolvedValue(release);
+      hubServiceMock.fetchReleasesByIds.mockResolvedValue([release]);
 
       await expect(service.getCurrent()).resolves.toEqual({
-        id: 1,
-        projectId: 42,
+        id: uuidOf(1),
+        projectId: uuidOf(42),
         note: 'pick',
         startsAt: row.startsAt,
         endsAt: null,
         featuredBy: curator,
         project: release,
       });
+      expect(hubServiceMock.fetchReleasesByIds).toHaveBeenCalledWith([uuidOf(42)]);
+      expect(prismaMock.featuredRelease.updateMany).not.toHaveBeenCalled();
     });
 
-    it('retires the entry when the project was unpublished', async () => {
+    it('answers none for a pick whose game left the hub, and ends it only when the game is withheld', async () => {
       prismaMock.featuredRelease.findFirst.mockResolvedValue(row);
-      hubServiceMock.fetchRelease.mockResolvedValue({
-        ...release,
-        publishedAt: null,
-      });
-      prismaMock.featuredRelease.updateMany.mockResolvedValue({ count: 1 });
+      hubServiceMock.fetchReleasesByIds.mockResolvedValue([]);
 
       await expect(service.getCurrent()).resolves.toBeNull();
       expect(prismaMock.featuredRelease.updateMany).toHaveBeenCalledWith({
-        where: { id: 1, endsAt: null },
+        where: { id: uuidOf(1), project: { hiddenAt: { not: null } } },
         data: { endsAt: expect.any(Date) },
       });
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
     });
   });
 
-  describe('setFeatured', () => {
-    it('rejects unknown projects', async () => {
-      projectServiceMock.requireProject.mockRejectedValue(new NotFoundException());
+  describe('electGameOfTheWeek', () => {
+    it('picks the best game, ends the pick before it and tells its creator', async () => {
+      picks.push({ id: uuidOf(1), projectId: uuidOf(7), startsAt: weeksLater(-1), endsAt: null });
 
-      await expect(service.setFeatured(1, 9)).rejects.toBeInstanceOf(NotFoundException);
-      expect(prismaMock.featuredRelease.create).not.toHaveBeenCalled();
-    });
+      await service.electGameOfTheWeek(ids(3, 5, 8), MONDAY);
 
-    it('rejects unpublished projects', async () => {
-      projectServiceMock.requireProject.mockResolvedValue({
-        id: 1,
-        publishedAt: null,
-        userId: 3,
-        publishedName: null,
-        name: 'Draft',
+      expect(picks).toEqual([
+        { id: uuidOf(1), projectId: uuidOf(7), startsAt: weeksLater(-1), endsAt: MONDAY },
+        { id: uuidOf(2), projectId: uuidOf(3), startsAt: MONDAY, endsAt: null },
+      ]);
+      expect(prismaMock.featuredRelease.create).toHaveBeenCalledWith({
+        data: { projectId: uuidOf(3), startsAt: MONDAY },
       });
-
-      await expect(service.setFeatured(1, 9)).rejects.toBeInstanceOf(BadRequestException);
-    });
-
-    it('ends the previous pick, creates the new one and notifies the creator', async () => {
-      projectServiceMock.requireProject.mockResolvedValue({
-        id: 42,
-        publishedAt: new Date(),
-        userId: 3,
-        publishedName: 'Moon Lander',
-        name: 'moon',
-      });
-      prismaMock.featuredRelease.updateMany.mockResolvedValue({ count: 1 });
-      prismaMock.featuredRelease.create.mockResolvedValue(row);
-      hubServiceMock.fetchRelease.mockResolvedValue(release);
-      notificationsServiceMock.notifyBestEffort.mockResolvedValue({});
-
-      const result = await service.setFeatured(42, 9, 'pick');
-
-      expect(prismaMock.featuredRelease.updateMany).toHaveBeenCalledWith({
-        where: { endsAt: null },
-        data: { endsAt: expect.any(Date) },
-      });
-      expect(prismaMock.featuredRelease.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            projectId: 42,
-            featuredById: 9,
-            note: 'pick',
-          }),
-        }),
-      );
       expect(notificationsServiceMock.notifyBestEffort).toHaveBeenCalledWith({
-        userId: 3,
+        userId: uuidOf(103),
         title: 'Your game is featured!',
-        message: 'Moon Lander is the game of the week on the Naucto hub.',
+        message: 'Game 3 is the game of the week on the Naucto hub.',
         type: 'INFO',
         kind: 'FEATURED',
-        data: { projectId: 42 },
+        data: { projectId: uuidOf(3) },
       });
-      expect(result.project).toEqual(release);
-      expect(result.projectId).toBe(42);
     });
-  });
 
-  describe('clearFeatured', () => {
-    it('ends whatever pick is current', async () => {
-      prismaMock.featuredRelease.updateMany.mockResolvedValueOnce({ count: 1 });
+    it('picks once a week, however often it is asked', async () => {
+      await service.electGameOfTheWeek(ids(3, 5, 8), MONDAY);
+      await service.electGameOfTheWeek(ids(5, 3, 8), new Date('2026-11-18T14:00:00Z'));
+      await service.electGameOfTheWeek(ids(8, 5, 3), new Date('2026-11-22T23:59:59Z'));
 
-      await service.clearFeatured();
+      expect(picks.map((pick) => pick.projectId)).toEqual(ids(3));
+      expect(notificationsServiceMock.notifyBestEffort).toHaveBeenCalledTimes(1);
+    });
 
-      expect(prismaMock.featuredRelease.updateMany).toHaveBeenCalledWith({
-        where: { endsAt: null },
-        data: { endsAt: expect.any(Date) },
+    it('picks later in the week when the server missed Monday', async () => {
+      const thursday = new Date('2026-11-19T10:00:00Z');
+
+      await service.electGameOfTheWeek(ids(3), thursday);
+      await service.electGameOfTheWeek(ids(5, 3), weeksLater(1));
+
+      expect(picks.map(({ projectId, startsAt }) => [projectId, startsAt])).toEqual([
+        [uuidOf(3), thursday],
+        [uuidOf(5), weeksLater(1)],
+      ]);
+    });
+
+    it('never picks a game again within eight weeks, even when it stays the best', async () => {
+      const ranking = Array.from({ length: WINNER_REST_WEEKS + 2 }, (_, index) =>
+        uuidOf(index + 1),
+      );
+
+      for (let week = 0; week < 40; week++) {
+        await service.electGameOfTheWeek(ranking, weeksLater(week));
+      }
+
+      const winners = picks.map((pick) => pick.projectId);
+      expect(winners).toHaveLength(40);
+      winners.forEach((winner, week) => {
+        expect(winners.slice(Math.max(0, week - WINNER_REST_WEEKS), week)).not.toContain(winner);
       });
+      // The best game is back as soon as its rest is over, not later.
+      expect(winners[WINNER_REST_WEEKS + 1]).toBe(uuidOf(1));
+    });
+
+    it('leaves the week without a pick rather than repeat one, and tries again the next day', async () => {
+      await service.electGameOfTheWeek(ids(3), MONDAY);
+
+      await service.electGameOfTheWeek(ids(3), weeksLater(1));
+
+      expect(picks).toEqual([
+        { id: uuidOf(1), projectId: uuidOf(3), startsAt: MONDAY, endsAt: weeksLater(1) },
+      ]);
+      expect(notificationsServiceMock.notifyBestEffort).toHaveBeenCalledTimes(1);
+
+      const tuesday = new Date(weeksLater(1).getTime() + 24 * 60 * 60 * 1000);
+      await service.electGameOfTheWeek(ids(3, 4), tuesday);
+
+      expect(picks[picks.length - 1]).toEqual({
+        id: uuidOf(2),
+        projectId: uuidOf(4),
+        startsAt: tuesday,
+        endsAt: null,
+      });
+    });
+
+    it('does not pick again a game a curator left running for months', async () => {
+      picks.push({ id: uuidOf(1), projectId: uuidOf(3), startsAt: weeksLater(-30), endsAt: null });
+
+      await service.electGameOfTheWeek(ids(3, 4), MONDAY);
+
+      expect(picks[picks.length - 1]).toMatchObject({ projectId: uuidOf(4), endsAt: null });
     });
   });
 
@@ -186,7 +247,7 @@ describe('RecommendationsService', () => {
         {
           ...row,
           endsAt: new Date('2026-08-20T09:00:00Z'),
-          project: { id: 42, name: 'moon', publishedName: 'Moon Lander' },
+          project: { id: uuidOf(42), name: 'moon', publishedName: 'Moon Lander' },
         },
       ]);
 
@@ -198,8 +259,8 @@ describe('RecommendationsService', () => {
       expect(result).toEqual({
         items: [
           expect.objectContaining({
-            id: 1,
-            project: { id: 42, name: 'Moon Lander' },
+            id: uuidOf(1),
+            project: { id: uuidOf(42), name: 'Moon Lander' },
           }),
         ],
         total: 1,

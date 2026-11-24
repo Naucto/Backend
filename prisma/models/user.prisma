@@ -16,7 +16,10 @@ enum SessionJoinPolicy {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
+  id               String          @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  // What a game reads as `net.id()`, and nothing else. Published games compute on it, so it stays
+  // a small integer; no route, key or relation takes it.
+  playerNumber     Int             @unique @default(autoincrement())
   email     String   @unique
   username  String   @unique
   nickname  String?
@@ -71,13 +74,15 @@ model User {
   flagsResolved          Flag[]             @relation("FlagsResolved")
   moderationActionsTaken ModerationAction[] @relation("ModerationActionsTaken")
   moderationRecord       ModerationAction[] @relation("ModerationRecord")
+
+  collections Collection[]
 }
 
 model RefreshToken {
-  id        Int      @id @default(autoincrement())
+  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   token     String   @unique
   user      User     @relation(fields: [userId], references: [id])
-  userId    Int
+  userId    String   @db.Uuid
   createdAt DateTime @default(now())
   expiresAt DateTime
 
@@ -85,25 +90,25 @@ model RefreshToken {
 }
 
 model FriendRequest {
-  id        Int      @id @default(autoincrement())
+  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   from      User     @relation("SentFriendRequests", fields: [fromId], references: [id], onDelete: Cascade)
-  fromId    Int
+  fromId    String   @db.Uuid
   to        User     @relation("ReceivedFriendRequests", fields: [toId], references: [id], onDelete: Cascade)
-  toId      Int
+  toId      String   @db.Uuid
   createdAt DateTime @default(now())
 
   @@unique([fromId, toId])
   @@index([toId])
 }
 
-// Canonical pair order: userAId < userBId (enforced by FriendsService), so a
-// friendship is stored exactly once and looked up without an OR.
+// Canonical pair order: userAId < userBId in the order Postgres gives `uuid` (enforced by
+// FriendsService), so a friendship is stored exactly once and looked up without an OR.
 model Friendship {
-  id        Int      @id @default(autoincrement())
+  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   userA     User     @relation("UserAFriends", fields: [userAId], references: [id], onDelete: Cascade)
-  userAId   Int
+  userAId   String   @db.Uuid
   userB     User     @relation("UserBFriends", fields: [userBId], references: [id], onDelete: Cascade)
-  userBId   Int
+  userBId   String   @db.Uuid
   createdAt DateTime @default(now())
 
   @@unique([userAId, userBId])

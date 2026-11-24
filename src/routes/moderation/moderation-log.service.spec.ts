@@ -5,11 +5,12 @@ import {
   Prisma,
 } from '@prisma/client';
 
+import { uuidOf } from '../../../test/uuid';
 import { ADMIN } from '../../auth/access/roles';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ModerationLogService, VISIBLE_TO_SUBJECT } from './moderation-log.service';
 
-const STAFF = { id: 1, role: ADMIN } as const;
+const STAFF = { id: uuidOf(1), role: ADMIN } as const;
 
 describe('ModerationLogService', () => {
   const tx = { moderationAction: { create: jest.fn() } };
@@ -28,10 +29,10 @@ describe('ModerationLogService', () => {
     const record = (action: ModerationActionType): Promise<unknown> =>
       service.record(tx as unknown as Prisma.TransactionClient, {
         action,
-        actorId: 1,
+        actorId: uuidOf(1),
         targetType: ModerationTargetType.USER,
-        targetId: 7,
-        subjectUserId: 7,
+        targetId: uuidOf(7),
+        subjectUserId: uuidOf(7),
       });
 
     it('decides for every kind of action whether its subject sees it', () => {
@@ -43,6 +44,9 @@ describe('ModerationLogService', () => {
     it.each([
       [ModerationActionType.ACCOUNT_WARNED, true],
       [ModerationActionType.COMMENT_HIDDEN, true],
+      [ModerationActionType.COLLECTION_HIDDEN, true],
+      [ModerationActionType.COLLECTION_RESTORED, true],
+      [ModerationActionType.COLLECTION_DELETED, true],
       [ModerationActionType.DRAFT_VIEWED, false],
       [ModerationActionType.FLAGS_DISMISSED, false],
     ])('writes %s as visible to its subject: %s', async (action, visible) => {
@@ -63,9 +67,9 @@ describe('ModerationLogService', () => {
     it('stores an empty message or note as none', async () => {
       await service.record(tx as unknown as Prisma.TransactionClient, {
         action: ModerationActionType.COMMENT_HIDDEN,
-        actorId: 1,
+        actorId: uuidOf(1),
         targetType: ModerationTargetType.COMMENT,
-        targetId: 3,
+        targetId: uuidOf(3),
         reason: ModerationReason.SPAM,
         publicMessage: '',
         internalNote: '',
@@ -89,19 +93,19 @@ describe('ModerationLogService', () => {
       await once.recordOnce(
         {
           action: ModerationActionType.DRAFT_VIEWED,
-          actorId: 1,
+          actorId: uuidOf(1),
           targetType: ModerationTargetType.PROJECT,
-          targetId: 12,
-          subjectUserId: 7,
+          targetId: uuidOf(12),
+          subjectUserId: uuidOf(7),
         },
-        'view:1:12:490000',
+        `view:${uuidOf(1)}:${uuidOf(12)}:490000`,
       );
 
       expect(createMany).toHaveBeenCalledWith({
         data: [
           expect.objectContaining({
             action: ModerationActionType.DRAFT_VIEWED,
-            dedupeKey: 'view:1:12:490000',
+            dedupeKey: `view:${uuidOf(1)}:${uuidOf(12)}:490000`,
             visibleToSubject: false,
           }),
         ],
@@ -117,15 +121,15 @@ describe('ModerationLogService', () => {
     };
 
     it('takes the copies of what the person wrote, and leaves who decided what and why', async () => {
-      await service.scrubAccount(scrubTx as unknown as Prisma.TransactionClient, 7);
+      await service.scrubAccount(scrubTx as unknown as Prisma.TransactionClient, uuidOf(7));
 
       expect(scrubTx.moderationAction.updateMany).toHaveBeenCalledWith({
-        where: { subjectUserId: 7 },
+        where: { subjectUserId: uuidOf(7) },
         data: { snapshot: Prisma.DbNull },
       });
       expect(scrubTx.flag.updateMany.mock.calls).toEqual([
-        [{ where: { targetOwnerId: 7 }, data: { snapshot: {} } }],
-        [{ where: { reporterId: 7 }, data: { details: null } }],
+        [{ where: { targetOwnerId: uuidOf(7) }, data: { snapshot: {} } }],
+        [{ where: { reporterId: uuidOf(7) }, data: { details: null } }],
       ]);
     });
   });
@@ -154,10 +158,10 @@ describe('ModerationLogService', () => {
     });
 
     it('narrows to one target, which is how its history is read', async () => {
-      await service.list(STAFF, { targetType: ModerationTargetType.PROJECT, targetId: 12 });
+      await service.list(STAFF, { targetType: ModerationTargetType.PROJECT, targetId: uuidOf(12) });
 
       expect(prisma.moderationAction.count).toHaveBeenCalledWith({
-        where: { targetType: ModerationTargetType.PROJECT, targetId: 12 },
+        where: { targetType: ModerationTargetType.PROJECT, targetId: uuidOf(12) },
       });
     });
 

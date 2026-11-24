@@ -35,12 +35,18 @@ import { ANALYTICS_THROTTLERS } from './routes/analytics/analytics-throttler.gua
 import { AnalyticsTimelineService } from './routes/analytics/analytics-timeline.service';
 import { UserAnalyticsController } from './routes/analytics/user-analytics.controller';
 import { UserAnalyticsService } from './routes/analytics/user-analytics.service';
+import {
+  CollectionsController,
+  UserCollectionsController,
+} from './routes/collections/collections.controller';
+import { CollectionsService } from './routes/collections/collections.service';
 import { FeaturesModule } from './routes/features/features.module';
 import { FriendsController, UserFriendshipController } from './routes/friends/friends.controller';
 import { FriendsService } from './routes/friends/friends.service';
 import { AccountModerationService } from './routes/moderation/account-moderation.service';
 import { AdminCaseController } from './routes/moderation/admin-case.controller';
 import { AdminModerationAccountController } from './routes/moderation/admin-moderation-account.controller';
+import { AdminModerationCollectionController } from './routes/moderation/admin-moderation-collection.controller';
 import { AdminModerationCommentController } from './routes/moderation/admin-moderation-comment.controller';
 import { AdminModerationLogController } from './routes/moderation/admin-moderation-log.controller';
 import { AdminModerationProjectController } from './routes/moderation/admin-moderation-project.controller';
@@ -65,6 +71,8 @@ import { ProjectCommentController } from './routes/project-comment/project-comme
 import { ProjectCommentService } from './routes/project-comment/project-comment.service';
 import { AdminFeaturedReleaseController } from './routes/recommendations/admin-featured-release.controller';
 import { FeaturedReleaseController } from './routes/recommendations/featured-release.controller';
+import { HubFeedController } from './routes/recommendations/hub-feed.controller';
+import { HubFeedService } from './routes/recommendations/hub-feed.service';
 import { RecommendationsService } from './routes/recommendations/recommendations.service';
 import { AdminReportsController } from './routes/reports/admin-reports.controller';
 import { AdminReportsService } from './routes/reports/admin-reports.service';
@@ -108,6 +116,9 @@ const nullProvider = (token: InjectionToken): Provider => ({
     UserPresenceController,
     FeaturedReleaseController,
     AdminFeaturedReleaseController,
+    HubFeedController,
+    CollectionsController,
+    UserCollectionsController,
     AnalyticsIngestController,
     AdminAnalyticsController,
     AnalyticsMarkerController,
@@ -123,6 +134,7 @@ const nullProvider = (token: InjectionToken): Provider => ({
     AdminModerationAccountController,
     AdminModerationProjectController,
     AdminModerationCommentController,
+    AdminModerationCollectionController,
     AdminModerationLogController,
   ],
   providers: [
@@ -140,6 +152,8 @@ const nullProvider = (token: InjectionToken): Provider => ({
     nullProvider(FriendsService),
     nullProvider(PresenceService),
     nullProvider(RecommendationsService),
+    nullProvider(HubFeedService),
+    nullProvider(CollectionsService),
     nullProvider(AnalyticsIngestService),
     nullProvider(AnalyticsTallyService),
     nullProvider(AnalyticsQueryService),

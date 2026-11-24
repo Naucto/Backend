@@ -1,20 +1,10 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  HttpStatus,
-  Param,
-  ParseIntPipe,
-  Post,
-  Query,
-  Req,
-} from '@nestjs/common';
-import { ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Delete, Get, HttpStatus, Param, Post, Query, Req } from '@nestjs/common';
+import { ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { RequiresStaffSession } from '../../auth/access/access.decorators';
 import { ADMIN, MODERATOR } from '../../auth/access/roles';
 import { RequestWithUser } from '../../auth/auth.types';
+import { ParseIdPipe } from '../../common/pipes/parse-id.pipe';
 import { AccountModerationService } from './account-moderation.service';
 import {
   AccountDirectoryQueryDto,
@@ -56,23 +46,25 @@ export class AdminModerationAccountController {
 
   @Get(':id')
   @ApiOperation({ summary: 'One account, with what the caller may do about it' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: HttpStatus.OK, type: ModerationAccountDetailDto })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No such account' })
   detail(
     @Req() req: RequestWithUser,
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
   ): Promise<ModerationAccountDetailDto> {
     return this.directory.account(staffOf(req), id);
   }
 
   @Post(':id/warn')
   @ApiOperation({ summary: 'Send an account a formal warning, kept on its record' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: HttpStatus.CREATED, type: ModerationActionDto })
   @ApiResponse({ status: HttpStatus.FORBIDDEN, description: RANK_REFUSALS })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No such account' })
   warn(
     @Req() req: RequestWithUser,
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
     @Body() dto: WarnAccountDto,
   ): Promise<ModerationActionDto> {
     return this.accounts.warn(staffOf(req), id, dto);
@@ -80,12 +72,13 @@ export class AdminModerationAccountController {
 
   @Post(':id/suspend')
   @ApiOperation({ summary: 'Suspend an account for a number of days, or until reinstated' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: HttpStatus.CREATED, type: ModerationActionDto })
   @ApiResponse({ status: HttpStatus.FORBIDDEN, description: RANK_REFUSALS })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No such account' })
   suspend(
     @Req() req: RequestWithUser,
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
     @Body() dto: SuspendAccountDto,
   ): Promise<ModerationActionDto> {
     return this.accounts.suspend(staffOf(req), id, dto);
@@ -93,6 +86,7 @@ export class AdminModerationAccountController {
 
   @Post(':id/reinstate')
   @ApiOperation({ summary: 'Lift the suspension of an account' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: HttpStatus.CREATED, type: ModerationActionDto })
   @ApiResponse({ status: HttpStatus.FORBIDDEN, description: RANK_REFUSALS })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No such account' })
@@ -102,7 +96,7 @@ export class AdminModerationAccountController {
   })
   reinstate(
     @Req() req: RequestWithUser,
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
     @Body() dto: ModerationNoteDto,
   ): Promise<ModerationActionDto> {
     return this.accounts.reinstate(staffOf(req), id, dto);
@@ -110,12 +104,13 @@ export class AdminModerationAccountController {
 
   @Post(':id/clear-profile')
   @ApiOperation({ summary: 'Clear parts of a profile: display name, bio, picture, background' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: HttpStatus.CREATED, type: ModerationActionDto })
   @ApiResponse({ status: HttpStatus.FORBIDDEN, description: RANK_REFUSALS })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No such account' })
   clearProfile(
     @Req() req: RequestWithUser,
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
     @Body() dto: ClearProfileDto,
   ): Promise<ModerationActionDto> {
     return this.accounts.clearProfile(staffOf(req), id, dto);
@@ -124,13 +119,14 @@ export class AdminModerationAccountController {
   @Delete(':id')
   @RequiresStaffSession(ADMIN)
   @ApiOperation({ summary: 'Erase an account for good, as its owner could' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiBody({ type: StaffDeleteAccountDto })
   @ApiResponse({ status: HttpStatus.OK, type: ModerationActionDto })
   @ApiResponse({ status: HttpStatus.FORBIDDEN, description: RANK_REFUSALS })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No such account' })
   remove(
     @Req() req: RequestWithUser,
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
     @Body() dto: StaffDeleteAccountDto,
   ): Promise<ModerationActionDto> {
     return this.accounts.remove(staffOf(req), id, dto);

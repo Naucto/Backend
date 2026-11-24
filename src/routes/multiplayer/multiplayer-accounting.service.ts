@@ -41,7 +41,7 @@ export class MultiplayerAccountingService implements SyncedGameTableObserver {
   constructor(private readonly prisma: PrismaService) {}
 
   /** Records a room the API created, classified as an editor test when the editor asked. */
-  async roomCreated(sessionId: string, projectId: number, editorTest: boolean): Promise<void> {
+  async roomCreated(sessionId: string, projectId: string, editorTest: boolean): Promise<void> {
     try {
       await this.prisma.analyticsMpSession.createMany({
         data: [{ id: sessionId, projectId, editorTest }],
@@ -61,6 +61,16 @@ export class MultiplayerAccountingService implements SyncedGameTableObserver {
     if (changed.count === 0) {
       this.logger.log(`Room ${sessionId} was already classified; its editor join is ignored`);
     }
+  }
+
+  /** Those of `sessionIds` the editor opened to test a game. */
+  async editorTests(sessionIds: string[]): Promise<Set<string>> {
+    const rooms = await this.prisma.analyticsMpSession.findMany({
+      where: { id: { in: sessionIds }, editorTest: true },
+      select: { id: true },
+    });
+
+    return new Set(rooms.map((room) => room.id));
   }
 
   seatConnected(sessionId: string, seatId: number, now = Date.now()): void {

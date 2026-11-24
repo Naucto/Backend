@@ -1,46 +1,36 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsPositive, IsString, MaxLength } from 'class-validator';
 
 import { ProjectExResponseDto } from '../../project/dto/project-response.dto';
 
-const FEATURED_NOTE_MAX_LENGTH = 280;
-
-export class SetFeaturedReleaseDto {
-  @ApiProperty({ example: 42, description: 'ID of the published project' })
-  @Type(() => Number)
-  @IsInt()
-  @IsPositive()
-  projectId!: number;
-
-  @ApiProperty({
-    example: "Editor's pick: a tight one-button platformer",
-    description: 'Optional curator note shown next to the featured game',
-    required: false,
-    maxLength: FEATURED_NOTE_MAX_LENGTH,
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(FEATURED_NOTE_MAX_LENGTH)
-  note?: string;
-}
-
 export class FeaturedCuratorDto {
-  @ApiProperty({ example: 1 })
-  id!: number;
+  @ApiProperty({ format: 'uuid', example: '3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b' })
+  id!: string;
 
   @ApiProperty({ example: 'admin' })
   username!: string;
 }
 
 export class FeaturedEntryDto {
-  @ApiProperty({ example: 7, description: 'Featured entry ID' })
-  id!: number;
+  @ApiProperty({
+    format: 'uuid',
+    example: '5a1c3e7b-2d4f-4a6b-9c8d-0e1f2a3b4c5d',
+    description: 'Featured entry ID',
+  })
+  id!: string;
 
-  @ApiProperty({ example: 42, description: 'Featured project ID' })
-  projectId!: number;
+  @ApiProperty({
+    format: 'uuid',
+    example: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
+    description: 'Featured project ID',
+  })
+  projectId!: string;
 
-  @ApiProperty({ type: String, nullable: true, required: false })
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    required: false,
+    description: 'What a curator wrote about the pick; null for a pick the hub made itself',
+  })
   note!: string | null;
 
   @ApiProperty({ example: '2026-08-17T09:00:00Z' })
@@ -49,7 +39,12 @@ export class FeaturedEntryDto {
   @ApiProperty({ type: String, nullable: true, required: false })
   endsAt!: Date | null;
 
-  @ApiProperty({ type: FeaturedCuratorDto, nullable: true, required: false })
+  @ApiProperty({
+    type: FeaturedCuratorDto,
+    nullable: true,
+    required: false,
+    description: 'The curator of a pick made by hand; null for a pick the hub made itself',
+  })
   featuredBy!: FeaturedCuratorDto | null;
 }
 
@@ -71,8 +66,8 @@ export class FeaturedReleaseResponseDto {
 }
 
 export class FeaturedProjectSummaryDto {
-  @ApiProperty({ example: 42 })
-  id!: number;
+  @ApiProperty({ format: 'uuid', example: '7c9e6679-7425-40de-944b-e07fc1f90ae7' })
+  id!: string;
 
   @ApiProperty({ example: 'Moon Lander' })
   name!: string;

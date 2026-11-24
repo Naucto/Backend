@@ -25,7 +25,7 @@ export class ModerationController {
 
   @Post('flags')
   @Throttle({ identity: { limit: 20, ttl: DAY_MS } })
-  @ApiOperation({ summary: 'Report a game, a comment or a profile to staff' })
+  @ApiOperation({ summary: 'Report a profile, or something an account made, to staff' })
   @ApiResponse({ status: HttpStatus.CREATED, type: CreatedFlagDto })
   @ApiResponse({
     status: HttpStatus.BAD_REQUEST,

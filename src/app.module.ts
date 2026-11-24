@@ -11,6 +11,7 @@ import { PresenceModule } from './presence/presence.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { AdminModule } from './routes/admin/admin.module';
 import { AnalyticsModule } from './routes/analytics/analytics.module';
+import { CollectionsModule } from './routes/collections/collections.module';
 import { FeaturesModule } from './routes/features/features.module';
 import { FriendsModule } from './routes/friends/friends.module';
 import { ModerationModule } from './routes/moderation/moderation.module';
@@ -43,6 +44,7 @@ import { WebRTCModule } from './webrtc/webrtc.module';
     NotificationsModule,
     FriendsModule,
     PresenceModule,
+    CollectionsModule,
     RecommendationsModule,
     FeaturesModule,
     AnalyticsModule,

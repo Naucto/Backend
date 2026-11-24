@@ -1,12 +1,13 @@
 import { ModerationReason, ModerationTargetType } from '@prisma/client';
 
 import { withEnv } from '../../../test/env';
+import { uuidOf } from '../../../test/uuid';
 import { DiscordService } from '../../discord/discord.service';
 import { FlagNotifier } from './flag-notifier';
 
 const NOTICE = {
   targetType: ModerationTargetType.COMMENT,
-  targetId: 31,
+  targetId: uuidOf(31),
   reason: ModerationReason.HARASSMENT,
 };
 
@@ -40,11 +41,27 @@ describe('FlagNotifier', () => {
         embeds: [
           expect.objectContaining({
             title: 'A comment was reported',
-            url: 'https://admin.naucto.test/moderation/cases/COMMENT/31',
+            url: `https://admin.naucto.test/moderation/cases/COMMENT/${uuidOf(31)}`,
           }),
         ],
       }),
     );
+  });
+
+  it.each([
+    [ModerationTargetType.USER, 'A profile was reported'],
+    [ModerationTargetType.PROJECT, 'A game was reported'],
+    [ModerationTargetType.COMMENT, 'A comment was reported'],
+    [ModerationTargetType.COLLECTION, 'A collection was reported'],
+  ])('names a %s by its kind and links its case', (targetType, title) => {
+    withEnv({ ADMIN_PANEL_URL: 'https://admin.naucto.test' });
+
+    const [embed] = notifier().message({ ...NOTICE, targetType }).embeds ?? [];
+
+    expect(embed).toMatchObject({
+      title,
+      url: `https://admin.naucto.test/moderation/cases/${targetType}/${uuidOf(31)}`,
+    });
   });
 
   // A notice is built from a kind, a reason and an id, so nothing a person wrote can reach it. This
@@ -58,7 +75,7 @@ describe('FlagNotifier', () => {
       title: 'A comment was reported',
       color: expect.any(Number),
       fields: [{ name: 'Reason', value: 'Harassment', inline: true }],
-      footer: { text: 'COMMENT #31' },
+      footer: { text: `COMMENT #${uuidOf(31)}` },
       timestamp: expect.any(String),
     });
   });

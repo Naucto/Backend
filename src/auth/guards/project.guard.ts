@@ -5,19 +5,20 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { isUUID } from 'class-validator';
 
 import { PrismaService } from '../../prisma/prisma.service';
 
-function projectRequestOf(context: ExecutionContext): { userId: number; projectId: number } {
+function projectRequestOf(context: ExecutionContext): { userId: string; projectId: string } {
   const request = context.switchToHttp().getRequest();
   const user = request.user;
   const rawProjectId: unknown = request.params.id;
 
-  if (!user || typeof rawProjectId !== 'string' || !/^\d+$/.test(rawProjectId)) {
+  if (!user || typeof rawProjectId !== 'string' || !isUUID(rawProjectId)) {
     throw new ForbiddenException('Invalid user or project ID');
   }
 
-  return { userId: user.id, projectId: Number(rawProjectId) };
+  return { userId: user.id, projectId: rawProjectId };
 }
 
 @Injectable()

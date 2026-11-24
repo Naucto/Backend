@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { AnalyticsLiveState, Prisma } from '@prisma/client';
 
+import { NO_RELEASE_ID } from '../../common/ids';
 import { getOptionalEnv } from '../../config/env';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FeaturesService } from '../features/features.service';
@@ -193,7 +194,7 @@ export class AnalyticsIngestService {
       });
       await tx.$executeRaw`
         INSERT INTO "AnalyticsLiveMinute" ("minute", "visitorId", "state", "releaseId")
-        VALUES (${minuteStart(now)}, ${dto.visitorId}::uuid, ${dto.state}::"AnalyticsLiveState", ${releaseId})
+        VALUES (${minuteStart(now)}, ${dto.visitorId}::uuid, ${dto.state}::"AnalyticsLiveState", ${releaseId}::uuid)
         ON CONFLICT ("minute", "visitorId") DO UPDATE
         SET "releaseId" = CASE
               WHEN EXCLUDED."state" > "AnalyticsLiveMinute"."state" THEN EXCLUDED."releaseId"
@@ -220,7 +221,7 @@ export class AnalyticsIngestService {
     const releaseId =
       dto.releaseId !== undefined && (await this.releases.isPublished(dto.releaseId))
         ? dto.releaseId
-        : 0;
+        : NO_RELEASE_ID;
     this.tally.recordPing(
       {
         kind: dto.kind,
@@ -229,7 +230,7 @@ export class AnalyticsIngestService {
         consent: dto.consent ?? 'UNKNOWN',
         releaseId,
         // Running time only counts against a published game.
-        playMs: releaseId === 0 ? 0 : (dto.playMs ?? 0),
+        playMs: releaseId === NO_RELEASE_ID ? 0 : (dto.playMs ?? 0),
       },
       now,
     );
@@ -241,7 +242,7 @@ export class AnalyticsIngestService {
    * holds, and never revives an erased one: either answer tells the client to mint a new visitor.
    */
   async link(
-    userId: number,
+    userId: string,
     visitorId: string,
     now = new Date(),
   ): Promise<AnalyticsLinkResponseDto> {

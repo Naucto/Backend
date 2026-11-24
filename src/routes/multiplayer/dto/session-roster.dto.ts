@@ -1,8 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class SessionPlayerDto {
-  @ApiProperty({ description: 'User ID', example: 42 })
-  userId!: number;
+  @ApiProperty({
+    description: 'User ID',
+    format: 'uuid',
+    example: '3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b',
+  })
+  userId!: string;
 
   @ApiProperty({ description: 'Username', example: 'alice' })
   username!: string;
@@ -16,6 +20,14 @@ export class SessionPlayerDto {
 
   @ApiProperty({ description: 'Whether this player is hosting', example: false })
   host!: boolean;
+
+  @ApiProperty({
+    type: 'integer',
+    description:
+      "Player number of this player: what the game reads as net.id() and the playerId of that player's connection, never an account id",
+    example: 1042,
+  })
+  playerId!: number;
 }
 
 export class SessionRosterResponseDto {

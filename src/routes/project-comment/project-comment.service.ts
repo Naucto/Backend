@@ -24,18 +24,18 @@ const AUTHOR_SELECT = {
 const DEFAULT_COMMENTS_LIMIT = 20;
 
 type CommentAuthor = {
-  id: number;
+  id: string;
   username: string;
   nickname: string | null;
 };
 
 type CommentReplyRecord = {
-  id: number;
+  id: string;
   content: string;
   deleted: boolean;
   hiddenAt: Date | null;
   createdAt: Date;
-  projectId: number;
+  projectId: string;
   author: CommentAuthor;
 };
 
@@ -62,7 +62,7 @@ function published(
 export class ProjectCommentService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private buildVisibleTopLevelCommentWhere(projectId: number): Prisma.CommentWhereInput {
+  private buildVisibleTopLevelCommentWhere(projectId: string): Prisma.CommentWhereInput {
     return {
       projectId,
       parentId: null,
@@ -88,7 +88,7 @@ export class ProjectCommentService {
   }
 
   async getComments(
-    projectId: number,
+    projectId: string,
     page?: number,
     limit?: number,
     sort: 'newest' | 'oldest' = 'newest',
@@ -139,8 +139,8 @@ export class ProjectCommentService {
   }
 
   async createComment(
-    projectId: number,
-    userId: number,
+    projectId: string,
+    userId: string,
     content: string,
   ): Promise<CommentResponseDto> {
     const project = await this.prisma.project.findUnique({
@@ -174,9 +174,9 @@ export class ProjectCommentService {
   }
 
   async createReply(
-    projectId: number,
-    commentId: number,
-    userId: number,
+    projectId: string,
+    commentId: string,
+    userId: string,
     content: string,
   ): Promise<CommentResponseDto> {
     const parentComment = await this.prisma.comment.findUnique({
@@ -230,9 +230,9 @@ export class ProjectCommentService {
   }
 
   async updateComment(
-    projectId: number,
-    commentId: number,
-    userId: number,
+    projectId: string,
+    commentId: string,
+    userId: string,
     content: string,
   ): Promise<CommentResponseDto> {
     const comment = await this.prisma.comment.findUnique({
@@ -263,7 +263,7 @@ export class ProjectCommentService {
     return this.mapComment(updated);
   }
 
-  async deleteComment(projectId: number, commentId: number, userId: number): Promise<void> {
+  async deleteComment(projectId: string, commentId: string, userId: string): Promise<void> {
     const [comment, project] = await Promise.all([
       this.prisma.comment.findUnique({
         where: { id: commentId },

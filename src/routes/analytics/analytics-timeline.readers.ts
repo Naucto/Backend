@@ -1,5 +1,6 @@
 import { AnalyticsAnonConsent, AnalyticsFactType, Prisma } from '@prisma/client';
 
+import { NO_RELEASE_ID } from '../../common/ids';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TimelineMetric, TimelineSource } from './analytics-timeline';
 
@@ -15,7 +16,7 @@ export interface TimelineRange {
 }
 
 export interface TimelineFilters {
-  releaseId?: number;
+  releaseId?: string;
   source?: TimelineSource;
 }
 
@@ -137,9 +138,9 @@ async function acquiredFrom(
 /** The accounts among these linked to a consenting browser whose first session came from it. */
 async function accountsFrom(
   prisma: PrismaService,
-  accountIds: readonly number[],
+  accountIds: readonly string[],
   source: TimelineSource,
-): Promise<Set<number>> {
+): Promise<Set<string>> {
   const visitors = await linkedVisitors(prisma, accountIds);
   const acquired = await acquiredFrom(
     prisma,
@@ -154,9 +155,9 @@ async function accountsFrom(
 /** The consenting browsers linked to these accounts, the earliest first. */
 export async function linkedVisitors(
   prisma: PrismaService,
-  accountIds: readonly number[],
-): Promise<{ id: string; userId: number }[]> {
-  const linked: { id: string; userId: number }[] = [];
+  accountIds: readonly string[],
+): Promise<{ id: string; userId: string }[]> {
+  const linked: { id: string; userId: string }[] = [];
   for (const ids of chunks([...new Set(accountIds)])) {
     const rows = await prisma.analyticsVisitor.findMany({
       where: { userId: { in: ids } },
@@ -205,7 +206,7 @@ const anonymousPlays =
         ...only,
         minute: between(range),
         playsStarted: { gt: 0 },
-        releaseId: releaseId ?? { not: 0 },
+        releaseId: releaseId ?? { not: NO_RELEASE_ID },
       },
       _sum: { playsStarted: true },
     });
@@ -371,7 +372,7 @@ export const TIMELINE_READERS: Record<TimelineMetric, Reader> = {
       where: { type: 'PROJECT_CREATED', at: between(range), projectId: { not: null } },
       select: { at: true, actorUserId: true, projectId: true },
     });
-    const forks = new Set<number>();
+    const forks = new Set<string>();
     for (const ids of chunks(
       created.flatMap((one) => (one.projectId === null ? [] : [one.projectId])),
     )) {

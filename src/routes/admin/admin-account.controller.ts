@@ -1,19 +1,10 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpStatus,
-  Param,
-  ParseIntPipe,
-  Put,
-  Query,
-  Req,
-} from '@nestjs/common';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, HttpStatus, Param, Put, Query, Req } from '@nestjs/common';
+import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { RequiresStaffSession } from '../../auth/access/access.decorators';
 import { ADMIN, parseRole, VIEWER } from '../../auth/access/roles';
 import { RequestWithUser } from '../../auth/auth.types';
+import { ParseIdPipe } from '../../common/pipes/parse-id.pipe';
 import { AdminAccountService } from './admin-account.service';
 import {
   AccountSearchQueryDto,
@@ -63,12 +54,13 @@ export class AdminAccountController {
 
   @Put(':id/role')
   @ApiOperation({ summary: "Change an account's role; never your own, never the last admin" })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: HttpStatus.OK, type: AccountSummaryDto })
   @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: 'Your own account' })
   @ApiResponse({ status: HttpStatus.CONFLICT, description: 'The last admin' })
   setRole(
     @Req() req: RequestWithUser,
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
     @Body() dto: SetRoleDto,
   ): Promise<AccountSummaryDto> {
     return this.accounts.setRole(req.user.id, id, dto.role);

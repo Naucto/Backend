@@ -89,6 +89,12 @@ function suspendedNow(now: Date): Prisma.UserWhereInput {
   };
 }
 
+/** Where the store may hold a file of a game: where it is served, then where it is withheld. */
+const STORED_AT = {
+  cover: (id: string): string[] => [projectKeys.cover(id), projectKeys.withheldCover(id)],
+  clip: (id: string): string[] => [projectKeys.clip(id), projectKeys.withheldClip(id)],
+};
+
 const WARNED: Prisma.UserWhereInput = {
   moderationRecord: { some: { action: ModerationActionType.ACCOUNT_WARNED } },
 };
@@ -116,7 +122,7 @@ function commentState(comment: Pick<CommentRow, 'deleted' | 'hiddenAt'>): Commen
 }
 
 function operationOwner(owner: Owner): {
-  id: number;
+  id: string;
   role: string;
   deleted: boolean;
   suspended: boolean;
@@ -190,7 +196,7 @@ export class ModerationDirectoryService {
     };
   }
 
-  async account(staff: StaffActor, accountId: number): Promise<ModerationAccountDetailDto> {
+  async account(staff: StaffActor, accountId: string): Promise<ModerationAccountDetailDto> {
     const row = await this.prisma.user.findUnique({
       where: { id: accountId },
       select: ACCOUNT_SELECT,
@@ -259,7 +265,7 @@ export class ModerationDirectoryService {
     };
   }
 
-  async project(staff: StaffActor, projectId: number): Promise<ModerationProjectDetailDto> {
+  async project(staff: StaffActor, projectId: string): Promise<ModerationProjectDetailDto> {
     const row = await this.prisma.project.findUnique({
       where: { id: projectId },
       select: {
@@ -270,7 +276,12 @@ export class ModerationDirectoryService {
     if (!row) {
       throw new NotFoundException('Game not found');
     }
-    const openFlags = (await this.openFlags(ModerationTargetType.PROJECT, [row.id])).get(row.id);
+    const [flags, cover, clip] = await Promise.all([
+      this.openFlags(ModerationTargetType.PROJECT, [row.id]),
+      this.storedKey(STORED_AT.cover(row.id)),
+      this.storedKey(STORED_AT.clip(row.id)),
+    ]);
+    const openFlags = flags.get(row.id);
     const state = projectState(row);
     const targetState: Record<ProjectModerationState, TargetState> = {
       PUBLISHED: 'VISIBLE',
@@ -284,7 +295,8 @@ export class ModerationDirectoryService {
       tags: row.tags,
       collaborators: row.collaborators.map((collaborator) => toAccountRef(collaborator, staff)),
       forkedFromId: row.forkedFromId,
-      hasCover: (await this.coverKey(row.id)) !== null,
+      hasCover: cover !== null,
+      hasClip: clip !== null,
       allowedActions: allowedOperations(staff, {
         type: ModerationTargetType.PROJECT,
         state: targetState[state],
@@ -294,11 +306,11 @@ export class ModerationDirectoryService {
     };
   }
 
-  /** The cover of a game, from wherever it is kept while the game is withheld. */
-  async projectCover(projectId: number): Promise<DownloadedFile> {
-    const key = await this.coverKey(projectId);
+  /** The cover or the clip of a game, from wherever it is kept while the game is withheld. */
+  async projectFile(projectId: string, what: keyof typeof STORED_AT): Promise<DownloadedFile> {
+    const key = await this.storedKey(STORED_AT[what](projectId));
     if (!key) {
-      throw new NotFoundException('This game has no cover');
+      throw new NotFoundException(`This game has no ${what}`);
     }
     return this.s3Service.downloadFile({ key });
   }
@@ -372,8 +384,7 @@ export class ModerationDirectoryService {
       hiddenAt: row.hiddenAt,
       openFlags,
       playUrl: state === 'PUBLISHED' ? siteUrls.play(row.id) : null,
-      previewPlayUrl: siteUrls.previewPlay(row.id),
-      previewEditUrl: siteUrls.previewEdit(row.id),
+      editUrl: siteUrls.edit(row.id),
     };
   }
 
@@ -401,8 +412,9 @@ export class ModerationDirectoryService {
     };
   }
 
-  private async coverKey(projectId: number): Promise<string | null> {
-    for (const key of [projectKeys.cover(projectId), projectKeys.withheldCover(projectId)]) {
+  /** The first of `keys` the store holds. */
+  private async storedKey(keys: string[]): Promise<string | null> {
+    for (const key of keys) {
       if (await this.s3Service.fileExists(key)) {
         return key;
       }
@@ -411,7 +423,7 @@ export class ModerationDirectoryService {
   }
 
   /** Open flags per target of one kind. */
-  private async openFlags(type: ModerationTargetType, ids: number[]): Promise<Map<number, number>> {
+  private async openFlags(type: ModerationTargetType, ids: string[]): Promise<Map<string, number>> {
     if (ids.length === 0) {
       return new Map();
     }
@@ -424,7 +436,7 @@ export class ModerationDirectoryService {
   }
 
   /** Open flags per account, on its profile and on everything it wrote or made. */
-  private async flagsAbout(accountIds: number[]): Promise<Map<number, number>> {
+  private async flagsAbout(accountIds: string[]): Promise<Map<string, number>> {
     if (accountIds.length === 0) {
       return new Map();
     }
@@ -440,7 +452,7 @@ export class ModerationDirectoryService {
     );
   }
 
-  private async warnings(accountIds: number[]): Promise<Map<number, number>> {
+  private async warnings(accountIds: string[]): Promise<Map<string, number>> {
     if (accountIds.length === 0) {
       return new Map();
     }

@@ -9,6 +9,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 
+import { uuidOf } from '../../../test/uuid';
 import { USER } from '../../auth/access/roles';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AnalyticsFactService } from '../analytics/analytics-fact.service';
@@ -78,7 +79,7 @@ describe('UserController', () => {
           provide: APP_GUARD,
           useValue: {
             canActivate: (context: ExecutionContext): boolean => {
-              context.switchToHttp().getRequest().user = { id: 7 };
+              context.switchToHttp().getRequest().user = { id: uuidOf(7) };
               return true;
             },
           },
@@ -98,7 +99,7 @@ describe('UserController', () => {
 
   describe('GET /users/profile', () => {
     const row = {
-      id: 7,
+      id: uuidOf(7),
       email: 'louis@example.com',
       username: 'louis',
       nickname: null,
@@ -127,13 +128,13 @@ describe('UserController', () => {
         .mockResolvedValueOnce(null);
 
       await expect(controller.getProfile({ user: row } as any)).resolves.toEqual({
-        id: 7,
+        id: uuidOf(7),
         email: 'louis@example.com',
         username: 'louis',
         nickname: null,
         role: USER,
         createdAt: row.createdAt,
-        profileImageUrl: 'https://cdn.example/users/7/profile?v=abc',
+        profileImageUrl: `https://cdn.example/users/${uuidOf(7)}/profile?v=abc`,
         backgroundImageUrl: null,
         suspension: null,
       });
@@ -143,7 +144,7 @@ describe('UserController', () => {
       (s3Service.getFileMetadataOrNull as jest.Mock).mockRejectedValue(new Error('timeout'));
 
       await expect(controller.getProfile({ user: row } as any)).resolves.toMatchObject({
-        id: 7,
+        id: uuidOf(7),
         profileImageUrl: null,
         backgroundImageUrl: null,
       });
@@ -151,30 +152,32 @@ describe('UserController', () => {
   });
 
   describe('PATCH /users/profile', () => {
-    const req = { user: { id: 7 } } as any;
+    const req = { user: { id: uuidOf(7) } } as any;
 
     beforeEach(() => {
-      userService.updateMyProfile = jest.fn().mockResolvedValue({ id: 7, username: 'louis' });
+      userService.updateMyProfile = jest
+        .fn()
+        .mockResolvedValue({ id: uuidOf(7), username: 'louis' });
       (s3Service.getFileMetadataOrNull as jest.Mock).mockResolvedValue(null);
     });
 
     it('clears a field sent blank', async () => {
       await controller.updateMyProfile({ description: '   ' }, req);
 
-      expect(userService.updateMyProfile).toHaveBeenCalledWith(7, { description: null });
+      expect(userService.updateMyProfile).toHaveBeenCalledWith(uuidOf(7), { description: null });
     });
 
     it('leaves alone a field the request does not carry', async () => {
       await controller.updateMyProfile({ colour: 'JADE' }, req);
 
-      expect(userService.updateMyProfile).toHaveBeenCalledWith(7, { colour: 'JADE' });
+      expect(userService.updateMyProfile).toHaveBeenCalledWith(uuidOf(7), { colour: 'JADE' });
     });
 
     it('answers with the profile and its two image addresses', async () => {
       const result = await controller.updateMyProfile({ nickname: 'Louis' }, req);
 
       expect(result.data).toEqual({
-        id: 7,
+        id: uuidOf(7),
         username: 'louis',
         profileImageUrl: null,
         backgroundImageUrl: null,
@@ -186,9 +189,9 @@ describe('UserController', () => {
     it('throws Forbidden when req.user.id !== id', async () => {
       await expect(
         controller.uploadProfileBackground(
-          222,
+          uuidOf(222),
           { originalname: 'bg.png' } as any,
-          { user: { id: 111 } } as any,
+          { user: { id: uuidOf(111) } } as any,
         ),
       ).rejects.toMatchObject({ status: HttpStatus.FORBIDDEN });
     });
@@ -213,7 +216,7 @@ describe('UserController', () => {
       'stores a %s whose declared type and content agree',
       async (route) => {
         await request(app.getHttpServer())
-          .post(`/users/7/${route}`)
+          .post(`/users/${uuidOf(7)}/${route}`)
           .attach('file', GIF, { filename: 'a.gif', contentType: 'image/gif' })
           .expect(HttpStatus.CREATED);
 
@@ -225,7 +228,7 @@ describe('UserController', () => {
       'refuses a %s with image content declared as another type',
       async (route) => {
         await request(app.getHttpServer())
-          .post(`/users/7/${route}`)
+          .post(`/users/${uuidOf(7)}/${route}`)
           .attach('file', GIF, { filename: 'a.gif', contentType: 'text/html' })
           .expect(HttpStatus.UNPROCESSABLE_ENTITY);
 
@@ -237,7 +240,7 @@ describe('UserController', () => {
       'stops reading a %s past the size limit',
       async (route) => {
         await request(app.getHttpServer())
-          .post(`/users/7/${route}`)
+          .post(`/users/${uuidOf(7)}/${route}`)
           .attach('file', Buffer.alloc(MAX_FILE_SIZE + 1), {
             filename: 'a.gif',
             contentType: 'image/gif',
@@ -250,17 +253,19 @@ describe('UserController', () => {
   describe('removeProfilePicture', () => {
     it("refuses to clear someone else's zone", async () => {
       await expect(
-        controller.removeProfilePicture(222, { user: { id: 111 } } as any),
+        controller.removeProfilePicture(uuidOf(222), { user: { id: uuidOf(111) } } as any),
       ).rejects.toBeInstanceOf(HttpException);
     });
 
     it('answers the same whether or not there was an image', async () => {
       (s3Service.deleteFile as jest.Mock).mockResolvedValue(undefined);
 
-      const result = await controller.removeProfilePicture(7, { user: { id: 7 } } as any);
+      const result = await controller.removeProfilePicture(uuidOf(7), {
+        user: { id: uuidOf(7) },
+      } as any);
 
-      expect(s3Service.deleteFile).toHaveBeenCalledWith({ key: 'users/7/profile' });
-      expect(result).toEqual({ message: 'Profile picture removed successfully', id: 7 });
+      expect(s3Service.deleteFile).toHaveBeenCalledWith({ key: `users/${uuidOf(7)}/profile` });
+      expect(result).toEqual({ message: 'Profile picture removed successfully', id: uuidOf(7) });
     });
   });
 
@@ -268,21 +273,23 @@ describe('UserController', () => {
     it('answers not found when the person has set none', async () => {
       (s3Service.getFileMetadataOrNull as jest.Mock).mockResolvedValue(null);
 
-      await expect(controller.getProfilePicture(7)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(controller.getProfilePicture(uuidOf(7))).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
 
     it('answers with the versioned address', async () => {
       (s3Service.getFileMetadataOrNull as jest.Mock).mockResolvedValue({ ETag: '"abc"' });
 
-      await expect(controller.getProfilePicture(7)).resolves.toEqual({
-        resourceUrl: 'https://cdn.example/users/7/profile?v=abc',
+      await expect(controller.getProfilePicture(uuidOf(7))).resolves.toEqual({
+        resourceUrl: `https://cdn.example/users/${uuidOf(7)}/profile?v=abc`,
       });
-      expect(edgeService.getCDNUrl).toHaveBeenCalledWith('users/7/profile');
+      expect(edgeService.getCDNUrl).toHaveBeenCalledWith(`users/${uuidOf(7)}/profile`);
     });
   });
 
   describe('/users/me', () => {
-    const req = { user: { id: 7 } } as any;
+    const req = { user: { id: uuidOf(7) } } as any;
 
     it('returns the account settings', async () => {
       userService.getMe = jest.fn().mockResolvedValue({
@@ -294,7 +301,7 @@ describe('UserController', () => {
         friendCode: '7K3QW9ZB',
         sessionJoinPolicy: 'ANYONE',
       });
-      expect(userService.getMe).toHaveBeenCalledWith(7);
+      expect(userService.getMe).toHaveBeenCalledWith(uuidOf(7));
     });
 
     it('forwards only the provided fields on update', async () => {
@@ -304,12 +311,12 @@ describe('UserController', () => {
       });
 
       await controller.updateMe(req, { sessionJoinPolicy: 'FRIENDS' });
-      expect(userService.updateMe).toHaveBeenCalledWith(7, {
+      expect(userService.updateMe).toHaveBeenCalledWith(uuidOf(7), {
         sessionJoinPolicy: 'FRIENDS',
       });
 
       await controller.updateMe(req, {});
-      expect(userService.updateMe).toHaveBeenLastCalledWith(7, {});
+      expect(userService.updateMe).toHaveBeenLastCalledWith(uuidOf(7), {});
     });
 
     it('regenerates the friend code', async () => {
@@ -331,12 +338,12 @@ describe('UserController', () => {
       const res = { clearCookie: jest.fn() } as any;
 
       await controller.deleteMe(
-        { user: { id: 7 } } as any,
+        { user: { id: uuidOf(7) } } as any,
         { confirmation: 'DELETE', removePublishedGames: true },
         res,
       );
 
-      expect(accountDeletion.deleteAccount).toHaveBeenCalledWith(7, true, {
+      expect(accountDeletion.deleteAccount).toHaveBeenCalledWith(uuidOf(7), true, {
         by: 'self',
         password: undefined,
       });
@@ -351,7 +358,7 @@ describe('UserController', () => {
       const res = { clearCookie: jest.fn() } as any;
 
       await expect(
-        controller.deleteMe({ user: { id: 7 } } as any, { confirmation: 'DELETE' }, res),
+        controller.deleteMe({ user: { id: uuidOf(7) } } as any, { confirmation: 'DELETE' }, res),
       ).rejects.toThrow('boom');
       expect(res.clearCookie).not.toHaveBeenCalled();
     });

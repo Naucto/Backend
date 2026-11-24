@@ -9,10 +9,11 @@ import {
   Post,
   Request,
 } from '@nestjs/common';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { AllowedWhileSuspended, RequiresAuth } from '../auth/access/access.decorators';
 import { RequestWithUser } from '../auth/auth.types';
+import { ParseIdPipe } from '../common/pipes/parse-id.pipe';
 import {
   NotificationOfferResponseDto,
   NotificationResponseDto,
@@ -87,6 +88,7 @@ export class NotificationsController {
   }
 
   @ApiOperation({ summary: 'set one notification as read' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({
     status: HttpStatus.OK,
     description: 'Notification marked as read',
@@ -96,7 +98,7 @@ export class NotificationsController {
   @AllowedWhileSuspended()
   async markAsRead(
     @Request() req: RequestWithUser,
-    @Param('id') id: string,
+    @Param('id', ParseIdPipe) id: string,
   ): Promise<NotificationResponseDto> {
     const payload = await this.notificationsService.markAsRead(req.user.id, id);
 

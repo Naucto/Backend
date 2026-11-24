@@ -1,8 +1,9 @@
-import { Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Controller, Get, Param, Query } from '@nestjs/common';
+import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { RequiresStaffSession } from '../../auth/access/access.decorators';
 import { ADMIN } from '../../auth/access/roles';
+import { ParseIdPipe } from '../../common/pipes/parse-id.pipe';
 import { AnalyticsQueryService } from './analytics-query.service';
 import { AnalyticsTimelineService } from './analytics-timeline.service';
 import {
@@ -163,9 +164,10 @@ export class AdminAnalyticsController {
   }
 
   @Get('users/:id')
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiOperation({ summary: 'What analytics counted of one account' })
   @ApiResponse({ status: 200, type: UserAnalyticsSummaryDto })
-  user(@Param('id', ParseIntPipe) id: number): Promise<UserAnalyticsSummaryDto> {
+  user(@Param('id', ParseIdPipe) id: string): Promise<UserAnalyticsSummaryDto> {
     return this.users.summary(id);
   }
 

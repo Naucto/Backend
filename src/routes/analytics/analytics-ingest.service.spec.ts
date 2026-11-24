@@ -1,5 +1,7 @@
 import { AnalyticsLiveState } from '@prisma/client';
 
+import { uuidOf } from '../../../test/uuid';
+import { NO_RELEASE_ID } from '../../common/ids';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FeaturesService } from '../features/features.service';
 import { AnalyticsIngestService, IngestRequest } from './analytics-ingest.service';
@@ -307,7 +309,7 @@ describe('AnalyticsIngestService', () => {
       extra: Partial<AnalyticsPlayReportDto> = {},
     ): AnalyticsPlayReportDto => ({
       playId: PLAY,
-      releaseId: 7,
+      releaseId: uuidOf(7),
       continued: false,
       activeMs,
       ...extra,
@@ -445,7 +447,12 @@ describe('AnalyticsIngestService', () => {
       releases.isPublished.mockResolvedValue(false);
 
       await service.recordBeat(
-        { visitorId: VISITOR, sessionId: SESSION, state: AnalyticsLiveState.PLAYING, releaseId: 9 },
+        {
+          visitorId: VISITOR,
+          sessionId: SESSION,
+          state: AnalyticsLiveState.PLAYING,
+          releaseId: uuidOf(9),
+        },
         BROWSER,
         NOW,
       );
@@ -465,7 +472,7 @@ describe('AnalyticsIngestService', () => {
           state: 'PLAYING',
           signedIn: false,
           consent: 'DECLINED',
-          releaseId: 7,
+          releaseId: uuidOf(7),
           playMs: 20_000,
         },
         BROWSER,
@@ -478,7 +485,7 @@ describe('AnalyticsIngestService', () => {
           state: 'PLAYING',
           signedIn: false,
           consent: 'DECLINED',
-          releaseId: 7,
+          releaseId: uuidOf(7),
           playMs: 20_000,
         },
         NOW,
@@ -499,13 +506,13 @@ describe('AnalyticsIngestService', () => {
       releases.isPublished.mockResolvedValue(false);
 
       await service.recordPing(
-        { kind: 'BEAT', state: 'PLAYING', signedIn: false, releaseId: 9, playMs: 20_000 },
+        { kind: 'BEAT', state: 'PLAYING', signedIn: false, releaseId: uuidOf(9), playMs: 20_000 },
         BROWSER,
         NOW,
       );
 
       expect(tally.recordPing).toHaveBeenCalledWith(
-        expect.objectContaining({ releaseId: 0, playMs: 0 }),
+        expect.objectContaining({ releaseId: NO_RELEASE_ID, playMs: 0 }),
         NOW,
       );
     });
@@ -515,12 +522,12 @@ describe('AnalyticsIngestService', () => {
     it('holds the purge gate shared, then locks the account and the visitor exclusively', async () => {
       tx.analyticsVisitor.findUnique.mockResolvedValue(null);
 
-      await service.link(5, VISITOR, NOW);
+      await service.link(uuidOf(5), VISITOR, NOW);
 
       const [gate, account, visitor] = tx.$executeRaw.mock.calls;
       expect(sqlOf(gate ?? [])).toContain('pg_advisory_xact_lock_shared(');
       expect(sqlOf(account ?? [])).toContain('pg_advisory_xact_lock(');
-      expect(account).toContain(5);
+      expect(account).toContain(uuidOf(5));
       expect(sqlOf(visitor ?? [])).toContain('pg_advisory_xact_lock(');
     });
 
@@ -530,13 +537,13 @@ describe('AnalyticsIngestService', () => {
         firstSeenAt: ago(MINUTE_MS),
       });
 
-      expect(await service.link(5, VISITOR, NOW)).toEqual({ status: 'linked' });
+      expect(await service.link(uuidOf(5), VISITOR, NOW)).toEqual({ status: 'linked' });
       expect(tx.analyticsVisitor.update).toHaveBeenCalledWith({
         where: { id: VISITOR },
-        data: { userId: 5, linkedAt: NOW },
+        data: { userId: uuidOf(5), linkedAt: NOW },
       });
       expect(tx.analyticsProjectionWork.createMany).toHaveBeenCalledWith({
-        data: [{ visitorId: VISITOR, userId: 5, enqueuedAt: NOW, nextAttemptAt: NOW }],
+        data: [{ visitorId: VISITOR, userId: uuidOf(5), enqueuedAt: NOW, nextAttemptAt: NOW }],
         skipDuplicates: true,
       });
     });
@@ -544,38 +551,44 @@ describe('AnalyticsIngestService', () => {
     it('creates a visitor first seen at its link', async () => {
       tx.analyticsVisitor.findUnique.mockResolvedValue(null);
 
-      await service.link(5, VISITOR, NOW);
+      await service.link(uuidOf(5), VISITOR, NOW);
 
       expect(tx.analyticsVisitor.create).toHaveBeenCalledWith({
-        data: { id: VISITOR, userId: 5, linkedAt: NOW, firstSeenAt: NOW, lastSeenAt: NOW },
+        data: { id: VISITOR, userId: uuidOf(5), linkedAt: NOW, firstSeenAt: NOW, lastSeenAt: NOW },
       });
     });
 
     it('never takes a visitor another account holds', async () => {
-      tx.analyticsVisitor.findUnique.mockResolvedValue({ userId: 6, firstSeenAt: ago(MINUTE_MS) });
+      tx.analyticsVisitor.findUnique.mockResolvedValue({
+        userId: uuidOf(6),
+        firstSeenAt: ago(MINUTE_MS),
+      });
 
-      expect(await service.link(5, VISITOR, NOW)).toEqual({ status: 'conflict' });
+      expect(await service.link(uuidOf(5), VISITOR, NOW)).toEqual({ status: 'conflict' });
       expect(tx.analyticsVisitor.update).not.toHaveBeenCalled();
     });
 
     it('answers linked without writing for a visitor already linked to the account', async () => {
-      tx.analyticsVisitor.findUnique.mockResolvedValue({ userId: 5, firstSeenAt: ago(MINUTE_MS) });
+      tx.analyticsVisitor.findUnique.mockResolvedValue({
+        userId: uuidOf(5),
+        firstSeenAt: ago(MINUTE_MS),
+      });
 
-      expect(await service.link(5, VISITOR, NOW)).toEqual({ status: 'linked' });
+      expect(await service.link(uuidOf(5), VISITOR, NOW)).toEqual({ status: 'linked' });
       expect(tx.analyticsProjectionWork.createMany).not.toHaveBeenCalled();
     });
 
     it('never revives an erased visitor', async () => {
       tx.analyticsVisitorTombstone.findUnique.mockResolvedValue({ id: VISITOR });
 
-      expect(await service.link(5, VISITOR, NOW)).toEqual({ status: 'erased' });
+      expect(await service.link(uuidOf(5), VISITOR, NOW)).toEqual({ status: 'erased' });
       expect(tx.analyticsVisitor.create).not.toHaveBeenCalled();
     });
 
     it('links nothing while analytics is off', async () => {
       features.features.analytics = false;
 
-      expect(await service.link(5, VISITOR, NOW)).toEqual({ status: 'disabled' });
+      expect(await service.link(uuidOf(5), VISITOR, NOW)).toEqual({ status: 'disabled' });
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
   });

@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 
+import { uuidOf } from '../../../test/uuid';
 import { PresenceService } from '../../presence/presence.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { periodOf } from './analytics-periods';
@@ -60,7 +61,7 @@ describe('AnalyticsQueryService', () => {
         ingestErrorRate: 0,
       });
 
-      expect((await service.pointOf('plays', 'release:9', DAY, NOW)).value).toBe(0);
+      expect((await service.pointOf('plays', `release:${uuidOf(9)}`, DAY, NOW)).value).toBe(0);
       expect((await service.pointOf('active_browsers_peak', '', DAY, NOW)).value).toBeNull();
       expect((await service.pointOf('session_seconds_median', '', DAY, NOW)).value).toBeNull();
     });
@@ -227,13 +228,13 @@ describe('AnalyticsQueryService', () => {
     it('counts distinct players once over the range, never as a sum of its days', async () => {
       finalOn('2026-10-05', '2026-10-06');
       mocked.activityMetrics.mockResolvedValue([
-        { metric: 'players', dimension: 'release:9', value: 3 },
+        { metric: 'players', dimension: `release:${uuidOf(9)}`, value: 3 },
       ]);
 
       const games = await service.games({ from: '2026-10-05', to: '2026-10-06' }, NOW);
 
       expect(games.items).toEqual([
-        { releaseId: 9, name: null, plays: 0, playtimeMs: 0, players: 3, mpSessions: 0 },
+        { releaseId: uuidOf(9), name: null, plays: 0, playtimeMs: 0, players: 3, mpSessions: 0 },
       ]);
       expect(mocked.activityMetrics).toHaveBeenCalledTimes(1);
       expect(mocked.activityMetrics).toHaveBeenCalledWith(prisma, {
@@ -245,13 +246,13 @@ describe('AnalyticsQueryService', () => {
     it('has no player count for a range reaching before the raw window', async () => {
       finalOn('2026-05-01');
       prisma.analyticsRollup.groupBy.mockResolvedValue([
-        { dimension: 'release:9', _sum: { value: 12 }, _max: { value: 12 } },
+        { dimension: `release:${uuidOf(9)}`, _sum: { value: 12 }, _max: { value: 12 } },
       ]);
 
       const games = await service.games({ from: '2026-05-01', to: '2026-05-01' }, NOW);
 
       expect(games.status).toBe('final');
-      expect(games.items[0]).toMatchObject({ releaseId: 9, plays: 12, players: null });
+      expect(games.items[0]).toMatchObject({ releaseId: uuidOf(9), plays: 12, players: null });
       expect(mocked.activityMetrics).not.toHaveBeenCalled();
     });
   });

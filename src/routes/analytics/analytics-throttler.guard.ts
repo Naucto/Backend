@@ -16,14 +16,14 @@ const MINUTE_MS = 60_000;
 
 interface ThrottledRequest {
   ip?: string;
-  user?: { id: number } | null;
+  user?: { id: string } | null;
   body?: unknown;
 }
 
 /** The account for a signed-in call, else the browser's visitor id, else the address. */
 function identityOf(req: ThrottledRequest): string {
   if (req.user) {
-    return `u:${String(req.user.id)}`;
+    return `u:${req.user.id}`;
   }
   const visitorId =
     typeof req.body === 'object' && req.body !== null

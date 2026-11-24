@@ -1,23 +1,28 @@
 import { Injectable } from '@nestjs/common';
-import { ModerationTargetType } from '@prisma/client';
+import { CollectionVisibility, ModerationTargetType } from '@prisma/client';
 
 import { currentSuspension } from '../../auth/access/suspension';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ITEM_ORDER } from '../collections/collections.service';
 import { hubName } from '../project/hub-fields';
-import { TargetState } from './dto/case.dto';
+import { CaseListedGameDto, TargetState, TargetVisibility } from './dto/case.dto';
 import { TargetContentDto } from './dto/moderation-action.dto';
 import { ACCOUNT_REF_SELECT, AccountRefRow } from './moderation-mappers';
 
-/** A game, a comment or an account as moderation looks at it now. */
+/** What a flag or a case is about, as moderation looks at it now. */
 export interface TargetView {
   type: ModerationTargetType;
-  id: number;
+  id: string;
   state: TargetState;
-  /** The account itself, the creator of the game or the author of the comment. */
+  /** The account itself, or the account the content belongs to. */
   owner: AccountRefRow | null;
   content: TargetContentDto | null;
-  /** The game itself, or the game a comment is on. */
-  project: { id: number; name: string; reachable: boolean } | null;
+  /** The game itself, or the game the target sits on. Null for a target tied to no single game. */
+  project: { id: string; name: string; reachable: boolean } | null;
+  /** Who its owner lets read it. Null for a target whose owner has no such choice. */
+  visibility: TargetVisibility | null;
+  /** The games it lists, in its order. Empty for a target that lists none. */
+  games: CaseListedGameDto[];
 }
 
 const PROJECT_SELECT = {
@@ -38,7 +43,7 @@ const PROJECT_SELECT = {
 export class ModerationTargetService {
   constructor(private readonly prisma: PrismaService) {}
 
-  view(type: ModerationTargetType, id: number): Promise<TargetView> {
+  view(type: ModerationTargetType, id: string): Promise<TargetView> {
     switch (type) {
       case ModerationTargetType.USER:
         return this.account(id);
@@ -46,14 +51,25 @@ export class ModerationTargetService {
         return this.game(id);
       case ModerationTargetType.COMMENT:
         return this.comment(id);
+      case ModerationTargetType.COLLECTION:
+        return this.collection(id);
     }
   }
 
-  private gone(type: ModerationTargetType, id: number): TargetView {
-    return { type, id, state: 'GONE', owner: null, content: null, project: null };
+  private gone(type: ModerationTargetType, id: string): TargetView {
+    return {
+      type,
+      id,
+      state: 'GONE',
+      owner: null,
+      content: null,
+      project: null,
+      visibility: null,
+      games: [],
+    };
   }
 
-  private async account(id: number): Promise<TargetView> {
+  private async account(id: string): Promise<TargetView> {
     const account = await this.prisma.user.findUnique({
       where: { id },
       select: {
@@ -78,10 +94,12 @@ export class ModerationTargetService {
       owner,
       content: { title: account.nickname ?? account.username, body: description },
       project: null,
+      visibility: null,
+      games: [],
     };
   }
 
-  private async game(id: number): Promise<TargetView> {
+  private async game(id: string): Promise<TargetView> {
     const game = await this.prisma.project.findUnique({ where: { id }, select: PROJECT_SELECT });
     if (!game) {
       return this.gone(ModerationTargetType.PROJECT, id);
@@ -104,10 +122,12 @@ export class ModerationTargetService {
       owner: game.creator,
       content: { title: hubName(game), body: body || null },
       project: { id, name: hubName(game), reachable: state === 'VISIBLE' },
+      visibility: null,
+      games: [],
     };
   }
 
-  private async comment(id: number): Promise<TargetView> {
+  private async comment(id: string): Promise<TargetView> {
     const comment = await this.prisma.comment.findUnique({
       where: { id },
       select: {
@@ -134,6 +154,43 @@ export class ModerationTargetService {
         name: hubName(comment.project),
         reachable: comment.project.publishedAt !== null && comment.project.hiddenAt === null,
       },
+      visibility: null,
+      games: [],
+    };
+  }
+
+  /** A private collection exists for its owner alone, as a game nobody released does. */
+  private async collection(id: string): Promise<TargetView> {
+    const collection = await this.prisma.collection.findUnique({
+      where: { id },
+      select: {
+        title: true,
+        description: true,
+        visibility: true,
+        hiddenAt: true,
+        owner: { select: ACCOUNT_REF_SELECT },
+        items: {
+          select: { project: { select: { id: true, name: true, publishedName: true } } },
+          orderBy: ITEM_ORDER,
+        },
+      },
+    });
+    if (!collection) {
+      return this.gone(ModerationTargetType.COLLECTION, id);
+    }
+    return {
+      type: ModerationTargetType.COLLECTION,
+      id,
+      state: collection.hiddenAt
+        ? 'HIDDEN'
+        : collection.visibility === CollectionVisibility.PRIVATE
+          ? 'UNPUBLISHED'
+          : 'VISIBLE',
+      owner: collection.owner,
+      content: { title: collection.title, body: collection.description },
+      project: null,
+      visibility: collection.visibility,
+      games: collection.items.map(({ project }) => ({ id: project.id, name: hubName(project) })),
     };
   }
 }

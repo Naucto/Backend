@@ -1,6 +1,7 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 
+import { uuidOf } from '../../../test/uuid';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   CommentNestedReplyException,
@@ -26,14 +27,14 @@ describe('ProjectCommentService', () => {
     },
   };
 
-  const author = { id: 7, username: 'ada', nickname: null };
+  const author = { id: uuidOf(7), username: 'ada', nickname: null };
   const stored = {
-    id: 5,
+    id: uuidOf(5),
     content: 'Great game!',
     deleted: false,
     createdAt: new Date('2026-08-17T09:00:00Z'),
-    projectId: 1,
-    authorId: 7,
+    projectId: uuidOf(1),
+    authorId: uuidOf(7),
     parentId: null,
     author,
   };
@@ -56,11 +57,11 @@ describe('ProjectCommentService', () => {
     });
 
     it('returns a page of top-level comments with their replies', async () => {
-      const reply = { ...stored, id: 6, parentId: 5, content: 'Agreed' };
+      const reply = { ...stored, id: uuidOf(6), parentId: uuidOf(5), content: 'Agreed' };
       prismaMock.comment.findMany.mockResolvedValue([{ ...stored, replies: [reply] }]);
       prismaMock.comment.count.mockResolvedValue(1);
 
-      const result = await service.getComments(1, 2, 10, 'oldest');
+      const result = await service.getComments(uuidOf(1), 2, 10, 'oldest');
 
       expect(prismaMock.comment.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -72,19 +73,19 @@ describe('ProjectCommentService', () => {
       expect(result).toEqual({
         comments: [
           {
-            id: 5,
+            id: uuidOf(5),
             content: 'Great game!',
             deleted: false,
             createdAt: stored.createdAt,
-            projectId: 1,
+            projectId: uuidOf(1),
             author,
             replies: [
               {
-                id: 6,
+                id: uuidOf(6),
                 content: 'Agreed',
                 deleted: false,
                 createdAt: stored.createdAt,
-                projectId: 1,
+                projectId: uuidOf(1),
                 author,
               },
             ],
@@ -98,10 +99,10 @@ describe('ProjectCommentService', () => {
 
     it('withholds the text of a comment moderation hid, and says who removed it', async () => {
       const hidden = { ...stored, hiddenAt: new Date('2026-08-18T09:00:00Z') };
-      const hiddenReply = { ...hidden, id: 6, parentId: 5 };
+      const hiddenReply = { ...hidden, id: uuidOf(6), parentId: uuidOf(5) };
       prismaMock.comment.findMany.mockResolvedValue([{ ...hidden, replies: [hiddenReply] }]);
 
-      const { comments } = await service.getComments(1);
+      const { comments } = await service.getComments(uuidOf(1));
 
       expect(comments[0]).toMatchObject({ content: '', deleted: true, removedBy: 'MODERATION' });
       expect(comments[0]?.replies?.[0]).toMatchObject({
@@ -117,16 +118,16 @@ describe('ProjectCommentService', () => {
         { ...stored, content: '', deleted: true, replies: [] },
       ]);
 
-      const { comments } = await service.getComments(1);
+      const { comments } = await service.getComments(uuidOf(1));
 
       expect(comments[0]).toMatchObject({ deleted: true, removedBy: 'USER' });
     });
 
     it('keeps a deleted comment only while it still has replies', async () => {
-      await service.getComments(1);
+      await service.getComments(uuidOf(1));
 
       const where = {
-        projectId: 1,
+        projectId: uuidOf(1),
         parentId: null,
         OR: [{ deleted: false }, { deleted: true, replies: { some: {} } }],
       };
@@ -139,7 +140,7 @@ describe('ProjectCommentService', () => {
       { page: 3.9, limit: 0, expected: { page: 3, limit: 20, skip: 40 } },
       { page: NaN, limit: NaN, expected: { page: 1, limit: 20, skip: 0 } },
     ])('clamps page $page and limit $limit', async ({ page, limit, expected }) => {
-      const result = await service.getComments(1, page, limit);
+      const result = await service.getComments(uuidOf(1), page, limit);
 
       expect(prismaMock.comment.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ skip: expected.skip, take: expected.limit }),
@@ -154,7 +155,7 @@ describe('ProjectCommentService', () => {
     ])('answers not found for a %s project', async (_state, project) => {
       prismaMock.project.findUnique.mockResolvedValue(project);
 
-      await expect(service.getComments(1)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.getComments(uuidOf(1))).rejects.toBeInstanceOf(NotFoundException);
       expect(prismaMock.comment.findMany).not.toHaveBeenCalled();
     });
   });
@@ -163,18 +164,18 @@ describe('ProjectCommentService', () => {
     it('answers not found for a missing project', async () => {
       prismaMock.project.findUnique.mockResolvedValue(null);
 
-      await expect(service.createComment(1, 7, 'Great game!')).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        service.createComment(uuidOf(1), uuidOf(7), 'Great game!'),
+      ).rejects.toBeInstanceOf(NotFoundException);
       expect(prismaMock.comment.create).not.toHaveBeenCalled();
     });
 
     it('refuses a comment on an unpublished project', async () => {
       prismaMock.project.findUnique.mockResolvedValue({ publishedAt: null });
 
-      await expect(service.createComment(1, 7, 'Great game!')).rejects.toBeInstanceOf(
-        CommentProjectNotPublishedException,
-      );
+      await expect(
+        service.createComment(uuidOf(1), uuidOf(7), 'Great game!'),
+      ).rejects.toBeInstanceOf(CommentProjectNotPublishedException);
       expect(prismaMock.comment.create).not.toHaveBeenCalled();
     });
 
@@ -182,22 +183,24 @@ describe('ProjectCommentService', () => {
       prismaMock.project.findUnique.mockResolvedValue(published);
       prismaMock.comment.create.mockResolvedValue(stored);
 
-      const result = await service.createComment(1, 7, 'Great game!');
+      const result = await service.createComment(uuidOf(1), uuidOf(7), 'Great game!');
 
       expect(prismaMock.comment.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: { content: 'Great game!', authorId: 7, projectId: 1 },
+          data: { content: 'Great game!', authorId: uuidOf(7), projectId: uuidOf(1) },
         }),
       );
-      expect(result).toEqual(expect.objectContaining({ id: 5, content: 'Great game!', author }));
+      expect(result).toEqual(
+        expect.objectContaining({ id: uuidOf(5), content: 'Great game!', author }),
+      );
     });
   });
 
   describe('createReply', () => {
     const parent = {
-      id: 5,
+      id: uuidOf(5),
       parentId: null,
-      projectId: 1,
+      projectId: uuidOf(1),
       deleted: false,
       project: published,
     };
@@ -205,16 +208,16 @@ describe('ProjectCommentService', () => {
     it('answers not found for a missing parent', async () => {
       prismaMock.comment.findUnique.mockResolvedValue(null);
 
-      await expect(service.createReply(1, 5, 8, 'Agreed')).rejects.toBeInstanceOf(
-        CommentNotFoundException,
-      );
+      await expect(
+        service.createReply(uuidOf(1), uuidOf(5), uuidOf(8), 'Agreed'),
+      ).rejects.toBeInstanceOf(CommentNotFoundException);
     });
 
     it('answers not found for a parent of another project', async () => {
       prismaMock.comment.findUnique.mockResolvedValue(parent);
 
       const failure: unknown = await service
-        .createReply(999, 5, 8, 'Agreed')
+        .createReply(uuidOf(999), uuidOf(5), uuidOf(8), 'Agreed')
         .catch((error: unknown) => error);
 
       expect(failure).toBeInstanceOf(NotFoundException);
@@ -224,12 +227,12 @@ describe('ProjectCommentService', () => {
     it('refuses a reply to a reply', async () => {
       prismaMock.comment.findUnique.mockResolvedValue({
         ...parent,
-        parentId: 4,
+        parentId: uuidOf(4),
       });
 
-      await expect(service.createReply(1, 5, 8, 'Agreed')).rejects.toBeInstanceOf(
-        CommentNestedReplyException,
-      );
+      await expect(
+        service.createReply(uuidOf(1), uuidOf(5), uuidOf(8), 'Agreed'),
+      ).rejects.toBeInstanceOf(CommentNestedReplyException);
     });
 
     it('refuses a reply to a deleted comment', async () => {
@@ -238,17 +241,17 @@ describe('ProjectCommentService', () => {
         deleted: true,
       });
 
-      await expect(service.createReply(1, 5, 8, 'Agreed')).rejects.toBeInstanceOf(
-        ForbiddenException,
-      );
+      await expect(
+        service.createReply(uuidOf(1), uuidOf(5), uuidOf(8), 'Agreed'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
     it('refuses a reply to a comment moderation hid', async () => {
       prismaMock.comment.findUnique.mockResolvedValue({ ...parent, hiddenAt: new Date() });
 
-      await expect(service.createReply(1, 5, 8, 'Agreed')).rejects.toBeInstanceOf(
-        ForbiddenException,
-      );
+      await expect(
+        service.createReply(uuidOf(1), uuidOf(5), uuidOf(8), 'Agreed'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
       expect(prismaMock.comment.create).not.toHaveBeenCalled();
     });
 
@@ -258,9 +261,9 @@ describe('ProjectCommentService', () => {
         project: { publishedAt: null },
       });
 
-      await expect(service.createReply(1, 5, 8, 'Agreed')).rejects.toBeInstanceOf(
-        CommentProjectNotPublishedException,
-      );
+      await expect(
+        service.createReply(uuidOf(1), uuidOf(5), uuidOf(8), 'Agreed'),
+      ).rejects.toBeInstanceOf(CommentProjectNotPublishedException);
       expect(prismaMock.comment.create).not.toHaveBeenCalled();
     });
 
@@ -268,38 +271,43 @@ describe('ProjectCommentService', () => {
       prismaMock.comment.findUnique.mockResolvedValue(parent);
       prismaMock.comment.create.mockResolvedValue({
         ...stored,
-        id: 6,
-        parentId: 5,
+        id: uuidOf(6),
+        parentId: uuidOf(5),
       });
 
-      await service.createReply(1, 5, 8, 'Agreed');
+      await service.createReply(uuidOf(1), uuidOf(5), uuidOf(8), 'Agreed');
 
       expect(prismaMock.comment.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: { content: 'Agreed', authorId: 8, projectId: 1, parentId: 5 },
+          data: {
+            content: 'Agreed',
+            authorId: uuidOf(8),
+            projectId: uuidOf(1),
+            parentId: uuidOf(5),
+          },
         }),
       );
     });
   });
 
   describe('updateComment', () => {
-    const own = { id: 5, authorId: 7, projectId: 1, deleted: false };
+    const own = { id: uuidOf(5), authorId: uuidOf(7), projectId: uuidOf(1), deleted: false };
 
     it('answers not found for a missing comment', async () => {
       prismaMock.comment.findUnique.mockResolvedValue(null);
 
-      await expect(service.updateComment(1, 5, 7, 'Edited')).rejects.toBeInstanceOf(
-        CommentNotFoundException,
-      );
+      await expect(
+        service.updateComment(uuidOf(1), uuidOf(5), uuidOf(7), 'Edited'),
+      ).rejects.toBeInstanceOf(CommentNotFoundException);
       expect(prismaMock.comment.update).not.toHaveBeenCalled();
     });
 
     it('refuses an edit by anyone but the author', async () => {
       prismaMock.comment.findUnique.mockResolvedValue(own);
 
-      await expect(service.updateComment(1, 5, 8, 'Edited')).rejects.toBeInstanceOf(
-        ForbiddenException,
-      );
+      await expect(
+        service.updateComment(uuidOf(1), uuidOf(5), uuidOf(8), 'Edited'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
       expect(prismaMock.comment.update).not.toHaveBeenCalled();
     });
 
@@ -307,7 +315,7 @@ describe('ProjectCommentService', () => {
       prismaMock.comment.findUnique.mockResolvedValue(own);
 
       const failure: unknown = await service
-        .updateComment(999, 5, 7, 'Edited')
+        .updateComment(uuidOf(999), uuidOf(5), uuidOf(7), 'Edited')
         .catch((error: unknown) => error);
 
       expect(failure).toBeInstanceOf(NotFoundException);
@@ -318,18 +326,18 @@ describe('ProjectCommentService', () => {
     it('does not edit a deleted comment', async () => {
       prismaMock.comment.findUnique.mockResolvedValue({ ...own, deleted: true });
 
-      await expect(service.updateComment(1, 5, 7, 'Edited')).rejects.toBeInstanceOf(
-        CommentNotFoundException,
-      );
+      await expect(
+        service.updateComment(uuidOf(1), uuidOf(5), uuidOf(7), 'Edited'),
+      ).rejects.toBeInstanceOf(CommentNotFoundException);
       expect(prismaMock.comment.update).not.toHaveBeenCalled();
     });
 
     it('does not let the author rewrite a comment moderation hid', async () => {
       prismaMock.comment.findUnique.mockResolvedValue({ ...own, hiddenAt: new Date() });
 
-      await expect(service.updateComment(1, 5, 7, 'Edited')).rejects.toBeInstanceOf(
-        CommentNotFoundException,
-      );
+      await expect(
+        service.updateComment(uuidOf(1), uuidOf(5), uuidOf(7), 'Edited'),
+      ).rejects.toBeInstanceOf(CommentNotFoundException);
       expect(prismaMock.comment.update).not.toHaveBeenCalled();
     });
 
@@ -340,11 +348,11 @@ describe('ProjectCommentService', () => {
         content: 'Edited',
       });
 
-      const result = await service.updateComment(1, 5, 7, 'Edited');
+      const result = await service.updateComment(uuidOf(1), uuidOf(5), uuidOf(7), 'Edited');
 
       expect(prismaMock.comment.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: 5 },
+          where: { id: uuidOf(5) },
           data: { content: 'Edited' },
         }),
       );
@@ -354,27 +362,29 @@ describe('ProjectCommentService', () => {
 
   describe('deleteComment', () => {
     const target = {
-      id: 5,
-      authorId: 7,
-      projectId: 1,
+      id: uuidOf(5),
+      authorId: uuidOf(7),
+      projectId: uuidOf(1),
       _count: { replies: 0 },
     };
 
     beforeEach(() => {
-      prismaMock.project.findUnique.mockResolvedValue({ userId: 3 });
+      prismaMock.project.findUnique.mockResolvedValue({ userId: uuidOf(3) });
     });
 
     it('answers not found for a missing comment', async () => {
       prismaMock.comment.findUnique.mockResolvedValue(null);
 
-      await expect(service.deleteComment(1, 5, 7)).rejects.toBeInstanceOf(CommentNotFoundException);
+      await expect(service.deleteComment(uuidOf(1), uuidOf(5), uuidOf(7))).rejects.toBeInstanceOf(
+        CommentNotFoundException,
+      );
     });
 
     it('answers not found for a comment of another project', async () => {
       prismaMock.comment.findUnique.mockResolvedValue(target);
 
       const failure: unknown = await service
-        .deleteComment(999, 5, 7)
+        .deleteComment(uuidOf(999), uuidOf(5), uuidOf(7))
         .catch((error: unknown) => error);
 
       expect(failure).toBeInstanceOf(NotFoundException);
@@ -385,21 +395,23 @@ describe('ProjectCommentService', () => {
     it("refuses anyone but the author and the project's creator", async () => {
       prismaMock.comment.findUnique.mockResolvedValue(target);
 
-      await expect(service.deleteComment(1, 5, 8)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.deleteComment(uuidOf(1), uuidOf(5), uuidOf(8))).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
       expect(prismaMock.comment.delete).not.toHaveBeenCalled();
       expect(prismaMock.comment.update).not.toHaveBeenCalled();
     });
 
     it.each([
-      ['its author', 7],
-      ["the project's creator", 3],
+      ['its author', uuidOf(7)],
+      ["the project's creator", uuidOf(3)],
     ])('removes a comment without replies for %s', async (_who, userId) => {
       prismaMock.comment.findUnique.mockResolvedValue(target);
 
-      await service.deleteComment(1, 5, userId);
+      await service.deleteComment(uuidOf(1), uuidOf(5), userId);
 
       expect(prismaMock.comment.delete).toHaveBeenCalledWith({
-        where: { id: 5 },
+        where: { id: uuidOf(5) },
       });
       expect(prismaMock.comment.update).not.toHaveBeenCalled();
     });
@@ -410,10 +422,10 @@ describe('ProjectCommentService', () => {
         _count: { replies: 2 },
       });
 
-      await service.deleteComment(1, 5, 7);
+      await service.deleteComment(uuidOf(1), uuidOf(5), uuidOf(7));
 
       expect(prismaMock.comment.update).toHaveBeenCalledWith({
-        where: { id: 5 },
+        where: { id: uuidOf(5) },
         data: { deleted: true, content: '' },
       });
       expect(prismaMock.comment.delete).not.toHaveBeenCalled();

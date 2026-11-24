@@ -54,6 +54,7 @@ export const USER_RELATION_FATES: Record<UserRelation, 'deleted' | 'unlinked' | 
     analyticsDays: 'deleted',
     analyticsProjectionWork: 'deleted',
     feedbackPrompt: 'deleted',
+    collections: 'deleted',
     // A report stays with the platform once its author is anonymised. Its screenshot goes, since an
     // image can show the person.
     reports: 'kept',
@@ -90,7 +91,7 @@ export class AccountDeletionService {
   ) {}
 
   async deleteAccount(
-    userId: number,
+    userId: string,
     removePublishedGames: boolean,
     requester: DeletionRequester,
     alongside?: (tx: Prisma.TransactionClient) => Promise<void>,
@@ -123,7 +124,7 @@ export class AccountDeletionService {
 
   // Published games are kept unless the user asked otherwise; a project's live sessions go first
   // because their foreign keys block its delete.
-  private async removeOwnedProjects(userId: number, removePublished: boolean): Promise<void> {
+  private async removeOwnedProjects(userId: string, removePublished: boolean): Promise<void> {
     const projects = await this.prisma.project.findMany({
       where: {
         userId,
@@ -148,7 +149,7 @@ export class AccountDeletionService {
    * exist exactly when the account is gone.
    */
   private async purgeAndAnonymise(
-    userId: number,
+    userId: string,
     alongside?: (tx: Prisma.TransactionClient) => Promise<void>,
   ): Promise<void> {
     const now = new Date();
@@ -173,6 +174,7 @@ export class AccountDeletionService {
       });
       await tx.notification.deleteMany({ where: { userId } });
       await tx.feedbackPrompt.deleteMany({ where: { userId } });
+      await tx.collection.deleteMany({ where: { ownerId: userId } });
       await tx.gameSession.updateMany({
         where: { hostId: userId, endedAt: null },
         data: { endedAt: now },
@@ -218,7 +220,7 @@ export class AccountDeletionService {
     }
   }
 
-  private async removeProfileAssets(userId: number): Promise<void> {
+  private async removeProfileAssets(userId: string): Promise<void> {
     for (const asset of PROFILE_ASSETS) {
       try {
         await this.profileAssetService.remove(userId, asset);
@@ -228,14 +230,14 @@ export class AccountDeletionService {
     }
   }
 
-  private async removeReportScreenshots(userId: number): Promise<void> {
+  private async removeReportScreenshots(userId: string): Promise<void> {
     const reports = await this.prisma.report.findMany({
       where: { userId, screenshotKey: { not: null } },
       select: { id: true, screenshotKey: true },
     });
     // A key is cleared only once its file is gone, so a failed delete stays findable: a report of a
     // deleted account that still holds a key is a screenshot left to remove.
-    const removed: number[] = [];
+    const removed: string[] = [];
     for (const report of reports) {
       if (!report.screenshotKey) {
         continue;

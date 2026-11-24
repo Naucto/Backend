@@ -1,11 +1,15 @@
 /**
  * Development seed: people, friendships, pending requests and shared game sessions, so the lists
- * and panels that stay hidden on an empty database have rows to draw, and 80 days of usage
- * analytics for the admin console (`seed-dev-analytics.ts`).
+ * and panels that stay hidden on an empty database have rows to draw, 80 days of usage
+ * analytics for the admin console (`seed-dev-analytics.ts`), a disk style on a few games,
+ * collections of the published games (`seed-dev-collections.ts`), and a month of views, likes, comments and plays for the hub to
+ * rank the published games on (`seed-dev-hub.ts`), and notifications of every kind for the bell
+ * (`seed-dev-notifications.ts`).
  *
- *   npm run seed:dev                         everything
- *   npm run seed:dev -- --no-analytics       everything but the analytics
- *   npm run seed:dev -- --clear-analytics    only removes the analytics it wrote
+ *   npm run seed:dev                              everything
+ *   npm run seed:dev -- --no-analytics            everything but the analytics
+ *   npm run seed:dev -- --clear-analytics         only removes the analytics it wrote
+ *   npm run seed:dev -- --only notifications      only the notifications, on people already seeded
  *
  * Games are seeded separately, by `npm run seed:content` in the Frontend: their content is a Yjs
  * document only the engine can build.
@@ -18,9 +22,15 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
+import { compareIds } from '../src/common/ids';
 import { getOptionalEnv } from '../src/config/env';
 import { databaseUrl } from '../src/prisma/database-url';
+import { DiskStyleDto } from '../src/routes/project/dto/disk-style.dto';
+import { keepEditTime } from '../src/routes/project/keep-edit-time';
 import { clearAnalytics, seedAnalytics } from './seed-dev-analytics';
+import { seedCollections } from './seed-dev-collections';
+import { seedHubSignals } from './seed-dev-hub';
+import { seedNotifications } from './seed-dev-notifications';
 
 const connectionString = databaseUrl();
 if (!connectionString) {
@@ -43,10 +53,7 @@ interface SeedUser {
   friendCode: string;
 }
 
-/**
- * Names are the design's own cast, so a screenshot lines up with the artboard. The ids they land on
- * drive the identity colour, which is why the order matters and the list is not alphabetical.
- */
+/** Names are the design's own cast, so a screenshot lines up with the artboard. */
 const USERS: SeedUser[] = [
   {
     username: 'alexis',
@@ -120,6 +127,16 @@ const SHARED_SESSIONS: {
   },
 ];
 
+/**
+ * Disks their authors chose, by project name as the Frontend's `tools/seed-content.ts` spells it.
+ * The other games keep the colour a client derives from their id, so a local hub shows both.
+ */
+const DISK_STYLES: Record<string, DiskStyleDto> = {
+  'Snake 8-bit': { color: '#10d275', finish: 'stripes', color2: '#bfff3c' },
+  'Moon Lander': { color: '#234975', finish: 'gradient', color2: '#430067', gradDir: 'v' },
+  Duel: { color: '#ffd100', finish: 'gold' },
+};
+
 function assertLocalDatabase(url: string): void {
   // A deployment reaches its database under a compose service name too, so the host alone does
   // not tell it apart from a laptop.
@@ -137,9 +154,9 @@ function assertLocalDatabase(url: string): void {
   }
 }
 
-async function seedUsers(): Promise<Map<string, number>> {
+async function seedUsers(): Promise<Map<string, string>> {
   const password = await bcrypt.hash(DEV_PASSWORD, 10);
-  const ids = new Map<string, number>();
+  const ids = new Map<string, string>();
   for (const user of USERS) {
     const row = await prisma.user.upsert({
       where: { email: `${user.username}@naucto.local` },
@@ -165,14 +182,26 @@ async function seedUsers(): Promise<Map<string, number>> {
   return ids;
 }
 
-async function seedSocialGraph(ids: Map<string, number>, alexis: number): Promise<void> {
+/** The people a previous run seeded, for the parts that must not write them again. */
+async function findSeededUsers(): Promise<Map<string, string>> {
+  const rows = await prisma.user.findMany({
+    where: { email: { in: USERS.map((user) => `${user.username}@naucto.local`) } },
+    select: { id: true, username: true },
+  });
+  if (rows.length < USERS.length) {
+    throw new Error('The people are not all seeded yet: run seed:dev once without --only.');
+  }
+  return new Map(rows.map((row) => [row.username, row.id]));
+}
+
+async function seedSocialGraph(ids: Map<string, string>, alexis: string): Promise<void> {
   for (const name of FRIENDS_OF_ALEXIS) {
     const other = ids.get(name);
     if (other === undefined) {
       continue;
     }
-    // FriendsService stores the pair with userAId < userBId; match that or lookups miss.
-    const [userAId, userBId] = alexis < other ? [alexis, other] : [other, alexis];
+    // FriendsService stores the pair in the order of `compareIds`; match that or lookups miss.
+    const [userAId, userBId] = compareIds(alexis, other) < 0 ? [alexis, other] : [other, alexis];
     await prisma.friendship.upsert({
       where: { userAId_userBId: { userAId, userBId } },
       update: {},
@@ -201,8 +230,8 @@ async function seedSocialGraph(ids: Map<string, number>, alexis: number): Promis
  * re-run refreshes its times instead of inserting a duplicate.
  */
 async function seedGameSessions(
-  ids: Map<string, number>,
-  alexis: number,
+  ids: Map<string, string>,
+  alexis: string,
 ): Promise<{ total: number; made: number } | null> {
   const projects = await prisma.project.findMany({
     select: { id: true, name: true },
@@ -273,10 +302,51 @@ async function seedGameSessions(
   return { total, made };
 }
 
+/** Answers how many games it styled; none while the Frontend's games are not seeded. */
+async function seedDiskStyles(): Promise<number> {
+  const games = await prisma.project.findMany({
+    where: { name: { in: Object.keys(DISK_STYLES) } },
+    select: { id: true, name: true, updatedAt: true },
+  });
+
+  for (const game of games) {
+    const disk = DISK_STYLES[game.name];
+    if (!disk) {
+      continue;
+    }
+    await prisma.project.update({
+      where: { id: game.id },
+      data: {
+        diskColor: disk.color,
+        diskFinish: disk.finish,
+        diskColor2: disk.color2 ?? null,
+        diskGradDir: disk.gradDir ?? null,
+        ...keepEditTime(game),
+      },
+    });
+  }
+  return games.length;
+}
+
 async function main(): Promise<void> {
   assertLocalDatabase(connectionString);
   if (process.argv.includes('--clear-analytics')) {
     console.log(await clearAnalytics(prisma));
+    return;
+  }
+  if (process.argv.includes('--only')) {
+    const part = process.argv[process.argv.indexOf('--only') + 1];
+    if (part !== 'notifications') {
+      throw new Error(`--only takes "notifications", not "${part ?? ''}".`);
+    }
+    const seeded = await findSeededUsers();
+    const alexisId = seeded.get('alexis');
+    if (alexisId === undefined) {
+      throw new Error('alexis missing from the seeded users');
+    }
+    // The pending requests are what the friend-request notifications point at.
+    await seedSocialGraph(seeded, alexisId);
+    console.log(`notifications: ${await seedNotifications(prisma, seeded)}`);
     return;
   }
   const ids = await seedUsers();
@@ -287,11 +357,12 @@ async function main(): Promise<void> {
 
   await seedSocialGraph(ids, alexis);
   const sessions = await seedGameSessions(ids, alexis);
+  const styled = await seedDiskStyles();
 
   console.log(`seeded ${String(ids.size)} people`);
   console.log(`  sign in as any of them: <name>@naucto.local / ${DEV_PASSWORD}`);
   console.log(
-    `  alexis (id ${String(alexis)}) has ${String(FRIENDS_OF_ALEXIS.length)} friends and ` +
+    `  alexis (id ${alexis}) has ${String(FRIENDS_OF_ALEXIS.length)} friends and ` +
       `${String(PENDING_TO_ALEXIS.length)} pending requests`,
   );
   console.log(
@@ -300,9 +371,15 @@ async function main(): Promise<void> {
       : `  ${String(sessions.total)} shared game sessions (${String(sessions.made)} new), ` +
           'so PLAYED WITH RECENTLY has rows',
   );
+  console.log(`  ${String(styled)} games with a disk their author chose`);
   if (!process.argv.includes('--no-analytics')) {
     console.log(`analytics: ${await seedAnalytics(prisma)}`);
   }
+  // After the analytics, which create the sample games again on every run, and with the hub
+  // signals last: they have the hub of the day drawn again, over the collections too.
+  console.log(`collections: ${await seedCollections(prisma, ids)}`);
+  console.log(`hub: ${await seedHubSignals(prisma, [...ids.values()])}`);
+  console.log(`notifications: ${await seedNotifications(prisma, ids)}`);
   console.log('next: npm run seed:content in the Frontend, for games with playable content');
 }
 

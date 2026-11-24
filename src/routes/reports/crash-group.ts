@@ -3,12 +3,13 @@ import { CrashSource } from '@prisma/client';
 const GROUP_KEY_MAX_LENGTH = 300;
 
 /**
- * A message with what varies between two occurrences of one crash taken out: addresses, long hex
- * or numeric ids and counts.
+ * A message with what varies between two occurrences of one crash taken out: addresses, ids
+ * (UUIDs, long hex, numbers) and counts.
  */
 export function normalizeMessage(message: string): string {
   return message
     .replace(/(?:https?|blob|file):\/\/\S+/gi, '<url>')
+    .replace(/\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b/gi, '<id>')
     .replace(/\b[0-9a-f]{8,}\b/gi, '<id>')
     .replace(/\d+/g, '<n>')
     .replace(/\s+/g, ' ')

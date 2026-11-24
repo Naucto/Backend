@@ -5,6 +5,7 @@ import { Prisma, User } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
 import { withEnv } from '../../test/env';
+import { uuidOf } from '../../test/uuid';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserService } from '../routes/user/user.service';
 import { USER } from './access/roles';
@@ -19,7 +20,8 @@ jest.mock('bcryptjs', () => ({
 }));
 
 const userRow = (overrides: Partial<User> = {}): User => ({
-  id: 1,
+  id: uuidOf(1),
+  playerNumber: 1,
   email: 'test@example.com',
   username: 'testuser',
   nickname: null,
@@ -49,14 +51,14 @@ interface PrismaMock {
 function makeRefreshTokenMock(overrides: Partial<RefreshTokenMock> = {}): RefreshTokenMock {
   return {
     create: jest.fn().mockResolvedValue({
-      id: 1,
+      id: uuidOf(1),
       token: 'stored',
-      userId: 1,
+      userId: uuidOf(1),
       expiresAt: new Date(),
     }),
     deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
     findUnique: jest.fn().mockResolvedValue(null),
-    delete: jest.fn().mockResolvedValue({ id: 1 }),
+    delete: jest.fn().mockResolvedValue({ id: uuidOf(1) }),
     ...overrides,
   };
 }
@@ -87,7 +89,7 @@ describe('AuthService', () => {
 
   const jwtService: jest.Mocked<Pick<JwtService, 'sign' | 'verify'>> = {
     sign: jest.fn().mockReturnValue('token123'),
-    verify: jest.fn().mockReturnValue({ sub: 1, email: 'test@test.com' }),
+    verify: jest.fn().mockReturnValue({ sub: uuidOf(1), email: 'test@test.com' }),
   };
 
   const prismaService = makePrisma();
@@ -115,7 +117,7 @@ describe('AuthService', () => {
     withEnv({ JWT_EXPIRES_IN: '1h', JWT_REFRESH_EXPIRES_IN: '7d' });
     (jwtService.sign as jest.Mock).mockReturnValue('token123');
     (jwtService.verify as jest.Mock).mockReturnValue({
-      sub: 1,
+      sub: uuidOf(1),
       email: 'test@test.com',
     });
     (bcrypt.compare as jest.Mock).mockResolvedValue(true);
@@ -178,14 +180,14 @@ describe('AuthService', () => {
     });
 
     it("should replace the user's sessions with the new one inside a single transaction", async () => {
-      const mockUser = userRow({ id: 3 });
+      const mockUser = userRow({ id: uuidOf(3) });
       jest.spyOn(authService, 'validateUser').mockResolvedValue(mockUser);
 
       await authService.login('test@example.com', 'password');
 
       const { deleteMany, create } = prismaService.tx.refreshToken;
-      expect(deleteMany).toHaveBeenCalledWith({ where: { userId: 3 } });
-      expect(create).toHaveBeenCalledWith({ data: expect.objectContaining({ userId: 3 }) });
+      expect(deleteMany).toHaveBeenCalledWith({ where: { userId: uuidOf(3) } });
+      expect(create).toHaveBeenCalledWith({ data: expect.objectContaining({ userId: uuidOf(3) }) });
       expect(deleteMany.mock.invocationCallOrder[0]).toBeLessThan(
         create.mock.invocationCallOrder[0] ?? 0,
       );
@@ -253,7 +255,9 @@ describe('AuthService', () => {
             }
           }
           if (usernameFilter === 'existsUser') {
-            return [userRow({ id: 2, email: 'user@example.com', username: usernameFilter })];
+            return [
+              userRow({ id: uuidOf(2), email: 'user@example.com', username: usernameFilter }),
+            ];
           }
           return [];
         },
@@ -307,7 +311,9 @@ describe('AuthService', () => {
     const mintedUsername = (): string | undefined => userService.createOAuthUser.mock.calls[0]?.[1];
 
     it('should sign an account that already holds the address in, and create nothing', async () => {
-      userService.findByEmail.mockResolvedValue(userRow({ id: 4, email: 'ada@example.com' }));
+      userService.findByEmail.mockResolvedValue(
+        userRow({ id: uuidOf(4), email: 'ada@example.com' }),
+      );
 
       await expect(signInWithGoogle('ada@example.com', 'Ada Lovelace')).resolves.toEqual({
         access_token: 'token123',
@@ -316,7 +322,7 @@ describe('AuthService', () => {
 
       expect(userService.createOAuthUser).not.toHaveBeenCalled();
       expect(jwtService.sign).toHaveBeenCalledWith(
-        { sub: 4, email: 'ada@example.com' },
+        { sub: uuidOf(4), email: 'ada@example.com' },
         expect.any(Object),
       );
     });
@@ -324,13 +330,15 @@ describe('AuthService', () => {
     it("should create the account under the provider's name when that handle is free", async () => {
       userService.findByEmail.mockResolvedValue(undefined);
       userService.findAll.mockResolvedValue([]);
-      userService.createOAuthUser.mockResolvedValue(userRow({ id: 5, email: 'ada@example.com' }));
+      userService.createOAuthUser.mockResolvedValue(
+        userRow({ id: uuidOf(5), email: 'ada@example.com' }),
+      );
 
       await signInWithGoogle('ada@example.com', 'Ada Lovelace');
 
       expect(userService.createOAuthUser).toHaveBeenCalledWith('ada@example.com', 'Ada_Lovelace');
       expect(jwtService.sign).toHaveBeenCalledWith(
-        { sub: 5, email: 'ada@example.com' },
+        { sub: uuidOf(5), email: 'ada@example.com' },
         expect.any(Object),
       );
     });
@@ -338,7 +346,7 @@ describe('AuthService', () => {
     it('should tell the new account apart with a suffix when the handle is taken', async () => {
       userService.findByEmail.mockResolvedValue(undefined);
       userService.findAll.mockResolvedValue([userRow({ username: 'Ada_Lovelace' })]);
-      userService.createOAuthUser.mockResolvedValue(userRow({ id: 5 }));
+      userService.createOAuthUser.mockResolvedValue(userRow({ id: uuidOf(5) }));
 
       await signInWithGoogle('ada@example.com', 'Ada Lovelace');
 
@@ -353,7 +361,7 @@ describe('AuthService', () => {
       ['A display name of thirty chars', 'A_display_name_of_'],
     ])('should mint a handle the profile rule accepts from %s', async (name, expected) => {
       userService.findByEmail.mockResolvedValue(undefined);
-      userService.createOAuthUser.mockResolvedValue(userRow({ id: 5 }));
+      userService.createOAuthUser.mockResolvedValue(userRow({ id: uuidOf(5) }));
 
       userService.findAll.mockResolvedValue([]);
       await signInWithGoogle('someone@example.com', name);
@@ -369,7 +377,9 @@ describe('AuthService', () => {
     });
 
     it('should sign in whoever GitHub vouches for', async () => {
-      userService.findByEmail.mockResolvedValue(userRow({ id: 6, email: 'grace@example.com' }));
+      userService.findByEmail.mockResolvedValue(
+        userRow({ id: uuidOf(6), email: 'grace@example.com' }),
+      );
       const authenticate = jest
         .fn()
         .mockResolvedValue({ email: 'grace@example.com', name: 'Grace' });
@@ -382,7 +392,9 @@ describe('AuthService', () => {
     });
 
     it('should sign in whoever Microsoft vouches for', async () => {
-      userService.findByEmail.mockResolvedValue(userRow({ id: 6, email: 'grace@example.com' }));
+      userService.findByEmail.mockResolvedValue(
+        userRow({ id: uuidOf(6), email: 'grace@example.com' }),
+      );
       const authenticate = jest
         .fn()
         .mockResolvedValue({ email: 'grace@example.com', name: 'Grace' });
@@ -397,9 +409,9 @@ describe('AuthService', () => {
 
   describe('refreshToken', () => {
     const storedToken = (expiresAt: Date): object => ({
-      id: 1,
+      id: uuidOf(1),
       expiresAt,
-      user: { id: 1, email: 'user@example.com' },
+      user: { id: uuidOf(1), email: 'user@example.com' },
     });
 
     it('should throw UnauthorizedException if the token fails verification', async () => {
@@ -421,7 +433,7 @@ describe('AuthService', () => {
 
     it('should throw UnauthorizedException if refresh token expired', async () => {
       const expiredDate = new Date(Date.now() - 1000 * 60 * 60);
-      const deleteOne = jest.fn().mockResolvedValue({ id: 1 });
+      const deleteOne = jest.fn().mockResolvedValue({ id: uuidOf(1) });
       const prisma = makePrisma({
         findUnique: jest.fn().mockResolvedValue(storedToken(expiredDate)),
         delete: deleteOne,
@@ -429,7 +441,7 @@ describe('AuthService', () => {
       const svc = await buildModule(prisma);
 
       await expect(svc.refreshToken('expired-token')).rejects.toThrow(UnauthorizedException);
-      expect(deleteOne).toHaveBeenCalledWith({ where: { id: 1 } });
+      expect(deleteOne).toHaveBeenCalledWith({ where: { id: uuidOf(1) } });
       expect(prisma.tx.refreshToken.create).not.toHaveBeenCalled();
     });
 
@@ -449,12 +461,12 @@ describe('AuthService', () => {
         refresh_token: 'new-token',
       });
       expect(jwtService.sign).toHaveBeenCalledWith(
-        { sub: 1, email: 'user@example.com' },
+        { sub: uuidOf(1), email: 'user@example.com' },
         expect.any(Object),
       );
-      expect(prisma.tx.refreshToken.deleteMany).toHaveBeenCalledWith({ where: { id: 1 } });
+      expect(prisma.tx.refreshToken.deleteMany).toHaveBeenCalledWith({ where: { id: uuidOf(1) } });
       expect(prisma.tx.refreshToken.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({ userId: 1 }),
+        data: expect.objectContaining({ userId: uuidOf(1) }),
       });
       expect(prisma.refreshToken.create).not.toHaveBeenCalled();
     });
@@ -474,9 +486,11 @@ describe('AuthService', () => {
 
   describe('revokeAllRefreshTokens', () => {
     it('should delete every refresh token of the user, and of nobody else', async () => {
-      await authService.revokeAllRefreshTokens(7);
+      await authService.revokeAllRefreshTokens(uuidOf(7));
 
-      expect(prismaService.refreshToken.deleteMany).toHaveBeenCalledWith({ where: { userId: 7 } });
+      expect(prismaService.refreshToken.deleteMany).toHaveBeenCalledWith({
+        where: { userId: uuidOf(7) },
+      });
     });
   });
 
@@ -484,7 +498,7 @@ describe('AuthService', () => {
     it('should refuse when the account is gone', async () => {
       prismaService.user.findUnique.mockResolvedValue(null);
 
-      await expect(authService.changePassword(1, 'new-password-1')).rejects.toThrow(
+      await expect(authService.changePassword(uuidOf(1), 'new-password-1')).rejects.toThrow(
         UnauthorizedException,
       );
       expect(userService.updatePassword).not.toHaveBeenCalled();
@@ -493,7 +507,7 @@ describe('AuthService', () => {
     it('should require the current password of an account that has one', async () => {
       prismaService.user.findUnique.mockResolvedValue(userRow());
 
-      await expect(authService.changePassword(1, 'new-password-1')).rejects.toThrow(
+      await expect(authService.changePassword(uuidOf(1), 'new-password-1')).rejects.toThrow(
         BadRequestException,
       );
       expect(userService.updatePassword).not.toHaveBeenCalled();
@@ -504,7 +518,7 @@ describe('AuthService', () => {
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
 
       await expect(
-        authService.changePassword(1, 'new-password-1', 'not-the-password'),
+        authService.changePassword(uuidOf(1), 'new-password-1', 'not-the-password'),
       ).rejects.toThrow(UnauthorizedException);
       expect(bcrypt.compare).toHaveBeenCalledWith('not-the-password', 'hashedPass');
       expect(userService.updatePassword).not.toHaveBeenCalled();
@@ -513,11 +527,11 @@ describe('AuthService', () => {
     it('should let an account without a password set one, asking for no current password', async () => {
       prismaService.user.findUnique.mockResolvedValue(userRow({ password: null }));
 
-      await authService.changePassword(1, 'new-password-1');
+      await authService.changePassword(uuidOf(1), 'new-password-1');
 
       expect(bcrypt.compare).not.toHaveBeenCalled();
       expect(userService.updatePassword).toHaveBeenCalledWith(
-        1,
+        uuidOf(1),
         'new-password-1',
         prismaService.tx,
       );
@@ -527,17 +541,17 @@ describe('AuthService', () => {
       prismaService.user.findUnique.mockResolvedValue(userRow());
 
       await expect(
-        authService.changePassword(1, 'new-password-1', 'the-password'),
+        authService.changePassword(uuidOf(1), 'new-password-1', 'the-password'),
       ).resolves.toEqual({ access_token: 'token123', refresh_token: 'token123' });
 
       const { deleteMany, create } = prismaService.tx.refreshToken;
       expect(userService.updatePassword).toHaveBeenCalledWith(
-        1,
+        uuidOf(1),
         'new-password-1',
         prismaService.tx,
       );
-      expect(deleteMany).toHaveBeenCalledWith({ where: { userId: 1 } });
-      expect(create).toHaveBeenCalledWith({ data: expect.objectContaining({ userId: 1 }) });
+      expect(deleteMany).toHaveBeenCalledWith({ where: { userId: uuidOf(1) } });
+      expect(create).toHaveBeenCalledWith({ data: expect.objectContaining({ userId: uuidOf(1) }) });
       expect(prismaService.refreshToken.deleteMany).not.toHaveBeenCalled();
     });
   });

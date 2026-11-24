@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 
+import { uuidOf } from '../../../test/uuid';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AnalyticsErasureService } from './analytics-erasure.service';
 
@@ -32,11 +33,11 @@ describe('AnalyticsErasureService', () => {
   });
 
   it('locks the account exclusively, then its visitors, before reading or writing anything else', async () => {
-    await service.erase(7);
+    await service.erase(uuidOf(7));
 
     const [accountLock, visitorLock] = tx.$executeRaw.mock.calls;
     expect(sqlOf(accountLock ?? [])).toContain('pg_advisory_xact_lock(');
-    expect(accountLock).toContain(7);
+    expect(accountLock).toContain(uuidOf(7));
     expect(sqlOf(visitorLock ?? [])).toContain('pg_advisory_xact_lock(');
     expect(visitorLock).toContainEqual([visitorA, visitorB]);
     expect(tx.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
@@ -45,7 +46,7 @@ describe('AnalyticsErasureService', () => {
   });
 
   it('tombstones the visitors before deleting them, so nothing queued recreates them', async () => {
-    await service.erase(7);
+    await service.erase(uuidOf(7));
 
     expect(tx.analyticsVisitorTombstone.createMany).toHaveBeenCalledWith({
       data: [{ id: visitorA }, { id: visitorB }],
@@ -60,28 +61,30 @@ describe('AnalyticsErasureService', () => {
   });
 
   it('removes the release-view keys of the account and of each visitor', async () => {
-    await service.erase(7);
+    await service.erase(uuidOf(7));
 
     expect(tx.releaseView.deleteMany).toHaveBeenCalledWith({
-      where: { viewerKey: { in: ['u:7', `v:${visitorA}`, `v:${visitorB}`] } },
+      where: { viewerKey: { in: [`u:${uuidOf(7)}`, `v:${visitorA}`, `v:${visitorB}`] } },
     });
   });
 
   it('removes live minutes, pending projection work and the lifetime history', async () => {
-    await service.erase(7);
+    await service.erase(uuidOf(7));
 
     expect(tx.analyticsLiveMinute.deleteMany).toHaveBeenCalledWith({
       where: { visitorId: { in: [visitorA, visitorB] } },
     });
-    expect(tx.analyticsProjectionWork.deleteMany).toHaveBeenCalledWith({ where: { userId: 7 } });
-    expect(tx.analyticsUserDaily.deleteMany).toHaveBeenCalledWith({ where: { userId: 7 } });
+    expect(tx.analyticsProjectionWork.deleteMany).toHaveBeenCalledWith({
+      where: { userId: uuidOf(7) },
+    });
+    expect(tx.analyticsUserDaily.deleteMany).toHaveBeenCalledWith({ where: { userId: uuidOf(7) } });
   });
 
   it('keeps business facts but unlinks the account from them', async () => {
-    await service.erase(7);
+    await service.erase(uuidOf(7));
 
     expect(tx.analyticsFact.updateMany).toHaveBeenCalledWith({
-      where: { actorUserId: 7 },
+      where: { actorUserId: uuidOf(7) },
       data: { actorUserId: null },
     });
   });
@@ -89,17 +92,17 @@ describe('AnalyticsErasureService', () => {
   it('still clears account-keyed rows when the account has no visitor', async () => {
     tx.analyticsVisitor.findMany.mockResolvedValue([]);
 
-    await expect(service.erase(7)).resolves.toBe(0);
+    await expect(service.erase(uuidOf(7))).resolves.toBe(0);
 
     expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
     expect(tx.releaseView.deleteMany).toHaveBeenCalledWith({
-      where: { viewerKey: { in: ['u:7'] } },
+      where: { viewerKey: { in: [`u:${uuidOf(7)}`] } },
     });
     expect(tx.analyticsFact.updateMany).toHaveBeenCalled();
   });
 
   it('runs inside a transaction the caller already holds', async () => {
-    await service.eraseWithin(tx as unknown as Prisma.TransactionClient, 7);
+    await service.eraseWithin(tx as unknown as Prisma.TransactionClient, uuidOf(7));
 
     expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(tx.analyticsVisitor.deleteMany).toHaveBeenCalled();

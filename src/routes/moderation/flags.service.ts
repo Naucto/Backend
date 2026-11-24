@@ -17,6 +17,7 @@ const FLAGGABLE: Record<ModerationTargetType, readonly TargetState[]> = {
   USER: ['VISIBLE', 'SUSPENDED'],
   PROJECT: ['VISIBLE'],
   COMMENT: ['VISIBLE'],
+  COLLECTION: ['VISIBLE'],
 };
 
 /** What people report to staff. */
@@ -30,7 +31,7 @@ export class FlagsService {
     private readonly notifier: FlagNotifier,
   ) {}
 
-  async create(reporterId: number, input: CreateFlagDto): Promise<CreatedFlagDto> {
+  async create(reporterId: string, input: CreateFlagDto): Promise<CreatedFlagDto> {
     const target = await this.flaggable(input.targetType, input.targetId);
     if (target.owner?.id === reporterId) {
       throw new CodedException(
@@ -40,7 +41,7 @@ export class FlagsService {
       );
     }
 
-    let flag: { id: number };
+    let flag: { id: string };
     try {
       flag = await this.prisma.flag.create({
         data: {
@@ -51,7 +52,7 @@ export class FlagsService {
           reason: input.reason,
           details: input.details || null,
           snapshot: { ...target.content },
-          openKey: `${String(reporterId)}:${input.targetType}:${String(input.targetId)}`,
+          openKey: `${reporterId}:${input.targetType}:${input.targetId}`,
         },
         select: { id: true },
       });
@@ -74,7 +75,7 @@ export class FlagsService {
    * The target as the reporter sees it, or the same 404 for one that is gone as for one that is
    * hidden from them: a report must not tell a draft or a removed comment from nothing at all.
    */
-  private async flaggable(type: ModerationTargetType, id: number): Promise<TargetView> {
+  private async flaggable(type: ModerationTargetType, id: string): Promise<TargetView> {
     const target = await this.targets.view(type, id);
     const reachable = FLAGGABLE[type].includes(target.state) && (target.project?.reachable ?? true);
     if (!reachable) {

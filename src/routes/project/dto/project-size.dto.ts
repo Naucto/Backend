@@ -95,8 +95,12 @@ export class CheckpointLimitDto {
 }
 
 export class ProjectSizeDto {
-  @ApiProperty({ example: 1, description: 'Project ID' })
-  projectId!: number;
+  @ApiProperty({
+    format: 'uuid',
+    example: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
+    description: 'Project ID',
+  })
+  projectId!: string;
 
   @ApiProperty({ type: ContentSizeBreakdownDto })
   contentSize!: ContentSizeBreakdownDto;

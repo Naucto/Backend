@@ -41,7 +41,7 @@ function toEntry(row: EntryRow): StandingEntryDto {
 export class StandingService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async standing(userId: number, page: PageRequest): Promise<StandingDto> {
+  async standing(userId: string, page: PageRequest): Promise<StandingDto> {
     const { skip, take } = toSkipTake(page);
     const visible: Prisma.ModerationActionWhereInput = {
       subjectUserId: userId,
@@ -80,7 +80,7 @@ export class StandingService {
 
   /** The suspension in force, with the reason and message of the decision that set it. */
   private async suspension(
-    userId: number,
+    userId: string,
     account: { suspendedAt: Date | null; suspendedUntil: Date | null },
   ): Promise<StandingSuspensionDto | null> {
     const suspension = currentSuspension(account);

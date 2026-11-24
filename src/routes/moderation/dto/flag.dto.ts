@@ -1,22 +1,25 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ModerationReason, ModerationTargetType } from '@prisma/client';
 import { Transform } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
 
+import { IsId } from '../../../common/decorators/is-id';
 import { trimmed } from '../../reports/dto/report-transforms';
 
 export const FLAG_DETAILS_MAX_LENGTH = 1_000;
 
-/** What a person tells staff about a game, a comment or a profile. */
+/** What a person tells staff about one target. */
 export class CreateFlagDto {
   @ApiProperty({ enum: ModerationTargetType, enumName: 'ModerationTargetType' })
   @IsEnum(ModerationTargetType)
   targetType!: ModerationTargetType;
 
-  @ApiProperty({ description: 'The id of the account, the game or the comment', minimum: 1 })
-  @IsInt()
-  @Min(1)
-  targetId!: number;
+  @ApiProperty({
+    format: 'uuid',
+    description: 'The id of the target, of the kind `targetType` names',
+  })
+  @IsId()
+  targetId!: string;
 
   @ApiProperty({ enum: ModerationReason, enumName: 'ModerationReason' })
   @IsEnum(ModerationReason)
@@ -31,6 +34,6 @@ export class CreateFlagDto {
 }
 
 export class CreatedFlagDto {
-  @ApiProperty()
-  id!: number;
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
 }

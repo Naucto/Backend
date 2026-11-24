@@ -11,7 +11,10 @@ enum ProjectStatus {
 }
 
 model Project {
-  id           Int               @id @default(autoincrement())
+  id           String            @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  // The number a project was known by while ids were integers, kept to translate the public links
+  // written then. Null for every project created since; nothing else reads it.
+  legacyId     Int?              @unique
   name         String
   shortDesc    String
   longDesc     String?
@@ -22,6 +25,22 @@ model Project {
   publishedTags      String[]          @default([])
   status       ProjectStatus     @default(IN_PROGRESS)
   iconUrl      String?
+  // Version of the stored cover, read back from the store when it was uploaded; null for a cover
+  // stored before the version was kept, or when there is none.
+  coverVersion String?
+  // The colours the game draws with, as `#rrggbb` in the order the game indexes them. Mirrored
+  // from the game's content by its editor, so a client can read them without the engine; empty
+  // until an editor wrote them.
+  palette      String[]          @default([])
+  // The disk its author chose for the game: a colour and a finish, set together. Null until
+  // chosen: a client then derives a colour from the id.
+  diskColor   String?
+  diskFinish  String?
+  diskColor2  String?
+  diskGradDir String?
+  // Version of the stored clip, written when it was uploaded; null without a clip. It is all the
+  // row says of the clip: its address is derived from the project id.
+  clipVersion String?
   monetization MonetizationType  @default(NONE)
   price        Float?
   createdAt    DateTime          @default(now())
@@ -30,17 +49,19 @@ model Project {
   // Set while moderation withholds the game: it leaves the hub and its release stops being served,
   // while `publishedAt` stays so a restore puts it back as it was.
   hiddenAt     DateTime?
+  // When the game first reached the hub; later releases and a republish leave it alone.
+  firstPublishedAt DateTime?
   // Bumped on each release transition (publish, content change, unpublish); keys its analytics fact.
   releaseRevision    Int     @default(0)
   // Hash of the released content and published metadata, so republishing them unchanged is no-op.
   releaseContentHash String?
-  userId       Int
+  userId       String            @db.Uuid
 
   // Logical size breakdown of the last saved content (see src/routes/project/content-size.ts)
   contentSize      Json? @map("content_size")
   contentSizeTotal Int?  @map("content_size_total")
 
-  forkedFromId Int?      @map("forked_from_id")
+  forkedFromId String?           @db.Uuid @map("forked_from_id")
 
   forkedFrom    Project?      @relation("ProjectForks", fields: [forkedFromId], references: [id], onDelete: SetNull)
   forks         Project[]     @relation("ProjectForks")
@@ -52,6 +73,7 @@ model Project {
   userLikes     Like[]
   featuredReleases FeaturedRelease[]
   releaseViews  ReleaseView[]
+  collectionItems CollectionItem[]
 
   viewCount     Int @default(0)
   uniquePlayers Int @default(0)
@@ -59,12 +81,12 @@ model Project {
 }
 
 model Comment {
-  id        Int       @id @default(autoincrement())
+  id        String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
   author    User      @relation(fields: [authorId], references: [id])
-  authorId  Int
+  authorId  String    @db.Uuid
   project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  projectId Int
-  parentId  Int?
+  projectId String    @db.Uuid
+  parentId  String?   @db.Uuid
   parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
   replies   Comment[] @relation("CommentReplies")
   content   String
@@ -79,11 +101,11 @@ model Comment {
 }
 
 model Like {
-  id        Int      @id @default(autoincrement())
+  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   user      User     @relation(fields: [userId], references: [id])
-  userId    Int
+  userId    String   @db.Uuid
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  projectId Int
+  projectId String   @db.Uuid
   createdAt DateTime @default(now())
 
   @@unique([userId, projectId])
@@ -93,9 +115,9 @@ model Like {
 // One row per viewer per UTC day on a release; viewCount moves only when a row lands, so a
 // reload is not a view. viewerKey is the user's id, or a keyed hash of the address when anonymous.
 model ReleaseView {
-  id        Int      @id @default(autoincrement())
+  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  projectId Int
+  projectId String   @db.Uuid
   viewerKey String
   day       DateTime @db.Date
   createdAt DateTime @default(now())

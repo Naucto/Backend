@@ -4,6 +4,7 @@ import { IncomingMessage } from 'http';
 import { Duplex } from 'stream';
 import { WebSocket, WebSocketServer } from 'ws';
 
+import { uuidOf } from '../../test/uuid';
 import { PresenceSocketHandler } from '../presence/presence.types';
 import { WebRTCClientReadyState } from '../webrtc/server/webrtc.server';
 import { WebRTCService } from '../webrtc/webrtc.service';
@@ -24,19 +25,20 @@ type FakeSocket = EventEmitter & {
 
 /** What a test reads of the server: its clients, and the upgrade ws hands over after a handshake. */
 type ServerInternals = {
-  wss(): WebSocketServer & { privateClients: Map<number, Set<FakeSocket>> };
+  wss(): WebSocketServer & { privateClients: Map<string, Set<FakeSocket>> };
   _internal_base_onUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void;
 };
 
 const TOKENS: Record<string, unknown> = {
-  'token-of-7': 7,
-  'token-of-8': 8,
+  'token-of-7': uuidOf(7),
+  'token-of-8': uuidOf(8),
   'token-without-user': 'seven',
+  'token-of-a-number': 7,
 };
 
 const notification: NotificationPayload = {
-  id: '1',
-  userId: 7,
+  id: uuidOf(1),
+  userId: uuidOf(7),
   title: 'Build complete',
   message: 'Your build is ready.',
   type: 'INFO',
@@ -159,12 +161,12 @@ describe('NotificationWebRTCServer', () => {
 
       const socket = await authenticate('token-of-7');
 
-      expect(notificationsService.getUserNotifications).toHaveBeenCalledWith(7);
+      expect(notificationsService.getUserNotifications).toHaveBeenCalledWith(uuidOf(7));
       expect(sent(socket)).toEqual([{ type: 'notifications:init', payload: [notification] }]);
       expect(socket.close).not.toHaveBeenCalled();
     });
 
-    it.each(['forged', 'token-without-user'])(
+    it.each(['forged', 'token-without-user', 'token-of-a-number'])(
       'closes a socket whose token names no user (%s)',
       async (token) => {
         const socket = await authenticate(token);
@@ -180,9 +182,9 @@ describe('NotificationWebRTCServer', () => {
       notificationsService.isActiveUser.mockResolvedValue(false);
 
       const socket = await authenticate('token-of-7');
-      server.sendToUser(7, notification);
+      server.sendToUser(uuidOf(7), notification);
 
-      expect(notificationsService.isActiveUser).toHaveBeenCalledWith(7);
+      expect(notificationsService.isActiveUser).toHaveBeenCalledWith(uuidOf(7));
       expect(socket.close).toHaveBeenCalled();
       expect(sent(socket)).toEqual([]);
       expect(presence.onSocketOpen).not.toHaveBeenCalled();
@@ -241,7 +243,7 @@ describe('NotificationWebRTCServer', () => {
       const second = await authenticate('token-of-7');
       const other = await authenticate('token-of-8');
 
-      server.sendToUser(7, notification);
+      server.sendToUser(uuidOf(7), notification);
 
       const delivered = { type: 'notification', payload: notification };
       expect(sent(first)).toContainEqual(delivered);
@@ -254,28 +256,28 @@ describe('NotificationWebRTCServer', () => {
       const second = await authenticate('token-of-7');
 
       disconnect(first);
-      server.sendToUser(7, notification);
+      server.sendToUser(uuidOf(7), notification);
 
       expect(sent(second)).toContainEqual({
         type: 'notification',
         payload: notification,
       });
-      expect(internals.wss().privateClients.get(7)).toEqual(new Set([second]));
+      expect(internals.wss().privateClients.get(uuidOf(7))).toEqual(new Set([second]));
 
       disconnect(second);
 
-      expect(internals.wss().privateClients.has(7)).toBe(false);
+      expect(internals.wss().privateClients.has(uuidOf(7))).toBe(false);
     });
 
     it("tells presence when a user's socket opens and closes", async () => {
       server.setPresenceHandler(presence);
 
       const socket = await authenticate('token-of-7');
-      expect(presence.onSocketOpen).toHaveBeenCalledWith(7, expect.any(Number));
+      expect(presence.onSocketOpen).toHaveBeenCalledWith(uuidOf(7), expect.any(Number));
       expect(presence.onSocketClose).not.toHaveBeenCalled();
 
       disconnect(socket);
-      expect(presence.onSocketClose).toHaveBeenCalledWith(7, expect.any(Number));
+      expect(presence.onSocketClose).toHaveBeenCalledWith(uuidOf(7), expect.any(Number));
     });
   });
 
@@ -292,7 +294,7 @@ describe('NotificationWebRTCServer', () => {
       server.setPresenceHandler(presence);
       const socket = connect();
 
-      receive(socket, { type: 'presence:set', kind: 'PLAYING', releaseId: 42 });
+      receive(socket, { type: 'presence:set', kind: 'PLAYING', releaseId: uuidOf(42) });
 
       expect(presence.onSet).not.toHaveBeenCalled();
     });
@@ -301,13 +303,39 @@ describe('NotificationWebRTCServer', () => {
       server.setPresenceHandler(presence);
       const socket = await authenticate('token-of-7');
 
-      receive(socket, { type: 'presence:set', kind: 'PLAYING', releaseId: 42 });
+      receive(socket, { type: 'presence:set', kind: 'PLAYING', releaseId: uuidOf(42) });
 
-      expect(presence.onSet).toHaveBeenCalledWith(7, expect.any(Number), {
+      expect(presence.onSet).toHaveBeenCalledWith(uuidOf(7), expect.any(Number), {
         kind: 'PLAYING',
-        releaseId: 42,
+        releaseId: uuidOf(42),
         projectId: null,
       });
+    });
+
+    it('takes the ids of a presence update in lower case', async () => {
+      server.setPresenceHandler(presence);
+      const socket = await authenticate('token-of-7');
+
+      receive(socket, {
+        type: 'presence:set',
+        kind: 'PLAYING',
+        releaseId: '3F2B8C1E-9D4A-4E6F-8A7B-1C2D3E4F5A6B',
+      });
+
+      expect(presence.onSet).toHaveBeenCalledWith(
+        uuidOf(7),
+        expect.any(Number),
+        expect.objectContaining({ releaseId: '3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b' }),
+      );
+    });
+
+    it.each([42, '42'])('refuses a presence update naming %p as a release', async (releaseId) => {
+      server.setPresenceHandler(presence);
+      const socket = await authenticate('token-of-7');
+
+      receive(socket, { type: 'presence:set', kind: 'PLAYING', releaseId });
+
+      expect(presence.onSet).not.toHaveBeenCalled();
     });
 
     it('closes a socket that sends a message of an unknown type', () => {

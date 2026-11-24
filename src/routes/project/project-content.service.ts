@@ -52,7 +52,7 @@ export type ProjectLimits = {
 };
 
 export type ProjectSize = {
-  projectId: number;
+  projectId: string;
   contentSize: ContentSizeBreakdown;
   maxContentBytes: number;
   withinBudget: boolean;
@@ -98,7 +98,7 @@ function releaseContentHash(bytes: Buffer, snapshot: ReleaseSnapshot): string {
  */
 async function lockReleaseState(
   tx: Prisma.TransactionClient,
-  projectId: number,
+  projectId: string,
 ): Promise<{ published: boolean; hidden: boolean; contentHash: string | null; revision: number }> {
   const [row] = await tx.$queryRaw<
     {
@@ -107,7 +107,7 @@ async function lockReleaseState(
       releaseContentHash: string | null;
       releaseRevision: number;
     }[]
-  >`SELECT "publishedAt", "hiddenAt", "releaseContentHash", "releaseRevision" FROM "Project" WHERE id = ${projectId} FOR UPDATE`;
+  >`SELECT "publishedAt", "hiddenAt", "releaseContentHash", "releaseRevision" FROM "Project" WHERE id = ${projectId}::uuid FOR UPDATE`;
   if (!row) {
     throw new NotFoundException(`Project with ID ${projectId} not found`);
   }
@@ -146,7 +146,7 @@ export class ProjectContentService {
 
   /** Persists a size breakdown; passing the row keeps the write from counting as an edit. */
   private async storeContentSize(
-    projectId: number,
+    projectId: string,
     contentSize: ContentSizeBreakdown,
     unedited?: { updatedAt: Date } | null,
   ): Promise<void> {
@@ -160,7 +160,7 @@ export class ProjectContentService {
     });
   }
 
-  async listVersions(projectId: number): Promise<ProjectSave[]> {
+  async listVersions(projectId: string): Promise<ProjectSave[]> {
     return (await this.s3Service.listObjects({ prefix: projectKeys.saves(projectId) })).map(
       (object) => ({
         name: object.Key!.split('/').pop()!,
@@ -169,7 +169,7 @@ export class ProjectContentService {
     );
   }
 
-  async listCheckpoints(projectId: number): Promise<ProjectSave[]> {
+  async listCheckpoints(projectId: string): Promise<ProjectSave[]> {
     return (await this.s3Service.listObjects({ prefix: projectKeys.checkpoints(projectId) })).map(
       (object) => ({
         name: object.Key!.split('/').pop()!,
@@ -178,7 +178,7 @@ export class ProjectContentService {
     );
   }
 
-  async fetchLastVersion(projectId: number): Promise<DownloadedFile> {
+  async fetchLastVersion(projectId: string): Promise<DownloadedFile> {
     const files = (await this.listVersions(projectId)).sort(newestFirst);
 
     if (files.length === 0 || !files[0]?.name) {
@@ -197,7 +197,7 @@ export class ProjectContentService {
    * inside the window, so a long session costs one slot per window rather than one per pause in
    * the typing. Past the window a new slot opens and the oldest go, keeping `maxAutosaves`.
    */
-  async save(projectId: number, file: Express.Multer.File): Promise<void> {
+  async save(projectId: string, file: Express.Multer.File): Promise<void> {
     // Decoded before anything is stored: a blob that is not a game document would otherwise become
     // the newest save.
     let contentSize: ContentSizeBreakdown | undefined;
@@ -239,7 +239,7 @@ export class ProjectContentService {
   }
 
   /** Stores the release of `sourceProjectId` as a new autosave of `targetProjectId`. */
-  async copyReleaseToSave(sourceProjectId: number, targetProjectId: number): Promise<void> {
+  async copyReleaseToSave(sourceProjectId: string, targetProjectId: string): Promise<void> {
     const releaseContent = await this.s3Service.downloadFile({
       key: projectKeys.release(sourceProjectId),
     });
@@ -259,7 +259,7 @@ export class ProjectContentService {
   }
 
   /** Decodes the latest save and persists its size breakdown, without counting as an edit. */
-  async recomputeContentSize(projectId: number): Promise<ContentSizeBreakdown> {
+  async recomputeContentSize(projectId: string): Promise<ContentSizeBreakdown> {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
       select: { updatedAt: true },
@@ -271,7 +271,7 @@ export class ProjectContentService {
   }
 
   /** Returns the stored breakdown, computing it from the latest save if missing. */
-  async getContentSize(projectId: number): Promise<ProjectSize> {
+  async getContentSize(projectId: string): Promise<ProjectSize> {
     const project = await this.projectService.requireProject(projectId, { contentSize: true });
 
     const contentSize = isContentSizeBreakdown(project.contentSize)
@@ -292,7 +292,7 @@ export class ProjectContentService {
    * bytes that were measured, and those bytes.
    */
   private async assertWithinBudget(
-    projectId: number,
+    projectId: string,
   ): Promise<{ file: DownloadedFile; bytes: Buffer }> {
     const file = await this.fetchLastVersion(projectId);
     const bytes = await buffer(file.body);
@@ -314,18 +314,18 @@ export class ProjectContentService {
   }
 
   /** Projects whose size breakdown has never been computed (oldest first). */
-  async findProjectsWithoutContentSize(limit: number): Promise<number[]> {
+  async findProjectsWithoutContentSize(limit: number): Promise<string[]> {
     const projects = await this.prisma.project.findMany({
       where: { contentSizeTotal: null },
       select: { id: true },
-      orderBy: { id: 'asc' },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       take: limit,
     });
     return projects.map((project) => project.id);
   }
 
   /** Saving under a name that exists rewrites that version, so the cap only meets a new name. */
-  async checkpoint(projectId: number, rawName: string): Promise<void> {
+  async checkpoint(projectId: string, rawName: string): Promise<void> {
     const name = keyName(rawName);
     const existing = await this.listCheckpoints(projectId);
     const overwriting = existing.some((checkpoint) => checkpoint.name === name);
@@ -341,7 +341,7 @@ export class ProjectContentService {
     });
   }
 
-  async removeCheckpoint(projectId: number, checkpoint: string): Promise<void> {
+  async removeCheckpoint(projectId: string, checkpoint: string): Promise<void> {
     await this.s3Service.deleteFile({
       key: projectKeys.checkpoint(projectId, keyName(checkpoint)),
     });
@@ -352,9 +352,9 @@ export class ProjectContentService {
    * published while the hub has nothing to serve.
    */
   private async writeRelease(
-    projectId: number,
+    projectId: string,
     snapshot: ReleaseSnapshot,
-    actorUserId: number,
+    actorUserId: string,
   ): Promise<void> {
     const { file, bytes } = await this.assertWithinBudget(projectId);
     const contentHash = releaseContentHash(bytes, snapshot);
@@ -381,10 +381,11 @@ export class ProjectContentService {
           : null;
       const revision = type ? before.revision + 1 : before.revision;
 
+      const publishedAt = new Date();
       await tx.project.update({
         where: { id: projectId },
         data: {
-          publishedAt: new Date(),
+          publishedAt,
           publishedName: snapshot.name,
           publishedShortDesc: snapshot.shortDesc,
           publishedLongDesc: snapshot.longDesc,
@@ -392,6 +393,10 @@ export class ProjectContentService {
           releaseRevision: revision,
           releaseContentHash: contentHash,
         },
+      });
+      await tx.project.updateMany({
+        where: { id: projectId, firstPublishedAt: null },
+        data: { firstPublishedAt: publishedAt },
       });
       if (type) {
         await this.facts.record(tx, {
@@ -405,7 +410,7 @@ export class ProjectContentService {
     this.eventEmitter.emit(PROJECT_CHANGED, new ProjectChangedEvent(projectId));
   }
 
-  async publish(projectId: number, actorUserId: number): Promise<void> {
+  async publish(projectId: string, actorUserId: string): Promise<void> {
     const project = await this.projectService.requireProject(projectId, {
       hiddenAt: true,
       name: true,
@@ -420,7 +425,7 @@ export class ProjectContentService {
     await this.writeRelease(projectId, project, actorUserId);
   }
 
-  async unpublish(projectId: number, actorUserId: number): Promise<void> {
+  async unpublish(projectId: string, actorUserId: string): Promise<void> {
     // The row first: a blob nobody points at is harmless, a row pointing at a deleted blob is not.
     await this.prisma.$transaction(async (tx) => {
       const before = await lockReleaseState(tx, projectId);
@@ -448,7 +453,7 @@ export class ProjectContentService {
     await this.s3Service.deleteFile({ key: projectKeys.release(projectId) });
   }
 
-  async updateRelease(projectId: number, actorUserId: number): Promise<void> {
+  async updateRelease(projectId: string, actorUserId: string): Promise<void> {
     const project = await this.projectService.requireProject(projectId, {
       publishedAt: true,
       hiddenAt: true,
@@ -471,7 +476,7 @@ export class ProjectContentService {
   /**
    * Removes one autosave, or throws NotFoundException when the project holds no save of that name.
    */
-  async deleteVersion(projectId: number, version: string): Promise<void> {
+  async deleteVersion(projectId: string, version: string): Promise<void> {
     const name = keyName(version);
 
     const existing = await this.listVersions(projectId);
@@ -483,20 +488,20 @@ export class ProjectContentService {
     await this.s3Service.deleteFile({ key: projectKeys.save(projectId, name) });
   }
 
-  async fetchSavedVersion(projectId: number, version: string): Promise<DownloadedFile> {
+  async fetchSavedVersion(projectId: string, version: string): Promise<DownloadedFile> {
     return this.s3Service.downloadFile({
       key: projectKeys.save(projectId, keyName(version)),
     });
   }
 
-  async fetchCheckpoint(projectId: number, checkpoint: string): Promise<DownloadedFile> {
+  async fetchCheckpoint(projectId: string, checkpoint: string): Promise<DownloadedFile> {
     return this.s3Service.downloadFile({
       key: projectKeys.checkpoint(projectId, keyName(checkpoint)),
     });
   }
 
   /** The versioned CDN URL of the release blob, or null when none is stored. */
-  async releaseUrl(projectId: number): Promise<string | null> {
+  async releaseUrl(projectId: string): Promise<string | null> {
     await this.refuseHidden(projectId);
     const key = projectKeys.release(projectId);
     const head = await this.s3Service.getFileMetadataOrNull(key);
@@ -504,7 +509,7 @@ export class ProjectContentService {
     return head ? versionedUrl(this.edgeService.getCDNUrl(key), head.ETag) : null;
   }
 
-  async fetchReleaseContent(projectId: number): Promise<DownloadedFile> {
+  async fetchReleaseContent(projectId: string): Promise<DownloadedFile> {
     await this.refuseHidden(projectId);
     return this.s3Service.downloadFile({ key: projectKeys.release(projectId) });
   }
@@ -514,7 +519,7 @@ export class ProjectContentService {
    * when the game has no release. Never behind a public route: this is the one reader that does
    * not refuse a withheld game.
    */
-  async fetchReleaseForReview(projectId: number): Promise<DownloadedFile | null> {
+  async fetchReleaseForReview(projectId: string): Promise<DownloadedFile | null> {
     for (const key of [projectKeys.release(projectId), projectKeys.withheldRelease(projectId)]) {
       if (await this.s3Service.fileExists(key)) {
         return this.s3Service.downloadFile({ key });
@@ -524,7 +529,7 @@ export class ProjectContentService {
   }
 
   /** A game that does not exist is left to answer as a missing file does. */
-  private async refuseHidden(projectId: number): Promise<void> {
+  private async refuseHidden(projectId: string): Promise<void> {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
       select: { hiddenAt: true },
@@ -558,20 +563,27 @@ export class ProjectContentService {
    * what the edge serves to keys it does not serve, mark the row, then remove the served copies.
    * A failure between two steps leaves a copy too many and never a game without its release.
    */
-  async copyToWithheld(projectId: number): Promise<void> {
+  async copyToWithheld(projectId: string): Promise<void> {
     await this.copy(projectKeys.release(projectId), {
       key: projectKeys.withheldRelease(projectId),
     });
     await this.copy(projectKeys.cover(projectId), { key: projectKeys.withheldCover(projectId) });
+    await this.copy(projectKeys.clip(projectId), { key: projectKeys.withheldClip(projectId) });
   }
 
-  async removeServedCopies(projectId: number): Promise<void> {
+  async removeServedCopies(projectId: string): Promise<void> {
     await this.s3Service.deleteFile({ key: projectKeys.release(projectId) });
     await this.s3Service.deleteFile({ key: projectKeys.cover(projectId) });
+    await this.s3Service.deleteFile({ key: projectKeys.clip(projectId) });
   }
 
-  /** The reverse, in the same three steps. Answers the address of the cover it put back, if any. */
-  async copyFromWithheld(projectId: number): Promise<{ coverUrl: string | null }> {
+  /**
+   * The reverse, in the same three steps. Answers the address of the cover and the version of the
+   * clip it put back, if any: the row names neither while the game is withheld.
+   */
+  async copyFromWithheld(
+    projectId: string,
+  ): Promise<{ coverUrl: string | null; clipVersion: string | null }> {
     await this.copy(projectKeys.withheldRelease(projectId), {
       key: projectKeys.release(projectId),
       cacheControl: RELEASE_CACHE_CONTROL,
@@ -583,11 +595,26 @@ export class ProjectContentService {
       cacheControl: 'no-cache',
       publicRead: true,
     });
-    return { coverUrl: restored ? this.edgeService.getCDNUrl(cover) : null };
+    const clip = projectKeys.clip(projectId);
+    const clipRestored = await this.copy(projectKeys.withheldClip(projectId), {
+      key: clip,
+      cacheControl: 'no-cache',
+      publicRead: true,
+    });
+
+    return {
+      coverUrl: restored ? this.edgeService.getCDNUrl(cover) : null,
+      // The version is all the row keeps of a clip: when the store gives none, the time stands in,
+      // or the clip just put back would read as absent.
+      clipVersion: clipRestored
+        ? ((await this.s3Service.getFileMetadataOrNull(clip))?.ETag ?? Date.now().toString())
+        : null,
+    };
   }
 
-  async removeWithheldCopies(projectId: number): Promise<void> {
+  async removeWithheldCopies(projectId: string): Promise<void> {
     await this.s3Service.deleteFile({ key: projectKeys.withheldRelease(projectId) });
     await this.s3Service.deleteFile({ key: projectKeys.withheldCover(projectId) });
+    await this.s3Service.deleteFile({ key: projectKeys.withheldClip(projectId) });
   }
 }

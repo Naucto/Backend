@@ -6,15 +6,15 @@ import {
   HttpCode,
   HttpStatus,
   Param,
-  ParseIntPipe,
   Patch,
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { RequiresStaffSession } from '../../auth/access/access.decorators';
 import { ADMIN } from '../../auth/access/roles';
+import { ParseIdPipe } from '../../common/pipes/parse-id.pipe';
 import { AnalyticsMarkerService } from './analytics-marker.service';
 import {
   AnalyticsMarkerDto,
@@ -45,22 +45,24 @@ export class AnalyticsMarkerController {
   }
 
   @Patch(':id')
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiOperation({ summary: 'Change a marker. Null clears an optional field' })
   @ApiResponse({ status: 200, type: AnalyticsMarkerDto })
   @ApiResponse({ status: 404, description: 'No such marker' })
   update(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
     @Body() dto: UpdateAnalyticsMarkerDto,
   ): Promise<AnalyticsMarkerDto> {
     return this.markers.update(id, dto);
   }
 
   @Delete(':id')
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Remove a marker' })
   @ApiResponse({ status: 204, description: 'Removed' })
   @ApiResponse({ status: 404, description: 'No such marker' })
-  remove(@Param('id', ParseIntPipe) id: number): Promise<void> {
+  remove(@Param('id', ParseIdPipe) id: string): Promise<void> {
     return this.markers.remove(id);
   }
 }

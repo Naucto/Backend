@@ -59,7 +59,7 @@ export class CrashReportDto {
   @MaxLength(CRASH_STACK_MAX_LENGTH)
   stack!: string;
 
-  @ApiProperty({ example: '/play/42' })
+  @ApiProperty({ example: '/play/3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b' })
   @IsString()
   @MaxLength(PATH_MAX_LENGTH)
   @Matches(PATH_PATTERN)

@@ -3,8 +3,12 @@ import { ApiProperty } from '@nestjs/swagger';
 import { ROLE_NAMES, USER } from '../access/roles';
 
 export class UserDto {
-  @ApiProperty({ example: 1, description: 'User ID' })
-  id!: number;
+  @ApiProperty({
+    format: 'uuid',
+    example: '3f2b8c1e-9d4a-4e6f-8a7b-1c2d3e4f5a6b',
+    description: 'User ID',
+  })
+  id!: string;
 
   @ApiProperty({ example: 'user@example.com', description: 'User email' })
   email!: string;

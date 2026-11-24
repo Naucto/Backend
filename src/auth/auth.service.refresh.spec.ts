@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 
 import { withEnv } from '../../test/env';
+import { uuidOf } from '../../test/uuid';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserService } from '../routes/user/user.service';
 import { AuthService } from './auth.service';
@@ -10,18 +11,18 @@ import { GithubAuthService } from './providers/github-auth.service';
 import { GoogleAuthService } from './providers/google-auth.service';
 import { MicrosoftAuthService } from './providers/microsoft-auth.service';
 
-const USER = { id: 7, email: 'ada@example.com' };
+const USER = { id: uuidOf(7), email: 'ada@example.com' };
 
 interface StoredToken {
-  id: number;
+  id: string;
   token: string;
-  userId: number;
+  userId: string;
   expiresAt: Date;
 }
 
 interface TokenWhere {
-  id?: number;
-  userId?: number;
+  id?: string;
+  userId?: string;
 }
 
 /** The refresh-token table, with the unique column and the missing-row failure the real one has. */
@@ -35,7 +36,7 @@ class TokenStore {
         throw new Error('Unique constraint failed on the fields: (`token`)');
       }
 
-      const row = { id: this.nextId++, ...data };
+      const row = { id: uuidOf(this.nextId++), ...data };
       this.rows.push(row);
 
       return row;
@@ -45,7 +46,7 @@ class TokenStore {
 
       return row ? { ...row, user: USER } : null;
     },
-    delete: async ({ where }: { where: { id: number } }): Promise<StoredToken> => {
+    delete: async ({ where }: { where: { id: string } }): Promise<StoredToken> => {
       const index = this.rows.findIndex((row) => row.id === where.id);
       const [removed] = index < 0 ? [] : this.rows.splice(index, 1);
 

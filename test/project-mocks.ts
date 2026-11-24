@@ -15,6 +15,7 @@ import { COLLABORATOR_SELECT, CREATOR_SELECT } from '../src/routes/project/proje
 import { EdgeService } from '../src/routes/s3/edge.service';
 import { S3Service } from '../src/routes/s3/s3.service';
 import { WorkSessionService } from '../src/routes/work-session/work-session.service';
+import { uuidOf } from './uuid';
 
 type ProjectWithPeople = Prisma.ProjectGetPayload<{
   include: {
@@ -25,7 +26,8 @@ type ProjectWithPeople = Prisma.ProjectGetPayload<{
 
 /** A draft nobody has released; a test overrides only the fields its case is about. */
 export const aProject = (overrides: Partial<ProjectWithPeople> = {}): ProjectWithPeople => ({
-  id: 1,
+  id: uuidOf(1),
+  legacyId: null,
   name: 'Project A',
   shortDesc: 'Short A',
   longDesc: 'Long A',
@@ -34,31 +36,39 @@ export const aProject = (overrides: Partial<ProjectWithPeople> = {}): ProjectWit
   publishedShortDesc: null,
   publishedLongDesc: null,
   publishedTags: [],
+  palette: [],
   status: ProjectStatus.IN_PROGRESS,
   iconUrl: null,
+  coverVersion: null,
+  clipVersion: null,
+  diskColor: null,
+  diskFinish: null,
+  diskColor2: null,
+  diskGradDir: null,
   monetization: MonetizationType.NONE,
   price: 0,
   createdAt: new Date(),
-  userId: 1,
+  userId: uuidOf(1),
   viewCount: 0,
   uniquePlayers: 0,
   likes: 0,
   updatedAt: new Date(),
   publishedAt: null,
   hiddenAt: null,
+  firstPublishedAt: null,
   releaseRevision: 0,
   releaseContentHash: null,
   forkedFromId: null,
   contentSize: null,
   contentSizeTotal: null,
-  creator: { id: 42, username: 'creatorUser' },
-  collaborators: [{ id: 1, username: 'user1' }],
+  creator: { id: uuidOf(42), username: 'creatorUser' },
+  collaborators: [{ id: uuidOf(1), username: 'user1' }],
   ...overrides,
 });
 
 export const draft = aProject();
 export const released = aProject({
-  id: 2,
+  id: uuidOf(2),
   name: 'Project B',
   shortDesc: 'Short B',
   longDesc: 'Long B',
@@ -111,6 +121,7 @@ export class ProjectMocks {
     project: {
       create: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
       delete: jest.fn(),
     },
     gameSession: {
@@ -154,6 +165,9 @@ export class ProjectMocks {
       deleteMany: jest.fn(),
       findUnique: jest.fn(),
     },
+    comment: {
+      groupBy: jest.fn(),
+    },
     workSession: {
       updateMany: jest.fn(),
       deleteMany: jest.fn(),
@@ -175,6 +189,7 @@ export class ProjectMocks {
     downloadFile: jest.fn(),
     uploadFile: jest.fn(),
     fileExists: jest.fn(),
+    getFileMetadataOrNull: jest.fn(),
     setObjectPublicRead: jest.fn(),
   };
 
@@ -200,7 +215,7 @@ export class ProjectMocks {
 
   readonly mockLastVersion = (blob: Buffer): void => {
     this.s3ServiceMock.listObjects.mockResolvedValue([
-      { Key: 'save/1/100', LastModified: new Date(100) },
+      { Key: `save/${uuidOf(1)}/100`, LastModified: new Date(100) },
     ]);
     this.s3ServiceMock.downloadFile.mockResolvedValue({
       body: Readable.from(blob),

@@ -21,15 +21,20 @@ import { S3Service } from '../s3/s3.service';
 import { WorkSessionService } from '../work-session/work-session.service';
 import { AddCollaboratorDto, RemoveCollaboratorDto } from './dto/collaborator-project.dto';
 import { CreateProjectDto } from './dto/create-project.dto';
+import { DiskStyleDto } from './dto/disk-style.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
+import { diskOf } from './hub-fields';
 import { ProjectHiddenException } from './project.error';
 import { projectKeys } from './project-keys';
 import {
   DEFAULT_LIMIT,
   PaginatedProjectsResult,
   ProjectEx,
+  ProjectLook,
+  ProjectRow,
   RELEASED,
   WITH_PEOPLE,
+  WITHOUT_LEGACY_ID,
 } from './project-select';
 import { normalizeTags } from './project-tags';
 
@@ -66,7 +71,7 @@ export class ProjectService {
 
   /** The project's row narrowed to `select`, or a 404. */
   async requireProject<S extends Prisma.ProjectSelect>(
-    id: number,
+    id: string,
     select: S,
   ): Promise<Prisma.ProjectGetPayload<{ select: S }>> {
     const project = await this.prisma.project.findUnique({ where: { id }, select });
@@ -78,8 +83,43 @@ export class ProjectService {
     return project as Prisma.ProjectGetPayload<{ select: S }>;
   }
 
+  /** Where the edge serves a version of the clip: another address each time the clip changes. */
+  private clipUrlAt(projectId: string, version: string): string {
+    return versionedUrl(this.edgeService.getCDNUrl(projectKeys.clip(projectId)), version);
+  }
+
+  /**
+   * How the row says the game is drawn, for an answer that lists or opens it. The addresses of the
+   * cover and of the clip come from the row alone: a list cannot afford a storage lookup per game.
+   * A cover stored before its version was kept gets the bare address, which the store serves
+   * `no-cache`.
+   */
+  lookOf(
+    project: Pick<
+      Project,
+      | 'id'
+      | 'iconUrl'
+      | 'coverVersion'
+      | 'clipVersion'
+      | 'diskColor'
+      | 'diskFinish'
+      | 'diskColor2'
+      | 'diskGradDir'
+    >,
+  ): ProjectLook {
+    const cover = project.iconUrl
+      ? this.edgeService.getCDNUrl(projectKeys.cover(project.id))
+      : null;
+
+    return {
+      coverUrl: cover && project.coverVersion ? versionedUrl(cover, project.coverVersion) : cover,
+      clipUrl: project.clipVersion ? this.clipUrlAt(project.id, project.clipVersion) : null,
+      disk: diskOf(project),
+    };
+  }
+
   private buildUserProjectsWhere(
-    userId: number,
+    userId: string,
     filters: UserProjectFilters = {},
   ): Prisma.ProjectWhereInput {
     const where: Prisma.ProjectWhereInput = {
@@ -125,10 +165,10 @@ export class ProjectService {
   }
 
   async findAll(
-    userId: number,
+    userId: string,
     page?: number,
     limit?: number,
-  ): Promise<PaginatedProjectsResult<ProjectEx>> {
+  ): Promise<PaginatedProjectsResult<ProjectEx & ProjectLook>> {
     const window = pageWindow(page, limit, DEFAULT_LIMIT);
     const where = this.buildUserProjectsWhere(userId);
 
@@ -139,40 +179,61 @@ export class ProjectService {
       this.prisma.project.findMany({
         where,
         include: WITH_PEOPLE,
-        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+        omit: WITHOUT_LEGACY_ID,
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
         skip: window.skip,
         take: window.take,
       }),
     ]);
 
     return {
-      projects,
+      projects: projects.map((project) => ({ ...project, ...this.lookOf(project) })),
       total,
       page: window.page,
       limit: window.limit,
     };
   }
 
-  async countUserProjects(userId: number, filters: UserProjectFilters = {}): Promise<number> {
+  async countUserProjects(userId: string, filters: UserProjectFilters = {}): Promise<number> {
     return this.prisma.project.count({
       where: this.buildUserProjectsWhere(userId, filters),
     });
   }
 
-  async findOne(id: number): Promise<ProjectEx> {
+  async findOne(id: string): Promise<ProjectEx & ProjectLook> {
     const project = await this.prisma.project.findUnique({
       where: { id },
       include: WITH_PEOPLE,
+      omit: WITHOUT_LEGACY_ID,
     });
 
     if (!project) {
       throw new NotFoundException(`Project with ID ${id} not found`);
     }
 
-    return project;
+    return { ...project, ...this.lookOf(project) };
   }
 
-  async create(createProjectDto: CreateProjectDto, userId: number): Promise<Project> {
+  /**
+   * The id of the project a link written with its old number names. Any project answers, a draft
+   * included: the id opens nothing by itself.
+   */
+  async idOfLegacy(legacyId: number): Promise<string> {
+    // The column is a 32-bit integer: a number outside it names no project, and the database would
+    // refuse the query rather than find nothing.
+    const project =
+      legacyId < 1 || legacyId > 2 ** 31 - 1
+        ? null
+        : await this.prisma.project.findUnique({ where: { legacyId }, select: { id: true } });
+
+    if (!project) {
+      throw new NotFoundException(`No project was numbered ${legacyId}`);
+    }
+
+    return project.id;
+  }
+
+  async create(createProjectDto: CreateProjectDto, userId: string): Promise<ProjectRow> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { id: true },
@@ -193,6 +254,7 @@ export class ProjectService {
           creator: { connect: { id: userId } },
         },
         include: WITH_PEOPLE,
+        omit: WITHOUT_LEGACY_ID,
       });
       await this.recordProjectCreated(tx, project.id, userId);
       return project;
@@ -202,8 +264,8 @@ export class ProjectService {
   /** Called by every path that creates a project, once the project is there to stay. */
   async recordProjectCreated(
     tx: Prisma.TransactionClient,
-    projectId: number,
-    userId: number,
+    projectId: string,
+    userId: string,
   ): Promise<void> {
     await this.facts.record(tx, {
       type: AnalyticsFactType.PROJECT_CREATED,
@@ -213,7 +275,7 @@ export class ProjectService {
     });
   }
 
-  async update(id: number, updateProjectDto: UpdateProjectDto): Promise<Project> {
+  async update(id: string, updateProjectDto: UpdateProjectDto): Promise<ProjectRow> {
     await this.findOne(id);
 
     const updated = await this.prisma.project.update({
@@ -221,19 +283,45 @@ export class ProjectService {
       data: {
         ...updateProjectDto,
         ...(updateProjectDto.tags ? { tags: normalizeTags(updateProjectDto.tags) } : {}),
+        ...(updateProjectDto.palette
+          ? { palette: updateProjectDto.palette.map((colour) => colour.toLowerCase()) }
+          : {}),
       },
+      omit: WITHOUT_LEGACY_ID,
     });
     this.eventEmitter.emit(PROJECT_CHANGED, new ProjectChangedEvent(id));
 
     return updated;
   }
 
-  private async storeCover(
-    projectId: number,
+  /** Sets the disk of a project whole, or clears it with null. */
+  async setDisk(id: string, disk: DiskStyleDto | null): Promise<DiskStyleDto | null> {
+    const project = await this.requireProject(id, { hiddenAt: true });
+    // The disk is how the hub draws the game: a restore puts back the game staff withheld.
+    if (project.hiddenAt) {
+      throw new ProjectHiddenException();
+    }
+
+    const updated = await this.prisma.project.update({
+      where: { id },
+      data: {
+        diskColor: disk?.color.toLowerCase() ?? null,
+        diskFinish: disk?.finish ?? null,
+        diskColor2: disk?.color2?.toLowerCase() ?? null,
+        diskGradDir: disk?.gradDir ?? null,
+      },
+      select: { diskColor: true, diskFinish: true, diskColor2: true, diskGradDir: true },
+    });
+
+    return diskOf(updated);
+  }
+
+  /** Puts an object anyone may read at `key`, and answers the version the store gave it. */
+  private async storePublic(
+    key: string,
     file: Express.Multer.File | DownloadedFile,
-    metadata: Record<string, string> = {},
-  ): Promise<void> {
-    const key = projectKeys.cover(projectId);
+    metadata: Record<string, string>,
+  ): Promise<string | undefined> {
     await this.s3Service.uploadFile({
       file,
       keyName: key,
@@ -242,28 +330,57 @@ export class ProjectService {
     });
     await this.s3Service.setObjectPublicRead(key);
 
-    // The row keeps the image's public URL, so readers of the project need no storage lookup.
+    return (await this.s3Service.getFileMetadataOrNull(key))?.ETag;
+  }
+
+  private async storeCover(
+    projectId: string,
+    file: Express.Multer.File | DownloadedFile,
+    metadata: Record<string, string> = {},
+  ): Promise<void> {
+    const key = projectKeys.cover(projectId);
+    const version = await this.storePublic(key, file, metadata);
+
+    // The row keeps the image's public URL and its version, so readers of the project need no
+    // storage lookup.
     await this.prisma.project.update({
       where: { id: projectId },
-      data: { iconUrl: this.edgeService.getCDNUrl(key) },
+      data: { iconUrl: this.edgeService.getCDNUrl(key), coverVersion: version ?? null },
     });
     this.eventEmitter.emit(PROJECT_CHANGED, new ProjectChangedEvent(projectId));
   }
 
-  async uploadImage(id: number, file: Express.Multer.File, uploaderId: number): Promise<void> {
+  private async storeClip(
+    projectId: string,
+    file: Express.Multer.File | DownloadedFile,
+    metadata: Record<string, string> = {},
+  ): Promise<string> {
+    // The version is all the row keeps of a clip: when the store gives none, the time stands in,
+    // or the clip just stored would read as absent.
+    const clipVersion =
+      (await this.storePublic(projectKeys.clip(projectId), file, metadata)) ??
+      Date.now().toString();
+
+    await this.prisma.project.update({ where: { id: projectId }, data: { clipVersion } });
+    this.eventEmitter.emit(PROJECT_CHANGED, new ProjectChangedEvent(projectId));
+
+    return this.clipUrlAt(projectId, clipVersion);
+  }
+
+  async uploadImage(id: string, file: Express.Multer.File, uploaderId: string): Promise<void> {
     const project = await this.findOne(id);
     // A cover is public the moment it is stored, which is what withholding a game takes away.
     if (project.hiddenAt) {
       throw new ProjectHiddenException();
     }
     await this.storeCover(id, file, {
-      uploadedBy: uploaderId.toString(),
-      projectId: id.toString(),
+      uploadedBy: uploaderId,
+      projectId: id,
     });
   }
 
   /** Gives `targetProjectId` the cover of `sourceProjectId`, when the source has one. */
-  async copyCover(sourceProjectId: number, targetProjectId: number): Promise<void> {
+  async copyCover(sourceProjectId: string, targetProjectId: string): Promise<void> {
     const sourceCover = projectKeys.cover(sourceProjectId);
     if (await this.s3Service.fileExists(sourceCover)) {
       await this.storeCover(
@@ -273,15 +390,53 @@ export class ProjectService {
     }
   }
 
+  /** Stores the clip of a project over the one it has, and answers its address. */
+  async uploadClip(id: string, file: Express.Multer.File, uploaderId: string): Promise<string> {
+    const project = await this.requireProject(id, { hiddenAt: true });
+    // A clip is public the moment it is stored, which is what withholding a game takes away.
+    if (project.hiddenAt) {
+      throw new ProjectHiddenException();
+    }
+
+    return this.storeClip(id, file, {
+      uploadedBy: uploaderId,
+      projectId: id,
+    });
+  }
+
+  /** Gives `targetProjectId` the clip of `sourceProjectId`, when the source has one. */
+  async copyClip(sourceProjectId: string, targetProjectId: string): Promise<void> {
+    const sourceClip = projectKeys.clip(sourceProjectId);
+    if (await this.s3Service.fileExists(sourceClip)) {
+      await this.storeClip(targetProjectId, await this.s3Service.downloadFile({ key: sourceClip }));
+    }
+  }
+
+  /**
+   * The row first: an object left in the store is dropped with the project or replaced by the
+   * next clip, while a row still naming a deleted object would hand out an address that fails.
+   */
+  async removeClip(id: string): Promise<void> {
+    const project = await this.requireProject(id, { hiddenAt: true });
+    // Its clip is held out of reach for a restore to put back, where this removal would not find it.
+    if (project.hiddenAt) {
+      throw new ProjectHiddenException();
+    }
+
+    await this.prisma.project.update({ where: { id }, data: { clipVersion: null } });
+    await this.s3Service.deleteFile({ key: projectKeys.clip(id) });
+    this.eventEmitter.emit(PROJECT_CHANGED, new ProjectChangedEvent(id));
+  }
+
   /** The versioned CDN URL of the cover, or null when the project has none. */
-  async coverUrl(projectId: number): Promise<string | null> {
+  async coverUrl(projectId: string): Promise<string | null> {
     const key = projectKeys.cover(projectId);
     const head = await this.s3Service.getFileMetadataOrNull(key);
 
     return head ? versionedUrl(this.edgeService.getCDNUrl(key), head.ETag) : null;
   }
 
-  private async removeStoredContent(id: number): Promise<void> {
+  private async removeStoredContent(id: string): Promise<void> {
     try {
       const { keys, prefixes } = projectKeys.owned(id);
       for (const key of keys) {
@@ -308,7 +463,7 @@ export class ProjectService {
    * the deletion must exist exactly when the project is gone.
    */
   async remove(
-    id: number,
+    id: string,
     alongside?: (tx: Prisma.TransactionClient) => Promise<void>,
   ): Promise<void> {
     await this.findOne(id);
@@ -329,12 +484,12 @@ export class ProjectService {
 
   private async findUserByIdentifier(
     dto: AddCollaboratorDto | RemoveCollaboratorDto,
-  ): Promise<{ id: number }> {
-    let user: { id: number } | null = null;
+  ): Promise<{ id: string }> {
+    let user: { id: string } | null = null;
     let identifier: string;
 
     if (dto.userId) {
-      identifier = dto.userId.toString();
+      identifier = dto.userId;
       user = await this.prisma.user.findUnique({
         where: { id: dto.userId },
         select: { id: true },
@@ -362,7 +517,7 @@ export class ProjectService {
     return user;
   }
 
-  async addCollaborator(id: number, addCollaboratorDto: AddCollaboratorDto): Promise<ProjectEx> {
+  async addCollaborator(id: string, addCollaboratorDto: AddCollaboratorDto): Promise<ProjectEx> {
     const user = await this.findUserByIdentifier(addCollaboratorDto);
     const project = await this.findOne(id);
 
@@ -376,6 +531,7 @@ export class ProjectService {
         collaborators: { connect: { id: user.id } },
       },
       include: WITH_PEOPLE,
+      omit: WITHOUT_LEGACY_ID,
     });
 
     // The invitee has no other signal that they were added; the project id lets the notification
@@ -393,7 +549,7 @@ export class ProjectService {
   }
 
   async removeCollaborator(
-    id: number,
+    id: string,
     removeCollaboratorDto: RemoveCollaboratorDto,
   ): Promise<ProjectEx> {
     const user = await this.findUserByIdentifier(removeCollaboratorDto);
@@ -415,6 +571,7 @@ export class ProjectService {
         },
       },
       include: WITH_PEOPLE,
+      omit: WITHOUT_LEGACY_ID,
     });
 
     // No projectId: the removed collaborator has nothing left to open.

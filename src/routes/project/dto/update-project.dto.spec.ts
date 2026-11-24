@@ -25,6 +25,7 @@ describe('UpdateProjectDto', () => {
   it.each([
     ['a description', 'longDesc'],
     ['tags', 'tags'],
+    ['a palette', 'palette'],
     ['a status', 'status'],
     ['a monetization', 'monetization'],
     ['a price', 'price'],

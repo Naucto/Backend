@@ -1,6 +1,7 @@
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 
+import { uuidOf } from '../../../../test/uuid';
 import { AnalyticsReleasesQueryDto, AnalyticsTimelineQueryDto } from './admin-timeline-query.dto';
 import { CreateAnalyticsMarkerDto } from './analytics-marker.dto';
 
@@ -11,6 +12,7 @@ function invalid<T extends object>(type: new () => T, body: unknown): string[] {
   }).map((error) => error.property);
 }
 
+const UPPER_CASE_ID = 'AB12CD34-0000-4000-8000-00000000EF56';
 const RANGE = { from: '2026-10-20T18:00:00Z', to: '2026-10-21T18:00:00Z' };
 
 describe('the timeline query', () => {
@@ -18,11 +20,11 @@ describe('the timeline query', () => {
     const query = plainToInstance(AnalyticsTimelineQueryDto, {
       ...RANGE,
       metrics: 'visitors_new,plays_anonymous',
-      releaseId: '9',
+      releaseId: uuidOf(9),
     });
 
     expect(query.metrics).toEqual(['visitors_new', 'plays_anonymous']);
-    expect(query.releaseId).toBe(9);
+    expect(query.releaseId).toBe(uuidOf(9));
     expect(validateSync(query)).toEqual([]);
   });
 
@@ -45,12 +47,15 @@ describe('the timeline query', () => {
 
 describe('the game search query', () => {
   it('reads ids from a comma-separated list', () => {
-    const query = plainToInstance(AnalyticsReleasesQueryDto, { ids: '12,40', limit: '5' });
+    const query = plainToInstance(AnalyticsReleasesQueryDto, {
+      ids: `${uuidOf(12)},${UPPER_CASE_ID}`,
+      limit: '5',
+    });
 
-    expect(query.ids).toEqual([12, 40]);
+    expect(query.ids).toEqual([uuidOf(12), UPPER_CASE_ID.toLowerCase()]);
     expect(query.limit).toBe(5);
     expect(validateSync(query)).toEqual([]);
-    expect(invalid(AnalyticsReleasesQueryDto, { ids: '12,x' })).toEqual(['ids']);
+    expect(invalid(AnalyticsReleasesQueryDto, { ids: `${uuidOf(12)},12` })).toEqual(['ids']);
     expect(invalid(AnalyticsReleasesQueryDto, { limit: '500' })).toEqual(['limit']);
   });
 });

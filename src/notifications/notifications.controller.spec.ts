@@ -1,6 +1,7 @@
 import { HttpStatus } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 
+import { uuidOf } from '../../test/uuid';
 import { RequestWithUser } from '../auth/auth.types';
 import { NotificationsController } from './notifications.controller';
 import { NotificationsService } from './notifications.service';
@@ -16,13 +17,13 @@ describe('NotificationsController', () => {
 
   const request = {
     user: {
-      id: 42,
+      id: uuidOf(42),
     },
   } as RequestWithUser;
 
   const notificationPayload = {
-    id: '7',
-    userId: 42,
+    id: uuidOf(7),
+    userId: uuidOf(42),
     title: 'Build complete',
     message: 'Your build is ready.',
     type: 'INFO' as const,
@@ -84,7 +85,7 @@ describe('NotificationsController', () => {
     });
 
     expect(notificationsService.createNotification).toHaveBeenCalledWith({
-      userId: 42,
+      userId: uuidOf(42),
       title: 'Build complete',
       message: 'Your build is ready.',
       type: 'INFO',
@@ -97,7 +98,7 @@ describe('NotificationsController', () => {
       read: true,
     });
 
-    await expect(controller.markAsRead(request, '7')).resolves.toEqual({
+    await expect(controller.markAsRead(request, uuidOf(7))).resolves.toEqual({
       statusCode: HttpStatus.OK,
       message: 'Notification marked as read',
       data: {
@@ -106,7 +107,7 @@ describe('NotificationsController', () => {
       },
     });
 
-    expect(notificationsService.markAsRead).toHaveBeenCalledWith(42, '7');
+    expect(notificationsService.markAsRead).toHaveBeenCalledWith(uuidOf(42), uuidOf(7));
   });
 
   it('should mark all notifications as read for the current user', async () => {
@@ -117,6 +118,6 @@ describe('NotificationsController', () => {
       message: 'Notifications marked as read',
       data: { count: 3 },
     });
-    expect(notificationsService.markAllAsRead).toHaveBeenCalledWith(42);
+    expect(notificationsService.markAllAsRead).toHaveBeenCalledWith(uuidOf(42));
   });
 });

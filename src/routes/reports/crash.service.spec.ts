@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 
+import { uuidOf } from '../../../test/uuid';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   CRASH_NEW_PER_HOUR,
@@ -36,7 +37,7 @@ describe('CrashService', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
-    prisma.report.upsert.mockResolvedValue({ id: 3, status: 'NEW', count: 4 });
+    prisma.report.upsert.mockResolvedValue({ id: uuidOf(3), status: 'NEW', count: 4 });
     prisma.report.updateMany.mockResolvedValue({ count: 1 });
     prisma.reportOccurrence.findMany.mockResolvedValue([]);
     stacks.resolve.mockImplementation((stack: string) =>
@@ -72,7 +73,7 @@ describe('CrashService', () => {
     });
     expect(prisma.reportOccurrence.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        reportId: 3,
+        reportId: uuidOf(3),
         route: '/hub',
         browser: 'Safari',
         os: 'Mac OS',
@@ -101,16 +102,16 @@ describe('CrashService', () => {
   });
 
   it('reopens a resolved crash as a regression and announces it', async () => {
-    prisma.report.upsert.mockResolvedValue({ id: 3, status: 'RESOLVED', count: 7 });
+    prisma.report.upsert.mockResolvedValue({ id: uuidOf(3), status: 'RESOLVED', count: 7 });
 
     await service.record(crash);
 
     expect(prisma.report.updateMany).toHaveBeenCalledWith({
-      where: { id: 3, status: 'RESOLVED' },
+      where: { id: uuidOf(3), status: 'RESOLVED' },
       data: { status: 'NEW', regressedAt: expect.any(Date) },
     });
     expect(notifier.notify).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: 'regressed', reportId: 3, count: 7 }),
+      expect.objectContaining({ kind: 'regressed', reportId: uuidOf(3), count: 7 }),
     );
   });
 
@@ -118,7 +119,7 @@ describe('CrashService', () => {
     ['a first occurrence', { status: 'NEW', count: 1 }, 'new'],
     ['a milestone', { status: 'TRIAGED', count: 100 }, 'milestone'],
   ])('announces %s', async (_, row, kind) => {
-    prisma.report.upsert.mockResolvedValue({ id: 3, ...row });
+    prisma.report.upsert.mockResolvedValue({ id: uuidOf(3), ...row });
 
     await service.record(crash);
 
@@ -129,7 +130,7 @@ describe('CrashService', () => {
     ['an ordinary repeat', { status: 'NEW', count: 4 }],
     ['an ignored crash', { status: 'IGNORED', count: 1 }],
   ])('stays quiet on %s', async (_, row) => {
-    prisma.report.upsert.mockResolvedValue({ id: 3, ...row });
+    prisma.report.upsert.mockResolvedValue({ id: uuidOf(3), ...row });
 
     await service.record(crash);
 
@@ -137,7 +138,7 @@ describe('CrashService', () => {
   });
 
   it('announces a regression once when two reports reopen it together', async () => {
-    prisma.report.upsert.mockResolvedValue({ id: 3, status: 'RESOLVED', count: 7 });
+    prisma.report.upsert.mockResolvedValue({ id: uuidOf(3), status: 'RESOLVED', count: 7 });
     prisma.report.updateMany.mockResolvedValue({ count: 0 });
 
     await service.record(crash);
@@ -150,7 +151,7 @@ describe('CrashService', () => {
       .mockRejectedValueOnce(
         new Prisma.PrismaClientKnownRequestError('unique', { code: 'P2002', clientVersion: 'x' }),
       )
-      .mockResolvedValueOnce({ id: 3, status: 'NEW', count: 2 });
+      .mockResolvedValueOnce({ id: uuidOf(3), status: 'NEW', count: 2 });
 
     await service.record(crash);
 
@@ -159,15 +160,15 @@ describe('CrashService', () => {
   });
 
   it('prunes the occurrences past the ones it keeps', async () => {
-    prisma.reportOccurrence.findMany.mockResolvedValue([{ id: 1 }, { id: 2 }]);
+    prisma.reportOccurrence.findMany.mockResolvedValue([{ id: uuidOf(1) }, { id: uuidOf(2) }]);
 
     await service.record(crash);
 
     expect(prisma.reportOccurrence.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { reportId: 3 }, skip: CRASH_OCCURRENCES_KEPT }),
+      expect.objectContaining({ where: { reportId: uuidOf(3) }, skip: CRASH_OCCURRENCES_KEPT }),
     );
     expect(prisma.reportOccurrence.deleteMany).toHaveBeenCalledWith({
-      where: { id: { in: [1, 2] } },
+      where: { id: { in: [uuidOf(1), uuidOf(2)] } },
     });
   });
 
@@ -181,7 +182,7 @@ describe('CrashService', () => {
     await service.record({ ...crash, message: 'one too many' });
     expect(prisma.report.upsert).toHaveBeenCalledTimes(CRASH_NEW_PER_HOUR);
 
-    prisma.report.findUnique.mockResolvedValue({ id: 3 });
+    prisma.report.findUnique.mockResolvedValue({ id: uuidOf(3) });
     await service.record(crash);
     await service.record({ ...crash, source: 'BACKEND' });
     expect(prisma.report.upsert).toHaveBeenCalledTimes(CRASH_NEW_PER_HOUR + 2);

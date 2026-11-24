@@ -16,6 +16,7 @@ import { ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from 
 
 import { RequiresAuth } from '../../auth/access/access.decorators';
 import { RequestWithUser } from '../../auth/auth.types';
+import { ParseIdPipe } from '../../common/pipes/parse-id.pipe';
 import {
   FriendDto,
   FriendRequestDto,
@@ -71,20 +72,20 @@ export class FriendsController {
   @Post('requests/:id/accept')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Accept an incoming friend request' })
-  @ApiParam({ name: 'id', description: 'Friend request ID' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid', description: 'Friend request ID' })
   @ApiResponse({ status: HttpStatus.NO_CONTENT })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'Request not found' })
-  async accept(@Req() req: RequestWithUser, @Param('id', ParseIntPipe) id: number): Promise<void> {
+  async accept(@Req() req: RequestWithUser, @Param('id', ParseIdPipe) id: string): Promise<void> {
     await this.friendsService.accept(req.user.id, id);
   }
 
   @Delete('requests/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Decline an incoming or cancel an outgoing friend request' })
-  @ApiParam({ name: 'id', description: 'Friend request ID' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid', description: 'Friend request ID' })
   @ApiResponse({ status: HttpStatus.NO_CONTENT })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'Request not found' })
-  async decline(@Req() req: RequestWithUser, @Param('id', ParseIntPipe) id: number): Promise<void> {
+  async decline(@Req() req: RequestWithUser, @Param('id', ParseIdPipe) id: string): Promise<void> {
     await this.friendsService.decline(req.user.id, id);
   }
 
@@ -108,12 +109,17 @@ export class FriendsController {
   @Delete(':userId')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Remove a friend' })
-  @ApiParam({ name: 'userId', description: 'ID of the friend to remove' })
+  @ApiParam({
+    name: 'userId',
+    type: String,
+    format: 'uuid',
+    description: 'ID of the friend to remove',
+  })
   @ApiResponse({ status: HttpStatus.NO_CONTENT })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'Not friends' })
   async remove(
     @Req() req: RequestWithUser,
-    @Param('userId', ParseIntPipe) userId: number,
+    @Param('userId', ParseIdPipe) userId: string,
   ): Promise<void> {
     await this.friendsService.remove(req.user.id, userId);
   }
@@ -127,11 +133,11 @@ export class UserFriendshipController {
 
   @Get(':id/friendship')
   @ApiOperation({ summary: 'Friendship status between the caller and a user' })
-  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid', description: 'User ID' })
   @ApiResponse({ status: HttpStatus.OK, type: FriendshipStatusDto })
   async friendship(
     @Req() req: RequestWithUser,
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
   ): Promise<FriendshipStatusDto> {
     return {
       status: await this.friendsService.friendshipStatus(req.user.id, id),

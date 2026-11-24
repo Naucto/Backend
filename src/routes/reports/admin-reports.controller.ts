@@ -5,19 +5,19 @@ import {
   HttpStatus,
   Logger,
   Param,
-  ParseIntPipe,
   Put,
   Query,
   Req,
   Res,
 } from '@nestjs/common';
-import { ApiOperation, ApiProduces, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiParam, ApiProduces, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 import { pipeline } from 'stream/promises';
 
 import { RequiresStaffSession } from '../../auth/access/access.decorators';
 import { ADMIN, parseRole } from '../../auth/access/roles';
 import { RequestWithUser } from '../../auth/auth.types';
+import { ParseIdPipe } from '../../common/pipes/parse-id.pipe';
 import { AdminReportsService } from './admin-reports.service';
 import {
   AdminReportDetailDto,
@@ -78,22 +78,24 @@ export class AdminReportsController {
 
   @Get(':id')
   @ApiOperation({ summary: 'One report in full' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: HttpStatus.OK, type: AdminReportDetailDto })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No such report' })
   detail(
     @Req() req: RequestWithUser,
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
   ): Promise<AdminReportDetailDto> {
     return this.reports.detail(id, parseRole(req.user.role));
   }
 
   @Put(':id')
   @ApiOperation({ summary: 'Set the status of a report or the note of the team' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: HttpStatus.OK, type: AdminReportDetailDto })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No such report' })
   update(
     @Req() req: RequestWithUser,
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
     @Body() dto: UpdateReportDto,
   ): Promise<AdminReportDetailDto> {
     return this.reports.update(
@@ -105,10 +107,11 @@ export class AdminReportsController {
 
   @Get(':id/screenshot')
   @ApiOperation({ summary: 'The screenshot of a bug report, served privately' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiProduces('image/png', 'image/jpeg', 'image/webp')
   @ApiResponse({ status: HttpStatus.OK, description: 'The image' })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'No screenshot' })
-  async screenshot(@Param('id', ParseIntPipe) id: number, @Res() res: Response): Promise<void> {
+  async screenshot(@Param('id', ParseIdPipe) id: string, @Res() res: Response): Promise<void> {
     const file = await this.reports.screenshot(id);
     res.set({
       'Content-Type': file.contentType ?? 'application/octet-stream',

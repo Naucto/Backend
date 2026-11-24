@@ -15,8 +15,8 @@ export class KeylessViewLimiter {
   private readonly windows = new Map<string, number[]>();
 
   /** Spends one view of both budgets of the address, or none when either is spent. */
-  admit(address: string, releaseId: number, now = Date.now()): boolean {
-    const perRelease = `${address}|${String(releaseId)}`;
+  admit(address: string, releaseId: string, now = Date.now()): boolean {
+    const perRelease = `${address}|${releaseId}`;
     const perAddress = address;
     if (
       this.used(perRelease, now) >= KEYLESS_VIEWS_PER_RELEASE ||

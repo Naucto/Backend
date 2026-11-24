@@ -12,14 +12,17 @@ import { ProjectService } from './project.service';
 import { ProjectContentService } from './project-content.service';
 import {
   DEFAULT_LIMIT,
+  LIVE_COMMENT,
   PaginatedProjectsResult,
   ProjectEx,
+  ProjectWithCounts,
   PUBLISHED,
+  PUBLISHED_SQL,
   RELEASED,
   ReleaseProject,
   WITH_PEOPLE,
   WITH_PEOPLE_AND_COUNTS,
-  withCounts,
+  WITHOUT_LEGACY_ID,
 } from './project-select';
 import { normalizeTags } from './project-tags';
 import { viewerKeyOf } from './viewer-key';
@@ -34,18 +37,28 @@ export type ReleaseWindow = (typeof RELEASE_WINDOWS)[number];
 export const RELEASE_SORTS = ['fresh', 'popular', 'liked', 'discussed', 'name'] as const;
 export type ReleaseSort = (typeof RELEASE_SORTS)[number];
 
-const RELEASE_ORDER_BY: Record<ReleaseSort, Prisma.ProjectOrderByWithRelationInput[]> = {
-  fresh: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
-  popular: [{ viewCount: 'desc' }, { publishedAt: 'desc' }],
-  liked: [{ likes: 'desc' }, { publishedAt: 'desc' }],
-  discussed: [{ comments: { _count: 'desc' } }, { publishedAt: 'desc' }],
-  name: [{ publishedName: 'asc' }, { name: 'asc' }],
+/**
+ * Every ordering ends on the id, so two pages never share a game that ties with another.
+ * `discussed` is not here: Prisma orders a relation by its whole count, deleted comments included.
+ */
+const RELEASE_ORDER_BY: Record<
+  Exclude<ReleaseSort, 'discussed'>,
+  Prisma.ProjectOrderByWithRelationInput[]
+> = {
+  // A row published around the release path (a seed, a repair) has no first date; without
+  // `nulls: 'last'` Postgres would list it ahead of every dated game.
+  fresh: [{ firstPublishedAt: { sort: 'desc', nulls: 'last' } }, { id: 'desc' }],
+  popular: [{ viewCount: 'desc' }, { id: 'desc' }],
+  liked: [{ likes: 'desc' }, { id: 'desc' }],
+  name: [{ publishedName: 'asc' }, { name: 'asc' }, { id: 'asc' }],
 };
 
 export type PublishedProjectFilters = {
   search?: string;
   tags?: string[];
   releaseWindow?: ReleaseWindow;
+  /** Narrows to these games; not something a query string can ask for. */
+  ids?: string[];
 };
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -67,20 +80,39 @@ export class HubService {
     private readonly contentService: ProjectContentService,
   ) {}
 
-  /** The row of a project on the hub narrowed to `select`, or a 404 for a draft as for a gap. */
+  /** A project as the hub lists it: its released fields, its counts and its cover. */
+  private toRelease({ _count, ...project }: ProjectWithCounts): ReleaseProject {
+    return {
+      ...hubFields(project),
+      commentCount: _count.comments,
+      forkCount: _count.forks,
+      ...this.projectService.lookOf(project),
+    };
+  }
+
+  /** What a game that is not on the hub answers: withheld says so, a draft reads as a gap. */
+  private async notOnHub(id: string): Promise<ProjectHiddenException | NotFoundException> {
+    const withheld = await this.prisma.project.count({
+      where: { id, ...RELEASED, hiddenAt: { not: null } },
+    });
+
+    return withheld > 0
+      ? new ProjectHiddenException()
+      : new NotFoundException(`Published project with ID ${id} not found`);
+  }
+
+  /**
+   * The row of a project on the hub narrowed to `select`, or a 404 for a draft as for a gap and a
+   * 403 for a withheld game.
+   */
   private async requirePublished<S extends Prisma.ProjectSelect>(
-    id: number,
+    id: string,
     select: S,
   ): Promise<Prisma.ProjectGetPayload<{ select: S }>> {
     const project = await this.prisma.project.findFirst({ where: { id, ...PUBLISHED }, select });
 
     if (!project) {
-      const withheld = await this.prisma.project.count({
-        where: { id, ...RELEASED, hiddenAt: { not: null } },
-      });
-      throw withheld > 0
-        ? new ProjectHiddenException()
-        : new NotFoundException(`Published project with ID ${id} not found`);
+      throw await this.notOnHub(id);
     }
 
     return project as Prisma.ProjectGetPayload<{ select: S }>;
@@ -117,7 +149,11 @@ export class HubService {
         Date.now() - RELEASE_WINDOW_DAYS[filters.releaseWindow] * DAY_IN_MS,
       );
 
-      andClauses.push({ publishedAt: { gte: threshold } });
+      andClauses.push({ firstPublishedAt: { gte: threshold } });
+    }
+
+    if (filters.ids) {
+      andClauses.push({ id: { in: filters.ids } });
     }
 
     if (normalizedSearch) {
@@ -158,35 +194,83 @@ export class HubService {
   }
 
   /** The cover of a project on the hub; a 404 for a draft, null when it has no cover. */
-  async publishedCoverUrl(projectId: number): Promise<string | null> {
+  async publishedCoverUrl(projectId: string): Promise<string | null> {
     await this.requirePublished(projectId, { id: true });
 
     return this.projectService.coverUrl(projectId);
   }
 
-  async fetchRelease(projectId: number): Promise<ReleaseProject> {
-    const project = await this.prisma.project.findFirst({
-      where: {
-        id: projectId,
-      },
+  /** The games on the hub among `ids`, in the order given. */
+  async fetchReleasesByIds(ids: string[]): Promise<ReleaseProject[]> {
+    const projects = await this.prisma.project.findMany({
+      where: { id: { in: ids }, ...PUBLISHED },
       include: WITH_PEOPLE_AND_COUNTS,
+      omit: WITHOUT_LEGACY_ID,
     });
+    const releases = new Map(projects.map((project) => [project.id, this.toRelease(project)]));
 
-    if (!project) {
-      throw new NotFoundException(`Project with ID ${projectId} not found`);
-    }
-
-    return hubFields(withCounts(project));
+    return ids.flatMap((id) => releases.get(id) ?? []);
   }
 
-  async fetchPublishedGames(): Promise<ReleaseProject[]> {
-    const projects = await this.prisma.project.findMany({
-      where: {
-        ...PUBLISHED,
-      },
+  /**
+   * A game on the hub; a 404 for a draft as for a gap, so nothing says a draft exists, and a 403
+   * for a withheld game.
+   */
+  async fetchRelease(projectId: string): Promise<ReleaseProject> {
+    const [release] = await this.fetchReleasesByIds([projectId]);
+
+    if (!release) {
+      throw await this.notOnHub(projectId);
+    }
+
+    return release;
+  }
+
+  /** The project this person last worked on, released or not, as the hub would show it. */
+  async fetchLastEdited(userId: string): Promise<ReleaseProject | null> {
+    const project = await this.prisma.project.findFirst({
+      where: { collaborators: { some: { id: userId } } },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
       include: WITH_PEOPLE_AND_COUNTS,
+      omit: WITHOUT_LEGACY_ID,
     });
-    return projects.map((project) => hubFields(withCounts(project)));
+
+    return project && this.toRelease(project);
+  }
+
+  /**
+   * One page of ids, most discussed first. The games holding a comment that still stands are
+   * ranked by a grouping of those comments; the others follow, newest first.
+   */
+  private async discussedIds(
+    where: Prisma.ProjectWhereInput,
+    skip: number,
+    take: number,
+  ): Promise<string[]> {
+    const discussed = await this.prisma.comment.groupBy({
+      by: ['projectId'],
+      where: { ...LIVE_COMMENT, project: where },
+      orderBy: [{ _count: { projectId: 'desc' } }, { projectId: 'desc' }],
+      skip,
+      take,
+    });
+    const ids = discussed.map((row) => row.projectId);
+    if (ids.length === take) {
+      return ids;
+    }
+
+    const discussedTotal = await this.prisma.project.count({
+      where: { AND: [where, { comments: { some: LIVE_COMMENT } }] },
+    });
+    const silent = await this.prisma.project.findMany({
+      where: { AND: [where, { comments: { none: LIVE_COMMENT } }] },
+      select: { id: true },
+      orderBy: RELEASE_ORDER_BY.fresh,
+      skip: Math.max(0, skip - discussedTotal),
+      take: take - ids.length,
+    });
+
+    return [...ids, ...silent.map((project) => project.id)];
   }
 
   async fetchPublishedGamesPaginated(
@@ -198,6 +282,20 @@ export class HubService {
     const window = pageWindow(page, limit, DEFAULT_LIMIT);
     const where = this.buildPublishedGamesWhere(filters);
 
+    if (sort === 'discussed') {
+      const [total, ids] = await Promise.all([
+        this.prisma.project.count({ where }),
+        this.discussedIds(where, window.skip, window.take),
+      ]);
+
+      return {
+        projects: await this.fetchReleasesByIds(ids),
+        total,
+        page: window.page,
+        limit: window.limit,
+      };
+    }
+
     const [total, projects] = await this.prisma.$transaction([
       this.prisma.project.count({
         where,
@@ -205,6 +303,7 @@ export class HubService {
       this.prisma.project.findMany({
         where,
         include: WITH_PEOPLE_AND_COUNTS,
+        omit: WITHOUT_LEGACY_ID,
         orderBy: RELEASE_ORDER_BY[sort],
         skip: window.skip,
         take: window.take,
@@ -212,7 +311,7 @@ export class HubService {
     ]);
 
     return {
-      projects: projects.map((project) => hubFields(withCounts(project))),
+      projects: projects.map((project) => this.toRelease(project)),
       total,
       page: window.page,
       limit: window.limit,
@@ -234,17 +333,18 @@ export class HubService {
 
     const projects = await this.prisma.project.findMany({
       where,
-      orderBy: [{ publishedAt: 'desc' }, { updatedAt: 'desc' }],
+      orderBy: [{ publishedAt: 'desc' }, { updatedAt: 'desc' }, { id: 'desc' }],
       skip,
       take,
       include: WITH_PEOPLE_AND_COUNTS,
+      omit: WITHOUT_LEGACY_ID,
     });
 
-    return projects.map((project) => hubFields(withCounts(project)));
+    return projects.map((project) => this.toRelease(project));
   }
 
   async fetchPublishedGamesByUser(
-    userId: number,
+    userId: string,
     page?: number,
     limit?: number,
     ownedOnly = false,
@@ -270,7 +370,7 @@ export class HubService {
 
   /** Published games this person collaborates on without owning them. */
   async fetchCollaborationsByUser(
-    userId: number,
+    userId: string,
     page?: number,
     limit?: number,
   ): Promise<ReleaseProject[]> {
@@ -287,7 +387,7 @@ export class HubService {
 
   /** Published games other people forked from one of this person's. */
   async fetchRemixesOfUser(
-    userId: number,
+    userId: string,
     page?: number,
     limit?: number,
   ): Promise<ReleaseProject[]> {
@@ -324,7 +424,7 @@ export class HubService {
           END
         ) AS tag
         FROM "Project"
-        WHERE "publishedAt" IS NOT NULL AND "hiddenAt" IS NULL
+        WHERE ${PUBLISHED_SQL}
       ) tags
       WHERE tag ILIKE ${`%${fragment}%`}
       GROUP BY tag
@@ -335,7 +435,7 @@ export class HubService {
 
   /** Totals over every published game the user owns. */
   async fetchUserTotals(
-    userId: number,
+    userId: string,
   ): Promise<{ gameCount: number; totalPlays: number; totalLikes: number }> {
     const where: Prisma.ProjectWhereInput = { ...PUBLISHED, userId };
     const [gameCount, sums] = await this.prisma.$transaction([
@@ -351,7 +451,7 @@ export class HubService {
   }
 
   async fetchLikedPublishedGamesByUser(
-    userId: number,
+    userId: string,
     page?: number,
     limit?: number,
   ): Promise<ReleaseProject[]> {
@@ -377,7 +477,7 @@ export class HubService {
    * play, keyed by nothing, within the limits of its address.
    */
   async registerReleaseView(
-    projectId: number,
+    projectId: string,
     viewer: { visitorId: string | null; address: string },
     now = new Date(),
   ): Promise<{ viewCount: number }> {
@@ -423,7 +523,7 @@ export class HubService {
   }
 
   /** A like moves the counter only when its row was created, so a repeated request counts once. */
-  async likeProject(projectId: number, userId: number): Promise<{ likes: number; liked: boolean }> {
+  async likeProject(projectId: string, userId: string): Promise<{ likes: number; liked: boolean }> {
     const project = await this.requirePublished(projectId, { likes: true, updatedAt: true });
 
     let updated: { likes: number };
@@ -449,8 +549,8 @@ export class HubService {
 
   /** Withdrawing stays possible after an unpublish, and moves the counter only when a row went. */
   async unlikeProject(
-    projectId: number,
-    userId: number,
+    projectId: string,
+    userId: string,
   ): Promise<{ likes: number; liked: boolean }> {
     const project = await this.projectService.requireProject(projectId, {
       likes: true,
@@ -481,8 +581,8 @@ export class HubService {
   }
 
   async getLikeStatus(
-    projectId: number,
-    userId: number,
+    projectId: string,
+    userId: string,
   ): Promise<{ likes: number; liked: boolean }> {
     const project = await this.projectService.requireProject(projectId, { likes: true });
 
@@ -495,7 +595,7 @@ export class HubService {
     return { likes: project.likes, liked: !!existingLike };
   }
 
-  async fork(sourceProjectId: number, userId: number): Promise<ProjectEx> {
+  async fork(sourceProjectId: string, userId: string): Promise<ProjectEx> {
     const sourceProject = await this.projectService.requireProject(sourceProjectId, {
       publishedAt: true,
       hiddenAt: true,
@@ -507,6 +607,7 @@ export class HubService {
       publishedShortDesc: true,
       publishedLongDesc: true,
       publishedTags: true,
+      palette: true,
     });
 
     if (!sourceProject.publishedAt) {
@@ -532,11 +633,13 @@ export class HubService {
         name: `Fork of ${shown.name}`.slice(0, PROJECT_NAME_MAX_LENGTH),
         shortDesc: shown.shortDesc,
         longDesc: shown.longDesc,
+        palette: sourceProject.palette,
         forkedFrom: { connect: { id: sourceProjectId } },
         creator: { connect: { id: userId } },
         collaborators: { connect: [{ id: userId }] },
       },
       include: WITH_PEOPLE,
+      omit: WITHOUT_LEGACY_ID,
     });
 
     try {
@@ -552,14 +655,20 @@ export class HubService {
       this.projectService.recordProjectCreated(tx, newProject.id, userId),
     );
 
-    try {
-      await this.projectService.copyCover(sourceProjectId, newProject.id);
-    } catch (error) {
-      this.logger.warn(
-        `Cover of project ${sourceProjectId} was not copied to its fork ${newProject.id}: ${
-          error instanceof Error ? error.message : 'unknown error'
-        }`,
-      );
+    // Each on its own: a fork is worth having without its cover, or without its clip.
+    for (const [what, copy] of [
+      ['Cover', (): Promise<void> => this.projectService.copyCover(sourceProjectId, newProject.id)],
+      ['Clip', (): Promise<void> => this.projectService.copyClip(sourceProjectId, newProject.id)],
+    ] as const) {
+      try {
+        await copy();
+      } catch (error) {
+        this.logger.warn(
+          `${what} of project ${sourceProjectId} was not copied to its fork ${newProject.id}: ${
+            error instanceof Error ? error.message : 'unknown error'
+          }`,
+        );
+      }
     }
 
     return newProject;

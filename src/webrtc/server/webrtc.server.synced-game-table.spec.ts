@@ -3,6 +3,7 @@ import { IncomingMessage } from 'http';
 import { Duplex } from 'stream';
 import { WebSocket, WebSocketServer } from 'ws';
 
+import { uuidOf } from '../../../test/uuid';
 import { WebRTCService } from '../webrtc.service';
 import { WebRTCClientReadyState } from './webrtc.server';
 import {
@@ -54,11 +55,11 @@ function fakeSocket(): FakeSocket {
 
 function ticket(
   sessionId: string,
-  userId: number,
+  playerNumber: number,
   role: SyncedGameTableRole,
   maxPlayers = 4,
 ): SyncedGameTableTicket {
-  return { sessionId, userId, role, maxPlayers };
+  return { sessionId, playerNumber, userId: uuidOf(playerNumber), role, maxPlayers };
 }
 
 function framesSentTo(socket: FakeSocket): Frame[] {

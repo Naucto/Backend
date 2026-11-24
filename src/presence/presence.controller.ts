@@ -1,8 +1,9 @@
-import { Controller, Get, HttpStatus, Param, ParseIntPipe, Req } from '@nestjs/common';
+import { Controller, Get, HttpStatus, Param, Req } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { RequiresAuth } from '../auth/access/access.decorators';
 import { RequestWithUser } from '../auth/auth.types';
+import { ParseIdPipe } from '../common/pipes/parse-id.pipe';
 import { PresenceDto } from './dto/presence.dto';
 import { PresenceService } from './presence.service';
 
@@ -28,12 +29,12 @@ export class UserPresenceController {
 
   @Get(':id/presence')
   @ApiOperation({ summary: 'Presence of a user (404 when offline)' })
-  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid', description: 'User ID' })
   @ApiResponse({ status: HttpStatus.OK, type: PresenceDto })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'User is offline' })
   async presence(
     @Req() req: RequestWithUser,
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseIdPipe) id: string,
   ): Promise<PresenceDto> {
     return this.presenceService.presenceOf(req.user.id, id);
   }

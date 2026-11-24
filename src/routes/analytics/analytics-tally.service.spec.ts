@@ -1,5 +1,7 @@
 import { Logger } from '@nestjs/common';
 
+import { uuidOf } from '../../../test/uuid';
+import { NO_RELEASE_ID } from '../../common/ids';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AnalyticsTallyService, PingInput } from './analytics-tally.service';
 
@@ -15,7 +17,7 @@ describe('AnalyticsTallyService', () => {
     state: 'PLAYING',
     signedIn: false,
     consent: 'DECLINED',
-    releaseId: 7,
+    releaseId: uuidOf(7),
     playMs: 0,
     ...overrides,
   });
@@ -45,13 +47,22 @@ describe('AnalyticsTallyService', () => {
     const [tally] = flushed();
     expect(tally?.[0]).toContain('INSERT INTO "AnalyticsAnonTally"');
     // minute, state, signedIn, releaseId, consent, beats, playsStarted, playMs
-    expect(tally?.slice(1)).toEqual([MINUTE, 'PLAYING', false, 7, 'DECLINED', 1, 1, 25_000]);
+    expect(tally?.slice(1)).toEqual([
+      MINUTE,
+      'PLAYING',
+      false,
+      uuidOf(7),
+      'DECLINED',
+      1,
+      1,
+      25_000,
+    ]);
   });
 
   it('keeps apart pings that differ in any key', async () => {
     service.recordPing(ping(), AT);
     service.recordPing(ping({ signedIn: true }), AT);
-    service.recordPing(ping({ releaseId: 0 }), AT);
+    service.recordPing(ping({ releaseId: NO_RELEASE_ID }), AT);
     service.recordPing(ping({ consent: 'UNANSWERED' }), AT);
     service.recordPing(ping(), new Date(AT.getTime() + 60_000));
 
@@ -89,7 +100,7 @@ describe('AnalyticsTallyService', () => {
     await service.flush();
 
     const [tally, outcome] = flushed();
-    expect(tally?.slice(1)).toEqual([MINUTE, 'PLAYING', false, 7, 'DECLINED', 2, 0, 3_000]);
+    expect(tally?.slice(1)).toEqual([MINUTE, 'PLAYING', false, uuidOf(7), 'DECLINED', 2, 0, 3_000]);
     expect(outcome?.slice(3)).toEqual([2, 0, 0, 0]);
   });
 

@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsInt, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsOptional, IsString } from 'class-validator';
 
+import { IsId } from '../../common/decorators/is-id';
 import {
   PresenceChangedMessage,
   PresenceOfflineMessage,
@@ -42,15 +43,25 @@ export class PresenceSetMessage {
   @IsEnum(PRESENCE_KINDS)
   kind!: PresenceKind;
 
-  @ApiPropertyOptional({ type: Number, nullable: true, description: 'Release being played' })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description: 'Release being played',
+  })
   @IsOptional()
-  @IsInt()
-  releaseId?: number | null;
+  @IsId()
+  releaseId?: string | null;
 
-  @ApiPropertyOptional({ type: Number, nullable: true, description: 'Project being edited' })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description: 'Project being edited',
+  })
   @IsOptional()
-  @IsInt()
-  projectId?: number | null;
+  @IsId()
+  projectId?: string | null;
 }
 
 export const NOTIFICATION_CLIENT_MESSAGES = eventBasedMessages({

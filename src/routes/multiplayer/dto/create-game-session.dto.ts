@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { GameSessionVisibility } from '@prisma/client';
 import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, Length, Max, Min } from 'class-validator';
 
+import { IsId } from '../../../common/decorators/is-id';
 import {
   SESSION_MAX_PLAYERS,
   SESSION_MIN_PLAYERS,
@@ -10,9 +11,13 @@ import {
 } from './game-session-limits';
 
 export class CreateGameSessionDto {
-  @ApiProperty({ description: 'ID of the project this session is played on' })
-  @IsInt()
-  projectId!: number;
+  @ApiProperty({
+    description: 'ID of the project this session is played on',
+    format: 'uuid',
+    example: '8c5d2a7e-41b3-4f6a-9e0d-2b7c6a5f4e3d',
+  })
+  @IsId()
+  projectId!: string;
 
   @ApiProperty({ description: 'Human-readable title of the session' })
   @IsString()

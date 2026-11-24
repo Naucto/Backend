@@ -1,18 +1,19 @@
 import { NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { uuidOf } from '../../../test/uuid';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AnalyticsMarkerService } from './analytics-marker.service';
 
 const AT = new Date('2026-10-20T18:00:00Z');
 const row = {
-  id: 1,
+  id: uuidOf(1),
   at: AT,
   label: 'Trailer',
   channel: 'YouTube',
   url: 'https://youtube.com/watch?v=1',
   audience: 'PLAYERS',
-  releaseId: 9,
+  releaseId: uuidOf(9),
   createdAt: AT,
   updatedAt: AT,
 };
@@ -31,7 +32,9 @@ describe('AnalyticsMarkerService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    prisma.project.findMany.mockResolvedValue([{ id: 9, name: 'draft', publishedName: 'Orbs' }]);
+    prisma.project.findMany.mockResolvedValue([
+      { id: uuidOf(9), name: 'draft', publishedName: 'Orbs' },
+    ]);
     service = new AnalyticsMarkerService(prisma as unknown as PrismaService);
   });
 
@@ -49,7 +52,11 @@ describe('AnalyticsMarkerService', () => {
       },
       orderBy: { at: 'asc' },
     });
-    expect(markers[0]).toMatchObject({ id: 1, game: 'Orbs', at: '2026-10-20T18:00:00.000Z' });
+    expect(markers[0]).toMatchObject({
+      id: uuidOf(1),
+      game: 'Orbs',
+      at: '2026-10-20T18:00:00.000Z',
+    });
   });
 
   it('stores blank optional text as nothing, and a post for everyone unless told otherwise', async () => {
@@ -72,10 +79,10 @@ describe('AnalyticsMarkerService', () => {
   it('clears an optional field given null and leaves out what was not given', async () => {
     prisma.analyticsMarker.update.mockResolvedValue({ ...row, url: null });
 
-    await service.update(1, { url: null, label: 'Teaser' });
+    await service.update(uuidOf(1), { url: null, label: 'Teaser' });
 
     expect(prisma.analyticsMarker.update).toHaveBeenCalledWith({
-      where: { id: 1 },
+      where: { id: uuidOf(1) },
       data: { label: 'Teaser', url: null },
     });
   });
@@ -88,7 +95,7 @@ describe('AnalyticsMarkerService', () => {
     prisma.analyticsMarker.delete.mockRejectedValue(missing);
     prisma.analyticsMarker.update.mockRejectedValue(missing);
 
-    await expect(service.remove(4)).rejects.toThrow(NotFoundException);
-    await expect(service.update(4, { label: 'x' })).rejects.toThrow(NotFoundException);
+    await expect(service.remove(uuidOf(4))).rejects.toThrow(NotFoundException);
+    await expect(service.update(uuidOf(4), { label: 'x' })).rejects.toThrow(NotFoundException);
   });
 });

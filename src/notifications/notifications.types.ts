@@ -19,7 +19,7 @@ export type NotificationData = Record<string, unknown>;
 
 export type NotificationPayload = {
   id: string;
-  userId: number;
+  userId: string;
   title: string;
   message: string;
   type: NotificationType;
@@ -30,7 +30,7 @@ export type NotificationPayload = {
 };
 
 export type CreateNotificationInput = {
-  userId: number;
+  userId: string;
   title: string;
   message: string;
   type: NotificationType;

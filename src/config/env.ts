@@ -89,6 +89,7 @@ const ENV = {
 
 export type EnvKey = keyof typeof ENV;
 export type EnvValue<K extends EnvKey> = ReturnType<(typeof ENV)[K]>;
+export const ENV_KEYS = Object.keys(ENV) as EnvKey[];
 
 /** An empty variable counts as unset: compose passes `KEY=` through as "". */
 function readRaw(key: EnvKey): string | undefined {

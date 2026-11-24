@@ -1,6 +1,7 @@
 import { HttpStatus } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 
+import { uuidOf } from '../../../test/uuid';
 import { HubService } from '../project/hub.service';
 import { EdgeService } from '../s3/edge.service';
 import { S3Service } from '../s3/s3.service';
@@ -73,20 +74,20 @@ describe('UserPublicController', () => {
 
     it("should carry each person's picture, so a face is recognisable in the list", async () => {
       userService.searchPublic.mockResolvedValue([
-        { id: 12, username: 'louis', nickname: 'Louis' },
+        { id: uuidOf(12), username: 'louis', nickname: 'Louis' },
       ]);
       s3Service.getFileMetadataOrNull.mockResolvedValue({ ETag: '"abc"' });
-      edgeService.getCDNUrl.mockReturnValue('https://cdn.example/users/12/profile');
+      edgeService.getCDNUrl.mockReturnValue(`https://cdn.example/users/${uuidOf(12)}/profile`);
 
       const result = await controller.search('lou');
 
       expect(userService.searchPublic).toHaveBeenCalledWith('lou', 10);
       expect(result.data).toEqual([
         {
-          id: 12,
+          id: uuidOf(12),
           username: 'louis',
           nickname: 'Louis',
-          profileImageUrl: 'https://cdn.example/users/12/profile?v=abc',
+          profileImageUrl: `https://cdn.example/users/${uuidOf(12)}/profile?v=abc`,
         },
       ]);
     });
@@ -99,7 +100,7 @@ describe('UserPublicController', () => {
   describe('getPublicProfileByUsername', () => {
     it('should return a public user profile response', async () => {
       const publicProfile = {
-        id: 1,
+        id: uuidOf(1),
         username: 'Madeline',
         nickname: 'Maddy',
         description: 'Hello',
@@ -125,8 +126,8 @@ describe('UserPublicController', () => {
         },
       });
       expect(userService.findPublicProfileByUsername).toHaveBeenCalledWith('Madeline');
-      expect(s3Service.getFileMetadataOrNull).toHaveBeenCalledWith('users/1/profile');
-      expect(s3Service.getFileMetadataOrNull).toHaveBeenCalledWith('users/1/background');
+      expect(s3Service.getFileMetadataOrNull).toHaveBeenCalledWith(`users/${uuidOf(1)}/profile`);
+      expect(s3Service.getFileMetadataOrNull).toHaveBeenCalledWith(`users/${uuidOf(1)}/background`);
     });
   });
 });

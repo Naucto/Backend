@@ -12,7 +12,7 @@ export interface ProfileImageUrls {
   backgroundImageUrl: string | null;
 }
 
-function profileAssetKey(userId: number, asset: ProfileAsset): string {
+function profileAssetKey(userId: string, asset: ProfileAsset): string {
   return `users/${userId}/${asset}`;
 }
 
@@ -27,7 +27,7 @@ export class ProfileAssetService {
   ) {}
 
   /** The image's public address, versioned by its content; null when none is set. */
-  async url(userId: number, asset: ProfileAsset): Promise<string | null> {
+  async url(userId: string, asset: ProfileAsset): Promise<string | null> {
     const key = profileAssetKey(userId, asset);
     const head = await this.s3Service.getFileMetadataOrNull(key);
     if (!head) {
@@ -41,7 +41,7 @@ export class ProfileAssetService {
    * Both images, for a profile answer. The pictures are decoration there: a store that cannot be
    * read costs them, not the answer.
    */
-  async imageUrls(userId: number): Promise<ProfileImageUrls> {
+  async imageUrls(userId: string): Promise<ProfileImageUrls> {
     const urlOrNull = (asset: ProfileAsset): Promise<string | null> =>
       this.url(userId, asset).catch((error: unknown) => {
         this.logger.warn(
@@ -59,15 +59,15 @@ export class ProfileAssetService {
   }
 
   /** Replaces the image and answers with its public address. */
-  async store(userId: number, asset: ProfileAsset, file: Express.Multer.File): Promise<string> {
+  async store(userId: string, asset: ProfileAsset, file: Express.Multer.File): Promise<string> {
     const key = profileAssetKey(userId, asset);
 
     await this.s3Service.uploadFile({
       file,
       keyName: key,
       metadata: {
-        uploadedBy: userId.toString(),
-        userId: userId.toString(),
+        uploadedBy: userId,
+        userId,
         originalName: file.originalname,
       },
       cacheControl: 'no-cache',
@@ -80,7 +80,7 @@ export class ProfileAssetService {
   }
 
   /** Idempotent: removing an image that is not there succeeds. */
-  async remove(userId: number, asset: ProfileAsset): Promise<void> {
+  async remove(userId: string, asset: ProfileAsset): Promise<void> {
     await this.s3Service.deleteFile({ key: profileAssetKey(userId, asset) });
   }
 }
