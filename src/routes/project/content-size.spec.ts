@@ -61,6 +61,17 @@ describe('computeContentSize', () => {
     );
   });
 
+  it('counts the SFX a v3 document holds on their own', () => {
+    const doc = new Y.Doc();
+    doc.getMap<unknown>(GAME_KEYS.meta).set('schemaVersion', 3);
+    doc.getMap<string>(GAME_KEYS.effects).set('0', '{"name":"jump"}');
+    doc.getMap<string>(GAME_KEYS.songs).set('0', '{"bpm":120}');
+
+    const size = computeContentSize(Y.encodeStateAsUpdate(doc));
+
+    expect(size.sound).toBe('{"name":"jump"}'.length + '{"bpm":120}'.length);
+  });
+
   it('counts the cells of every sheet and map', () => {
     const doc = new Y.Doc();
     doc.getMap<unknown>(GAME_KEYS.meta).set('schemaVersion', 2);
