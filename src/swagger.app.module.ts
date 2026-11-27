@@ -24,6 +24,14 @@ import { AdminAccountController } from './routes/admin/admin-account.controller'
 import { AdminAccountService } from './routes/admin/admin-account.service';
 import { AdminAuthController } from './routes/admin/admin-auth.controller';
 import { AdminSessionService } from './routes/admin/admin-session.service';
+import {
+  AiKeysController,
+  AiMcpController,
+  AiProjectController,
+} from './routes/ai/ai.controller';
+import { AiService } from './routes/ai/ai.service';
+import { AiJobsService } from './routes/ai/ai-jobs.service';
+import { AiWorkspaceService } from './routes/ai/ai-workspace.service';
 import { AdminAnalyticsController } from './routes/analytics/admin-analytics.controller';
 import { AnalyticsIngestController } from './routes/analytics/analytics-ingest.controller';
 import { AnalyticsIngestService } from './routes/analytics/analytics-ingest.service';
@@ -136,6 +144,9 @@ const nullProvider = (token: InjectionToken): Provider => ({
     AdminModerationCommentController,
     AdminModerationCollectionController,
     AdminModerationLogController,
+    AiKeysController,
+    AiProjectController,
+    AiMcpController,
   ],
   providers: [
     { provide: APP_GUARD, useClass: AccessGuard },
@@ -173,6 +184,9 @@ const nullProvider = (token: InjectionToken): Provider => ({
     nullProvider(ContentModerationService),
     nullProvider(ModerationDirectoryService),
     nullProvider(ModerationLogService),
+    nullProvider(AiService),
+    nullProvider(AiWorkspaceService),
+    nullProvider(AiJobsService),
   ],
 })
 export class SwaggerAppModule {}

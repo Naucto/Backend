@@ -74,6 +74,13 @@ model Project {
   featuredReleases FeaturedRelease[]
   releaseViews  ReleaseView[]
   collectionItems CollectionItem[]
+  aiWorkspace     AiWorkspace?
+  aiJobs          AiJob[]
+  aiDeclarations  AiDeclaration[]
+
+  // What AI made part of this game, as CODE, SPRITES, MAPS, MUSIC, SFX or MULTIPLAYER: added when
+  // an assistant's change is kept or someone declares it, and never taken away.
+  aiCategories String[] @default([])
 
   viewCount     Int @default(0)
   uniquePlayers Int @default(0)

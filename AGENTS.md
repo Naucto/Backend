@@ -530,6 +530,28 @@ on the client side only: the routes answer whatever the flag says.
   at least, weighted by the activity of those games, one per owner. Its "see all" is the public
   list, not a shelf route.
 
+**AI assistance** (`src/routes/ai/`), what the Naucto MCP (`Naucto/Naucto-AI`) works through:
+
+- An assistant key (`AiKey`, `/ai/keys`) is the account's and reaches every project the account
+  owns, never one it only collaborates on. Only its hash is stored. The MCP sends it as a bearer
+  on `/ai/mcp/*`, which the session guard lets through (`@Public()`) and `AiService.connection`
+  checks; `X-Naucto-Project` names the project when the account owns several, and the server
+  refuses to guess. A soft-deleted account loses its keys in `AccountDeletionService`.
+- The assistant never writes the user's project. It writes its own copy (`AiWorkspace`): a
+  `draft` and the `base` it started from, whole Yjs states, made from the latest save the first
+  time it reads. Every write names the `revision` it read and a stale one answers 409. The server
+  keeps and hands out the states and never reads inside them: the engine does that, in the MCP
+  and in the editor.
+- A person reviews in the editor's diff mode: the draft set against the open document, changes
+  kept or refused one at a time, the kept ones written through the ordinary editing session.
+  `POST /ai/projects/:id/workspace/review` then hands back the document as it stands (the next
+  base) and the changes still waiting (the next draft), so a refused change is not offered again.
+- `Project.aiCategories` says what AI made part of a game. A review and a declaration only add to
+  it.
+- Generation jobs (`AiJob`) are queued with a key and finished by the generation service alone,
+  which proves itself with `AI_SERVICE_SECRET`: a result the assistant could write would name a
+  model nobody ran.
+
 ## Conventions (not all enforced by tooling — follow these)
 
 These complement the lint/TS rules (which you should read from the config files, not restate).

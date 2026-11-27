@@ -51,6 +51,7 @@ model User {
   likes            Like[]
   creator          Project[]       @relation("ProjectCreator")
   collaborators    Project[]       @relation("ProjectCollaborators")
+  aiKeys           AiKey[]
 
   // FIXME: After merge, refactor those fields to joinedWorkSessions/hostingWorkSessions
   workSession    WorkSession[] @relation("WorkSessionUsers")

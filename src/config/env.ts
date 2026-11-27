@@ -84,6 +84,9 @@ const ENV = {
   DISCORD_MODERATION_WEBHOOK_URL: text,
   ADMIN_PANEL_URL: text,
 
+  AI_SERVICE_SECRET: text,
+  AI_JOBS_PER_PROJECT_HOUR: integer,
+
   ENABLE_SWAGGER: flag,
 } satisfies Record<string, Parser<unknown>>;
 

@@ -1,0 +1,66 @@
+// AI assistance through the Naucto MCP: the account keys it authenticates with, the isolated
+// working save the assistant edits, the specialist generation jobs it queues, and what a project
+// says about the AI it used.
+
+// A long-lived credential the account owner creates once. It reaches every project the account
+// owns, so there is no per-project token and nothing to link.
+model AiKey {
+  id         String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  // Only the hash is kept: the token is shown once, when the key is made.
+  tokenHash  String    @unique
+  userId     String    @db.Uuid
+  name       String    @default("Assistant")
+  // Null never expires; a person who wants a hard limit sets a date.
+  expiresAt  DateTime?
+  revokedAt  DateTime?
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+  // Gone with the account: a key outliving its owner would outlive what it may reach.
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+// The assistant's own copy of a project: `draft` is what it made, `base` the user state it started
+// from. Both are whole Yjs states. The editor sets the draft against the open document and takes
+// changes from it one at a time; the user's own saves are never written from here.
+model AiWorkspace {
+  projectId String   @id @db.Uuid
+  // Every write names the revision it read, so two writers cannot overwrite each other unseen.
+  revision  Int      @default(1)
+  base      Bytes
+  draft     Bytes
+  updatedAt DateTime @updatedAt
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model AiJob {
+  id              String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  projectId       String   @db.Uuid
+  userId          String   @db.Uuid
+  kind            String
+  state           String   @default("QUEUED")
+  request         Json
+  result          Json?
+  error           String?
+  model           String?
+  cancelRequested Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+}
+
+// AI tools someone says they used outside the tracked workflow. It only ever adds categories.
+model AiDeclaration {
+  id         String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  projectId  String   @db.Uuid
+  userId     String   @db.Uuid
+  categories String[]
+  note       String
+  createdAt  DateTime @default(now())
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+}
