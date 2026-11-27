@@ -15,5 +15,7 @@ model EmailToken {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId, purpose])
+  // One live link per account and purpose; issuing a new one claims this row, which is what
+  // makes the resend cooldown hold under concurrent requests.
+  @@unique([userId, purpose])
 }

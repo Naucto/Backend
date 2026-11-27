@@ -309,9 +309,6 @@ export class AuthService {
     if (!user || user.deletedAt || user.emailVerifiedAt !== null) {
       return;
     }
-    if (await this.emailTokens.isCoolingDown(user.id, EmailTokenPurpose.VERIFY_EMAIL)) {
-      return;
-    }
 
     await this.accountMail.sendVerification(user);
   }
@@ -320,9 +317,6 @@ export class AuthService {
   async requestPasswordReset(email: string): Promise<void> {
     const user = await this.userService.findByEmail(email);
     if (!user || user.deletedAt) {
-      return;
-    }
-    if (await this.emailTokens.isCoolingDown(user.id, EmailTokenPurpose.RESET_PASSWORD)) {
       return;
     }
 

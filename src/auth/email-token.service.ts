@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { EmailTokenPurpose, Prisma } from '@prisma/client';
 import { createHash, randomBytes } from 'crypto';
 
-import { PrismaService } from '../prisma/prisma.service';
+import { isUniqueViolation, PrismaService } from '../prisma/prisma.service';
 
 const HOURS = 60 * 60 * 1000;
 
@@ -23,24 +23,47 @@ function digestOf(token: string): string {
 export class EmailTokenService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** A fresh link for the purpose, replacing any the account was sent before. */
+  /**
+   * A fresh link for the purpose, replacing the one the account was sent before, or null when a
+   * link of the purpose went out less than a cooldown ago. The check and the write are one
+   * statement, so of many requests racing for the same account only one is handed a link.
+   */
   async issue(
     userId: number,
     purpose: EmailTokenPurpose,
     db: Prisma.TransactionClient = this.prisma,
-  ): Promise<string> {
+  ): Promise<string | null> {
     const token = randomBytes(TOKEN_BYTES).toString('base64url');
+    const now = new Date();
+    const fresh = {
+      tokenHash: digestOf(token),
+      createdAt: now,
+      expiresAt: new Date(now.getTime() + EMAIL_TOKEN_LIFETIME_MS[purpose]),
+    };
 
-    await db.emailToken.deleteMany({ where: { userId, purpose } });
-    await db.emailToken.create({
-      data: {
+    // A racing request holds the row until it commits, and this one then reads its new createdAt.
+    const { count: replaced } = await db.emailToken.updateMany({
+      where: {
         userId,
         purpose,
-        tokenHash: digestOf(token),
-        expiresAt: new Date(Date.now() + EMAIL_TOKEN_LIFETIME_MS[purpose]),
+        createdAt: { lte: new Date(now.getTime() - EMAIL_TOKEN_COOLDOWN_MS) },
       },
+      data: fresh,
     });
+    if (replaced > 0) {
+      return token;
+    }
 
+    // No row old enough: either none exists, or one is still cooling down. The unique key on
+    // (userId, purpose) lets only one create through; a P2002 means another request won.
+    try {
+      await db.emailToken.create({ data: { userId, purpose, ...fresh } });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        return null;
+      }
+      throw error;
+    }
     return token;
   }
 
@@ -67,17 +90,5 @@ export class EmailTokenService {
     }
 
     return stored.userId;
-  }
-
-  /** Whether a link of this purpose went to the account too recently to send another. */
-  async isCoolingDown(userId: number, purpose: EmailTokenPurpose): Promise<boolean> {
-    const recent = await this.prisma.emailToken.count({
-      where: {
-        userId,
-        purpose,
-        createdAt: { gt: new Date(Date.now() - EMAIL_TOKEN_COOLDOWN_MS) },
-      },
-    });
-    return recent > 0;
   }
 }

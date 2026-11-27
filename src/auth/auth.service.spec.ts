@@ -107,9 +107,8 @@ describe('AuthService', () => {
     verify: jest.fn().mockReturnValue({ sub: 1, email: 'test@test.com' }),
   };
 
-  const emailTokens: jest.Mocked<Pick<EmailTokenService, 'consume' | 'isCoolingDown'>> = {
+  const emailTokens: jest.Mocked<Pick<EmailTokenService, 'consume'>> = {
     consume: jest.fn(),
-    isCoolingDown: jest.fn(),
   };
 
   const accountMail: jest.Mocked<
@@ -662,7 +661,6 @@ describe('AuthService', () => {
     it('should mail a new link to an unconfirmed account', async () => {
       const unconfirmed = userRow({ emailVerifiedAt: null });
       userService.findByEmail.mockResolvedValue(unconfirmed);
-      emailTokens.isCoolingDown.mockResolvedValue(false);
 
       await authService.resendVerification('test@example.com');
 
@@ -675,18 +673,8 @@ describe('AuthService', () => {
       ['a deleted account', userRow({ emailVerifiedAt: null, deletedAt: new Date() })],
     ])('should send nothing, and say nothing, for %s', async (_label, user) => {
       userService.findByEmail.mockResolvedValue(user);
-      emailTokens.isCoolingDown.mockResolvedValue(false);
 
       await expect(authService.resendVerification('test@example.com')).resolves.toBeUndefined();
-      expect(accountMail.sendVerification).not.toHaveBeenCalled();
-    });
-
-    it('should send nothing while the last link is too recent', async () => {
-      userService.findByEmail.mockResolvedValue(userRow({ emailVerifiedAt: null }));
-      emailTokens.isCoolingDown.mockResolvedValue(true);
-
-      await authService.resendVerification('test@example.com');
-
       expect(accountMail.sendVerification).not.toHaveBeenCalled();
     });
   });
@@ -695,7 +683,6 @@ describe('AuthService', () => {
     it('should mail a reset link to an existing account', async () => {
       const user = userRow();
       userService.findByEmail.mockResolvedValue(user);
-      emailTokens.isCoolingDown.mockResolvedValue(false);
 
       await authService.requestPasswordReset('test@example.com');
 
@@ -706,15 +693,6 @@ describe('AuthService', () => {
       userService.findByEmail.mockResolvedValue(undefined);
 
       await expect(authService.requestPasswordReset('nobody@example.com')).resolves.toBeUndefined();
-      expect(accountMail.sendPasswordReset).not.toHaveBeenCalled();
-    });
-
-    it('should send nothing while the last link is too recent', async () => {
-      userService.findByEmail.mockResolvedValue(userRow());
-      emailTokens.isCoolingDown.mockResolvedValue(true);
-
-      await authService.requestPasswordReset('test@example.com');
-
       expect(accountMail.sendPasswordReset).not.toHaveBeenCalled();
     });
   });

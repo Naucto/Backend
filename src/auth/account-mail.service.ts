@@ -18,7 +18,10 @@ interface Recipient {
   nickname: string | null;
 }
 
-/** Issues the single-use links of an account and mails them. */
+/**
+ * Issues the single-use links of an account and mails them. A link is not issued, and nothing is
+ * sent, while the previous one of the same purpose is less than a cooldown old.
+ */
 @Injectable()
 export class AccountMailService {
   constructor(
@@ -29,6 +32,9 @@ export class AccountMailService {
 
   async sendVerification(user: Recipient): Promise<void> {
     const token = await this.tokens.issue(user.id, EmailTokenPurpose.VERIFY_EMAIL);
+    if (token === null) {
+      return;
+    }
     const rendered = this.renderer.verifyEmail(DEFAULT_MAIL_LOCALE, {
       name: user.nickname ?? user.username,
       url: frontendLink(VERIFY_EMAIL_PATH, { token }),
@@ -39,6 +45,9 @@ export class AccountMailService {
 
   async sendPasswordReset(user: Recipient): Promise<void> {
     const token = await this.tokens.issue(user.id, EmailTokenPurpose.RESET_PASSWORD);
+    if (token === null) {
+      return;
+    }
     const rendered = this.renderer.resetPassword(DEFAULT_MAIL_LOCALE, {
       name: user.nickname ?? user.username,
       url: frontendLink(RESET_PASSWORD_PATH, { token }),
