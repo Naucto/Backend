@@ -1,0 +1,83 @@
+// AI assistance through the Naucto MCP: the grants it authenticates with, the isolated
+// working save the assistant edits, the specialist generation jobs it queues, and what a project
+// says about the AI it used.
+
+// An assistant connected to an account, as its owner approved it on a code it was shown (the
+// OAuth device flow, RFC 8628). It reaches every project the account owns. Its tokens are opaque
+// and only their hashes are kept: a short access token, and a refresh token replaced at each use.
+model AiGrant {
+  id               String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  userId           String    @db.Uuid
+  // What the assistant called itself when it asked, e.g. "Claude Code on my laptop".
+  clientName       String
+  accessTokenHash  String    @unique
+  accessExpiresAt  DateTime
+  refreshTokenHash String    @unique
+  createdAt        DateTime  @default(now())
+  lastUsedAt       DateTime?
+  revokedAt        DateTime?
+  // Gone with the account: a grant outliving its owner would outlive what it may reach.
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+// A code shown to a person, while the assistant that asked for it waits. Approved, it becomes a
+// grant the next time the assistant asks; it lives a quarter of an hour at most.
+model AiDeviceCode {
+  id             String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  deviceCodeHash String    @unique
+  // What the person types: short, unambiguous, unique while it lives.
+  userCode       String    @unique
+  clientName     String
+  expiresAt      DateTime
+  lastPolledAt   DateTime?
+  // Set by the person who approves or refuses it.
+  userId         String?   @db.Uuid
+  approved       Boolean?
+  createdAt      DateTime  @default(now())
+}
+
+// The assistant's own copy of a project: `draft` is what it made, `base` the user state it started
+// from. Both are whole Yjs states. The editor sets the draft against the open document and takes
+// changes from it one at a time; the user's own saves are never written from here.
+model AiWorkspace {
+  projectId String   @id @db.Uuid
+  // Every write names the revision it read, so two writers cannot overwrite each other unseen.
+  revision  Int      @default(1)
+  base      Bytes
+  draft     Bytes
+  updatedAt DateTime @updatedAt
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model AiJob {
+  id              String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  projectId       String   @db.Uuid
+  userId          String   @db.Uuid
+  kind            String
+  state           String   @default("QUEUED")
+  request         Json
+  result          Json?
+  error           String?
+  model           String?
+  cancelRequested Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+}
+
+// AI tools someone says they used outside the tracked workflow. It only ever adds categories.
+model AiDeclaration {
+  id         String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  projectId  String   @db.Uuid
+  userId     String   @db.Uuid
+  categories String[]
+  note       String
+  createdAt  DateTime @default(now())
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+}

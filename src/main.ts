@@ -12,6 +12,7 @@ import express, { NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module';
 import { ViolationValidationPipe } from './common/pipes/violation-validation.pipe';
 import { getOptionalEnv } from './config/env';
+import { aiJsonParser } from './routes/ai/ai-body';
 import { useTextJsonParser } from './routes/analytics/analytics-ingest-paths';
 import { setupSwagger } from './swagger';
 
@@ -26,6 +27,8 @@ if (isProduction) {
   // The API sits behind the deployment's reverse proxy on a private network, so the address of
   // the reader is the one that proxy reports, not the proxy's own.
   expressApp.set('trust proxy', 'loopback, linklocal, uniquelocal');
+  // Before Nest's own parser, which stops at a size no game state fits in.
+  expressApp.use('/ai', aiJsonParser);
 
   const app = await NestFactory.create<NestExpressApplication>(
     AppModule,

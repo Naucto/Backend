@@ -38,6 +38,7 @@ describe('AccountDeletionService', () => {
     notification: { deleteMany: jest.fn() },
     feedbackPrompt: { deleteMany: jest.fn() },
     collection: { deleteMany: jest.fn() },
+    aiGrant: { deleteMany: jest.fn() },
     report: { findMany: jest.fn(), updateMany: jest.fn() },
   };
   const projectService = { remove: jest.fn() };
