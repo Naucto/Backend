@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomInt } from 'node:crypto';
 
 import {
   ConflictException,
@@ -46,8 +46,8 @@ const token = (kind: 'at' | 'rt' | 'dc'): string =>
 
 /** XXXX-XXXX from the unambiguous alphabet. */
 function userCodeOf(): string {
-  const bytes = randomBytes(8);
-  const letters = [...bytes].map((byte) => CODE_ALPHABET[byte % CODE_ALPHABET.length]);
+  // randomInt draws without the bias a modulo on random bytes would give some letters.
+  const letters = Array.from({ length: 8 }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]);
   return `${letters.slice(0, 4).join('')}-${letters.slice(4).join('')}`;
 }
 
