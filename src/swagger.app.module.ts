@@ -25,8 +25,9 @@ import { AdminAccountService } from './routes/admin/admin-account.service';
 import { AdminAuthController } from './routes/admin/admin-auth.controller';
 import { AdminSessionService } from './routes/admin/admin-session.service';
 import {
-  AiKeysController,
+  AiGrantsController,
   AiMcpController,
+  AiOAuthController,
   AiProjectController,
 } from './routes/ai/ai.controller';
 import { AiService } from './routes/ai/ai.service';
@@ -144,7 +145,8 @@ const nullProvider = (token: InjectionToken): Provider => ({
     AdminModerationCommentController,
     AdminModerationCollectionController,
     AdminModerationLogController,
-    AiKeysController,
+    AiOAuthController,
+    AiGrantsController,
     AiProjectController,
     AiMcpController,
   ],

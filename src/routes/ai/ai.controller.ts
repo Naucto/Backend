@@ -16,64 +16,129 @@ import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Public, RequiresAuth } from '../../auth/access/access.decorators';
 import { RequestWithUser } from '../../auth/auth.types';
 import { ParseIdPipe } from '../../common/pipes/parse-id.pipe';
-import { AiService } from './ai.service';
+import { AiService, AiTokenError } from './ai.service';
 import { AiJobsService } from './ai-jobs.service';
 import { AiWorkspaceService } from './ai-workspace.service';
 import {
   AiConnectionDto,
   AiDeclarationCreateDto,
   AiDeclarationDto,
+  AiDeviceAuthorizationDto,
+  AiDeviceDescriptionDto,
+  AiDeviceRequestDto,
+  AiGrantDto,
   AiJobCompleteDto,
   AiJobCreateDto,
   AiJobDto,
   AiJobFailDto,
   AiJobStartDto,
-  AiKeyCreatedDto,
-  AiKeyCreateDto,
-  AiKeySummaryDto,
   AiProvenanceDto,
   AiReachableProjectDto,
   AiSaveDto,
   AiSaveQueryDto,
   AiSaveWriteDto,
+  AiTokenDto,
+  AiTokenErrorDto,
+  AiTokenRequestDto,
   AiWorkspaceDto,
   AiWorkspaceReviewDto,
 } from './dto/ai.dto';
 
-@ApiTags('ai')
-@Controller('ai/keys')
-@RequiresAuth()
-export class AiKeysController {
+/**
+ * The OAuth device flow an assistant connects with (RFC 8628): public to the session guard, since
+ * what asks is the assistant, before it holds anything.
+ */
+@ApiTags('ai-oauth')
+@Controller('ai/oauth')
+@Public()
+export class AiOAuthController {
   constructor(private readonly ai: AiService) {}
 
-  @Post()
-  @ApiOperation({ summary: 'Make an assistant key, which reaches every project the account owns' })
-  @ApiResponse({ status: HttpStatus.CREATED, type: AiKeyCreatedDto })
-  async create(@Req() req: RequestWithUser, @Body() dto: AiKeyCreateDto): Promise<AiKeyCreatedDto> {
-    return this.ai.createKey(req.user.id, dto.name, dto.expiresInDays);
+  @Post('device')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Ask for a code to show the owner, and the address to type it at' })
+  @ApiResponse({ status: HttpStatus.OK, type: AiDeviceAuthorizationDto })
+  async device(@Body() dto: AiDeviceRequestDto): Promise<AiDeviceAuthorizationDto> {
+    return this.ai.startDevice(dto);
   }
 
-  @Get()
-  @ApiOperation({ summary: 'The account’s live assistant keys' })
-  @ApiResponse({ status: HttpStatus.OK, type: [AiKeySummaryDto] })
-  async list(@Req() req: RequestWithUser): Promise<AiKeySummaryDto[]> {
-    return this.ai.listKeys(req.user.id);
+  @Post('token')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Swap an approved device code, or a refresh token, for tokens' })
+  @ApiResponse({ status: HttpStatus.OK, type: AiTokenDto })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    type: AiTokenErrorDto,
+    description: 'Not yet, too fast, refused, expired or revoked',
+  })
+  async token(@Body() dto: AiTokenRequestDto): Promise<AiTokenDto> {
+    if (dto.grant_type === 'refresh_token') {
+      if (!dto.refresh_token) {
+        throw new AiTokenError('invalid_request', 'refresh_token is required');
+      }
+      return this.ai.refresh(dto.refresh_token);
+    }
+    if (!dto.device_code) {
+      throw new AiTokenError('invalid_request', 'device_code is required');
+    }
+    return this.ai.exchangeDevice(dto.device_code);
   }
+}
 
-  @Delete(':keyId')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Revoke a key everywhere' })
-  @ApiParam({ name: 'keyId', format: 'uuid' })
-  @ApiResponse({ status: HttpStatus.NO_CONTENT })
+/** What the owner answers a code with, and the assistants they connected. */
+@ApiTags('ai')
+@Controller('ai')
+@RequiresAuth()
+export class AiGrantsController {
+  constructor(private readonly ai: AiService) {}
+
+  @Get('device/:code')
+  @ApiOperation({ summary: 'What asks to connect with this code' })
+  @ApiParam({ name: 'code', example: 'ACDE-FGHJ' })
+  @ApiResponse({ status: HttpStatus.OK, type: AiDeviceDescriptionDto })
   @ApiResponse({
     status: HttpStatus.NOT_FOUND,
-    description: 'No live key of the caller’s by that id',
+    description: 'No such code, expired or already answered',
   })
+  async describe(@Param('code') code: string): Promise<AiDeviceDescriptionDto> {
+    return this.ai.describeDevice(code);
+  }
+
+  @Post('device/:code/approve')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Connect the assistant to the caller’s account' })
+  @ApiParam({ name: 'code', example: 'ACDE-FGHJ' })
+  @ApiResponse({ status: HttpStatus.NO_CONTENT })
+  async approve(@Req() req: RequestWithUser, @Param('code') code: string): Promise<void> {
+    await this.ai.answerDevice(code, req.user.id, true);
+  }
+
+  @Post('device/:code/deny')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Refuse the connection' })
+  @ApiParam({ name: 'code', example: 'ACDE-FGHJ' })
+  @ApiResponse({ status: HttpStatus.NO_CONTENT })
+  async deny(@Req() req: RequestWithUser, @Param('code') code: string): Promise<void> {
+    await this.ai.answerDevice(code, req.user.id, false);
+  }
+
+  @Get('grants')
+  @ApiOperation({ summary: 'The assistants connected to the account' })
+  @ApiResponse({ status: HttpStatus.OK, type: [AiGrantDto] })
+  async grants(@Req() req: RequestWithUser): Promise<AiGrantDto[]> {
+    return this.ai.listGrants(req.user.id);
+  }
+
+  @Delete('grants/:grantId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Disconnect an assistant everywhere' })
+  @ApiParam({ name: 'grantId', format: 'uuid' })
+  @ApiResponse({ status: HttpStatus.NO_CONTENT })
   async revoke(
     @Req() req: RequestWithUser,
-    @Param('keyId', ParseIdPipe) keyId: string,
+    @Param('grantId', ParseIdPipe) grantId: string,
   ): Promise<void> {
-    await this.ai.revokeKey(req.user.id, keyId);
+    await this.ai.revokeGrant(req.user.id, grantId);
   }
 }
 
@@ -171,7 +236,7 @@ export class AiProjectController {
 
 /**
  * The Naucto MCP's routes. Public to the session guard only: every handler authenticates an
- * assistant key, which no other route takes, and `X-Naucto-Project` names the project.
+ * assistant's access token, which no other route takes, and `X-Naucto-Project` names the project.
  */
 @ApiTags('ai-mcp')
 @Controller('ai/mcp')

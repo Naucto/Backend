@@ -55,8 +55,8 @@ export const USER_RELATION_FATES: Record<UserRelation, 'deleted' | 'unlinked' | 
     analyticsProjectionWork: 'deleted',
     feedbackPrompt: 'deleted',
     collections: 'deleted',
-    // An assistant key would otherwise go on reaching the projects the account kept.
-    aiKeys: 'deleted',
+    // An assistant's grant would otherwise go on reaching the projects the account kept.
+    aiGrants: 'deleted',
     // A report stays with the platform once its author is anonymised. Its screenshot goes, since an
     // image can show the person.
     reports: 'kept',
@@ -177,7 +177,7 @@ export class AccountDeletionService {
       await tx.notification.deleteMany({ where: { userId } });
       await tx.feedbackPrompt.deleteMany({ where: { userId } });
       await tx.collection.deleteMany({ where: { ownerId: userId } });
-      await tx.aiKey.deleteMany({ where: { userId } });
+      await tx.aiGrant.deleteMany({ where: { userId } });
       await tx.gameSession.updateMany({
         where: { hostId: userId, endedAt: null },
         data: { endedAt: now },

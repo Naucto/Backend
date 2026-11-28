@@ -9,10 +9,8 @@ import {
   IsObject,
   IsOptional,
   IsString,
-  Max,
   MaxLength,
   Min,
-  MinLength,
 } from 'class-validator';
 
 /** What AI can have made of a game, for the badge a release carries. */
@@ -23,35 +21,69 @@ export type AiCategory = (typeof AI_CATEGORIES)[number];
 export const AI_SAVE_SOURCES = ['draft', 'base', 'latest'] as const;
 export type AiSaveSource = (typeof AI_SAVE_SOURCES)[number];
 
-export class AiKeyCreateDto {
-  @ApiProperty({ example: 'Claude on my laptop', minLength: 1, maxLength: 60 })
-  @IsString()
-  @MinLength(1)
-  @MaxLength(60)
-  name!: string;
-
-  @ApiPropertyOptional({
-    description: 'Days until the key expires; absent never expires',
-    minimum: 1,
-    maximum: 3650,
-  })
+export class AiDeviceRequestDto {
+  @ApiPropertyOptional({ example: 'Claude Code on my laptop', maxLength: 80 })
   @IsOptional()
-  @IsInt()
-  @Min(1)
-  @Max(3650)
-  expiresInDays?: number;
+  @IsString()
+  @MaxLength(80)
+  clientName?: string;
 }
 
-export class AiKeySummaryDto {
+/** RFC 8628's answer, in its own field names, which OAuth clients read as they are. */
+export class AiDeviceAuthorizationDto {
+  @ApiProperty() device_code!: string;
+  @ApiProperty({ example: 'ACDE-FGHJ' }) user_code!: string;
+  @ApiProperty() verification_uri!: string;
+  @ApiProperty() verification_uri_complete!: string;
+  @ApiProperty() expires_in!: number;
+  @ApiProperty() interval!: number;
+}
+
+export const AI_GRANT_TYPES = [
+  'urn:ietf:params:oauth:grant-type:device_code',
+  'refresh_token',
+] as const;
+
+export class AiTokenRequestDto {
+  @ApiProperty({ enum: AI_GRANT_TYPES })
+  @IsIn(AI_GRANT_TYPES)
+  grant_type!: (typeof AI_GRANT_TYPES)[number];
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(200) device_code?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(200) refresh_token?: string;
+}
+
+export class AiTokenDto {
+  @ApiProperty() access_token!: string;
+  @ApiProperty() refresh_token!: string;
+  @ApiProperty({ enum: ['Bearer'] }) token_type!: 'Bearer';
+  @ApiProperty({ description: 'Seconds the access token lasts' }) expires_in!: number;
+}
+
+export const AI_TOKEN_ERRORS = [
+  'authorization_pending',
+  'slow_down',
+  'access_denied',
+  'expired_token',
+  'invalid_grant',
+  'invalid_request',
+] as const;
+export type AiTokenErrorCode = (typeof AI_TOKEN_ERRORS)[number];
+
+export class AiTokenErrorDto {
+  @ApiProperty({ enum: AI_TOKEN_ERRORS }) error!: AiTokenErrorCode;
+  @ApiProperty() error_description!: string;
+}
+
+export class AiDeviceDescriptionDto {
+  @ApiProperty() clientName!: string;
+  @ApiProperty() expiresAt!: Date;
+}
+
+export class AiGrantDto {
   @ApiProperty({ format: 'uuid' }) id!: string;
-  @ApiProperty() name!: string;
-  @ApiProperty({ type: Date, nullable: true }) expiresAt!: Date | null;
+  @ApiProperty() clientName!: string;
   @ApiProperty() createdAt!: Date;
   @ApiProperty({ type: Date, nullable: true }) lastUsedAt!: Date | null;
-}
-
-export class AiKeyCreatedDto extends AiKeySummaryDto {
-  @ApiProperty({ description: 'The key itself, shown this once and never again' }) token!: string;
 }
 
 export class AiConnectionDto {

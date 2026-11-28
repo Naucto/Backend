@@ -532,11 +532,14 @@ on the client side only: the routes answer whatever the flag says.
 
 **AI assistance** (`src/routes/ai/`), what the Naucto MCP (`Naucto/Naucto-AI`) works through:
 
-- An assistant key (`AiKey`, `/ai/keys`) is the account's and reaches every project the account
-  owns, never one it only collaborates on. Only its hash is stored. The MCP sends it as a bearer
-  on `/ai/mcp/*`, which the session guard lets through (`@Public()`) and `AiService.connection`
-  checks; `X-Naucto-Project` names the project when the account owns several, and the server
-  refuses to guess. A soft-deleted account loses its keys in `AccountDeletionService`.
+- An assistant connects with the OAuth device flow (RFC 8628, `/ai/oauth/*`): it asks for a code
+  and shows it, the owner types it on the editor's connect page and approves (`/ai/device/:code`),
+  and the assistant's next poll gets an access token (an hour) and a refresh token, replaced at each
+  use. Both are opaque, only their hashes are kept (`AiGrant`), and no session JWT is involved, so
+  an assistant's token can never pass for a person's session. A grant reaches every project the
+  account owns, never one it only collaborates on; `X-Naucto-Project` names the project when there
+  are several, and the server refuses to guess. Grants are listed and revoked at `/ai/grants`, and a
+  soft-deleted account loses them in `AccountDeletionService`.
 - The assistant never writes the user's project. It writes its own copy (`AiWorkspace`): a
   `draft` and the `base` it started from, whole Yjs states, made from the latest save the first
   time it reads. Every write names the `revision` it read and a stale one answers 409. The server

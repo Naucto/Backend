@@ -2,17 +2,33 @@
 ALTER TABLE "Project" ADD COLUMN     "aiCategories" TEXT[] DEFAULT ARRAY[]::TEXT[];
 
 -- CreateTable
-CREATE TABLE "AiKey" (
+CREATE TABLE "AiGrant" (
     "id" UUID NOT NULL DEFAULT uuidv7(),
-    "tokenHash" TEXT NOT NULL,
     "userId" UUID NOT NULL,
-    "name" TEXT NOT NULL DEFAULT 'Assistant',
-    "expiresAt" TIMESTAMP(3),
-    "revokedAt" TIMESTAMP(3),
+    "clientName" TEXT NOT NULL,
+    "accessTokenHash" TEXT NOT NULL,
+    "accessExpiresAt" TIMESTAMP(3) NOT NULL,
+    "refreshTokenHash" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "lastUsedAt" TIMESTAMP(3),
+    "revokedAt" TIMESTAMP(3),
+
+    CONSTRAINT "AiGrant_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "AiDeviceCode" (
+    "id" UUID NOT NULL DEFAULT uuidv7(),
+    "deviceCodeHash" TEXT NOT NULL,
+    "userCode" TEXT NOT NULL,
+    "clientName" TEXT NOT NULL,
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+    "lastPolledAt" TIMESTAMP(3),
+    "userId" UUID,
+    "approved" BOOLEAN,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "AiKey_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "AiDeviceCode_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -57,10 +73,19 @@ CREATE TABLE "AiDeclaration" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "AiKey_tokenHash_key" ON "AiKey"("tokenHash");
+CREATE UNIQUE INDEX "AiGrant_accessTokenHash_key" ON "AiGrant"("accessTokenHash");
 
 -- CreateIndex
-CREATE INDEX "AiKey_userId_createdAt_idx" ON "AiKey"("userId", "createdAt");
+CREATE UNIQUE INDEX "AiGrant_refreshTokenHash_key" ON "AiGrant"("refreshTokenHash");
+
+-- CreateIndex
+CREATE INDEX "AiGrant_userId_createdAt_idx" ON "AiGrant"("userId", "createdAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "AiDeviceCode_deviceCodeHash_key" ON "AiDeviceCode"("deviceCodeHash");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "AiDeviceCode_userCode_key" ON "AiDeviceCode"("userCode");
 
 -- CreateIndex
 CREATE INDEX "AiJob_projectId_createdAt_idx" ON "AiJob"("projectId", "createdAt");
@@ -69,7 +94,7 @@ CREATE INDEX "AiJob_projectId_createdAt_idx" ON "AiJob"("projectId", "createdAt"
 CREATE INDEX "AiDeclaration_projectId_createdAt_idx" ON "AiDeclaration"("projectId", "createdAt");
 
 -- AddForeignKey
-ALTER TABLE "AiKey" ADD CONSTRAINT "AiKey_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "AiGrant" ADD CONSTRAINT "AiGrant_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "AiWorkspace" ADD CONSTRAINT "AiWorkspace_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project"("id") ON DELETE CASCADE ON UPDATE CASCADE;
